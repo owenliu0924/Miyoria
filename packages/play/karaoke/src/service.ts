@@ -3,8 +3,11 @@
 // (`KaraokeWorkerKey`, the singing module's workers) and the pass follows the job; the backing
 // track and the reference are fetched once onto Core and served to the member through signed
 // links; at the end the browser sends its pitch track, Core scores it again with the shared
-// module, stores the result and tells her once. Nothing here calls a model; nothing here moves
-// coins.
+// module, stores the result and tells her once. Since step 3 (「做了什麼第三步」) the browser may
+// also send one recording of the song: a song worker reads its pitch, Core scores that with the
+// same module and it becomes the official result (`source: voice`); her note waits a bounded time
+// for it. The recording only passes through memory here and is never written or logged. Nothing
+// here calls a model; nothing here moves coins.
 
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
@@ -15,10 +18,15 @@ import type {
   KaraokeResult,
   KaraokeSession,
   KaraokeSongView,
+  KaraokeVoiceAccepted,
+  KaraokeVoiceCheck,
+  KaraokeVoiceState,
 } from "@miyoria/contracts/api";
 import {
   KARAOKE_FRAME_HZ,
   KARAOKE_MAX_SHIFT,
+  KARAOKE_VIDEO_FILE,
+  KARAOKE_VOICE_MAX_BYTES,
   karaokeBackingName,
   karaokeReferenceV2,
   shiftKaraokeReference,
@@ -38,9 +46,20 @@ import {
 } from "@miyoria/types";
 import { commentContext, type KaraokeConfig, lyricsOptions } from "./config.js";
 import { resultNote } from "./notes.js";
-import { decodeTrack, fromBase64, type ScoreResult, scoreSinging } from "./score/index.js";
+import {
+  alignSung,
+  decodeTrack,
+  encodeTrack,
+  fromBase64,
+  placeRecording,
+  recordingInSong,
+  type ScoreResult,
+  scoreSinging,
+  toBase64,
+  voiceChecks,
+} from "./score/index.js";
 import { FileSigner, LINK_MS } from "./signing.js";
-import type { KaraokeStore, ResultRow, SongRow } from "./store.js";
+import type { KaraokeStore, ResultRow, SessionRow, SongRow } from "./store.js";
 
 const DAY_MS = 86_400_000;
 /** How long a submitted track is kept (§13.2). */
@@ -55,12 +74,22 @@ const TOGETHER_COVERAGE = 0.3;
 const COMMENT_COVERAGE = 0.15;
 /** References kept parsed in memory. */
 const KEEP_PARSED = 6;
+/** A recording announced with the result must arrive within this, or the result stays 預估. */
+export const VOICE_UPLOAD_MS = 3 * 60_000;
+/** The longest a song worker may take to read a recording. */
+export const VOICE_READ_MS = 150_000;
+/** A recording may be this much longer than the song (the count-in, the ending). */
+const VOICE_SLACK_S = 30;
+/** How a recording may come. */
+export const VOICE_TYPES = ["audio/webm", "audio/ogg", "audio/mp4"] as const;
 
 export const KARAOKE_FILES: readonly KaraokeFileName[] = ["reference.json", "karaoke.m4a"];
 
-/** A file a signed link may name: the two, or the backing in another key. */
+/** A file a signed link may name: the two, the video, or the backing in another key. */
 function servable(name: string): name is KaraokeFileName {
-  if ((KARAOKE_FILES as readonly string[]).includes(name)) return true;
+  if ((KARAOKE_FILES as readonly string[]).includes(name) || name === KARAOKE_VIDEO_FILE) {
+    return true;
+  }
   const m = /^karaoke\.k([+-])([1-9]\d?)\.m4a$/.exec(name);
   return m !== null && Number(m[2]) <= KARAOKE_MAX_SHIFT;
 }
@@ -116,6 +145,8 @@ export interface Submission {
   calibrated: boolean;
   client_total: number | null;
   browser: string;
+  /** A recording of the song follows (`voice`); left out, none. */
+  recording?: boolean;
 }
 
 /** The part of a song's preparation that is not kept: the worker's stage while it runs. */
@@ -156,6 +187,10 @@ export class KaraokeService {
   readonly #keying = new Map<string, Promise<void>>();
   /** Songs whose files are being fetched, so two sessions do not fetch them twice. */
   readonly #fetching = new Map<string, Promise<void>>();
+  /** Videos being fetched. */
+  readonly #videos = new Map<string, Promise<boolean>>();
+  /** Recordings being read by a worker and scored, by session. */
+  readonly #voices = new Map<string, Promise<void>>();
 
   constructor(deps: KaraokeDeps) {
     this.#d = deps;
@@ -204,6 +239,7 @@ export class KaraokeService {
           ? song.lyrics_source
           : null,
       notes: song.notes,
+      video: song.video && this.#d.config.video,
       mine: person !== null && song.requested_by === person,
       best: mine?.best ?? null,
       sung: mine?.sung ?? 0,
@@ -282,6 +318,7 @@ export class KaraokeService {
         ...(source.url === undefined ? {} : { url: source.url }),
         ...(source.query === undefined ? {} : { query: source.query }),
         lyrics: lyricsOptions(cfg),
+        video: cfg.video,
       });
     } catch (error) {
       this.#d.log.warn({ err: errorText(error) }, "karaoke: the worker did not take the song");
@@ -317,6 +354,7 @@ export class KaraokeService {
       if (signal.aborted) return;
       await this.#poll(song, signal);
     }
+    this.#notesDue();
     if (upkeep) await this.#upkeep();
   }
 
@@ -369,9 +407,14 @@ export class KaraokeService {
         lyrics_source:
           ref.lyrics !== null && ref.lyrics.lines.length > 0 ? ref.lyrics.source : null,
         notes: ref.notes.length,
+        video: made.video,
         ready_at: toTimestamp(this.#d.now()),
       });
       this.#live.delete(song.id);
+      // The video is not needed to sing: fetched after, and a failure only means none is shown.
+      if (made.video && this.#d.config.video) {
+        void this.#fetchVideo({ ...song, worker_song: made.id });
+      }
     } catch (error) {
       if (signal.aborted) return;
       this.#fail(song, "準備好了但拿不到檔案,再點一次", errorText(error));
@@ -423,6 +466,32 @@ export class KaraokeService {
     } finally {
       this.#fetching.delete(song.id);
     }
+  }
+
+  /**
+   * The song's background video onto Core, unless it is there: `true` once it is. Never throws (a
+   * song without its video is sung over the still).
+   */
+  #fetchVideo(song: SongRow): Promise<boolean> {
+    const running = this.#videos.get(song.id);
+    if (running !== undefined) return running;
+    const work = (async () => {
+      const dest = join(this.#dir(song.id), KARAOKE_VIDEO_FILE);
+      if (await exists(dest)) return true;
+      const worker = this.#d.worker();
+      if (worker === null || song.worker_song === null) return false;
+      try {
+        await mkdir(this.#dir(song.id), { recursive: true });
+        await worker.file(song.worker_song, KARAOKE_VIDEO_FILE, dest);
+        return true;
+      } catch (error) {
+        this.#d.log.info({ song: song.id, err: errorText(error) }, "karaoke: no video on Core");
+        return false;
+      }
+    })();
+    this.#videos.set(song.id, work);
+    void work.finally(() => this.#videos.delete(song.id));
+    return work;
   }
 
   /** The song's reference, parsed, in version 2's shape (kept for the next few). */
@@ -522,15 +591,35 @@ export class KaraokeService {
       shift,
     });
     const exp = now + LINK_MS;
+    // A video is read in ranges while it plays: its link lasts the session. One not on Core yet
+    // is fetched for the next singing; this one has the still.
+    let videoUrl: string | null = null;
+    if (song.video && this.#d.config.video) {
+      if (await exists(join(this.#dir(song.id), KARAOKE_VIDEO_FILE))) {
+        const until = now + duration * 3 + 30 * 60_000;
+        videoUrl = this.#signer.url(id, KARAOKE_VIDEO_FILE, account, until);
+      } else {
+        void this.#fetchVideo(song);
+      }
+    }
+    const cfg = this.#d.config;
     return {
       session: id,
       song: this.#view(song, person, person === null ? undefined : this.#d.store.bestsOf(person)),
       backing_url: this.#signer.url(id, karaokeBackingName(shift) as KaraokeFileName, account, exp),
       reference_url: this.#signer.url(id, "reference.json", account, exp),
+      video_url: videoUrl,
       expires_at: toTimestamp(exp),
-      tolerance_cents: this.#d.config.tolerance_cents,
+      tolerance_cents: cfg.tolerance_cents,
       frame_hz: KARAOKE_FRAME_HZ,
       shift,
+      recording:
+        cfg.voice_score && this.#d.worker() !== null
+          ? {
+              max_bytes: KARAOKE_VOICE_MAX_BYTES,
+              max_seconds: Math.ceil(duration / 1000) + VOICE_SLACK_S,
+            }
+          : null,
     };
   }
 
@@ -546,16 +635,27 @@ export class KaraokeService {
     sig: string | undefined,
   ): Promise<{ path: string; type: string } | null> {
     if (!servable(name)) return null;
-    if (!this.#signer.check(session, name, account, exp, sig, this.#d.now())) return null;
+    // The video's link lasts its session (at most three times the longest song, and half an hour).
+    const longest =
+      name === KARAOKE_VIDEO_FILE
+        ? this.#d.config.max_song_secs * 3000 + 30 * 60_000 + LINK_MS
+        : undefined;
+    if (!this.#signer.check(session, name, account, exp, sig, this.#d.now(), longest)) return null;
     const row = this.#d.store.session(session);
     if (row === null || row.platform !== account.platform || row.account_id !== account.id) {
       return null;
     }
     // A backing in another key only for the session sung in it.
     if (name.startsWith("karaoke.k") && name !== karaokeBackingName(row.shift)) return null;
+    if (name === KARAOKE_VIDEO_FILE && !this.#d.config.video) return null;
     const path = join(this.#dir(row.song_id), name);
     if (!(await exists(path))) return null;
-    return { path, type: name.endsWith(".json") ? "application/json" : "audio/mp4" };
+    const type = name.endsWith(".json")
+      ? "application/json"
+      : name === KARAOKE_VIDEO_FILE
+        ? "video/mp4"
+        : "audio/mp4";
+    return { path, type };
   }
 
   /** The browser's track, once, at the end: Core's score, stored, and her note. */
@@ -605,6 +705,11 @@ export class KaraokeService {
     const context = this.#d.config.comment ? commentContext(this.#d.config.comment_channel) : null;
     const speaks = context !== null && result.facts.coverage >= COMMENT_COVERAGE;
     const at = toTimestamp(now);
+    // A recording follows: she hears of the song once its official score is in, or the wait is over.
+    const voice: KaraokeVoiceState =
+      body.recording && this.#d.config.voice_score && this.#d.worker() !== null
+        ? "waiting"
+        : "none";
     const detail: StoredDetail = { result, lines: phraseText, latency_ms: body.latency_ms };
     const row: ResultRow = {
       session_id: session.id,
@@ -623,9 +728,13 @@ export class KaraokeService {
       comment_state: speaks ? "waiting" : "none",
       comment: null,
       channel: speaks ? context.channel : null,
-      noted_at: at,
+      noted_at: voice === "waiting" ? null : at,
       comment_at: null,
       created_at: at,
+      source: "estimate",
+      voice_state: voice,
+      estimate_total: result.total,
+      checks: "[]",
     };
     const stored = store.scored(
       {
@@ -637,6 +746,7 @@ export class KaraokeService {
         browser: body.browser.slice(0, 60),
         submitted_at: at,
         purge_at: toTimestamp(now + TRACK_KEEP_MS),
+        voice_frames: null,
       },
       row,
       {
@@ -650,25 +760,11 @@ export class KaraokeService {
         rhythm: result.rhythm.score,
         expression: result.expression.score,
         unranked,
+        source: "estimate",
       },
     );
     if (!stored) throw new KaraokeError(409, "這一次已經交過了");
-    try {
-      this.#d.tell({
-        summary: resultNote({
-          name: session.name,
-          title: song.title,
-          result,
-          lines: phraseText,
-          bestBefore,
-        }),
-        key: `karaoke:${session.id}`,
-        person,
-        context: speaks ? context : null,
-      });
-    } catch (error) {
-      this.#d.log.warn({ err: errorText(error) }, "karaoke: cannot tell her about a song");
-    }
+    if (voice === "none") this.#tell(store.result(session.id) as ResultRow, session, song);
     if (person !== null && result.facts.coverage >= TOGETHER_COVERAGE) {
       this.#d.together(
         person,
@@ -678,6 +774,228 @@ export class KaraokeService {
       );
     }
     return this.#resultView(store.result(session.id) as ResultRow, song);
+  }
+
+  /** She hears of a result (the estimate, or the official one), once. */
+  #tell(row: ResultRow, session: SessionRow, song: SongRow): void {
+    const { result, lines } = JSON.parse(row.detail) as StoredDetail;
+    const context = row.channel === null ? null : commentContext(this.#d.config.comment_channel);
+    try {
+      this.#d.tell({
+        summary: resultNote({
+          name: session.name,
+          title: song.title,
+          result,
+          lines,
+          bestBefore: row.best_before,
+        }),
+        key: `karaoke:${session.id}`,
+        person: row.person_id as PersonId | null,
+        context: context !== null && context.channel === row.channel ? context : null,
+      });
+    } catch (error) {
+      this.#d.log.warn({ err: errorText(error) }, "karaoke: cannot tell her about a song");
+    }
+  }
+
+  /** Tells her of the results that waited for their recording, once it is in or the wait is over. */
+  #notesDue(): void {
+    const store = this.#d.store;
+    const now = this.#d.now();
+    for (const row of store.voiceOverdue(now - VOICE_UPLOAD_MS)) store.voiceFailed(row.session_id);
+    const waitMs = this.#d.config.voice_wait_secs * 1000;
+    for (const row of store.untold()) {
+      const pending = row.voice_state === "waiting" || row.voice_state === "scoring";
+      if (pending && now - Date.parse(row.created_at) < waitMs) continue;
+      this.#noteNow(row.session_id);
+    }
+  }
+
+  /** Tells her of a session's result as it is now, unless she was told already. */
+  #noteNow(sessionId: string): void {
+    const store = this.#d.store;
+    const now = this.#d.now();
+    const session = store.session(sessionId);
+    const row = store.result(sessionId);
+    const song = row === null ? null : store.song(row.song_id);
+    if (session === null || row === null || song === null) return;
+    if (!store.markNoted(sessionId, now)) return;
+    this.#tell(store.result(sessionId) as ResultRow, session, song);
+  }
+
+  /**
+   * The recording of a session, once, after its result: checked here, then read by a song worker
+   * and scored in the background (`voiceSettled` waits for it). `offsetMs`: the song time of the
+   * recording's first sample, as the browser's clock saw it.
+   */
+  voice(
+    account: AccountRef,
+    sessionId: string,
+    bytes: Uint8Array,
+    type: string,
+    offsetMs: number,
+  ): KaraokeVoiceAccepted {
+    this.#person(account);
+    const store = this.#d.store;
+    const session = store.session(sessionId);
+    if (
+      session === null ||
+      session.platform !== account.platform ||
+      session.account_id !== account.id
+    ) {
+      throw new KaraokeError(404, "沒有這一次的紀錄");
+    }
+    const row = store.result(sessionId);
+    if (row === null) throw new KaraokeError(409, "先交這一次的結果");
+    if (row.voice_state !== "waiting") throw new KaraokeError(409, "這一次不收錄音了");
+    const kind = type.split(";")[0]?.trim().toLowerCase() ?? "";
+    if (!(VOICE_TYPES as readonly string[]).includes(kind)) {
+      throw new KaraokeError(415, "錄音的格式不對");
+    }
+    if (bytes.length === 0) throw new KaraokeError(400, "錄音是空的");
+    if (bytes.length > KARAOKE_VOICE_MAX_BYTES) throw new KaraokeError(413, "錄音太大了");
+    if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) > 60_000) {
+      throw new KaraokeError(400, "錄音的開始時間不對");
+    }
+    const worker = this.#d.worker();
+    if (worker === null) {
+      store.voiceFailed(sessionId);
+      this.#noteNow(sessionId);
+      throw new KaraokeError(503, "現在沒有能算正式分數的機器,這一次是預估分數");
+    }
+    if (!store.claimVoice(sessionId)) throw new KaraokeError(409, "這一次不收錄音了");
+    const work = this.#scoreVoice(session, bytes, kind, offsetMs).finally(() => {
+      this.#voices.delete(sessionId);
+    });
+    this.#voices.set(sessionId, work);
+    return { state: "scoring" };
+  }
+
+  /** Every recording being scored is done (tests, and a module stopping). */
+  async voiceSettled(): Promise<void> {
+    await Promise.allSettled([...this.#voices.values()]);
+  }
+
+  async #scoreVoice(
+    session: SessionRow,
+    bytes: Uint8Array,
+    type: string,
+    offsetMs: number,
+  ): Promise<void> {
+    const store = this.#d.store;
+    const id = session.id;
+    try {
+      const worker = this.#d.worker();
+      if (worker === null) throw new Error("no song worker");
+      let pitch: Awaited<ReturnType<typeof worker.voice>>;
+      try {
+        pitch = await worker.voice({ bytes, type }, AbortSignal.timeout(VOICE_READ_MS));
+      } finally {
+        bytes.fill(0); // nothing of the recording stays in Core's memory past this
+      }
+      const song = store.song(session.song_id);
+      const track = store.track(id);
+      const row = store.result(id);
+      if (song === null || track === null || row === null) throw new Error("the session is gone");
+      const reference = shiftKaraokeReference(await this.reference(song.id), session.shift);
+      if (pitch.seconds > reference.duration_s + VOICE_SLACK_S) {
+        throw new Error(
+          `a recording of ${pitch.seconds} s for a song of ${reference.duration_s} s`,
+        );
+      }
+      const live = {
+        hz: track.hz,
+        midi: decodeTrack(fromBase64(track.frames) ?? new Uint8Array()),
+      };
+      const recorded = { hz: pitch.hz, midi: pitch.midi };
+      const placed = placeRecording(live, recorded, offsetMs);
+      const inSong = recordingInSong(recorded, placed.offset_ms);
+      const curve = {
+        hz: reference.pitch.hz,
+        start: reference.pitch.start,
+        midi: reference.pitch.midi,
+      };
+      const lines = reference.lyrics?.lines ?? [];
+      const result = scoreSinging({
+        reference: curve,
+        sung: { hz: KARAOKE_FRAME_HZ, midi: inSong },
+        latency_ms: track.latency_ms,
+        calibrated: track.calibrated,
+        phrases: lines.length > 0 ? lines.map((l) => ({ start: l.start, end: l.end })) : null,
+        tuning: { tolerance_cents: this.#d.config.tolerance_cents },
+      });
+      const checked = voiceChecks(
+        curve,
+        alignSung(curve, { hz: KARAOKE_FRAME_HZ, midi: inSong }, track.latency_ms),
+        { level_db: pitch.level_db, floor_db: pitch.floor_db },
+      );
+      const reasons = [
+        ...result.flags.reasons,
+        ...checked.checks.map((c) =>
+          c === "quiet"
+            ? `quiet voice (${pitch.level_db ?? "?"} dBFS, ${checked.above_floor_db ?? "?"} dB over its floor)`
+            : `pitch in the song's rests (${Math.round((checked.rest_voiced ?? 0) * 100)}%): backing from speakers?`,
+        ),
+        ...(placed.found ? [] : ["recording placed by the browser's start only"]),
+      ];
+      const unranked = result.flags.too_perfect || checked.checks.length > 0;
+      const detail: StoredDetail = {
+        result,
+        lines: lines.length > 0 ? lines.map((l) => l.text) : [],
+        latency_ms: track.latency_ms,
+        voice: {
+          offset_ms: Math.round(placed.offset_ms),
+          agreed: placed.agreed,
+          found: placed.found,
+          device: pitch.device,
+          level_db: pitch.level_db,
+          floor_db: pitch.floor_db,
+          rest_voiced: checked.rest_voiced,
+        },
+      };
+      const scored = store.voiceScored(
+        id,
+        {
+          total: result.total,
+          pitch: result.pitch.score,
+          stability: result.stability.score,
+          rhythm: result.rhythm.score,
+          expression: result.expression.score,
+          unranked,
+          reasons: JSON.stringify(reasons),
+          detail: JSON.stringify(detail),
+          checks: JSON.stringify(checked.checks),
+        },
+        toBase64(encodeTrack(inSong)),
+        {
+          session: id,
+          song: song.id,
+          title: song.title,
+          person: row.person_id,
+          total: result.total,
+          pitch: result.pitch.score,
+          stability: result.stability.score,
+          rhythm: result.rhythm.score,
+          expression: result.expression.score,
+          unranked,
+          source: "voice",
+        },
+        this.#d.now(),
+      );
+      if (scored) {
+        this.#d.log.info(
+          { session: id, total: result.total, estimate: row.estimate_total, device: pitch.device },
+          "karaoke: official score from the recording",
+        );
+      }
+    } catch (error) {
+      this.#d.log.warn(
+        { session: id, err: errorText(error) },
+        "karaoke: the recording was not scored",
+      );
+      store.voiceFailed(id);
+    }
+    this.#noteNow(id);
   }
 
   /** A result of the member's own. */
@@ -703,6 +1021,12 @@ export class KaraokeService {
     const { result, lines, latency_ms } = JSON.parse(row.detail) as StoredDetail;
     return {
       session: row.session_id,
+      source: row.source === "voice" ? "voice" : "estimate",
+      voice: {
+        state: row.voice_state as KaraokeVoiceState,
+        estimate_total: row.source === "voice" ? row.estimate_total : null,
+        checks: JSON.parse(row.checks) as KaraokeVoiceCheck[],
+      },
       song: { id: song.id, title: song.title, artist: song.artist },
       at: row.created_at,
       total: result.total,
@@ -744,8 +1068,16 @@ export class KaraokeService {
     const store = this.#d.store;
     store.purgeTracks(now);
     store.giveUpComments(now - COMMENT_WAIT_MS);
-    for (const song of store.idleReady(now - FILES_KEEP_MS)) {
-      if (this.#fetching.has(song.id)) continue;
+    const videoKeep = this.#d.config.video_keep_hours * 3_600_000;
+    if (videoKeep < FILES_KEEP_MS || !this.#d.config.video) {
+      // Videos go sooner than the rest (or at once when videos are off).
+      for (const song of store.idleReady(now - (this.#d.config.video ? videoKeep : 0))) {
+        if (this.#videos.has(song.id)) continue;
+        await rm(join(this.#dir(song.id), KARAOKE_VIDEO_FILE), { force: true }).catch(() => {});
+      }
+    }
+    for (const song of store.idleReady(now - Math.max(FILES_KEEP_MS, videoKeep))) {
+      if (this.#fetching.has(song.id) || this.#videos.has(song.id)) continue;
       const dir = this.#dir(song.id);
       if (!(await exists(dir))) continue;
       this.#parsed.delete(song.id);
@@ -769,6 +1101,9 @@ export class KaraokeService {
         client_total: r.client_total,
         unranked: r.unranked,
         reasons: JSON.parse(r.reasons) as string[],
+        source: r.source === "voice" ? ("voice" as const) : ("estimate" as const),
+        voice_state: r.voice_state as KaraokeVoiceState,
+        estimate_total: r.estimate_total,
         latency_ms: r.track?.latency_ms ?? 0,
         calibrated: r.track?.calibrated ?? false,
         browser: r.track?.browser ?? "",
@@ -796,6 +1131,16 @@ interface StoredDetail {
   result: ScoreResult;
   lines: (string | null)[];
   latency_ms: number;
+  /** How the recording was placed and what was heard (the official score only), for the owner. */
+  voice?: {
+    offset_ms: number;
+    agreed: number;
+    found: boolean;
+    device: string;
+    level_db: number | null;
+    floor_db: number | null;
+    rest_voiced: number | null;
+  };
 }
 
 function tooLong(maxSecs: number): string {

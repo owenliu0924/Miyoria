@@ -1,7 +1,8 @@
 // The short-lived links to a session's files (docs/design/karaoke.md §13.3): the backing track and
 // the reference are served only through a member route, and only with a signature over the
 // session, the file, the member's account and the moment it stops working. The key is made when
-// the module starts, so a restart ends every link; a link is good for `LINK_MS`.
+// the module starts, so a restart ends every link; a link is good for `LINK_MS`, except the
+// background video's, which is read in ranges while it plays and lasts its session.
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { AccountRef, KaraokeFileName } from "@miyoria/types";
@@ -31,7 +32,10 @@ export class FileSigner {
     return `${FILE_ROUTE}/${encodeURIComponent(session)}/${name}?exp=${exp}&sig=${sig}`;
   }
 
-  /** Whether a link's `exp` and `sig` are this module's for `account`, and still good at `now`. */
+  /**
+   * Whether a link's `exp` and `sig` are this module's for `account`, and still good at `now`. A
+   * link that claims to last longer than `longestMs` from now is not one of them.
+   */
   check(
     session: string,
     name: string,
@@ -39,10 +43,11 @@ export class FileSigner {
     exp: string | undefined,
     sig: string | undefined,
     now: number,
+    longestMs = LINK_MS * 2,
   ): boolean {
     if (exp === undefined || sig === undefined || !/^\d{1,16}$/.test(exp)) return false;
     const when = Number(exp);
-    if (when < now || when > now + LINK_MS * 2) return false;
+    if (when < now || when > now + longestMs) return false;
     const want = Buffer.from(this.#sign(session, name, account, when));
     const got = Buffer.from(sig);
     return want.length === got.length && timingSafeEqual(want, got);

@@ -7,6 +7,7 @@ import type {
   WorkersKaraokeLyricsV2,
   WorkersKaraokePiece,
 } from "@miyoria/contracts/workers/karaoke";
+import { lyricAt } from "./lane";
 
 /** What is shown above the words: nothing, the reading (furigana / pinyin), or romaji. */
 export type ReadingMode = "off" | "reading" | "roman";
@@ -33,6 +34,60 @@ export function lineProgress(line: WorkersKaraokeLineV2, t: number): number[] | 
     before = at;
     return at;
   });
+}
+
+/** Under reduced motion a piece lights whole as it begins, without the wipe. */
+export function stepped(at: number): number {
+  return at > 0 ? 1 : 0;
+}
+
+/**
+ * The two lines on the stage at `t`: the line being sung (or, between lines, the one coming, not
+ * yet lit) and the one after it. Indices into `lines`.
+ */
+export function stageLines<L extends { start: number; end: number | null }>(
+  lines: readonly L[],
+  t: number,
+): { main: number | null; second: number | null } {
+  const at = lyricAt(lines, t);
+  if (at.current !== null) return { main: at.current, second: at.next };
+  const main = at.next;
+  const second = main !== null && main + 1 < lines.length ? main + 1 : null;
+  return { main, second };
+}
+
+/**
+ * When a line's singing ends: its last timed piece's end when it is aligned (a line's own `end` is
+ * often the next line's start), else its `end`.
+ */
+export function sungEnd(line: Pick<WorkersKaraokeLineV2, "start" | "end" | "aligned" | "pieces">): number | null {
+  if (line.aligned && line.pieces) {
+    for (let i = line.pieces.length - 1; i >= 0; i--) {
+      const end = line.pieces[i]?.end;
+      if (end !== null && end !== undefined) return end;
+    }
+  }
+  return line.end;
+}
+
+/** Dots before a line comes in after a rest. */
+export const COUNTDOWN_DOTS = 4;
+
+/**
+ * How many dots are left before the next line starts (one a second, the last four seconds of a
+ * rest of at least that long), or `null` when none show.
+ */
+export function countdown<L extends { start: number; end: number | null }>(lines: readonly L[], t: number): number | null {
+  const at = lyricAt(lines, t);
+  if (at.current !== null || at.next === null) return null;
+  const next = lines[at.next] as L;
+  const before = at.next > 0 ? (lines[at.next - 1] as L) : null;
+  // Only after a real rest: a line right after another needs no counting in.
+  const restFrom = before === null ? 0 : (before.end ?? before.start);
+  if (next.start - restFrom < COUNTDOWN_DOTS) return null;
+  const left = next.start - t;
+  if (left <= 0 || left > COUNTDOWN_DOTS) return null;
+  return Math.ceil(left);
 }
 
 /** The reading modes a song's lyrics have (besides `off`): what its pieces carry. */

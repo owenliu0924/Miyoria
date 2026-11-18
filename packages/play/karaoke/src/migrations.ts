@@ -105,11 +105,25 @@ const KEY_AND_LYRICS = `ALTER TABLE \`karaoke_sessions\` ADD \`shift\` integer D
 ALTER TABLE \`karaoke_songs\` ADD \`lyrics_source\` text;
 `;
 
+/**
+ * Step 3: a song's background video, and the official score from a recording of the singer (which
+ * score a result is, what became of the recording, the estimate it replaced, what its checks found,
+ * and its pitch beside the browser's).
+ */
+const VIDEO_AND_VOICE = `ALTER TABLE \`karaoke_results\` ADD \`source\` text DEFAULT 'estimate' NOT NULL;
+ALTER TABLE \`karaoke_results\` ADD \`voice_state\` text DEFAULT 'none' NOT NULL;
+ALTER TABLE \`karaoke_results\` ADD \`estimate_total\` real;
+ALTER TABLE \`karaoke_results\` ADD \`checks\` text DEFAULT '[]' NOT NULL;
+ALTER TABLE \`karaoke_songs\` ADD \`video\` integer DEFAULT false NOT NULL;
+ALTER TABLE \`karaoke_tracks\` ADD \`voice_frames\` text;
+`;
+
 /** The songs, requests, sessions, tracks and results. */
 export const karaokeSchema: PluginSchema = {
   plugin: "karaoke",
   migrations: [
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "key_and_lyrics", sql: KEY_AND_LYRICS },
+    { version: 3, name: "video_and_voice", sql: VIDEO_AND_VOICE },
   ],
 };

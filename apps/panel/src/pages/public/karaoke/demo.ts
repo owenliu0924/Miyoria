@@ -3,10 +3,17 @@
 // `import.meta.env.DEV` (so a production build has none of it) and the query asks for it.
 //
 // What is faked: every `/api/*` answer the page needs (a member, the song list, a song being
-// prepared, the signed files, the result and her comment), and the audio: no backing track plays
-// and no microphone opens; a made-up singer follows the reference a little late and a little off.
-// What is real: the page, the lane, the clock, `Take`, `LiveScore`, the encoded track, and the
-// score (`scoreSinging` runs here on what the page sends, the way Core would).
+// prepared, the signed files, the result, the official score and her comment), and the audio: no
+// backing track plays and no microphone opens; a made-up singer follows the reference a little late
+// and a little off, and the "recording" is a few empty bytes. What is real: the page, the lane, the
+// clock, `Take`, `LiveScore`, the encoded track, and the score (`scoreSinging` runs here on what the
+// page sends, the way Core would).
+//
+// The songs: 紙船 has a video (a made-up test pattern, `demo-video.mp4`, which counts the
+// seconds so its sync with the song shows); 夜空中最亮的星 says it has one but its link leads nowhere,
+// so the stage falls back to the still; the others have none. A singing goes 預估 → 正在算 →
+// 正式分數 (a little higher than the estimate, which stays shown small); the second of 最近唱的 had
+// the backing in its recording (`bleed`).
 
 import type {
   KaraokeOverview,
@@ -22,7 +29,12 @@ import type {
 } from "@miyoria/contracts/workers/karaoke";
 import { decodeTrack, fromBase64, scoreSinging, TRACK_HZ } from "@miyoria/play/karaoke/score";
 import { type KaraokeEngine, setEngineFactory } from "./audio";
+// A 64 s test pattern with a seconds counter (ffmpeg's `testsrc`, 1280x720 at 12 fps, H.264, no
+// sound, ~260 KB), so the video's cover and its sync with the song can be seen. Only this file
+// refers to it, and this file is only in the dev server, so a production build has none of it.
+import demoVideo from "./demo-video.mp4?url";
 import type { Detection } from "./pitch";
+import { type RecorderState, type RecordingLimits, recordingOffsetMs, type VoiceRecorder, type VoiceTake } from "./recorder";
 
 // ---------------------------------------------------------------------------
 // a made-up song: an original tune and words
@@ -149,6 +161,7 @@ const song = (over: Partial<KaraokeSongView>): KaraokeSongView => ({
   lyrics: true,
   lyrics_source: "found",
   notes: TUNE.length,
+  video: false,
   mine: false,
   best: null,
   sung: 0,
@@ -179,8 +192,8 @@ function overview(): KaraokeOverview {
     open: true,
     preparing: true,
     songs: [
-      song({ best: 84.6, sung: 4 }),
-      song({ id: "d2", title: "夜空中最亮的星", artist: "逃跑計劃", duration_s: 252, best: 77.2, sung: 2 }),
+      song({ best: 84.6, sung: 4, video: true }),
+      song({ id: "d2", title: "夜空中最亮的星", artist: "逃跑計劃", duration_s: 252, best: 77.2, sung: 2, video: true }),
       song({ id: "d3", title: "群青", artist: "YOASOBI", duration_s: 248, lyrics_source: "heard" }),
       song({ id: "d4", title: "小幸運", artist: "田馥甄", duration_s: 265, lyrics: false, lyrics_source: null }),
       song({ id: "d5", title: "First Love", artist: "宇多田ヒカル", duration_s: 259, best: 69.8, sung: 1 }),
@@ -209,7 +222,7 @@ function ago(minutes: number): string {
   return new Date(Date.now() - minutes * 60_000).toISOString();
 }
 
-const results = new Map<string, { result: KaraokeResult; polls: number }>();
+const results = new Map<string, { result: KaraokeResult; polls: number; uploaded: boolean }>();
 /** The key of each session, and of the one singing now (the made-up singer follows it). */
 const keys = new Map<string, number>();
 let singingKey = 0;
@@ -229,6 +242,8 @@ function scored(body: KaraokeSubmit, session: string): KaraokeResult {
   return {
     ...r,
     session,
+    source: "estimate",
+    voice: { state: body.recording ? "waiting" : "none", estimate_total: null, checks: [] },
     song: { id: "demo-song", title: "紙船", artist: "示範" },
     at: new Date().toISOString(),
     phrases: r.phrases.map((p) => ({ ...p, text: WORDS[p.index] ?? null })),
@@ -238,6 +253,18 @@ function scored(body: KaraokeSubmit, session: string): KaraokeResult {
     best_before: 84.6,
     comment: { state: "waiting", text: null },
   } as unknown as KaraokeResult;
+}
+
+/** The recording's score: a little higher than the estimate, which is kept to show beside it. */
+function officially(r: KaraokeResult): KaraokeResult {
+  const total = Math.min(100, Math.round((r.total + 4.6) * 10) / 10);
+  return {
+    ...r,
+    source: "voice",
+    total,
+    pitch: { ...r.pitch, score: Math.min(r.pitch.max, Math.round((r.pitch.score + 4.6) * 10) / 10) },
+    voice: { state: "scored", estimate_total: r.total, checks: [] },
+  };
 }
 
 /** A full singing for the result opened from the list: a made-up track run through the score. */
@@ -251,13 +278,17 @@ function oldResult(session: string): KaraokeResult {
     calibrated: true,
     phrases: lines.map((l) => ({ start: l.start, end: l.end })),
   });
+  // The second of the recent ones had the backing in its recording: not a best.
+  const bleed = session === "demo-old2";
   return {
     ...r,
     session,
+    source: "voice",
+    voice: { state: "scored", estimate_total: Math.round((r.total - 3.1) * 10) / 10, checks: bleed ? ["bleed"] : [] },
     song: { id: "demo-song", title: "紙船", artist: "示範" },
     at: ago(26),
     phrases: r.phrases.map((p) => ({ ...p, text: WORDS[p.index] ?? null })),
-    unranked: false,
+    unranked: bleed,
     client_total: r.total,
     latency_ms: 140,
     best_before: 79.3,
@@ -298,24 +329,39 @@ function answer(method: string, path: string, body: unknown): Response | null {
     keys.set(id, shift);
     singingKey = shift;
     const backing = shift === 0 ? "karaoke.m4a" : `karaoke.k${shift > 0 ? "+" : "-"}${Math.abs(shift)}.m4a`;
+    // 紙船 has a real (made-up) video; 夜空中最亮的星 "has" one whose link leads nowhere, so the
+    // stage shows the still; the others have none.
+    const video =
+      start[1] === "demo-song" ? demoVideo : start[1] === "d2" ? `/karaoke-demo-missing-${id}.mp4` : null;
     const s: KaraokeSession = {
       session: id,
-      song: song({}),
+      song: song({ video: video !== null }),
       backing_url: `/api/member/karaoke/files/${id}/${backing}?exp=1&sig=demo`,
       reference_url: `/api/member/karaoke/files/${id}/reference.json?exp=1&sig=demo`,
+      video_url: video,
       expires_at: new Date(Date.now() + 600_000).toISOString(),
       tolerance_cents: 50,
       frame_hz: TRACK_HZ,
       shift,
+      recording: { max_bytes: 8 * 1024 * 1024, max_seconds: Math.ceil(DURATION) + 30 },
     };
     return json(s);
+  }
+  const voice = /^\/api\/member\/karaoke\/sessions\/([^/]+)\/voice$/.exec(path);
+  if (voice && method === "POST") {
+    const kept = results.get(voice[1] as string);
+    if (!kept || kept.uploaded) return json({ error: "這次的錄音已經收過了" }, 409);
+    kept.uploaded = true;
+    kept.polls = 0;
+    kept.result = { ...kept.result, voice: { ...kept.result.voice, state: "scoring" } };
+    return json({ state: "scoring" }, 202);
   }
   if (/\/reference\.json$/.test(path)) return json(REFERENCE);
   const submit = /^\/api\/member\/karaoke\/sessions\/([^/]+)\/result$/.exec(path);
   if (submit && method === "POST") {
     const id = submit[1] as string;
     const result = scored(body as KaraokeSubmit, id);
-    results.set(id, { result, polls: 0 });
+    results.set(id, { result, polls: 0, uploaded: false });
     return json(result);
   }
   const one = /^\/api\/member\/karaoke\/sessions\/([^/]+)$/.exec(path);
@@ -324,8 +370,14 @@ function answer(method: string, path: string, body: unknown): Response | null {
     const kept = results.get(id);
     if (!kept) return json(oldResult(id));
     kept.polls++;
-    // Her comment arrives on the second look.
-    if (kept.polls >= 2) kept.result = { ...kept.result, comment: { state: "said", text: COMMENT } };
+    const r = kept.result;
+    // The recording is scored on the third look after it arrived; her comment comes after that.
+    if (r.voice.state === "scoring" && kept.polls >= 3) {
+      kept.result = officially(r);
+      kept.polls = 0;
+    } else if (r.voice.state !== "waiting" && r.voice.state !== "scoring" && kept.polls >= 2) {
+      kept.result = { ...r, comment: { state: "said", text: COMMENT } };
+    }
     return json(kept.result);
   }
   if (path.startsWith("/api/")) return json({ error: "no such endpoint" }, 404);
@@ -390,6 +442,9 @@ class DemoEngine implements KaraokeEngine {
   beeps(at: readonly number[]): void {
     this.#beeps = [...at];
   }
+  recorder(limits: RecordingLimits, songTime: () => number): VoiceRecorder {
+    return new DemoRecorder(limits, songTime);
+  }
   close(): void {
     window.clearInterval(this.#timer);
     this.#timer = 0;
@@ -425,6 +480,48 @@ class DemoEngine implements KaraokeEngine {
       levelT: t,
     };
     for (const fn of this.#listeners) fn(d);
+  }
+}
+
+/** No microphone: a "recording" of empty bytes, about as large as a real one would be. */
+class DemoRecorder implements VoiceRecorder {
+  #state: RecorderState = "idle";
+  #offset: number | null = null;
+  #began = 0;
+  #timer = 0;
+  readonly #limits: RecordingLimits;
+  readonly #songTime: () => number;
+
+  constructor(limits: RecordingLimits, songTime: () => number) {
+    this.#limits = limits;
+    this.#songTime = songTime;
+  }
+  get state(): RecorderState {
+    return this.#state;
+  }
+  start(): void {
+    window.clearTimeout(this.#timer);
+    this.#state = "recording";
+    this.#offset = null;
+    // A real recorder says it began a moment after it was asked.
+    this.#timer = window.setTimeout(() => {
+      this.#offset = recordingOffsetMs(this.#songTime());
+      this.#began = performance.now();
+    }, 30);
+  }
+  async stop(): Promise<VoiceTake | null> {
+    window.clearTimeout(this.#timer);
+    const seconds = (performance.now() - this.#began) / 1000;
+    const offset = this.#offset;
+    const was = this.#state;
+    this.#state = "idle";
+    if (was !== "recording" || offset === null || seconds > this.#limits.max_seconds) return null;
+    const blob = new Blob([new Uint8Array(Math.max(1, Math.round(seconds * 4000)))], { type: "audio/webm" });
+    return { blob, type: "audio/webm", offset_ms: offset };
+  }
+  cancel(): void {
+    window.clearTimeout(this.#timer);
+    this.#state = "idle";
   }
 }
 

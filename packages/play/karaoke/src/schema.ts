@@ -9,7 +9,9 @@
 //   in the key the singer chose (`shift`, migration 2).
 // - `karaoke_tracks`: the pitch track a session sent: 50 Hz, one byte a frame, base64; deleted
 //   after a week (`purge_at`).
-// - `karaoke_results`: Core's score of a session, and her comment on it.
+// - `karaoke_results`: Core's score of a session, and her comment on it; since migration 3 which
+//   score it is (`source`: `estimate` from the browser's track, `voice` from the recording of the
+//   singer) and what became of the recording (`voice_state`).
 //
 // No foreign key to `persons`: a person who asks to be forgotten loses their sessions, tracks and
 // results through the plugin's hook; a song stays (it is nobody's).
@@ -48,6 +50,8 @@ export const karaokeSongs = sqliteTable(
     /** `found` (looked up) or `heard` (transcribed: shown as 聽寫); `null` without lyrics or before step 2. */
     lyrics_source: text(),
     notes: integer().notNull().default(0),
+    /** The worker made a background video for it (migration 3). */
+    video: integer({ mode: "boolean" }).notNull().default(false),
     /** Who asked for it first. */
     requested_by: text(),
     created_at: micros().notNull(),
@@ -110,6 +114,8 @@ export const karaokeTracks = sqliteTable(
     browser: text().notNull().default(""),
     submitted_at: micros().notNull(),
     purge_at: micros().notNull(),
+    /** The recording's pitch, placed in song time, in the same form (migration 3); never the sound. */
+    voice_frames: text(),
   },
   (t) => [index("karaoke_tracks_purge_idx").on(t.purge_at)],
 );
@@ -140,6 +146,14 @@ export const karaokeResults = sqliteTable(
     noted_at: micros(),
     comment_at: micros(),
     created_at: micros().notNull(),
+    /** `estimate` (the browser's track) or `voice` (the recording: the official score). */
+    source: text().notNull().default("estimate"),
+    /** `none`, `waiting`, `scoring`, `scored`, `failed`: what became of the recording. */
+    voice_state: text().notNull().default("none"),
+    /** Core's score of the browser's track, kept when the recording's replaces it. */
+    estimate_total: real(),
+    /** What the checks of the recording found, shown to the singer (JSON: `quiet`, `bleed`). */
+    checks: text().notNull().default("[]"),
   },
   (t) => [
     index("karaoke_results_person_idx").on(t.person_id, t.song_id, t.created_at),

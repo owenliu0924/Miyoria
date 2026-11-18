@@ -115,6 +115,7 @@ export { isJsonObject, type JsonObject, type JsonPrimitive, type JsonValue } fro
 export {
   type KaraokeFileName,
   type KaraokeQuery,
+  type KaraokeVoice,
   type KaraokeWorker,
   KaraokeWorkerKey,
 } from "./karaoke.js";

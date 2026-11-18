@@ -9,7 +9,7 @@
 // as one unreachable for too long. With a single worker none of the failover rules apply: it is
 // used as it is.
 
-import type { WorkersKaraokeKeyReply } from "@miyoria/contracts/workers";
+import type { WorkersKaraokeKeyReply, WorkersKaraokeVoicePitch } from "@miyoria/contracts/workers";
 import {
   type GpuContext,
   type SingWorker,
@@ -271,6 +271,27 @@ export class FailoverSingWorker implements SingWorker {
     const [ep, reply] = await this.#find(order, (w) => w.karaokeKey(song, semitones, signal));
     this.#karaoke.set(song, ep);
     return reply;
+  }
+
+  /**
+   * Any worker can read a recording: the first that answers, as for a new job. A timed-out one is
+   * not asked again elsewhere (it may be reading it: the recording is not sent twice).
+   */
+  async karaokeVoice(
+    bytes: Uint8Array,
+    type: string,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeVoicePitch> {
+    let last: unknown = null;
+    for (const ep of this.#candidates()) {
+      try {
+        return await this.#attempt(ep, (w) => w.karaokeVoice(bytes, type, signal));
+      } catch (error) {
+        if (!isUnreachable(error) || maybeReceived(error)) throw error;
+        last = error;
+      }
+    }
+    throw last ?? unreachable(this.#all.length === 0 ? NO_WORKER : "no song worker answers");
   }
 
   /** Healthy while any worker is; otherwise why each one is not. */

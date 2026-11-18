@@ -1,8 +1,9 @@
 // The page's audio: one AudioContext for the backing track, the click track and the microphone.
 // The backing track is fetched as bytes and decoded (no <audio> element, nothing to save), and
 // played through Web Audio so song time is the context's clock. The microphone goes into the
-// pitch worklet (`pitch.worklet.ts`); the samples never leave the browser, only the detections
-// reach the page.
+// pitch worklet (`pitch.worklet.ts`), whose detections reach the page; when the session allows a
+// recording for the official score, it also goes, mixed to one channel, to a `MediaRecorder`
+// (`recorder.ts`), sent once at the end. Nothing else of it leaves the browser.
 //
 // `KaraokeEngine` is what the screens use; `setEngineFactory` swaps it (the dev demo's fake).
 
@@ -10,6 +11,7 @@ import { estimateLatency } from "./latency";
 import { heardContextTime } from "./clock";
 import type { Detection } from "./pitch";
 import workletUrl from "./pitch.worklet.ts?worker&url";
+import { createVoiceRecorder, type RecordingLimits, type VoiceRecorder } from "./recorder";
 
 export interface KaraokeEngine {
   /** The context's time now. */
@@ -30,6 +32,11 @@ export interface KaraokeEngine {
   stop(): void;
   /** Short beeps at these context times. */
   beeps(at: readonly number[]): void;
+  /**
+   * A recorder of the microphone, one channel, for the official score; `null` when the microphone
+   * is not open or the browser cannot record. `songTime` reads the song's clock (seconds).
+   */
+  recorder(limits: RecordingLimits, songTime: () => number): VoiceRecorder | null;
   close(): void;
 }
 
@@ -43,6 +50,8 @@ const NODE = "miyoria-pitch";
 class WebAudioEngine implements KaraokeEngine {
   readonly #ctx: AudioContext;
   #mic: MediaStream | null = null;
+  #micSource: MediaStreamAudioSourceNode | null = null;
+  #mono: MediaStreamAudioDestinationNode | null = null;
   #node: AudioWorkletNode | null = null;
   #backing: AudioBuffer | null = null;
   #source: AudioBufferSourceNode | null = null;
@@ -79,7 +88,8 @@ class WebAudioEngine implements KaraokeEngine {
       node.port.onmessage = (e: MessageEvent<Detection>) => {
         for (const fn of this.#listeners) fn(e.data);
       };
-      this.#ctx.createMediaStreamSource(this.#mic).connect(node);
+      this.#micSource = this.#ctx.createMediaStreamSource(this.#mic);
+      this.#micSource.connect(node);
       // Connected so the graph pulls it; it writes silence.
       node.connect(this.#ctx.destination);
       this.#node = node;
@@ -147,11 +157,28 @@ class WebAudioEngine implements KaraokeEngine {
     }
   }
 
+  recorder(limits: RecordingLimits, songTime: () => number): VoiceRecorder | null {
+    if (!this.#micSource) return null;
+    if (!this.#mono) {
+      // The microphone mixed down to one channel on the context's own clock.
+      const mono = this.#ctx.createMediaStreamDestination();
+      mono.channelCount = 1;
+      mono.channelCountMode = "explicit";
+      mono.channelInterpretation = "speakers";
+      this.#micSource.connect(mono);
+      this.#mono = mono;
+    }
+    return createVoiceRecorder(this.#mono.stream, limits, songTime);
+  }
+
   close(): void {
     this.stop();
     this.#listeners.clear();
     for (const track of this.#mic?.getTracks() ?? []) track.stop();
     this.#mic = null;
+    this.#micSource?.disconnect();
+    this.#micSource = null;
+    this.#mono = null;
     this.#node?.disconnect();
     this.#node = null;
     void this.#ctx.close().catch(() => undefined);

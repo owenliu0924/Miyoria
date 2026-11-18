@@ -16,6 +16,9 @@ export const SONG_POLL_MS = 2_000;
 /** Her comment is looked for this often, and for this long. */
 export const COMMENT_POLL_MS = 5_000;
 export const COMMENT_WAIT_MS = 4 * 60_000;
+/** The official score (from the recording) is looked for this often, and for this long. */
+export const VOICE_POLL_MS = 3_000;
+export const VOICE_WAIT_MS = 3 * 60_000;
 
 /** An older Core has no such route, a stopped module stays stopped: asking again will not help. */
 export const retryUnlessOff = (n: number, e: Error) =>

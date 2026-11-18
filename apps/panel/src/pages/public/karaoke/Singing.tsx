@@ -1,11 +1,31 @@
-// The singing screen: the backing track through Web Audio, the microphone through the pitch
-// worklet, the lane on a canvas, the lyrics lit as they are sung, the running number. Before the
-// start the key can be moved (the Core has the worker render the backing in it; the reference
-// moves here by the same). At the song's end (or 「唱完了」) the track is encoded and handed on to
-// be sent; nothing is sent while singing.
+// The singing screen, a karaoke box after the owner's own app, laid out like a stream scene: the
+// whole window (over the panel's own frame) is the stage, the song's video (or a still) covers it
+// edge to edge, and everything else floats over it in layers, the way the stream overlay composes
+// its plates over the picture. Always there while singing: the pitch lane across the upper part,
+// the two lyric lines low in the middle over a soft scrim, and one small corner plate with the
+// running number (預估) and the time. The title plate, the notes and the bar of controls come on
+// demand (`chrome.ts`): before the start and after the end, on pointer movement, an edge, keyboard
+// focus, `Esc` or a tap, and go again after a moment. `f` (or the button) asks for real fullscreen.
+//
+// The backing track plays through Web Audio, the microphone goes through the pitch worklet, and,
+// when the session allows, is recorded for the official score. Before the start the key can be
+// moved (the Core has the worker render the backing in it; the reference moves here by the same).
+// There is no pause: the recording is one stretch of the song. At the song's end (or 「唱完了」)
+// the track is encoded and handed on with the recording; nothing is sent while singing.
 
-import { ArrowLeft, Check, Minus, Pause, Play, Plus, RotateCcw, Timer } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  Check,
+  LogOut,
+  Maximize,
+  Minimize,
+  Minus,
+  Play,
+  Plus,
+  RotateCcw,
+  Timer,
+} from "lucide-react";
+import { type CSSProperties, type PointerEvent, type ReactNode, useCallback, useEffect, useReducer, useRef, useState } from "react";
 import type { KaraokeSession, KaraokeSongView, KaraokeSubmit } from "@miyoria/contracts/api";
 import {
   KARAOKE_MAX_SHIFT,
@@ -18,18 +38,21 @@ import type { ScoreResult } from "@miyoria/play/karaoke/score";
 import { describeError, joinUrl } from "@/api/http";
 import { useConnection } from "@/app/connection";
 import { ConfirmDialog } from "@/components/confirm";
+import { Dot } from "@/components/status";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { KaraokeEngine } from "./audio";
-import { Bar, Fact, HeadphonesLine, PrivacyLine, Refusal } from "./bits";
-import { noiseFloor } from "./latency";
+import { HeadphonesLine, PrivacyLine, useReducedMotion } from "./bits";
+import { CHROME_START, chromeHidesIn, chromeReduce, chromeShown, nearEdge } from "./chrome";
 import { SongClock } from "./clock";
 import { LANE_SECONDS, LANE_SECONDS_NARROW, type LaneView, type MidiRange, midiRange } from "./lane";
 import { drawLane, type LaneColors, laneColors } from "./lane-draw";
-import { Lyrics } from "./Lyrics";
+import { noiseFloor } from "./latency";
+import { HeardBadge, Lyrics, ReadingToggle } from "./Lyrics";
 import { keyLabel, loadKey, loadReading, type ReadingMode, saveKey, saveReading } from "./lyric-text";
+import type { RecorderState, VoiceRecorder, VoiceTake } from "./recorder";
 import { clock } from "./result-text";
+import { StageBackground } from "./StageBackground";
 import { browserName } from "./support";
 import { finishTake, phrasesOf, referenceCurve, Take } from "./take";
 
@@ -41,6 +64,8 @@ export interface Finished {
   provisional: ScoreResult | null;
   /** The lyric lines' words, for the phrases of the number shown meanwhile. */
   lines: string[];
+  /** The recording of the singer, sent once after the result; `null` without one. */
+  voice: VoiceTake | null;
 }
 
 type Phase =
@@ -48,7 +73,6 @@ type Phase =
   | { kind: "error"; message: string }
   | { kind: "ready" }
   | { kind: "playing" }
-  | { kind: "paused" }
   | { kind: "finishing" };
 
 interface Loaded {
@@ -57,10 +81,78 @@ interface Loaded {
   reference: WorkersKaraokeReferenceV2;
   duration: number;
   range: MidiRange;
+  /** Records the singer for the official score; `null` when the session or the browser does not. */
+  recorder: VoiceRecorder | null;
 }
 
-/** How often the words and numbers under the lane are refreshed. */
+/** How often the words and numbers on the stage are refreshed. */
 const TICK_MS = 100;
+
+/**
+ * The stage: the whole window, over the panel's frame (dialogs stay above it). It is a size
+ * container, so the lane and the lyrics are sized by its width and its height (a phone held
+ * sideways is short).
+ */
+export const STAGE_BOX =
+  "fixed inset-0 z-40 isolate overflow-hidden bg-black text-white [container-type:size] [text-shadow:0_1px_3px_rgba(0,0,0,0.9)]";
+
+/** The safe area (a notch, rounded corners) plus a margin, as CSS. */
+const SAFE = {
+  top: "env(safe-area-inset-top, 0px)",
+  right: "env(safe-area-inset-right, 0px)",
+  bottom: "env(safe-area-inset-bottom, 0px)",
+  left: "env(safe-area-inset-left, 0px)",
+};
+const EDGE = "max(12px, 2.2cqmin)";
+
+/** Where each layer sits over the picture. */
+export const LAYOUT: Record<"title" | "score" | "lane" | "lyrics" | "bar", CSSProperties> = {
+  title: { top: `calc(${SAFE.top} + ${EDGE})`, left: `calc(${SAFE.left} + ${EDGE})`, maxWidth: "min(26rem, 58cqw)" },
+  score: { top: `calc(${SAFE.top} + ${EDGE})`, right: `calc(${SAFE.right} + ${EDGE})` },
+  lane: {
+    top: `calc(${SAFE.top} + max(60px, 15cqh))`,
+    left: `calc(${SAFE.left} + max(16px, 5cqw))`,
+    right: `calc(${SAFE.right} + max(16px, 5cqw))`,
+    height: "clamp(64px, 24cqh, 240px)",
+  },
+  lyrics: {
+    bottom: `calc(${SAFE.bottom} + max(64px, 11cqh))`,
+    left: `calc(${SAFE.left} + max(12px, 5cqw))`,
+    right: `calc(${SAFE.right} + max(12px, 5cqw))`,
+  },
+  bar: {
+    bottom: `calc(${SAFE.bottom} + ${EDGE})`,
+    left: `calc(${SAFE.left} + 12px)`,
+    right: `calc(${SAFE.right} + 12px)`,
+  },
+};
+
+/** A plate over the picture: the overlay's floating glass, in the panel's colours. */
+const PLATE = "glass-float rounded-[14px]";
+
+/** Fades a layer that comes on demand; under reduced motion it just shows or goes. */
+function onDemand(shown: boolean): string {
+  return cn(
+    "transition-[opacity,translate] duration-200 ease-out motion-reduce:transition-none",
+    shown ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-1.5 opacity-0",
+  );
+}
+
+/** Whether a key press came from something that takes typing or its own keys. */
+function typing(target: EventTarget | null): boolean {
+  const el = target as HTMLElement | null;
+  return Boolean(el?.closest?.("input, textarea, select, [contenteditable=true], [role=slider], [role=radio]"));
+}
+
+/** Whether keyboard focus (not a click) is on one of the controls under `root`. */
+function keyboardOnChrome(root: HTMLElement | null): boolean {
+  if (!root) return false;
+  try {
+    return root.querySelector("[data-chrome] :focus-visible") !== null;
+  } catch {
+    return false;
+  }
+}
 
 export function Singing({
   engine,
@@ -81,9 +173,14 @@ export function Singing({
   onCalibrate: () => void;
 }) {
   const { api, config } = useConnection();
+  const reduced = useReducedMotion();
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
   const [loaded, setLoaded] = useState<Loaded | null>(null);
-  const [tick, setTick] = useState({ now: 0, score: 0 });
+  const [tick, setTick] = useState<{ now: number; score: number; rec: RecorderState }>({
+    now: 0,
+    score: 0,
+    rec: "idle",
+  });
   const [quitting, setQuitting] = useState(false);
   const [shift, setShift] = useState(() => loadKey(song.id, KARAOKE_MAX_SHIFT));
   const [reading, setReading] = useState<ReadingMode>(() => loadReading());
@@ -92,11 +189,14 @@ export function Singing({
   const clockRef = useRef(new SongClock());
   const take = useRef<Take | null>(null);
   const alive = useRef(true);
+  const recWait = useRef<number>(0);
   /** The key a session was started for, and which load is the latest. */
   const started = useRef<number | null>(null);
   const loadToken = useRef(0);
   const phaseRef = useRef(phase);
   phaseRef.current = phase;
+  const loadedRef = useRef(loaded);
+  loadedRef.current = loaded;
 
   // Load once per key: the session's signed links, the reference, the backing track. Meanwhile the
   // room is listened to for its level.
@@ -130,7 +230,13 @@ export function Singing({
         });
         const range = midiRange(reference.pitch.midi, reference.notes);
         if (!alive.current || token !== loadToken.current) return;
-        setLoaded({ session, reference, duration: Math.max(duration, 1), range });
+        loadedRef.current?.recorder?.cancel();
+        // The recording is placed by the same clock as the pitch track: the context's.
+        const recorder = session.recording
+          ? audio.recorder(session.recording, () => clockRef.current.songTime(audio.now()))
+          : null;
+        const linked = { ...session, video_url: session.video_url === null ? null : link(session.video_url) };
+        setLoaded({ session: linked, reference, duration: Math.max(duration, 1), range, recorder });
         setPhase({ kind: "ready" });
       } catch (e) {
         off();
@@ -158,16 +264,30 @@ export function Singing({
   useEffect(() => {
     if (!loaded) return;
     return engine().onDetection((d) => {
-      const kind = phaseRef.current.kind;
-      if (kind !== "playing" && kind !== "paused") return;
+      if (phaseRef.current.kind !== "playing") return;
       const t = clockRef.current.songTimeAt(d.t);
       if (t === null || t < 0) return;
       take.current?.push(t, d.midi);
     });
   }, [engine, loaded]);
 
-  // Stop the backing when leaving the screen.
-  useEffect(() => () => engine().stop(), [engine]);
+  // Leaving the screen: the backing stops, a recording is thrown away.
+  useEffect(
+    () => () => {
+      window.clearTimeout(recWait.current);
+      loadedRef.current?.recorder?.cancel();
+      engine().stop();
+    },
+    [engine],
+  );
+
+  /** The recorder starts when the backing does (context time `at`), anew on a restart. */
+  const recordFrom = (at: number) => {
+    const r = loaded?.recorder;
+    window.clearTimeout(recWait.current);
+    if (!r) return;
+    recWait.current = window.setTimeout(() => r.start(), Math.max(0, (at - engine().now()) * 1000));
+  };
 
   const finish = useCallback(async () => {
     const t = take.current;
@@ -175,7 +295,9 @@ export function Singing({
     const audio = engine();
     clockRef.current.pause(audio.now());
     audio.stop();
+    window.clearTimeout(recWait.current);
     setPhase({ kind: "finishing" });
+    const voice = loaded.recorder ? await loaded.recorder.stop() : null;
     const done = await finishTake(t, {
       calibrated: latency.calibrated,
       phrases: phrasesOf(loaded.reference),
@@ -184,230 +306,424 @@ export function Singing({
     });
     const { id, title, artist } = loaded.session.song;
     const lines = (loaded.reference.lyrics?.lines ?? []).map((l) => l.text);
-    onFinished({ session: loaded.session.session, song: { id, title, artist }, lines, ...done });
+    onFinished({
+      session: loaded.session.session,
+      song: { id, title, artist },
+      lines,
+      body: { ...done.body, recording: voice !== null },
+      provisional: done.provisional,
+      voice,
+    });
   }, [engine, loaded, latency.calibrated, onFinished]);
 
-  const play = () => {
-    const audio = engine();
-    if (phase.kind === "ready") {
-      clockRef.current.start(audio.play(0), 0);
-      setPhase({ kind: "playing" });
-    } else if (phase.kind === "paused") {
-      const from = clockRef.current.songTime(audio.now());
-      clockRef.current.resume(audio.play(from));
-      setPhase({ kind: "playing" });
-    }
-  };
-  const pause = () => {
-    if (phase.kind !== "playing") return;
-    const audio = engine();
-    clockRef.current.pause(audio.now());
-    audio.stop();
-    setPhase({ kind: "paused" });
+  const start = () => {
+    if (phase.kind !== "ready") return;
+    const at = engine().play(0);
+    clockRef.current.start(at, 0);
+    recordFrom(at);
+    setPhase({ kind: "playing" });
   };
   const restart = () => {
-    if (!take.current) return;
+    if (!take.current || phase.kind !== "playing") return;
     const audio = engine();
     audio.stop();
     take.current.restart();
-    clockRef.current.start(audio.play(0), 0);
-    setPhase({ kind: "playing" });
+    const at = audio.play(0);
+    clockRef.current.start(at, 0);
+    recordFrom(at);
   };
-  const toggle = useRef(() => {});
-  toggle.current = () => (phase.kind === "playing" ? pause() : play());
+  const startRef = useRef(start);
+  startRef.current = start;
 
-  // Space pauses and goes on.
+  // ---- the controls on demand, and fullscreen ----
+
+  const root = useRef<HTMLElement | null>(null);
+  const [chrome, sendChrome] = useReducer(chromeReduce, CHROME_START);
+  const [pointerHold, setPointerHold] = useState(false);
+  const [focusHold, setFocusHold] = useState(false);
+  const [full, setFull] = useState(false);
+  const [, look] = useReducer((n: number) => n + 1, 0);
+  const canFull = typeof document !== "undefined" && document.fullscreenEnabled === true;
+  const hold = {
+    idle: phase.kind !== "playing",
+    focus: pointerHold || focusHold,
+    dialog: quitting,
+  };
+  const nowMs = performance.now();
+  const shown = chromeShown(chrome, hold, nowMs);
+  const shownRef = useRef(shown);
+  shownRef.current = shown;
+  const hidesIn = chromeHidesIn(chrome, hold, nowMs);
+
+  // Look again when they are due to go.
+  useEffect(() => {
+    if (hidesIn === null) return;
+    const t = window.setTimeout(look, hidesIn + 20);
+    return () => window.clearTimeout(t);
+  }, [hidesIn]);
+
+  const toggleFull = useCallback(() => {
+    if (!canFull) return;
+    // The whole document, so dialogs (in the page's body) stay above the stage.
+    const req = document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    req?.catch(() => undefined);
+  }, [canFull]);
+
+  useEffect(() => {
+    const onChange = () => {
+      setFull(document.fullscreenElement !== null && document.fullscreenElement !== undefined);
+      sendChrome({ type: "activity", at: performance.now() });
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+    };
+  }, []);
+
+  // Nothing of the page behind scrolls while the stage is up.
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    const before = [html.style.overflow, body.style.overflow];
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    return () => {
+      html.style.overflow = before[0] ?? "";
+      body.style.overflow = before[1] ?? "";
+    };
+  }, []);
+
+  // Keys: any key shows the controls; Space starts; `f` fullscreen; `Esc` shows them (the browser
+  // leaves fullscreen on its own).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.code !== "Space" || e.repeat) return;
-      const el = e.target as HTMLElement | null;
-      if (el && (el.closest("input, textarea, button, [role=slider]") ?? null)) return;
-      e.preventDefault();
-      toggle.current();
+      sendChrome({ type: "activity", at: performance.now() });
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key === "Escape") {
+        if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => undefined);
+        return;
+      }
+      if (typing(e.target)) return;
+      if ((e.key === "f" || e.key === "F") && !(e.target as HTMLElement | null)?.closest?.("button")) {
+        e.preventDefault();
+        toggleFull();
+        return;
+      }
+      if (e.code === "Space" && phaseRef.current.kind === "ready") {
+        if ((e.target as HTMLElement | null)?.closest?.("button")) return;
+        e.preventDefault();
+        startRef.current();
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [toggleFull]);
 
-  // The lane, every frame; the words and numbers under it, ten times a second.
+  const onPointerMove = (e: PointerEvent<HTMLElement>) => {
+    if (e.pointerType === "touch") return;
+    sendChrome({ type: "activity", at: performance.now() });
+    const rect = e.currentTarget.getBoundingClientRect();
+    const onControl = (e.target as HTMLElement).closest?.("[data-chrome]") !== null;
+    setPointerHold(onControl || nearEdge(e.clientY - rect.top, rect.height));
+  };
+  const onPointerUp = (e: PointerEvent<HTMLElement>) => {
+    if ((e.target as HTMLElement).closest?.("[data-chrome]")) return;
+    if (e.pointerType === "touch") sendChrome({ type: "tap", at: performance.now(), shown: shownRef.current });
+    else sendChrome({ type: "activity", at: performance.now() });
+  };
+  const onFocusChange = () => {
+    // After the focus has moved.
+    queueMicrotask(() => setFocusHold(keyboardOnChrome(root.current)));
+  };
+
+  // The lane, every frame; the words and numbers on the stage, ten times a second.
   useEffect(() => {
     if (!loaded) return;
     const el = canvas.current;
     const holder = box.current;
-    const ctx = el?.getContext("2d");
-    if (!el || !holder || !ctx) return;
+    const ctx = el?.getContext("2d") ?? null;
     const audio = engine();
-    const colors: LaneColors = laneColors(el);
+    const colors: LaneColors | null = el ? laneColors(el) : null;
     const curve = referenceCurve(loaded.reference);
     let width = 0;
     let height = 0;
     let dpr = 1;
     let span = LANE_SECONDS;
     const size = () => {
+      if (!el || !holder) return;
       width = holder.clientWidth;
       height = holder.clientHeight;
       dpr = Math.min(2, window.devicePixelRatio || 1);
-      // A phone shows less time, so a second stays wide enough to read.
-      span = width < 640 ? LANE_SECONDS_NARROW : LANE_SECONDS;
+      span = width < 560 ? LANE_SECONDS_NARROW : LANE_SECONDS;
       el.width = Math.round(width * dpr);
       el.height = Math.round(height * dpr);
     };
     size();
-    const ro = new ResizeObserver(size);
-    ro.observe(holder);
+    const ro = typeof ResizeObserver === "function" && holder ? new ResizeObserver(size) : null;
+    if (holder) ro?.observe(holder);
     let raf = 0;
     let last = 0;
     const frame = (ms: number) => {
       raf = requestAnimationFrame(frame);
       const now = clockRef.current.songTime(audio.heard());
-      const view: LaneView = { width, height, now, span, ...loaded.range };
-      if (width > 0 && height > 0) {
+      if (ctx && colors && width > 0 && height > 0) {
+        const view: LaneView = { width, height, now, span, ...loaded.range };
         drawLane(ctx, {
           view,
           reference: curve,
           notes: loaded.reference.notes,
           trail: take.current?.trail ?? [],
+          tolerance: loaded.session.tolerance_cents,
           colors,
           dpr,
         });
       }
       if (ms - last >= TICK_MS) {
         last = ms;
-        setTick({ now, score: take.current?.live.score ?? 0 });
+        setTick({ now, score: take.current?.live.score ?? 0, rec: loaded.recorder?.state ?? "idle" });
       }
       if (phaseRef.current.kind === "playing" && now >= loaded.duration + 0.3) void finish();
     };
     raf = requestAnimationFrame(frame);
     return () => {
       cancelAnimationFrame(raf);
-      ro.disconnect();
+      ro?.disconnect();
     };
   }, [engine, loaded, finish]);
 
-  if (phase.kind === "error") {
-    return (
-      <Card aria-label={song.title} className="max-w-2xl gap-4">
-        <CardHeader>
-          <CardTitle>{song.title}</CardTitle>
-        </CardHeader>
-        <Refusal>{phase.message}</Refusal>
-        <div>
-          <Button variant="outline" onClick={onQuit}>
-            <ArrowLeft aria-hidden />
-            回到歌單
-          </Button>
-        </div>
-      </Card>
-    );
-  }
+  /** What the video follows: the song's time as heard, and whether it plays. */
+  const songNow = useCallback(
+    () => ({ time: clockRef.current.songTime(engine().heard()), playing: phaseRef.current.kind === "playing" }),
+    [engine],
+  );
 
   const duration = loaded?.duration ?? song.duration_s ?? 0;
   const playing = phase.kind === "playing";
-  const begun = phase.kind === "playing" || phase.kind === "paused";
+  const lyrics = loaded?.reference.lyrics ?? null;
+  const recordable = (loaded?.session.recording ?? null) !== null;
+  const recording = (loaded?.recorder ?? null) !== null;
+  const progress = duration > 0 ? Math.min(1, Math.max(0, tick.now) / duration) : 0;
+  // The title shows with the controls, and on its own for the song's first seconds.
+  const titleShown = shown || (playing && tick.now < 5);
+
+  const leave = () => {
+    window.clearTimeout(recWait.current);
+    loaded?.recorder?.cancel();
+    engine().stop();
+    onQuit();
+  };
 
   return (
-    <section aria-label={`唱 ${song.title}`} className="grid min-w-0 gap-4">
-      <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
-        <div className="grid min-w-0 flex-1 gap-0.5">
-          <h2 className="truncate text-[15px] font-semibold tracking-[-0.01em]">{song.title}</h2>
-          {song.artist && <p className="truncate text-[13px] text-muted-foreground">{song.artist}</p>}
-        </div>
-        <dl className="flex flex-wrap gap-x-8 gap-y-3">
-          <Fact label="即時分數">
-            <span aria-live="off" className="font-mono">
-              {begun ? tick.score : "—"}
-            </span>
-          </Fact>
-          <Fact label="時間">
-            <span className="font-mono">
-              {clock(Math.max(0, tick.now))} / {clock(duration)}
-            </span>
-          </Fact>
-          <Fact label="延遲">
-            {latency.latency_ms} ms{latency.calibrated ? "" : "(估計)"}
-          </Fact>
-        </dl>
-      </div>
-
+    <section
+      ref={root}
+      aria-label={`唱 ${song.title}`}
+      data-stage
+      data-chrome-shown={shown ? "" : undefined}
+      className={cn(STAGE_BOX, !shown && "cursor-none")}
+      onPointerMove={onPointerMove}
+      onPointerLeave={() => setPointerHold(false)}
+      onPointerUp={onPointerUp}
+      onFocus={onFocusChange}
+      onBlur={onFocusChange}
+    >
+      {/* Layer 1, the picture: the video or the still, a light dim, a scrim under the lane and the lyrics. */}
+      <StageBackground url={loaded?.session.video_url ?? null} song={songNow} reduced={reduced} />
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-black/20" />
       <div
-        ref={box}
-        className={cn(
-          "relative h-60 w-full overflow-hidden rounded-md bg-well sm:h-72",
-          phase.kind === "loading" && "animate-pulse",
-        )}
-      >
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-[45%] bg-[linear-gradient(180deg,rgba(0,0,0,0.5),rgba(0,0,0,0))]"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 bottom-0 h-[55%] bg-[linear-gradient(0deg,rgba(0,0,0,0.78)_0%,rgba(0,0,0,0.5)_45%,rgba(0,0,0,0))]"
+      />
+
+      {/* Layer 2, always there: the lane and the lyrics. */}
+      <div ref={box} className="absolute" style={LAYOUT.lane}>
         <canvas
           ref={canvas}
           className="absolute inset-0 size-full"
           role="img"
           aria-label="音高跑道:原唱的旋律和你唱的線"
         />
-        {phase.kind === "loading" && (
-          <p className="absolute inset-0 grid place-items-center text-[13px] text-muted-foreground">
-            準備伴唱帶中,先不要出聲
-          </p>
-        )}
       </div>
-      <Bar value={duration > 0 ? Math.max(0, tick.now) / duration : 0} label="歌曲進度" />
+      <div className="absolute" style={LAYOUT.lyrics}>
+        <Lyrics lyrics={lyrics} now={tick.now} loaded={loaded !== null} mode={reading} reduced={reduced} />
+      </div>
+      {phase.kind === "loading" && (
+        <p className="absolute inset-0 grid place-items-center text-[15px]">準備伴唱帶中,先不要出聲</p>
+      )}
+      {phase.kind === "error" && (
+        <div className="absolute inset-0 grid place-items-center p-4">
+          <div className={cn(PLATE, "grid max-w-md gap-3 p-5 [text-shadow:none]")}>
+            <p className="text-[15px] font-semibold">{song.title}</p>
+            <p role="alert" className="text-[13px] text-primary">
+              {phase.message}
+            </p>
+            <div>
+              <Button variant="outline" size="sm" onClick={onQuit}>
+                <ArrowLeft aria-hidden />
+                回到歌單
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
-      <Lyrics
-        lyrics={loaded?.reference.lyrics ?? null}
-        now={tick.now}
-        loaded={loaded !== null}
-        mode={reading}
-        onMode={chooseReading}
-      />
-
-      <div className="flex flex-wrap items-center gap-2">
-        {playing ? (
-          <Button onClick={pause}>
-            <Pause aria-hidden />
-            暫停
-          </Button>
-        ) : (
-          <Button onClick={play} disabled={phase.kind !== "ready" && phase.kind !== "paused"}>
-            <Play aria-hidden />
-            {phase.kind === "paused" ? "繼續" : "開始"}
-          </Button>
-        )}
-        <Button variant="outline" onClick={restart} disabled={!begun}>
-          <RotateCcw aria-hidden />
-          從頭開始
-        </Button>
-        <Button
-          variant="outline"
-          onClick={() => void finish()}
-          disabled={!begun}
-          busy={phase.kind === "finishing"}
-        >
-          <Check aria-hidden />
-          唱完了
-        </Button>
-        <KeyControl
-          shift={shift}
-          can={phase.kind === "ready"}
-          busy={phase.kind === "loading" && started.current !== null && loaded === null}
-          onMove={moveKey}
-        />
-        {phase.kind === "ready" && (
-          <Button variant="ghost" onClick={onCalibrate}>
-            <Timer aria-hidden />
-            校正延遲
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          className="ml-auto"
-          onClick={() => (begun ? setQuitting(true) : onQuit())}
-          disabled={phase.kind === "finishing"}
-        >
-          離開
-        </Button>
+      {/* Layer 3, corner plates: the title (on demand), the number and the time (always). */}
+      {/* On a narrow phone the number's plate takes the top row, so the title goes under it. */}
+      <div data-chrome className={cn("absolute max-sm:mt-12", onDemand(titleShown))} style={LAYOUT.title}>
+        <div className={cn(PLATE, "grid gap-1 px-3.5 py-2.5 [text-shadow:none]")}>
+          <h2 className="flex min-w-0 items-center gap-2 text-[15px] font-semibold tracking-[-0.01em]">
+            <span className="truncate">{song.title}</span>
+            <HeardBadge lyrics={lyrics} />
+          </h2>
+          {song.artist && <p className="truncate text-[13px] text-muted-foreground">{song.artist}</p>}
+          {shown && (
+            <div className="mt-1.5 grid gap-1 border-t border-line-soft pt-2 text-xs [&_p]:text-xs [&_svg]:size-3.5">
+              <HeadphonesLine />
+              <PrivacyLine recording={recording} />
+              {recordable && loaded !== null && !recording && (
+                <p className="text-muted-foreground">這個瀏覽器不能錄音,這次只有預估分數</p>
+              )}
+              <p className="flex items-center gap-3 pt-0.5 text-[11px] text-muted-foreground">
+                <span className="flex items-center gap-1.5">
+                  <i className="h-1 w-3.5 rounded-full bg-white/85" />
+                  原唱
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <i className="h-1 w-3.5 rounded-full bg-primary" />你
+                </span>
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
-      <div className="grid gap-1.5">
-        <HeadphonesLine />
-        <PrivacyLine />
+      {phase.kind !== "error" && (
+        <div
+          className={cn(PLATE, "absolute flex items-center gap-4 rounded-full py-1.5 pr-4 pl-3.5 [text-shadow:none]")}
+          style={LAYOUT.score}
+          data-score
+        >
+          {playing && recording && tick.rec === "recording" && (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground" title="錄音中">
+              <Dot tone="brand" pulse={!reduced} />
+              <span className="max-sm:sr-only">錄音中</span>
+            </span>
+          )}
+          <dl className="flex items-center gap-4">
+            <div className="flex items-baseline gap-2">
+              <dt className="text-xs text-muted-foreground">預估</dt>
+              <dd className="min-w-[2ch] font-mono text-lg font-semibold tabular-nums" aria-live="off">
+                {phase.kind === "playing" || phase.kind === "finishing" ? tick.score : "—"}
+              </dd>
+            </div>
+            <div className="flex items-baseline">
+              <dt className="sr-only">時間</dt>
+              <dd className="font-mono text-xs text-muted-foreground tabular-nums">
+                {clock(Math.max(0, tick.now))} / {clock(duration)}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      )}
+      {tick.rec === "over" && (
+        <p
+          className={cn(PLATE, "absolute rounded-full px-3 py-1 text-xs [text-shadow:none]")}
+          style={{ ...LAYOUT.score, top: `calc(${SAFE.top} + ${EDGE} + 44px)` }}
+        >
+          錄音超過上限,這次只有預估分數
+        </p>
+      )}
+
+      {/* Layer 4, on demand: the bar of controls, bottom centre. */}
+      {phase.kind !== "error" && (
+        <div className="absolute flex justify-center" style={LAYOUT.bar}>
+          <div
+            role="toolbar"
+            aria-label="唱歌的控制"
+            data-chrome
+            className={cn(
+              PLATE,
+              "flex max-w-full flex-wrap items-center justify-center gap-1 px-2 py-1.5 [text-shadow:none]",
+              onDemand(shown),
+            )}
+          >
+            {phase.kind === "ready" || phase.kind === "loading" ? (
+              <Button size="sm" onClick={start} disabled={phase.kind !== "ready"}>
+                <Play aria-hidden />
+                開始
+              </Button>
+            ) : (
+              <>
+                <Button variant="ghost" size="sm" onClick={restart} disabled={!playing} aria-label="從頭開始">
+                  <RotateCcw aria-hidden />
+                  <Label>從頭開始</Label>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void finish()}
+                  disabled={!playing}
+                  busy={phase.kind === "finishing"}
+                >
+                  <Check aria-hidden />
+                  唱完了
+                </Button>
+              </>
+            )}
+            <Divider />
+            <KeyControl
+              shift={shift}
+              can={phase.kind === "ready"}
+              busy={phase.kind === "loading" && started.current !== null && loaded === null}
+              onMove={moveKey}
+            />
+            <ReadingToggle lyrics={lyrics} mode={reading} onMode={chooseReading} />
+            <Divider />
+            {phase.kind === "ready" && (
+              <Button variant="ghost" size="sm" onClick={onCalibrate} aria-label="校正延遲" title="校正延遲">
+                <Timer aria-hidden />
+                <Label>校正延遲</Label>
+              </Button>
+            )}
+            {canFull && (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={toggleFull}
+                aria-label={full ? "離開全螢幕" : "全螢幕"}
+                title={full ? "離開全螢幕(F)" : "全螢幕(F)"}
+              >
+                {full ? <Minimize aria-hidden /> : <Maximize aria-hidden />}
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => (playing ? setQuitting(true) : leave())}
+              disabled={phase.kind === "finishing"}
+              aria-label="離開"
+              title="離開"
+            >
+              <LogOut aria-hidden />
+              <Label>離開</Label>
+            </Button>
+          </div>
+        </div>
+      )}
+
+      <div
+        role="meter"
+        aria-label="歌曲進度"
+        aria-valuemin={0}
+        aria-valuemax={1}
+        aria-valuenow={Number(progress.toFixed(2))}
+        className="absolute inset-x-0 bottom-0 h-[3px] bg-white/12"
+      >
+        <div className="h-full bg-white/70" style={{ width: `${progress * 100}%` }} />
       </div>
 
       <ConfirmDialog
@@ -416,8 +732,7 @@ export function Singing({
         confirmLabel="離開"
         onConfirm={() => {
           setQuitting(false);
-          engine().stop();
-          onQuit();
+          leave();
         }}
         onClose={() => setQuitting(false)}
       >
@@ -425,6 +740,15 @@ export function Singing({
       </ConfirmDialog>
     </section>
   );
+}
+
+/** A button's words: kept for assistive technology, shown from `sm` on. */
+function Label({ children }: { children: ReactNode }) {
+  return <span className="max-sm:sr-only">{children}</span>;
+}
+
+function Divider() {
+  return <span aria-hidden className="mx-0.5 h-5 w-px bg-line-strong max-sm:hidden" />;
 }
 
 /** − key + : before the start only (the backing is made again for each key). */
@@ -443,7 +767,7 @@ function KeyControl({
   return (
     <div role="group" aria-label="升降調" className="flex items-center gap-1">
       <Button
-        variant="outline"
+        variant="ghost"
         size="icon-sm"
         aria-label="降半音"
         title={why ?? "降半音"}
@@ -454,12 +778,12 @@ function KeyControl({
       </Button>
       <span
         aria-live="polite"
-        className={cn("w-10 text-center font-mono text-sm tabular-nums", busy && "text-muted-foreground")}
+        className={cn("w-10 text-center font-mono text-[13px] tabular-nums", busy && "text-muted-foreground")}
       >
         {keyLabel(shift)}
       </span>
       <Button
-        variant="outline"
+        variant="ghost"
         size="icon-sm"
         aria-label="升半音"
         title={why ?? "升半音"}

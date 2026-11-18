@@ -3,7 +3,7 @@
 // failover), and the karaoke plugin (`@miyoria/play/karaoke`) uses, so neither package depends on
 // the other and there is one worker client.
 
-import type { WorkersSingJob } from "@miyoria/contracts/workers";
+import type { WorkersKaraokeVoicePitch, WorkersSingJob } from "@miyoria/contracts/workers";
 import { serviceKey } from "./service-key.js";
 
 /**
@@ -13,6 +13,7 @@ import { serviceKey } from "./service-key.js";
 export type KaraokeFileName =
   | "karaoke.m4a"
   | "reference.json"
+  | "video.mp4"
   | `karaoke.k${"+" | "-"}${number}.m4a`;
 
 /** How a song's lyrics are checked and aligned (`WorkersKaraokeLyricsOptions`). */
@@ -34,6 +35,15 @@ export interface KaraokeQuery {
   force?: boolean;
   /** How its lyrics are checked and aligned; left out, the worker's defaults. */
   lyrics?: KaraokeLyricsOptions;
+  /** Keep the source's picture as a background video (`video.mp4`); left out, yes. */
+  video?: boolean;
+}
+
+/** A singer's recording, sent once to have its pitch read (`POST /karaoke/voice`). */
+export interface KaraokeVoice {
+  bytes: Uint8Array;
+  /** `audio/webm`, `audio/ogg`, `audio/mp4` (or `audio/wav`). */
+  type: string;
 }
 
 export interface KaraokeWorker {
@@ -49,6 +59,11 @@ export interface KaraokeWorker {
    * the song); the answer names the file to fetch with `file`.
    */
   key(song: string, semitones: number, signal?: AbortSignal): Promise<{ file: string }>;
+  /**
+   * The pitch of a singer's recording (RMVPE on any worker that answers, 50 Hz from its first
+   * sample). The worker deletes the recording before it answers.
+   */
+  voice(voice: KaraokeVoice, signal?: AbortSignal): Promise<WorkersKaraokeVoicePitch>;
 }
 
 export const KaraokeWorkerKey = serviceKey<KaraokeWorker>("KaraokeWorker");

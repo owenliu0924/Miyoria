@@ -5,7 +5,19 @@ import { describe, expect, it } from "vitest";
 import type { KaraokeResult, KaraokeSongView } from "@miyoria/contracts/api";
 import { decodeTrack, fromBase64, scoreSinging, TRACK_HZ } from "@miyoria/play/karaoke/score";
 import { heardContextTime, SongClock } from "./clock";
-import { lyricAt, midiRange, midiToY, NOW_AT, RANGE_MIN, timeToX, visibleNotes } from "./lane";
+import {
+  LANE_PAD_Y,
+  lyricAt,
+  midiRange,
+  midiToY,
+  NOW_AT,
+  onPitch,
+  RANGE_MIN,
+  referenceAt,
+  timeToX,
+  visibleNotes,
+  visibleWindow,
+} from "./lane";
 import {
   BLUETOOTH_MS,
   clampLatency,
@@ -24,8 +36,38 @@ import {
   saveLatency,
 } from "./latency";
 import { hzToMidi, mcleodDetector, voicedMidi } from "./pitch";
-import { commentPollMs } from "./Result";
-import { clock, coreScored, partLines, rhythmLine, stabilityLine, type Scored } from "./result-text";
+import { privacyText } from "./bits";
+import {
+  bareType,
+  createVoiceRecorder,
+  MediaVoiceRecorder,
+  pickRecorderType,
+  RECORDER_BITS,
+  type RecorderLike,
+  recordingOffsetMs,
+  voicePath,
+  withinLimits,
+} from "./recorder";
+import { commentPollMs, resultPollMs, voicePollMs } from "./Result";
+import { clock, coreScored, partLines, rhythmLine, stabilityLine, type Scored, voiceView } from "./result-text";
+import {
+  catchUpRate,
+  StallWatch,
+  VIDEO_SEEK_S,
+  VIDEO_STALL_S,
+  type VideoNow,
+  videoStep,
+  videoTarget,
+} from "./video-sync";
+import {
+  CHROME_EDGE,
+  CHROME_IDLE_MS,
+  CHROME_START,
+  chromeHidesIn,
+  chromeReduce,
+  chromeShown,
+  nearEdge,
+} from "./chrome";
 import { filterSongs, retryText } from "./SongList";
 import { stageWord } from "./stages";
 import { browserName, missingSupport } from "./support";
@@ -79,34 +121,48 @@ describe("the song clock", () => {
 describe("the lane", () => {
   const view = { width: 800, height: 200, now: 20, span: 8, lo: 50, hi: 70 };
 
-  it("puts now at a quarter of the width and runs time to the right", () => {
-    expect(timeToX(20, view)).toBe(800 * NOW_AT);
-    expect(timeToX(26, view)).toBe(800);
-    expect(timeToX(18, view)).toBe(0);
-    expect(midiToY(50, view)).toBe(200);
-    expect(midiToY(70, view)).toBe(0);
+  it("puts now a little over a quarter in (the owner's app) and runs time to the right", () => {
+    expect(NOW_AT).toBe(0.28);
+    expect(timeToX(20, view)).toBeCloseTo(800 * NOW_AT);
+    expect(timeToX(20 + (1 - NOW_AT) * 8, view)).toBeCloseTo(800);
+    expect(timeToX(20 - NOW_AT * 8, view)).toBeCloseTo(0);
+    // Pitch fills the height inside a small margin, so the top and bottom notes are whole.
+    expect(midiToY(50, view)).toBe(200 - LANE_PAD_Y);
+    expect(midiToY(70, view)).toBe(LANE_PAD_Y);
     expect(midiToY(60, view)).toBe(100);
   });
 
   it("keeps the notes that reach into the lane", () => {
+    const { from, to } = visibleWindow(view);
     const notes = [
-      { start: 10, end: 17.9, midi: 60 },
-      { start: 17.5, end: 18.5, midi: 61 },
-      { start: 25.9, end: 27, midi: 62 },
-      { start: 26.1, end: 27, midi: 63 },
+      { start: 10, end: from - 0.1, midi: 60 },
+      { start: from - 0.5, end: from + 0.5, midi: 61 },
+      { start: to - 0.1, end: to + 1, midi: 62 },
+      { start: to + 0.1, end: to + 1, midi: 63 },
     ];
     expect(visibleNotes(notes, view).map((n) => n.midi)).toEqual([61, 62]);
   });
 
-  it("takes the song's range with a margin, at least the smallest range", () => {
+  it("takes the song's range with a margin, at least the smallest range, fixed for the song", () => {
     const curve = [null, 60, 61, 62, null, 64];
-    // 59 to 64 with three either side is 11: grown to 14 around it.
-    expect(midiRange(curve, [{ midi: 59.4 }])).toEqual({ lo: 55, hi: 69 });
-    const wide = midiRange([48, 72], []);
-    expect(wide).toEqual({ lo: 45, hi: 75 });
+    // 59 to 64 with four either side is 13: grown to 18 around it.
+    expect(midiRange(curve, [{ midi: 59.4 }])).toEqual({ lo: 53, hi: 71 });
+    expect(midiRange([48, 72], [])).toEqual({ lo: 44, hi: 76 });
     const flat = midiRange([60, 60, 60]);
     expect(flat.hi - flat.lo).toBe(RANGE_MIN);
-    expect(midiRange([])).toEqual({ lo: 53, hi: 67 });
+    expect(RANGE_MIN).toBe(18);
+    expect(midiRange([])).toEqual({ lo: 51, hi: 69 });
+  });
+
+  it("colours the singer's line by whether it is on the reference", () => {
+    const curve = { hz: 50, start: 0, midi: [60, 60, null, 62] };
+    expect(referenceAt(curve, 0.02)).toBe(60);
+    expect(referenceAt(curve, 0.04)).toBeNull();
+    expect(referenceAt(curve, 9)).toBeNull();
+    expect(onPitch(60.4, 60, 50)).toBe(true);
+    expect(onPitch(60.6, 60, 50)).toBe(false);
+    expect(onPitch(59.5, 60, 50)).toBe(true);
+    expect(onPitch(60, null, 50)).toBe(false);
   });
 
   it("shows the line being sung and the next one", () => {
@@ -427,6 +483,7 @@ describe("the song list's logic", () => {
     lyrics: true,
     lyrics_source: "found",
     notes: 100,
+    video: false,
     mine: false,
     best: null,
     sung: 0,
@@ -445,6 +502,22 @@ describe("the song list's logic", () => {
     expect(retryText(song({ id: "x", title: "Lemon", artist: "米津玄師" }))).toBe("Lemon 米津玄師");
   });
 
+  it("asks for the official score every three seconds for three minutes, never after a failed upload", () => {
+    const voice = (state: KaraokeResult["voice"]["state"]) =>
+      ({ comment: { state: "none", text: null }, voice: { state, estimate_total: null, checks: [] } }) as unknown as KaraokeResult;
+    expect(voicePollMs(voice("waiting"), 0, 1_000)).toBe(3_000);
+    expect(voicePollMs(voice("scoring"), 0, 1_000)).toBe(3_000);
+    expect(voicePollMs(voice("scoring"), 0, 3 * 60_000 + 1)).toBe(false);
+    expect(voicePollMs(voice("scoring"), 0, 1_000, true)).toBe(false);
+    expect(voicePollMs(voice("scored"), 0, 1_000)).toBe(false);
+    expect(voicePollMs(voice("none"), 0, 1_000)).toBe(false);
+    // With her comment awaited too, the sooner of the two.
+    const both = { ...voice("scoring"), comment: { state: "waiting", text: null } } as KaraokeResult;
+    expect(resultPollMs(both, 0, 1_000)).toBe(3_000);
+    expect(resultPollMs(both, 0, 3 * 60_000 + 1)).toBe(5_000);
+    expect(resultPollMs(voice("scored"), 0, 1_000)).toBe(false);
+  });
+
   it("asks for her comment every five seconds for four minutes while she is thinking", () => {
     const waiting = { comment: { state: "waiting", text: null } } as KaraokeResult;
     const said = { comment: { state: "said", text: "很好" } } as KaraokeResult;
@@ -452,5 +525,310 @@ describe("the song list's logic", () => {
     expect(commentPollMs(waiting, 0, 4 * 60_000 + 1)).toBe(false);
     expect(commentPollMs(said, 0, 1)).toBe(false);
     expect(commentPollMs(undefined, 0, 1)).toBe(false);
+  });
+});
+
+describe("the background video follows the song", () => {
+  const video = (over: Partial<VideoNow> = {}): VideoNow => ({
+    time: 10,
+    paused: false,
+    rate: 1,
+    duration: 200,
+    seeking: false,
+    ...over,
+  });
+  const playing = (time: number) => ({ time, playing: true });
+
+  it("aims at the song's time, inside the video", () => {
+    expect(videoTarget(-0.1, 200)).toBe(0);
+    expect(videoTarget(12, 200)).toBe(12);
+    expect(videoTarget(250, 200)).toBeCloseTo(199.95);
+    expect(videoTarget(12, Number.NaN)).toBe(12);
+  });
+
+  it("jumps when it is far off, and plays", () => {
+    expect(videoStep(video({ time: 10 }), playing(10.5))).toEqual({ seek: 10.5 });
+    expect(videoStep(video({ time: 11, paused: true, rate: 0.95 }), playing(10.6))).toEqual({
+      seek: 10.6,
+      rate: 1,
+      play: true,
+    });
+    expect(VIDEO_SEEK_S).toBe(0.25);
+  });
+
+  it("nudges its speed when a little off, and leaves it when close", () => {
+    expect(videoStep(video({ time: 10.1 }), playing(10))).toEqual({ rate: 0.95 });
+    expect(videoStep(video({ time: 9.9 }), playing(10))).toEqual({ rate: 1.05 });
+    expect(videoStep(video({ time: 10.02 }), playing(10))).toEqual({});
+    expect(videoStep(video({ time: 10.02, rate: 0.97 }), playing(10))).toEqual({ rate: 1 });
+    expect(videoStep(video({ time: 10, paused: true }), playing(10))).toEqual({ play: true });
+    expect([catchUpRate(0.03), catchUpRate(0.06), catchUpRate(0.2), catchUpRate(-0.2)]).toEqual([1, 0.97, 0.95, 1.05]);
+  });
+
+  it("holds still at the song's place when the song does not play, never moving the song", () => {
+    expect(videoStep(video({ time: 30 }), { time: 0, playing: false })).toEqual({ pause: true, seek: 0 });
+    expect(videoStep(video({ time: 0.1, paused: true }), { time: 0, playing: false })).toEqual({});
+    // Scheduled but not yet heard: still at the start.
+    expect(videoStep(video({ time: 0, paused: true }), playing(-0.08))).toEqual({});
+    // Past the video's end the song goes on alone.
+    expect(videoStep(video({ time: 199.9 }), playing(203))).toEqual({ pause: true });
+    // A jump under way is waited for.
+    expect(videoStep(video({ time: 2, seeking: true }), playing(10))).toEqual({});
+  });
+
+  it("gives up on a video that should play but does not move", () => {
+    const w = new StallWatch();
+    expect(w.check(0, 3, true)).toBe(false);
+    expect(w.check(2, 3, true)).toBe(false);
+    expect(w.check(VIDEO_STALL_S + 0.1, 3, true)).toBe(true);
+    const moving = new StallWatch();
+    for (let s = 0; s < 20; s++) expect(moving.check(s, s, true)).toBe(false);
+    // Paused on purpose is not stuck; a jump restarts the count.
+    const held = new StallWatch();
+    for (let s = 0; s < 20; s++) expect(held.check(s, 1, false)).toBe(false);
+    expect(held.check(20, 1, true)).toBe(false);
+    held.reset(24);
+    expect(held.check(25, 1, true)).toBe(false);
+    expect(held.check(29.5, 1, true)).toBe(true);
+  });
+});
+
+/** A `MediaRecorder` stand-in: the test says when it starts and what data it gives. */
+class FakeRecorder implements RecorderLike {
+  static made: FakeRecorder[] = [];
+  readonly mimeType: string;
+  readonly options: MediaRecorderOptions;
+  state: "inactive" | "recording" | "paused" = "inactive";
+  ondataavailable: ((e: { data: Blob }) => void) | null = null;
+  onstart: (() => void) | null = null;
+  onstop: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(_stream: MediaStream, options: MediaRecorderOptions = {}) {
+    this.options = options;
+    this.mimeType = options.mimeType ?? "";
+    FakeRecorder.made.push(this);
+  }
+  start(): void {
+    this.state = "recording";
+  }
+  began(): void {
+    this.onstart?.();
+  }
+  give(bytes: number): void {
+    this.ondataavailable?.({ data: new Blob([new Uint8Array(bytes)]) });
+  }
+  stop(): void {
+    if (this.state === "inactive") return;
+    this.state = "inactive";
+    queueMicrotask(() => this.onstop?.());
+  }
+}
+
+describe("recording the singer", () => {
+  const limits = { max_bytes: 10_000, max_seconds: 600 };
+  const stream = {} as MediaStream;
+
+  function recorder(over: Partial<typeof limits> = {}) {
+    FakeRecorder.made = [];
+    const clock = { song: 0, wall: 100 };
+    const r = new MediaVoiceRecorder(
+      stream,
+      "audio/webm;codecs=opus",
+      { ...limits, ...over },
+      () => clock.song,
+      (s, o) => new FakeRecorder(s, o),
+      () => clock.wall,
+    );
+    return { r, clock, rec: (i: number) => FakeRecorder.made[i] as FakeRecorder };
+  }
+
+  it("picks Opus in WebM, then Opus in Ogg, then MP4, and sends the type without its parameters", () => {
+    expect(pickRecorderType(() => true)).toBe("audio/webm;codecs=opus");
+    expect(pickRecorderType((t) => t.startsWith("audio/ogg"))).toBe("audio/ogg;codecs=opus");
+    expect(pickRecorderType((t) => t === "audio/mp4")).toBe("audio/mp4");
+    expect(pickRecorderType(() => false)).toBeNull();
+    expect(
+      pickRecorderType((t) => {
+        if (t.includes("webm")) throw new Error("odd");
+        return true;
+      }),
+    ).toBe("audio/ogg;codecs=opus");
+    expect([bareType("audio/webm;codecs=opus"), bareType("audio/ogg; codecs=opus"), bareType("audio/mp4")]).toEqual([
+      "audio/webm",
+      "audio/ogg",
+      "audio/mp4",
+    ]);
+  });
+
+  it("is not there without MediaRecorder or a type it records", () => {
+    expect(createVoiceRecorder(stream, limits, () => 0, {})).toBeNull();
+    const none = Object.assign(class {} as unknown as typeof FakeRecorder, { isTypeSupported: () => false });
+    expect(createVoiceRecorder(stream, limits, () => 0, { MediaRecorder: none })).toBeNull();
+    const some = Object.assign(FakeRecorder, { isTypeSupported: (t: string) => t === "audio/mp4" });
+    expect(createVoiceRecorder(stream, limits, () => 0, { MediaRecorder: some })).toBeInstanceOf(MediaVoiceRecorder);
+  });
+
+  it("notes the song time it really began at, and hands the recording over at the end", async () => {
+    const { r, clock, rec } = recorder();
+    r.start();
+    expect(rec(0).options).toEqual({ mimeType: "audio/webm;codecs=opus", audioBitsPerSecond: RECORDER_BITS });
+    expect(RECORDER_BITS).toBe(32_000);
+    clock.song = 0.0234;
+    rec(0).began();
+    expect(r.state).toBe("recording");
+    rec(0).give(4000);
+    rec(0).give(2000);
+    clock.wall += 180;
+    const take = await r.stop();
+    expect(take?.type).toBe("audio/webm");
+    expect(take?.offset_ms).toBe(23);
+    expect(take?.blob.size).toBe(6000);
+    expect(take?.blob.type).toBe("audio/webm");
+    expect([recordingOffsetMs(-0.004), recordingOffsetMs(1.2345)]).toEqual([0, 1235]);
+  });
+
+  it("throws the take away on a restart and records anew", async () => {
+    const { r, clock, rec } = recorder();
+    r.start();
+    rec(0).began();
+    rec(0).give(5000);
+    clock.song = 0.04;
+    r.start();
+    expect(rec(0).state).toBe("inactive");
+    // What the first one gives late is not kept.
+    rec(0).give(3000);
+    rec(1).began();
+    rec(1).give(700);
+    const take = await r.stop();
+    expect(take?.blob.size).toBe(700);
+    expect(take?.offset_ms).toBe(40);
+  });
+
+  it("gives nothing past the session's limits, and nothing when it never began", async () => {
+    const big = recorder({ max_bytes: 5000 });
+    big.r.start();
+    big.rec(0).began();
+    big.rec(0).give(3000);
+    big.rec(0).give(3000);
+    expect(big.r.state).toBe("over");
+    expect(big.rec(0).state).toBe("inactive");
+    expect(await big.r.stop()).toBeNull();
+
+    const long = recorder({ max_seconds: 600 });
+    long.r.start();
+    long.rec(0).began();
+    long.rec(0).give(100);
+    long.clock.wall += 601;
+    expect(await long.r.stop()).toBeNull();
+    expect(long.r.state).toBe("over");
+
+    const never = recorder();
+    never.r.start();
+    expect(await never.r.stop()).toBeNull();
+    expect(withinLimits(0, 1, limits)).toBe(false);
+    expect(withinLimits(10_000, 600, limits)).toBe(true);
+    expect(withinLimits(10_001, 1, limits)).toBe(false);
+  });
+
+  it("is posted to the session's voice route", () => {
+    expect(voicePath("S1")).toBe("/api/member/karaoke/sessions/S1/voice");
+    expect(voicePath("a/b")).toBe("/api/member/karaoke/sessions/a%2Fb/voice");
+  });
+
+  it("says plainly what leaves the browser", () => {
+    expect(privacyText(false)).toContain("不會送出去");
+    expect(privacyText(true)).toContain("送出一次");
+    expect(privacyText(true)).toContain("算完就刪掉");
+    expect(privacyText(true)).not.toContain("!");
+  });
+});
+
+describe("預估 and 正式分數", () => {
+  const result = (over: Partial<Pick<KaraokeResult, "source" | "voice">>): Pick<KaraokeResult, "source" | "voice"> => ({
+    source: "estimate",
+    voice: { state: "none", estimate_total: null, checks: [] },
+    ...over,
+  });
+
+  it("calls the browser's pitch 預估 and the recording's score 正式分數 with the estimate beside it", () => {
+    expect(voiceView(result({}))).toEqual({ label: "預估", pending: false, note: null, estimate: null, checks: [] });
+    expect(voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 71.2, checks: [] } }))).toEqual({
+      label: "正式分數",
+      pending: false,
+      note: null,
+      estimate: 71.2,
+      checks: [],
+    });
+  });
+
+  it("says while the official score is being worked out, and when it will not come", () => {
+    const scoring = result({ voice: { state: "scoring", estimate_total: null, checks: [] } });
+    expect(voiceView(scoring)).toMatchObject({ label: "預估", pending: true, note: "正在算正式分數" });
+    expect(voiceView(result({ voice: { state: "waiting", estimate_total: null, checks: [] } }))).toMatchObject({
+      pending: true,
+    });
+    expect(voiceView(scoring, { waitedOut: true })).toMatchObject({ pending: false, note: "正式分數還沒算好,晚點回來看看" });
+    expect(voiceView(scoring, { uploadFailed: true })).toMatchObject({
+      label: "預估",
+      pending: false,
+      note: "正式分數沒有算成,這次以預估為準",
+    });
+    expect(voiceView(result({ voice: { state: "failed", estimate_total: null, checks: [] } }))).toMatchObject({
+      label: "預估",
+      note: "正式分數沒有算成,這次以預估為準",
+    });
+  });
+
+  it("says what the checks of the recording found, plainly", () => {
+    const v = voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 60, checks: ["quiet", "bleed"] } }));
+    expect(v.checks).toEqual(["收到的聲音很小,分數可能不準", "間奏也收到了音高,可能是喇叭的伴奏,請戴耳機"]);
+    for (const line of v.checks) expect(line).not.toMatch(/[!!]/);
+  });
+});
+
+describe("the controls on demand", () => {
+  const singing = { idle: false, focus: false, dialog: false };
+
+  it("always show before the start, after the end, with focus on a control or a dialog open", () => {
+    for (const hold of [
+      { ...singing, idle: true },
+      { ...singing, focus: true },
+      { ...singing, dialog: true },
+    ]) {
+      expect(chromeShown(CHROME_START, hold, 1e9)).toBe(true);
+      expect(chromeHidesIn(CHROME_START, hold, 1e9)).toBeNull();
+    }
+    // While singing nobody has asked for them yet: away.
+    expect(chromeShown(CHROME_START, singing, 0)).toBe(false);
+  });
+
+  it("come on movement and go 2.5 s after the last of it", () => {
+    expect(CHROME_IDLE_MS).toBe(2_500);
+    let s = chromeReduce(CHROME_START, { type: "activity", at: 1_000 });
+    expect(chromeShown(s, singing, 1_000)).toBe(true);
+    expect(chromeHidesIn(s, singing, 1_000)).toBe(2_500);
+    expect(chromeShown(s, singing, 3_400)).toBe(true);
+    expect(chromeHidesIn(s, singing, 3_400)).toBe(100);
+    expect(chromeShown(s, singing, 3_500)).toBe(false);
+    expect(chromeHidesIn(s, singing, 3_500)).toBeNull();
+    // Moving again starts the count over.
+    s = chromeReduce(s, { type: "activity", at: 3_000 });
+    expect(chromeShown(s, singing, 5_000)).toBe(true);
+  });
+
+  it("toggle on a tap", () => {
+    const away = chromeReduce(CHROME_START, { type: "tap", at: 500, shown: false });
+    expect(chromeShown(away, singing, 600)).toBe(true);
+    const back = chromeReduce(away, { type: "tap", at: 900, shown: true });
+    expect(back.shownAt).toBeNull();
+    expect(chromeShown(back, singing, 950)).toBe(false);
+  });
+
+  it("stay while the pointer rests near the top or bottom edge", () => {
+    expect(CHROME_EDGE).toBe(0.14);
+    expect(nearEdge(10, 800)).toBe(true);
+    expect(nearEdge(790, 800)).toBe(true);
+    expect(nearEdge(400, 800)).toBe(false);
+    expect(nearEdge(5, 0)).toBe(false);
   });
 });

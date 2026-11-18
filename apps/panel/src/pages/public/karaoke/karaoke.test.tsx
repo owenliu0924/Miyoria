@@ -2,15 +2,20 @@
 // failed, the closed states, and the result with her comment. The audio is not reached here.
 
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KaraokeOverview, KaraokeResult, KaraokeSongView } from "@miyoria/contracts/api";
+import type { WorkersKaraokeReferenceV2 } from "@miyoria/contracts/workers/karaoke";
 import { App } from "@/app/App";
 import { createAppRouter } from "@/app/router";
 import { mockFetch, renderPage } from "@/test/render";
+import type { KaraokeEngine } from "./audio";
 import { KaraokePage } from "./KaraokePage";
+import type { Detection } from "./pitch";
+import type { RecordingLimits, VoiceRecorder } from "./recorder";
 import { Result } from "./Result";
+import { type Finished, Singing } from "./Singing";
 
 const MEMBER = { name: "小魚乾", avatar_url: null };
 
@@ -27,6 +32,7 @@ const song = (over: Partial<KaraokeSongView> = {}): KaraokeSongView => ({
   lyrics: true,
   lyrics_source: "found",
   notes: 240,
+  video: false,
   mine: false,
   best: 82.4,
   sung: 3,
@@ -249,6 +255,8 @@ describe("唱歌: the way there", () => {
 const coreResult =(over: Partial<KaraokeResult> = {}): KaraokeResult =>
   ({
     session: "S1",
+    source: "estimate",
+    voice: { state: "none", estimate_total: null, checks: [] },
     song: { id: "k1", title: "夜に駆ける", artist: "YOASOBI" },
     at: "2026-11-18T01:00:00Z",
     total: 78.6,
@@ -287,13 +295,24 @@ const coreResult =(over: Partial<KaraokeResult> = {}): KaraokeResult =>
     ...over,
   }) as KaraokeResult;
 
-function results(answers: KaraokeResult[]) {
+/** `answers`: what `GET .../S1` gives in turn; the result POST gives `o.submit`, else the first. */
+function results(answers: KaraokeResult[], o: { status?: number; submit?: KaraokeResult } = {}) {
   let n = 0;
   const posts: unknown[] = [];
-  mockFetch((method, url, body) => {
+  const uploads: { query: string; type: string | null; csrf: string | null }[] = [];
+  const voice = o;
+  const fn = mockFetch((method, url, body, headers) => {
     if (url.pathname === "/api/member/karaoke/sessions/S1/result" && method === "POST") {
       posts.push(body);
-      return { body: answers[0] };
+      return { body: o.submit ?? answers[0] };
+    }
+    if (url.pathname === "/api/member/karaoke/sessions/S1/voice" && method === "POST") {
+      uploads.push({
+        query: url.search,
+        type: headers.get("content-type"),
+        csrf: headers.get("X-Miyoria-Request"),
+      });
+      return voice.status ? { status: voice.status, body: { error: "no" } } : { status: 202, body: { state: "scoring" } };
     }
     if (url.pathname === "/api/member/karaoke/sessions/S1") {
       const r = answers[Math.min(n++, answers.length - 1)];
@@ -301,14 +320,15 @@ function results(answers: KaraokeResult[]) {
     }
     return undefined;
   });
-  return { posts };
+  return { posts, uploads, fn };
 }
 
 describe("唱歌: the result", () => {
   it("shows the total, the four parts in words, the phrases, and that she is thinking", async () => {
     results([coreResult()]);
     renderPage(<Result session="S1" title="夜に駆ける" artist="YOASOBI" onAgain={() => {}} onBack={() => {}} />);
-    const total = await screen.findByLabelText("系統分數 78.6");
+    // From the pitch the browser detected: 預估.
+    const total = await screen.findByLabelText("預估 78.6");
     expect(total).toBeInTheDocument();
     const parts = screen.getByRole("region", { name: "四個項目" });
     expect(within(parts).getByLabelText("音程")).toHaveTextContent("45.2 / 60");
@@ -338,7 +358,7 @@ describe("唱歌: the result", () => {
   it("says nothing of her when she will not comment", async () => {
     results([coreResult({ comment: { state: "none", text: null } })]);
     renderPage(<Result session="S1" title="夜に駆ける" artist={null} onAgain={() => {}} onBack={() => {}} />);
-    await screen.findByLabelText("系統分數 78.6");
+    await screen.findByLabelText("預估 78.6");
     expect(screen.queryByRole("region", { name: "她的講評" })).toBeNull();
   });
 
@@ -351,11 +371,361 @@ describe("唱歌: the result", () => {
       body,
       provisional: null,
       lines: [],
+      voice: null,
     };
     renderPage(
       <Result session="S1" title="夜に駆ける" artist={null} pending={pending} onAgain={() => {}} onBack={() => {}} />,
     );
-    expect(await screen.findByLabelText("系統分數 80.2")).toBeInTheDocument();
+    expect(await screen.findByLabelText("預估 80.2")).toBeInTheDocument();
     expect(posts).toEqual([body]);
+  });
+
+  it("shows the official score with the earlier estimate small beside it", async () => {
+    results([coreResult({ source: "voice", total: 83.4, voice: { state: "scored", estimate_total: 78.6, checks: [] } })]);
+    renderPage(<Result session="S1" title="夜に駆ける" artist={null} onAgain={() => {}} onBack={() => {}} />);
+    expect(await screen.findByLabelText("正式分數 83.4")).toBeInTheDocument();
+    const summary = screen.getByRole("region", { name: "分數" });
+    expect(summary).toHaveTextContent("預估78.6");
+    expect(screen.getByText("新的最好成績")).toBeInTheDocument();
+  });
+
+  it("says a recording that took in the backing, and keeps it off the bests", async () => {
+    results([
+      coreResult({
+        source: "voice",
+        total: 90,
+        unranked: true,
+        voice: { state: "scored", estimate_total: 70, checks: ["bleed"] },
+      }),
+    ]);
+    renderPage(<Result session="S1" title="夜に駆ける" artist={null} onAgain={() => {}} onBack={() => {}} />);
+    await screen.findByLabelText("正式分數 90.0");
+    expect(screen.getByText("間奏也收到了音高,可能是喇叭的伴奏,請戴耳機")).toBeInTheDocument();
+    expect(screen.queryByText("新的最好成績")).toBeNull();
+  });
+
+  it("sends the recording once after the result, then goes 預估 → 正在算 → 正式分數", async () => {
+    const waiting = coreResult({ total: 78.6, voice: { state: "waiting", estimate_total: null, checks: [] } });
+    const scoring = coreResult({ total: 78.6, voice: { state: "scoring", estimate_total: null, checks: [] } });
+    const official = coreResult({
+      source: "voice",
+      total: 82.1,
+      voice: { state: "scored", estimate_total: 78.6, checks: [] },
+    });
+    const { posts, uploads, fn } = results([scoring, official], { submit: waiting });
+    const body = { track: "AAAA", latency_ms: 120, calibrated: true, client_total: 79.9, browser: "Chrome 131", recording: true };
+    const pending = {
+      session: "S1",
+      song: { id: "k1", title: "夜に駆ける", artist: null },
+      body,
+      provisional: null,
+      lines: [],
+      voice: { blob: new Blob([new Uint8Array(64)], { type: "audio/webm" }), type: "audio/webm", offset_ms: 37 },
+    };
+    renderPage(
+      <Result session="S1" title="夜に駆ける" artist={null} pending={pending} onAgain={() => {}} onBack={() => {}} />,
+    );
+    expect(await screen.findByLabelText("預估 78.6")).toBeInTheDocument();
+    await waitFor(() => expect(uploads).toHaveLength(1));
+    expect(posts).toEqual([body]);
+    expect(uploads[0]).toMatchObject({ query: "?offset_ms=37", type: "audio/webm", csrf: "1" });
+    // The result POST comes first, the recording after it.
+    const order = fn.mock.calls.map(([u, init]) => `${(init as RequestInit | undefined)?.method ?? "GET"} ${new URL(String(u), "http://x").pathname}`);
+    expect(order.indexOf("POST /api/member/karaoke/sessions/S1/result")).toBeLessThan(
+      order.indexOf("POST /api/member/karaoke/sessions/S1/voice"),
+    );
+    expect(await screen.findByText("正在算正式分數")).toBeInTheDocument();
+    expect(await screen.findByLabelText("正式分數 82.1", undefined, { timeout: 8000 })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "分數" })).toHaveTextContent("預估78.6");
+    expect(uploads).toHaveLength(1);
+  }, 15_000);
+
+  it("stays 預估 with a short note when the recording could not be sent, and does not send it again", async () => {
+    const waiting = coreResult({ voice: { state: "waiting", estimate_total: null, checks: [] } });
+    const { uploads } = results([waiting], { status: 500 });
+    const pending = {
+      session: "S1",
+      song: { id: "k1", title: "夜に駆ける", artist: null },
+      body: { track: "AAAA", latency_ms: 0, calibrated: false, client_total: null, browser: "", recording: true },
+      provisional: null,
+      lines: [],
+      voice: { blob: new Blob([new Uint8Array(8)]), type: "audio/ogg", offset_ms: 0 },
+    };
+    renderPage(
+      <Result session="S1" title="夜に駆ける" artist={null} pending={pending} onAgain={() => {}} onBack={() => {}} />,
+    );
+    expect(await screen.findByText("正式分數沒有算成,這次以預估為準")).toBeInTheDocument();
+    expect(screen.getByLabelText("預估 78.6")).toBeInTheDocument();
+    expect(uploads).toHaveLength(1);
+    expect(uploads[0]?.type).toBe("audio/ogg");
+  });
+});
+
+// ---- the singing screen, with a stand-in for the audio --------------------------------------
+
+const REFERENCE: WorkersKaraokeReferenceV2 = {
+  format: "miyoria.karaoke.reference",
+  version: 2,
+  id: "k1",
+  title: "紙船",
+  artist: null,
+  duration_s: 30,
+  backing: "karaoke.m4a",
+  pitch: { hz: 50, start: 0, midi: Array.from({ length: 1500 }, (_, i) => (i > 100 ? 60 + ((i / 50) % 3) : null)) },
+  notes: [{ start: 2, end: 3, midi: 60, source: "pitch", line: null, char: null }],
+  lyrics: {
+    provider: "lrclib",
+    source: "found",
+    language: "zh",
+    timing: "char",
+    check: null,
+    lines: [
+      {
+        start: 2,
+        end: 5,
+        text: "紙船",
+        status: "matched",
+        source: "found",
+        similarity: 1,
+        heard: "紙船",
+        aligned: true,
+        pieces: [
+          { text: "紙", sung: true, start: 2, end: 2.5, reading: "zhǐ", roman: null },
+          { text: "船", sung: true, start: 2.5, end: 3, reading: "chuán", roman: null },
+        ],
+        edited: false,
+      },
+      {
+        start: 6,
+        end: 9,
+        text: "回家",
+        status: "matched",
+        source: "found",
+        similarity: 1,
+        heard: "回家",
+        aligned: false,
+        pieces: null,
+        edited: false,
+      },
+    ],
+  },
+  quality: { ok: true, reason: null, voiced_ratio: 0.8, notes: 1, lead_split: true },
+  made: { pitch: "t", notes: "t", lyrics: "t", asr: "t", aligner: "t" },
+};
+
+function fakeEngine(recorder: VoiceRecorder | null) {
+  const listeners = new Set<(d: Detection) => void>();
+  const asked: RecordingLimits[] = [];
+  const engine: KaraokeEngine = {
+    now: () => performance.now() / 1000,
+    heard: () => performance.now() / 1000,
+    estimateLatencyMs: () => 40,
+    openMic: async () => ({}),
+    setFloor: () => {},
+    onDetection: (f) => {
+      listeners.add(f);
+      return () => listeners.delete(f);
+    },
+    loadBacking: async () => 30,
+    play: () => performance.now() / 1000 + 0.05,
+    stop: () => {},
+    beeps: () => {},
+    recorder: (limits) => {
+      asked.push(limits);
+      return recorder;
+    },
+    close: () => {},
+  };
+  return { engine, asked };
+}
+
+function stubRecorder() {
+  const calls: string[] = [];
+  const r: VoiceRecorder = {
+    state: "idle",
+    start: () => void calls.push("start"),
+    stop: async () => {
+      calls.push("stop");
+      return { blob: new Blob([new Uint8Array(10)]), type: "audio/webm", offset_ms: 12 };
+    },
+    cancel: () => void calls.push("cancel"),
+  };
+  return { r, calls };
+}
+
+function singingSite(o: { video?: string | null; recording?: { max_bytes: number; max_seconds: number } | null } = {}) {
+  mockFetch((method, url) => {
+    if (url.pathname === "/api/member/karaoke/songs/k1/sessions" && method === "POST") {
+      return {
+        body: {
+          session: "S9",
+          song: song(),
+          backing_url: "/api/member/karaoke/files/S9/karaoke.m4a?sig=x",
+          reference_url: "/api/member/karaoke/files/S9/reference.json?sig=x",
+          video_url: o.video === undefined ? "/api/member/karaoke/files/S9/video.mp4?sig=x" : o.video,
+          expires_at: "2026-11-18T02:00:00Z",
+          tolerance_cents: 50,
+          frame_hz: 50,
+          shift: 0,
+          recording: o.recording === undefined ? { max_bytes: 8_000_000, max_seconds: 600 } : o.recording,
+        },
+      };
+    }
+    if (url.pathname.endsWith("/reference.json")) return { body: REFERENCE };
+    return undefined;
+  });
+}
+
+describe("唱歌: the singing screen", () => {
+  // jsdom has no media playback.
+  beforeEach(() => {
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(() => Promise.resolve());
+  });
+
+  it("is one stage: video behind, lane, two large lyric lines, 預估, and a quiet bar without pause", async () => {
+    singingSite();
+    const { r } = stubRecorder();
+    const { engine, asked } = fakeEngine(r);
+    const { container } = renderPage(
+      <Singing
+        engine={() => engine}
+        song={song({ title: "紙船", artist: null })}
+        latency={{ latency_ms: 40, calibrated: true }}
+        floor={null}
+        onFinished={() => {}}
+        onQuit={() => {}}
+        onCalibrate={() => {}}
+      />,
+    );
+    const go = await screen.findByRole("button", { name: "開始" });
+    await waitFor(() => expect(go).toBeEnabled());
+    const stage = container.querySelector("[data-stage]") as HTMLElement;
+    // The video: muted, inline, no controls, no picture-in-picture, loaded ahead, on the signed link.
+    const video = stage.querySelector("video") as HTMLVideoElement;
+    expect(video).not.toBeNull();
+    expect(video.muted).toBe(true);
+    expect(video.hasAttribute("controls")).toBe(false);
+    expect(video.getAttribute("playsinline")).not.toBeNull();
+    expect(video.getAttribute("preload")).toBe("auto");
+    expect(video.getAttribute("src")).toBe("/api/member/karaoke/files/S9/video.mp4?sig=x");
+    expect(video.getAttribute("controlslist")).toContain("nodownload");
+    expect(stage.querySelector("[data-stage-still]")).not.toBeNull();
+    expect(within(stage).getByRole("img", { name: /音高跑道/ })).toBeInTheDocument();
+    expect(within(stage).getByText("預估")).toBeInTheDocument();
+    // The first lines sit on the stage before the start.
+    expect(stage.querySelector("[data-line=current]")).toHaveTextContent("紙船");
+    expect(stage.querySelector("[data-line=next]")).toHaveTextContent("回家");
+    const bar = screen.getByRole("toolbar", { name: "唱歌的控制" });
+    expect(within(bar).getByRole("group", { name: "升降調" })).toBeInTheDocument();
+    expect(within(bar).getByRole("radiogroup", { name: "讀音" })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: "校正延遲" })).toBeInTheDocument();
+    expect(within(bar).getByRole("button", { name: "離開" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /暫停/ })).toBeNull();
+    // Recording is on: the page says plainly what is sent and that it is not kept.
+    expect(asked).toEqual([{ max_bytes: 8_000_000, max_seconds: 600 }]);
+    expect(screen.getByText(/唱完會把這首的錄音送出一次/)).toBeInTheDocument();
+  });
+
+  it("records from the start, anew on a restart, and hands the recording on at the end", async () => {
+    singingSite();
+    const { r, calls } = stubRecorder();
+    const { engine } = fakeEngine(r);
+    let finished: Finished | null = null;
+    renderPage(
+      <Singing
+        engine={() => engine}
+        song={song({ title: "紙船" })}
+        latency={{ latency_ms: 40, calibrated: true }}
+        floor={null}
+        onFinished={(f) => void (finished = f)}
+        onQuit={() => {}}
+        onCalibrate={() => {}}
+      />,
+    );
+    const go = await screen.findByRole("button", { name: "開始" });
+    await waitFor(() => expect(go).toBeEnabled());
+    await userEvent.click(go);
+    await waitFor(() => expect(calls).toEqual(["start"]));
+    await userEvent.click(screen.getByRole("button", { name: "從頭開始" }));
+    await waitFor(() => expect(calls).toEqual(["start", "start"]));
+    await userEvent.click(screen.getByRole("button", { name: "唱完了" }));
+    await waitFor(() => expect(finished).not.toBeNull());
+    const f = finished as unknown as Finished;
+    expect(f.body.recording).toBe(true);
+    expect(f.voice?.offset_ms).toBe(12);
+    expect(f.session).toBe("S9");
+  });
+
+  it("fills the window, and puts the controls away while singing until the pointer moves", async () => {
+    singingSite();
+    const { r } = stubRecorder();
+    const { engine } = fakeEngine(r);
+    const { container } = renderPage(
+      <Singing
+        engine={() => engine}
+        song={song({ title: "紙船" })}
+        latency={{ latency_ms: 40, calibrated: true }}
+        floor={null}
+        onFinished={() => {}}
+        onQuit={() => {}}
+        onCalibrate={() => {}}
+      />,
+    );
+    const go = await screen.findByRole("button", { name: "開始" });
+    await waitFor(() => expect(go).toBeEnabled());
+    const stage = container.querySelector("[data-stage]") as HTMLElement;
+    expect(stage.className).toContain("fixed inset-0");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    // Before the start they show.
+    expect(stage).toHaveAttribute("data-chrome-shown");
+    fireEvent.click(go);
+    // Singing, untouched: away after 2.5 s, the cursor with them; the number stays.
+    await waitFor(() => expect(stage).not.toHaveAttribute("data-chrome-shown"), { timeout: 4000 });
+    expect(stage.className).toContain("cursor-none");
+    expect(screen.getByRole("toolbar", { name: "唱歌的控制" }).className).toContain("opacity-0");
+    expect(stage.querySelector("[data-score]")).toHaveTextContent("預估");
+    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400 });
+    expect(stage).toHaveAttribute("data-chrome-shown");
+    expect(screen.getByRole("toolbar", { name: "唱歌的控制" }).className).toContain("opacity-100");
+  }, 10_000);
+
+  it("without a video or a recording: the still, and nothing of the voice leaves", async () => {
+    singingSite({ video: null, recording: null });
+    const { engine, asked } = fakeEngine(null);
+    const { container } = renderPage(
+      <Singing
+        engine={() => engine}
+        song={song({ title: "紙船" })}
+        latency={{ latency_ms: 40, calibrated: false }}
+        floor={null}
+        onFinished={() => {}}
+        onQuit={() => {}}
+        onCalibrate={() => {}}
+      />,
+    );
+    await screen.findByRole("button", { name: "開始" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "開始" })).toBeEnabled());
+    expect(container.querySelector("video")).toBeNull();
+    expect(container.querySelector("[data-stage-still]")).not.toBeNull();
+    expect(asked).toEqual([]);
+    expect(screen.getByText(/麥克風的聲音只在這個瀏覽器裡處理/)).toBeInTheDocument();
+  });
+
+  it("says when the browser cannot record though the session allows it", async () => {
+    singingSite({ video: null });
+    const { engine } = fakeEngine(null);
+    renderPage(
+      <Singing
+        engine={() => engine}
+        song={song({ title: "紙船" })}
+        latency={{ latency_ms: 40, calibrated: false }}
+        floor={null}
+        onFinished={() => {}}
+        onQuit={() => {}}
+        onCalibrate={() => {}}
+      />,
+    );
+    expect(await screen.findByText("這個瀏覽器不能錄音,這次只有預估分數")).toBeInTheDocument();
   });
 });

@@ -21,9 +21,10 @@ import {
   KaraokeStore,
   karaokeSchema,
 } from "@miyoria/play/karaoke";
-import { type PitchTrack, TrackRecorder } from "@miyoria/play/karaoke/score";
+import { type PitchTrack, resampleTrack, TrackRecorder } from "@miyoria/play/karaoke/score";
 import {
   FAKE_BACKING,
+  FAKE_VIDEO,
   FakeKaraokeWorker,
   humanSinger,
   noiseSinger,
@@ -34,9 +35,9 @@ import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import { AuthorizerKey } from "@miyoria/types";
 import type { AnyRouter } from "@orpc/server";
 import { Hono } from "hono";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../src/errors.js";
-import { karaokeAdminRpc, karaokeRoutes, karaokeRpc } from "../src/karaoke-routes.js";
+import { byteRange, karaokeAdminRpc, karaokeRoutes, karaokeRpc } from "../src/karaoke-routes.js";
 import { rpcRoutes, tableRoutes } from "../src/rpc.js";
 import type { ApiEnv } from "../src/state.js";
 
@@ -146,6 +147,7 @@ async function singThrough(
   singer: PitchTrack,
   latency_ms: number,
   calibrated = true,
+  recording = false,
 ): Promise<KaraokeResult> {
   const started = await call<KaraokeSession>(
     `/api/member/karaoke/songs/${songId}/sessions`,
@@ -168,7 +170,14 @@ async function singThrough(
   rig.clock.t += reference.duration_s * 1000 + 3000;
   const sent = await call<KaraokeResult>(
     `/api/member/karaoke/sessions/${started.body.session}/result`,
-    post({ track: rec.encode(), latency_ms, calibrated, client_total: null, browser: "test" }),
+    post({
+      track: rec.encode(),
+      latency_ms,
+      calibrated,
+      client_total: null,
+      browser: "test",
+      recording,
+    }),
   );
   expect(sent.status).toBe(200);
   return sent.body;
@@ -251,5 +260,93 @@ describe("offline end to end: encoder, route, Core's score", () => {
     expect(admin.body.results.filter((r) => r.unranked)).toHaveLength(1);
     const mine = await call<{ recent: unknown[] }>("/api/member/karaoke");
     expect(mine.body.recent).toHaveLength(8);
+  });
+});
+
+describe("the recording and the background video", () => {
+  it("takes the recording once through its route, and the official score replaces the estimate", async () => {
+    const id = await prepared();
+    // The browser's detection is sloppy; the recording (read by the worker) is clean.
+    const estimate = await singThrough(id, humanSinger(song, { wanderCents: 70 }), 0, true, true);
+    expect(estimate).toMatchObject({ source: "estimate", voice: { state: "waiting" } });
+    rig.worker.readVoice = () => {
+      const midi = resampleTrack(humanSinger(song), 50);
+      return {
+        hz: 50,
+        midi,
+        seconds: midi.length / 50,
+        level_db: -20,
+        floor_db: -60,
+        device: "cuda",
+        method: "rmvpe",
+      };
+    };
+    const upload = (body: Uint8Array<ArrayBuffer>, type = "audio/webm") =>
+      rig.hono.request(`/api/member/karaoke/sessions/${estimate.session}/voice?offset_ms=0`, {
+        method: "POST",
+        body,
+        headers: { "content-type": type },
+      });
+    expect((await upload(new Uint8Array([1, 2]), "text/plain")).status).toBe(415);
+    const big = await upload(new Uint8Array(8 * 1024 * 1024 + 1));
+    expect(big.status).toBe(413);
+    const res = await upload(new Uint8Array([1, 2, 3]));
+    expect(res.status).toBe(202);
+    expect(await res.json()).toEqual({ state: "scoring" });
+    expect((await upload(new Uint8Array([1]))).status).toBe(409);
+    await rig.service.voiceSettled();
+    const official = await call<KaraokeResult>(`/api/member/karaoke/sessions/${estimate.session}`);
+    expect(official.body).toMatchObject({
+      source: "voice",
+      voice: { state: "scored", estimate_total: estimate.total, checks: [] },
+    });
+    expect(official.body.total).toBeGreaterThan(estimate.total);
+    expect(rig.worker.voices).toMatchObject([{ size: 3, type: "audio/webm" }]);
+    rig.as.account = BOB;
+    expect((await upload(new Uint8Array([1]))).status).toBe(404);
+  });
+
+  it("serves the video in byte ranges", async () => {
+    const asked = await call<{ song: { id: string } }>(
+      "/api/member/karaoke/songs",
+      post({ text: "https://youtu.be/video" }),
+    );
+    const [job] = [...rig.worker.jobs.keys()];
+    rig.worker.finish(job as string, referenceOf(song, "k-video"), true);
+    await rig.service.tick(new AbortController().signal);
+    const started = await vi.waitFor(async () => {
+      const s = await call<KaraokeSession>(
+        `/api/member/karaoke/songs/${asked.body.song.id}/sessions`,
+        post({}),
+      );
+      expect(s.body.video_url).not.toBeNull();
+      return s.body;
+    });
+    const whole = await rig.hono.request(started.video_url as string);
+    expect(whole.status).toBe(200);
+    expect(whole.headers.get("content-type")).toBe("video/mp4");
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect(new Uint8Array(await whole.arrayBuffer())).toEqual(FAKE_VIDEO);
+    const part = await rig.hono.request(started.video_url as string, {
+      headers: { range: "bytes=4-7" },
+    });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toBe(`bytes 4-7/${FAKE_VIDEO.length}`);
+    expect(new Uint8Array(await part.arrayBuffer())).toEqual(FAKE_VIDEO.slice(4, 8));
+    const past = await rig.hono.request(started.video_url as string, {
+      headers: { range: "bytes=999-" },
+    });
+    expect(past.status).toBe(416);
+  });
+
+  it("reads one byte range of a header", () => {
+    expect(byteRange(undefined, 10)).toBeNull();
+    expect(byteRange("bytes=0-", 10)).toEqual({ start: 0, end: 9 });
+    expect(byteRange("bytes=2-4", 10)).toEqual({ start: 2, end: 4 });
+    expect(byteRange("bytes=8-20", 10)).toEqual({ start: 8, end: 9 });
+    expect(byteRange("bytes=-3", 10)).toEqual({ start: 7, end: 9 });
+    expect(byteRange("bytes=10-", 10)).toBe("unsatisfiable");
+    expect(byteRange("bytes=0-1,4-5", 10)).toBeNull();
+    expect(byteRange("items=0-1", 10)).toBeNull();
   });
 });

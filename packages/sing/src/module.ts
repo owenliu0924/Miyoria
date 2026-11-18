@@ -321,7 +321,8 @@ export class SingModule implements Module {
 
 /**
  * The karaoke port over the song workers (docs/design/karaoke.md §3): a job with
- * `purpose: "karaoke"`, its state, and its files from the worker that made it.
+ * `purpose: "karaoke"`, its state, and its files from the worker that made it; the pitch of a
+ * singer's recording from any worker that answers.
  */
 export function karaokeWorker(worker: SingWorker): KaraokeWorker {
   return {
@@ -335,6 +336,7 @@ export function karaokeWorker(worker: SingWorker): KaraokeWorker {
           force: query.force ?? false,
           purpose: "karaoke",
           ...(query.lyrics === undefined ? {} : { karaoke_lyrics: query.lyrics }),
+          ...(query.video === undefined ? {} : { karaoke_video: query.video }),
         },
         signal,
       ),
@@ -342,6 +344,7 @@ export function karaokeWorker(worker: SingWorker): KaraokeWorker {
     cancel: (id) => worker.cancel(id),
     file: (song, name, dest, signal) => worker.karaokeFile(song, name, dest, signal),
     key: (song, semitones, signal) => worker.karaokeKey(song, semitones, signal),
+    voice: (voice, signal) => worker.karaokeVoice(voice.bytes, voice.type, signal),
   };
 }
 

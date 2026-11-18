@@ -222,6 +222,20 @@ class WorkersKaraokeSong(BaseModel):
     artist: str | None
     duration_s: float | None
     quality: WorkersKaraokeQuality | None
+    video: bool = False
+
+
+class WorkersKaraokeVoicePitch(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    hz: Literal[50]
+    midi: list[float | None]
+    seconds: float
+    level_db: float | None
+    floor_db: float | None
+    device: str
+    method: str
 
 
 class WorkersLyricsHealth(BaseModel):
@@ -413,6 +427,7 @@ class WorkersSingJobRequest(BaseModel):
     exclusive_ack: bool = False
     purpose: Literal["cover", "karaoke"] = "cover"
     karaoke_lyrics: WorkersKaraokeLyricsOptions | None = None
+    karaoke_video: bool = True
 
 
 class WorkersSingLibraryEntry(BaseModel):

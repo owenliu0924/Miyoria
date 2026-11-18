@@ -1,33 +1,52 @@
-// Paints the singing lane on a canvas: the reference curve thin, the guide notes as bars, the now
-// line, and the singer's line in the primary colour. Geometry from `lane.ts`.
+// Paints the singing lane on a canvas over the stage: a faint line per semitone (stronger at each
+// C), the guide notes as bars (bright ahead, brightest while sung, dim once passed), the reference
+// curve thin, the now line, and the singer's line: the primary colour where it is on the
+// reference, the secondary where it is off. The look follows the owner's karaoke app; the
+// colours are the panel's two accents. Geometry from `lane.ts`.
 
 import type { WorkersKaraokeNote } from "@miyoria/contracts/workers/karaoke";
 import type { ReferenceCurve } from "@miyoria/play/karaoke/score";
-import { type LaneView, midiToY, NOW_AT, timeToX, visibleNotes, visibleWindow } from "./lane";
+import { type LaneView, midiToY, NOW_AT, onPitch, referenceAt, timeToX, visibleNotes, visibleWindow } from "./lane";
 import type { TrailPoint } from "./take";
 
 export interface LaneColors {
+  /** The singer on pitch, and the tip. */
   primary: string;
+  /** The singer off pitch. */
+  secondary: string;
   curve: string;
   note: string;
-  noteNear: string;
-  grid: string;
+  noteNow: string;
+  notePast: string;
+  semitone: string;
+  octave: string;
   now: string;
-  past: string;
+}
+
+/** A colour the canvas understands, else `fallback` (a theme colour may be a `color-mix`). */
+function usable(value: string, fallback: string): string {
+  if (!value || typeof document === "undefined") return value || fallback;
+  const ctx = document.createElement("canvas").getContext("2d");
+  if (!ctx) return value;
+  ctx.fillStyle = "#010203";
+  ctx.fillStyle = value;
+  return ctx.fillStyle === "#010203" ? fallback : value;
 }
 
 /** The theme's colours, read once per canvas. */
 export function laneColors(el: Element): LaneColors {
   const css = getComputedStyle(el);
-  const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+  const v = (name: string, fallback: string) => usable(css.getPropertyValue(name).trim(), fallback);
   return {
     primary: v("--primary", "#f29dc4"),
-    curve: "rgba(255, 255, 255, 0.5)",
-    note: "rgba(255, 255, 255, 0.14)",
-    noteNear: "rgba(255, 255, 255, 0.26)",
-    grid: v("--chart-grid", "rgba(255, 255, 255, 0.07)"),
-    now: v("--line-strong", "rgba(255, 255, 255, 0.2)"),
-    past: "rgba(4, 5, 10, 0.16)",
+    secondary: v("--secondary-line", "#a78bfa"),
+    curve: "rgba(255, 255, 255, 0.38)",
+    note: "rgba(240, 238, 244, 0.82)",
+    noteNow: "#ffffff",
+    notePast: "rgba(240, 238, 244, 0.26)",
+    semitone: "rgba(255, 255, 255, 0.045)",
+    octave: "rgba(255, 255, 255, 0.14)",
+    now: "rgba(255, 255, 255, 0.55)",
   };
 }
 
@@ -36,44 +55,44 @@ export interface LaneFrame {
   reference: ReferenceCurve;
   notes: readonly WorkersKaraokeNote[];
   trail: readonly TrailPoint[];
+  /** How close counts as on pitch, in cents. */
+  tolerance: number;
   colors: LaneColors;
   /** Device pixels per CSS pixel. */
   dpr: number;
 }
 
-const NOTE_MIN_H = 6;
-const NOTE_MAX_H = 16;
+const NOTE_MIN_H = 5;
+const NOTE_MAX_H = 12;
+/** A gap in the singer's line: silent this long, or a jump this many semitones. */
+const GAP_S = 0.12;
+const GAP_JUMP = 5;
 
 export function drawLane(ctx: CanvasRenderingContext2D, f: LaneFrame): void {
   const { view, colors } = f;
   ctx.setTransform(f.dpr, 0, 0, f.dpr, 0, 0);
   ctx.clearRect(0, 0, view.width, view.height);
 
-  // A hairline at every C, the octave's landmark.
-  ctx.strokeStyle = colors.grid;
+  // A hairline per semitone, a stronger one at every C.
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let m = Math.ceil(view.lo / 12) * 12; m <= view.hi; m += 12) {
+  for (let m = Math.ceil(view.lo); m <= view.hi; m++) {
     const y = Math.round(midiToY(m, view)) + 0.5;
+    ctx.strokeStyle = m % 12 === 0 ? colors.octave : colors.semitone;
+    ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(view.width, y);
+    ctx.stroke();
   }
-  ctx.stroke();
 
-  // What has gone by sits a little darker.
-  const nowX = view.width * NOW_AT;
-  ctx.fillStyle = colors.past;
-  ctx.fillRect(0, 0, nowX, view.height);
-
-  // The guide notes, most of a semitone tall.
-  const semitone = view.height / (view.hi - view.lo);
-  const noteH = Math.max(NOTE_MIN_H, Math.min(NOTE_MAX_H, semitone * 0.75));
+  // The guide notes.
+  const semitone = (midiToY(view.lo, view) - midiToY(view.hi, view)) / (view.hi - view.lo);
+  const noteH = Math.max(NOTE_MIN_H, Math.min(NOTE_MAX_H, semitone * 0.8));
   for (const n of visibleNotes(f.notes, view)) {
-    const x0 = timeToX(n.start, view);
-    const x1 = timeToX(n.end, view);
+    const x0 = Math.max(-4, timeToX(n.start, view));
+    const x1 = Math.min(view.width + 4, timeToX(n.end, view));
     const y = midiToY(n.midi, view);
-    const on = n.start <= view.now && n.end >= view.now;
-    ctx.fillStyle = on ? colors.noteNear : colors.note;
+    const on = n.start <= view.now && n.end > view.now;
+    ctx.fillStyle = on ? colors.noteNow : n.end <= view.now ? colors.notePast : colors.note;
     roundRect(ctx, x0, y - noteH / 2, Math.max(2, x1 - x0), noteH, 3);
   }
 
@@ -83,7 +102,7 @@ export function drawLane(ctx: CanvasRenderingContext2D, f: LaneFrame): void {
   const first = Math.max(0, Math.floor((from - ref.start) * ref.hz));
   const last = Math.min(ref.midi.length - 1, Math.ceil((to - ref.start) * ref.hz));
   ctx.strokeStyle = colors.curve;
-  ctx.lineWidth = 1.25;
+  ctx.lineWidth = 1;
   ctx.lineJoin = "round";
   ctx.beginPath();
   let pen = false;
@@ -101,41 +120,39 @@ export function drawLane(ctx: CanvasRenderingContext2D, f: LaneFrame): void {
   }
   ctx.stroke();
 
-  // The singer: a gap where they were silent or a step jumps more than a fifth.
-  ctx.strokeStyle = colors.primary;
+  // The singer, one short segment at a time so each takes its colour.
+  const clampY = (m: number) => midiToY(Math.min(view.hi, Math.max(view.lo, m)), view);
   ctx.lineWidth = 3;
   ctx.lineCap = "round";
-  ctx.beginPath();
-  pen = false;
-  let prev: number | null = null;
+  let prev: TrailPoint | null = null;
   for (const p of f.trail) {
-    if (p.midi === null || p.t < from - 0.1) {
-      pen = false;
+    if (p.midi === null || p.t < from - 0.1 || p.t > view.now + 0.05) {
       prev = null;
       continue;
     }
-    const x = timeToX(p.t, view);
-    const y = midiToY(Math.min(view.hi, Math.max(view.lo, p.midi)), view);
-    if (pen && prev !== null && Math.abs(p.midi - prev) < 7) ctx.lineTo(x, y);
-    else ctx.moveTo(x, y);
-    pen = true;
-    prev = p.midi;
+    if (prev !== null && prev.midi !== null && p.t - prev.t < GAP_S && Math.abs(p.midi - prev.midi) < GAP_JUMP) {
+      ctx.strokeStyle = onPitch(p.midi, referenceAt(ref, p.t), f.tolerance) ? colors.primary : colors.secondary;
+      ctx.beginPath();
+      ctx.moveTo(timeToX(prev.t, view), clampY(prev.midi));
+      ctx.lineTo(timeToX(p.t, view), clampY(p.midi));
+      ctx.stroke();
+    }
+    prev = p;
   }
-  ctx.stroke();
 
   // Now.
+  const nowX = Math.round(view.width * NOW_AT) + 0.5;
   ctx.strokeStyle = colors.now;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(Math.round(nowX) + 0.5, 0);
-  ctx.lineTo(Math.round(nowX) + 0.5, view.height);
+  ctx.moveTo(nowX, 0);
+  ctx.lineTo(nowX, view.height);
   ctx.stroke();
   const tip = f.trail.at(-1);
-  if (tip && tip.midi !== null && view.now - tip.t < 0.25) {
+  if (tip && tip.midi !== null && view.now - tip.t < 0.3) {
     ctx.fillStyle = colors.primary;
     ctx.beginPath();
-    const y = midiToY(Math.min(view.hi, Math.max(view.lo, tip.midi)), view);
-    ctx.arc(timeToX(tip.t, view), y, 4, 0, Math.PI * 2);
+    ctx.arc(timeToX(tip.t, view), clampY(tip.midi), 4, 0, Math.PI * 2);
     ctx.fill();
   }
 }

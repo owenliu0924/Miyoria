@@ -159,8 +159,8 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
   }
 
   if (view.kind === "sing") {
+    // The whole window: the stage sits over the page's frame (`Singing`, `STAGE_BOX`).
     return (
-      <Page>
         <Singing
           key={view.song.id}
           engine={engine}
@@ -180,7 +180,6 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
           onQuit={() => setView({ kind: "list" })}
           onCalibrate={() => setView({ kind: "calibrate", after: view.song })}
         />
-      </Page>
     );
   }
 

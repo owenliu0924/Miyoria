@@ -33,6 +33,8 @@ export const KaraokeSongViewSchema = z
     lyrics_source: z.enum(["found", "heard"]).nullable(),
     /** Guide bars on screen. */
     notes: z.number().int(),
+    /** It has a background video (the source's picture, no sound) and the module shows videos. */
+    video: z.boolean(),
     /** The member asked for it. */
     mine: z.boolean(),
     /** The member's best ranked total on it. */
@@ -102,6 +104,11 @@ export const KaraokeSessionSchema = z
     /** Signed, bound to this session and the member, valid until `expires_at`. */
     backing_url: z.string(),
     reference_url: z.string(),
+    /**
+     * The background video (muted, played on the backing's clock), or `null` without one. Signed
+     * like the others but valid as long as the session (a video is read in ranges while it plays).
+     */
+    video_url: z.string().nullable(),
     expires_at: z.string(),
     tolerance_cents: z.number(),
     /** Frames per second of the track to send. */
@@ -111,6 +118,14 @@ export const KaraokeSessionSchema = z
      * browser moves the reference's curve and notes by the same (`shiftKaraokeReference`).
      */
     shift: z.number().int(),
+    /**
+     * The official score comes from a recording of the singer (docs/design/karaoke.md
+     * 「做了什麼第三步」): the browser may record the microphone during the song and upload it once,
+     * after the result (`POST /api/member/karaoke/sessions/{id}/voice`), at most `max_bytes` and
+     * `max_seconds` long. `null`: no recording is taken (the module's setting, or no song worker);
+     * the result stays 預估.
+     */
+    recording: z.object({ max_bytes: z.number().int(), max_seconds: z.number().int() }).nullable(),
   })
   .meta({ id: "ApiKaraokeSession" });
 
@@ -137,8 +152,39 @@ export const KaraokeSubmitSchema = z
     client_total: z.number().min(0).max(100).nullable(),
     /** The browser's name, for the owner. */
     browser: z.string().max(60).default(""),
+    /**
+     * A recording of the song follows (`POST .../voice`): her comment waits a bounded time for the
+     * official score. `false` (the singer did not allow recording, or the browser cannot): 預估.
+     */
+    recording: z.boolean().default(false),
   })
   .meta({ id: "ApiKaraokeSubmit" });
+
+/**
+ * What became of the recording: `none` (there is none: the result is 預估), `waiting` (the result is
+ * in, the recording not yet), `scoring` (at the song worker), `scored` (the result is the official
+ * one), `failed` (the upload or the worker failed: the result stays 預估).
+ */
+export const KaraokeVoiceStateSchema = z
+  .enum(["none", "waiting", "scoring", "scored", "failed"])
+  .meta({ id: "ApiKaraokeVoiceState" });
+export type KaraokeVoiceState = z.output<typeof KaraokeVoiceStateSchema>;
+
+/**
+ * What the checks of a recording found, shown to the singer: `quiet` (the voice is very quiet or far
+ * from the microphone), `bleed` (pitch where the song has no voice: probably the backing from
+ * speakers). Either keeps the result off the bests.
+ */
+export const KaraokeVoiceCheckSchema = z
+  .enum(["quiet", "bleed"])
+  .meta({ id: "ApiKaraokeVoiceCheck" });
+export type KaraokeVoiceCheck = z.output<typeof KaraokeVoiceCheckSchema>;
+
+/** The answer to an uploaded recording: it is being scored. */
+export const KaraokeVoiceAcceptedSchema = z
+  .object({ state: KaraokeVoiceStateSchema })
+  .meta({ id: "ApiKaraokeVoiceAccepted" });
+export type KaraokeVoiceAccepted = z.output<typeof KaraokeVoiceAcceptedSchema>;
 export type KaraokeSubmit = z.input<typeof KaraokeSubmitSchema>;
 
 const score = z.number();
@@ -148,6 +194,17 @@ const max = z.number();
 export const KaraokeResultSchema = z
   .object({
     session: z.string(),
+    /**
+     * `voice`: scored from the recording of the singer (the official score); `estimate`: from the
+     * pitch the browser detected (預估). Later features (coins) only trust `voice`.
+     */
+    source: z.enum(["voice", "estimate"]),
+    voice: z.object({
+      state: KaraokeVoiceStateSchema,
+      /** Core's score of the browser's track, kept once the recording's replaced it. */
+      estimate_total: z.number().nullable(),
+      checks: z.array(KaraokeVoiceCheckSchema),
+    }),
     song: z.object({ id: z.string(), title: z.string(), artist: z.string().nullable() }),
     at: z.string(),
     total: z.number(),
@@ -227,6 +284,9 @@ export const KaraokeAdminResultsSchema = z
         client_total: z.number().nullable(),
         unranked: z.boolean(),
         reasons: z.array(z.string()),
+        source: z.enum(["voice", "estimate"]),
+        voice_state: KaraokeVoiceStateSchema,
+        estimate_total: z.number().nullable(),
         latency_ms: z.number().int(),
         calibrated: z.boolean(),
         browser: z.string(),

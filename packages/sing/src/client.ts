@@ -15,6 +15,8 @@ import {
   WorkersHealthSchema,
   type WorkersKaraokeKeyReply,
   WorkersKaraokeKeyReplySchema,
+  type WorkersKaraokeVoicePitch,
+  WorkersKaraokeVoicePitchSchema,
   type WorkersSingGpuContext,
   WorkersSingGpuStatusSchema,
   type WorkersSingJob,
@@ -116,6 +118,15 @@ export interface SingWorker {
     semitones: number,
     signal?: AbortSignal,
   ): Promise<WorkersKaraokeKeyReply>;
+  /**
+   * The pitch of a singer's recording (`POST /karaoke/voice`, the raw recording as the body): any
+   * worker can read it; it deletes the recording before it answers.
+   */
+  karaokeVoice(
+    bytes: Uint8Array,
+    type: string,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeVoicePitch>;
   /** `null` when healthy, else why not. */
   health(signal?: AbortSignal): Promise<string | null>;
 }
@@ -330,6 +341,23 @@ export class HttpSingWorker implements SingWorker {
     );
     const parsed = WorkersKaraokeKeyReplySchema.safeParse(await res.json());
     if (!parsed.success) throw new SingWorkerError("song worker sent a malformed key answer");
+    return parsed.data;
+  }
+
+  async karaokeVoice(
+    bytes: Uint8Array,
+    type: string,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeVoicePitch> {
+    // Reading the pitch of a song-long recording takes seconds on the card, more on the CPU.
+    const res = await this.#call(
+      "/karaoke/voice",
+      { method: "POST", headers: { "content-type": type }, body: bytes as Uint8Array<ArrayBuffer> },
+      Math.max(this.#timeoutMs * 20, 180_000),
+      signal,
+    );
+    const parsed = WorkersKaraokeVoicePitchSchema.safeParse(await res.json());
+    if (!parsed.success) throw new SingWorkerError("song worker sent a malformed pitch");
     return parsed.data;
   }
 
