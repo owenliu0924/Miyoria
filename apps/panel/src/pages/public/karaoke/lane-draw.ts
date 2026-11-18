@@ -60,6 +60,11 @@ export interface LaneFrame {
   colors: LaneColors;
   /** Device pixels per CSS pixel. */
   dpr: number;
+  /**
+   * The reference editor's lane: no now line, and every note drawn alike (the editor marks its
+   * own selection and playhead over it).
+   */
+  plain?: boolean;
 }
 
 const NOTE_MIN_H = 5;
@@ -67,6 +72,12 @@ const NOTE_MAX_H = 12;
 /** A gap in the singer's line: silent this long, or a jump this many semitones. */
 const GAP_S = 0.12;
 const GAP_JUMP = 5;
+
+/** The height of a note's bar on a lane. */
+export function noteHeight(view: LaneView): number {
+  const semitone = (midiToY(view.lo, view) - midiToY(view.hi, view)) / (view.hi - view.lo);
+  return Math.max(NOTE_MIN_H, Math.min(NOTE_MAX_H, semitone * 0.8));
+}
 
 export function drawLane(ctx: CanvasRenderingContext2D, f: LaneFrame): void {
   const { view, colors } = f;
@@ -85,14 +96,13 @@ export function drawLane(ctx: CanvasRenderingContext2D, f: LaneFrame): void {
   }
 
   // The guide notes.
-  const semitone = (midiToY(view.lo, view) - midiToY(view.hi, view)) / (view.hi - view.lo);
-  const noteH = Math.max(NOTE_MIN_H, Math.min(NOTE_MAX_H, semitone * 0.8));
+  const noteH = noteHeight(view);
   for (const n of visibleNotes(f.notes, view)) {
     const x0 = Math.max(-4, timeToX(n.start, view));
     const x1 = Math.min(view.width + 4, timeToX(n.end, view));
     const y = midiToY(n.midi, view);
-    const on = n.start <= view.now && n.end > view.now;
-    ctx.fillStyle = on ? colors.noteNow : n.end <= view.now ? colors.notePast : colors.note;
+    const on = !f.plain && n.start <= view.now && n.end > view.now;
+    ctx.fillStyle = f.plain ? colors.note : on ? colors.noteNow : n.end <= view.now ? colors.notePast : colors.note;
     roundRect(ctx, x0, y - noteH / 2, Math.max(2, x1 - x0), noteH, 3);
   }
 
@@ -140,6 +150,7 @@ export function drawLane(ctx: CanvasRenderingContext2D, f: LaneFrame): void {
     prev = p;
   }
 
+  if (f.plain) return;
   // Now.
   const nowX = Math.round(view.width * NOW_AT) + 0.5;
   ctx.strokeStyle = colors.now;

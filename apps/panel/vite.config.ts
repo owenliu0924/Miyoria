@@ -49,6 +49,10 @@ const config = defineConfig({
       "@miyoria/play/karaoke/lyrics": fileURLToPath(
         new URL("../../packages/play/karaoke/src/lyrics/index.ts", import.meta.url),
       ),
+      // The reference editor's edits and the rules a save must hold, shared with the Core the same way.
+      "@miyoria/play/karaoke/edit": fileURLToPath(
+        new URL("../../packages/play/karaoke/src/edit/index.ts", import.meta.url),
+      ),
       "@miyoria/contracts/workers/karaoke": fileURLToPath(
         new URL("../../packages/contracts/workers/src/karaoke.ts", import.meta.url),
       ),
