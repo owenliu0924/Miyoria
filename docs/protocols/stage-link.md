@@ -36,6 +36,8 @@ Stage 節點(`miyoria stage`,跑在直播機)和 Core 的 `stage.link` 模組之
 | `clip` | `reason`, `id?` | 存一段精華:Stage 叫 OBS 存 replay buffer(直播最後幾十秒,長度和資料夾在 OBS 設定),在檔案旁邊寫 `<檔名>.json`(`reason`、`at`)。成功時回 `status`,並另外送 `clip_saved`;OBS 沒存到(replay buffer 沒開)回 `error`。Core 在直播中、唱完歌 / 她情緒很強 / 聊天室突然很多訊息時送(`[modules."stage.link".highlights]`) |
 | `activity` | `kind`, `label`, `detail`, `progress`, `elapsed_ms`, `duration_ms` | 她現在在做什麼(overlay 左下的活動膠囊,見下面「活動」)。`kind`:`thinking` / `synthesizing` / `song_prepare` / `singing`,`null` = 隱藏(其他欄位為空);`label` 是短的中文狀態(≤ 40);`detail` 是歌名(已跳脫、≤ 49 字)或 `null`;`progress` 0..1 或 `null`(不確定);唱歌時 `elapsed_ms`(送出時唱到哪)與 `duration_ms`(歌多長),進度由收到的一方自己的時鐘推進 |
 | `touch` | `x`, `y`(0..1,畫面左上為原點), `part`(`head` / `face` / `body` / `screen`) | 觀眾在網站摸了直播畫面(`live.touch`)。overlay 在 (x·寬, y·高) 畫手印和愛心(每秒最多送 8 個、不重送給新連線);頭 / 臉 / 身體讓她小小反應(`[stage.touch]`,`screen` 不反應),見 `miyoria.example.toml` 的 stage 區 |
+| `danmaku` | `id`, `name`(string / null), `text`, `max_on_screen`, `queue_max`, `max_wait_ms` | 一則付費彈幕(`economy.danmaku`,[v5-play.md](../design/v5-play.md) §11.6):從 overlay 右邊飄到左邊。`name` 是 `null` 表示不顯示名字;三個上限是 owner 的設定,每一則都帶。Stage 對每一則回一次 `danmaku_done`。只送給 hello 帶 `danmaku` 能力的 Stage;送不出去時 Core 自己當成 `no_overlay` |
+| `danmaku_clear` | | 把 overlay 上的彈幕全部拿掉;還在排隊的回 `danmaku_done`(`cleared`) |
 | `status_request` | `id?` | 要一份最新的 `status` |
 | `ping` / `pong` | | |
 
@@ -57,7 +59,7 @@ Stage 節點(`miyoria stage`,跑在直播機)和 Core 的 `stage.link` 模組之
 {"type":"activity","kind":null,"label":"","detail":null,"progress":null,"elapsed_ms":null,"duration_ms":null}
 ```
 
-`song_video`、`activity`、`beat`、`clip` / `clip_saved` 是 v1 之後加的:舊版 Stage 不認得它們(記 debug log、略過),協定版本仍是 1。
+`song_video`、`activity`、`beat`、`clip` / `clip_saved`、`danmaku` / `danmaku_clear` / `danmaku_done` 是 v1 之後加的:舊版 Stage 不認得它們(記 debug log、略過),協定版本仍是 1。
 
 **活動(`activity`,Core 端)**:由 `stage.link` 從匯流排事件算出來,優先順序由高到低:
 
@@ -86,6 +88,7 @@ Stage 節點(`miyoria stage`,跑在直播機)和 Core 的 `stage.link` 模組之
 | `status` | `vts`(bool), `obs`(bool), `scene`(string / null), `streaming`(bool), `scenes`(string[]), `hotkeys`(string[]), `overlay_url`(string / null), `id?` | 目前狀態。`vts`:已連上並通過 VTS 認證;`obs`:已連上 obs-websocket;`scene`:OBS 目前的 program 場景;`scenes`:OBS 所有場景名稱(`GetSceneList`,順序跟 OBS 場景清單由上到下一樣,OBS 沒連上時是 `[]`);`hotkeys`:VTS 目前模型的 hotkey 名稱(VTS 連上 / 換連線、以及收到 `status_request` 時重新讀取,VTS 沒連上時是 `[]`);`overlay_url`:Stage 的 overlay 網頁(給 OBS browser source 用,綁 `0.0.0.0` / `::` 時寫成 `127.0.0.1`) |
 | `error` | `message`, `id?` | 錯誤 |
 | `clip_saved` | `reason`, `path` | 精華存好了:`path` 是直播機上 OBS 寫的檔案。Core 發 `stage.clip` 事件 |
+| `danmaku_done` | `id`, `outcome` | 一則彈幕的結果,每一則一次:`shown`(開始飄了)、`no_overlay`(沒有開著彈幕層的 overlay 頁)、`queue_full`、`too_late`、`cleared`、`lost`(頁面斷線或沒回)。只有 `shown` 是被看到了;Core 發 `stage.danmaku`,經濟照它留下或退回那一則的錢。連不上 Core 時 Stage 先留著,連上後再送 |
 | `ping` / `pong` | | |
 
 ```json

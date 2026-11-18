@@ -1,13 +1,15 @@
 // Overlay HTTP server: `GET /overlay/ws` streams subtitle / emotion / speaking / status /
-// activity JSON, `/overlay/` serves the overlay web app and `/overlay/backdrop` the stream's
-// background picture (`overlay_backdrop`, for the overlay's backdrop layer).
+// activity JSON (and takes back what became of each danmaku line, `OverlayReply`), `/overlay/`
+// serves the overlay web app and `/overlay/backdrop` the stream's background picture
+// (`overlay_backdrop`, for the overlay's backdrop layer).
 
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
-import type { OverlayMessage } from "@miyoria/contracts/overlay";
+import { type OverlayMessage, OverlayReplySchema } from "@miyoria/contracts/overlay";
 import { getLogger } from "@miyoria/runtime/kernel";
+import { type DanmakuDone, DanmakuRelay } from "./danmaku.js";
 import { type Gift, GiftMerger } from "./gifts.js";
 import { closeOnAbort, type ServeResult } from "./lipsync.js";
 import { formatAddress, HttpServer } from "./net.js";
@@ -49,11 +51,14 @@ export class OverlayHub {
   readonly #now: () => number;
   readonly #gifts = new GiftMerger();
   readonly #touches = new TouchThrottle();
+  readonly #danmaku: DanmakuRelay;
+  #nextPage = 0;
   #giftTimer: ReturnType<typeof setTimeout> | undefined;
 
   /** `now`: the clock a song's `elapsed_ms` is moved on with for new clients (ms). */
   constructor(now: () => number = Date.now) {
     this.#now = now;
+    this.#danmaku = new DanmakuRelay(now);
   }
 
   #send(text: string): void {
@@ -127,6 +132,64 @@ export class OverlayHub {
   screen(card: Extract<CoreMessage, { type: "screen" }>): void {
     const { name, text } = card;
     this.#send(frame({ type: "screen", name, text }));
+  }
+
+  // ---- danmaku ------------------------------------------------------------------------------
+
+  /** Called with how each danmaku line ended (for Core); set by the stage. */
+  onDanmakuDone: ((done: DanmakuDone) => void) | null = null;
+
+  #ended(done: readonly DanmakuDone[]): void {
+    for (const d of done) this.onDanmakuDone?.(d);
+  }
+
+  /**
+   * A danmaku line: passed on to every page, and waited for from the pages that show danmaku
+   * (ended at once when there is none). Not kept for new clients.
+   */
+  danmaku(line: Extract<CoreMessage, { type: "danmaku" }>): void {
+    const { send, done } = this.#danmaku.line(line.id, line.max_wait_ms);
+    this.#ended(done);
+    if (!send) return;
+    const { id, name, text, max_on_screen, queue_max, max_wait_ms } = line;
+    this.#send(frame({ type: "danmaku", id, name, text, max_on_screen, queue_max, max_wait_ms }));
+  }
+
+  /** Every danmaku line off the pages; the waiting ones come back as dropped (`cleared`). */
+  danmakuClear(): void {
+    this.#send(frame({ type: "danmaku_clear" }));
+  }
+
+  /** Lines no page answered in time: lost. */
+  expireDanmaku(): void {
+    this.#ended(this.#danmaku.expire());
+  }
+
+  /** A page connected; its id for `reply` and `leave`. */
+  join(): number {
+    this.#nextPage += 1;
+    return this.#nextPage;
+  }
+
+  /** A frame page `page` sent (`OverlayReply`); anything else is ignored. */
+  reply(page: number, text: string): void {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(text);
+    } catch {
+      return;
+    }
+    const parsed = OverlayReplySchema.safeParse(raw);
+    if (!parsed.success) return;
+    const msg = parsed.data;
+    if (msg.type === "danmaku_ready") this.#danmaku.ready(page);
+    else if (msg.type === "danmaku_shown") this.#ended(this.#danmaku.shown(page, msg.id));
+    else this.#ended(this.#danmaku.dropped(page, msg.id, msg.reason));
+  }
+
+  /** Page `page` went away: the lines only it was showing are lost. */
+  leave(page: number): void {
+    this.#ended(this.#danmaku.leave(page));
   }
 
   /** A viewer's touch, passed on (at most a few a second; the rest are dropped). Not kept for new clients. */
@@ -310,6 +373,7 @@ export async function serveOverlay(
         path: "/overlay/ws",
         onConnection(ws) {
           for (const text of hub.initial()) ws.send(text);
+          const page = hub.join();
           const unsubscribe = hub.listen((text) => {
             if (ws.bufferedAmount > MAX_BUFFERED) {
               log.debug("overlay client lagged");
@@ -317,8 +381,19 @@ export async function serveOverlay(
             }
             ws.send(text);
           });
-          ws.on("close", unsubscribe);
-          ws.on("error", unsubscribe);
+          // What became of the danmaku lines it was given (and whether it shows them at all).
+          ws.on("message", (data, isBinary) => {
+            if (!isBinary) hub.reply(page, data.toString());
+          });
+          let gone = false;
+          const leave = () => {
+            if (gone) return;
+            gone = true;
+            unsubscribe();
+            hub.leave(page);
+          };
+          ws.on("close", leave);
+          ws.on("error", leave);
         },
       },
     ],

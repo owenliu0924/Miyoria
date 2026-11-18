@@ -12,6 +12,12 @@ import {
 } from "@miyoria/types";
 import {
   type CoreMessage,
+  DANMAKU_ID_MAX,
+  DANMAKU_NAME_MAX,
+  DANMAKU_ON_SCREEN_MAX,
+  DANMAKU_QUEUE_MAX,
+  DANMAKU_TEXT_MAX,
+  DANMAKU_WAIT_MAX_MS,
   GIFT_LABEL_MAX,
   GIFT_NAME_MAX,
   SCREEN_NAME_MAX,
@@ -25,6 +31,12 @@ export const EMOTION_TOPIC = Events.AgentEmotion.type;
 export const GIFT_TOPIC = Events.EconomyGift.type;
 /** Topic of a paid screen message (`{name, text}`). */
 export const SCREEN_TOPIC = Events.EconomyScreen.type;
+/**
+ * Topics of a paid danmaku line and of taking them all off the overlay. A line is sent by the
+ * module (it must answer one that cannot go out, `danmakuMessage`); the clear goes through here.
+ */
+export const DANMAKU_TOPIC = Events.EconomyDanmaku.type;
+export const DANMAKU_CLEAR_TOPIC = Events.EconomyDanmakuClear.type;
 /** How much a feeling must change before her resting face follows it. */
 const RESTING_STEP = 0.1;
 /** Turns whose subtitles are tracked at once. */
@@ -246,6 +258,7 @@ export class Forwarder {
       if (event.type === GIFT_TOPIC) return giftMessage(event.data as JsonValue);
       if (event.type === TOUCH_TOPIC) return touchMessage(event.data as JsonValue);
       if (event.type === SCREEN_TOPIC) return screenMessage(event.data as JsonValue);
+      if (event.type === DANMAKU_CLEAR_TOPIC) return [{ type: "danmaku_clear" }];
       if (event.type === Events.AffectChanged.type) return this.#onAffect(event.data as JsonValue);
       return event.type === EMOTION_TOPIC ? this.#onEmotion(event.data as JsonValue) : [];
     }
@@ -421,6 +434,40 @@ function screenMessage(payload: JsonValue): CoreMessage[] {
       text: text.slice(0, SCREEN_TEXT_MAX),
     },
   ];
+}
+
+/** A whole number in `[min, max]`; `fallback` when it is not a number. */
+function bounded(v: unknown, min: number, max: number, fallback: number): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
+  return Math.min(Math.max(Math.round(v), min), max);
+}
+
+/**
+ * The `danmaku` message of an `economy.danmaku` payload: `null` without a usable id (nothing can
+ * be answered then), `msg: null` when the line itself is unusable (it is answered as not shown).
+ * Names are cut to the overlay's length; a blank one is no name.
+ */
+export function danmakuMessage(
+  payload: JsonValue,
+): { id: string; msg: Extract<CoreMessage, { type: "danmaku" }> | null } | null {
+  const p = isJsonObject(payload) ? payload : {};
+  const id = typeof p.id === "string" ? p.id.trim() : "";
+  if (id === "" || id.length > DANMAKU_ID_MAX) return null;
+  const text = typeof p.text === "string" ? p.text.trim() : "";
+  if (text === "" || text.length > DANMAKU_TEXT_MAX) return { id, msg: null };
+  const name = typeof p.name === "string" ? p.name.trim().slice(0, DANMAKU_NAME_MAX) : "";
+  return {
+    id,
+    msg: {
+      type: "danmaku",
+      id,
+      name: name === "" ? null : name,
+      text,
+      max_on_screen: bounded(p.max_on_screen, 1, DANMAKU_ON_SCREEN_MAX, 12),
+      queue_max: bounded(p.queue_max, 0, DANMAKU_QUEUE_MAX, 20),
+      max_wait_ms: bounded(p.max_wait_ms, 0, DANMAKU_WAIT_MAX_MS, 30_000),
+    },
+  };
 }
 
 /** Takes lines shown early that will not play out of `e`'s subtitle. */
