@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import {
   COUNTDOWN_DOTS,
   countdown,
+  fillClip,
   isDoubtful,
   lineProgress,
   type ReadingMode,
@@ -27,7 +28,10 @@ import {
   stageLines,
   stepped,
   sungEnd,
-} from "./lyric-text";
+} from "@miyoria/play/karaoke/lyrics";
+
+/** The share of a piece already sung, as the right edge of what shows of the fill (shared with the stream). */
+export { fillClip };
 
 /** Words over a picture: an outline under the fill and a shadow, so any frame behind stays clear. */
 export const LYRIC_INK =
@@ -177,13 +181,6 @@ function Piece({ piece, ruby, at }: { piece: WorkersKaraokePiece; ruby: string |
       <rt className={LYRIC_RUBY}>{ruby}</rt>
     </ruby>
   );
-}
-
-/** The share of a piece already sung, as the right edge of what shows of the fill. */
-export function fillClip(at: number): string {
-  // Past the box on the other three sides, so the outline is not cut.
-  const right = at >= 1 ? "-0.2em" : `${Math.round((1 - Math.max(0, at)) * 1000) / 10}%`;
-  return `inset(-0.3em ${right} -0.3em -0.2em)`;
 }
 
 /** The piece white, and the primary colour over the share already sung. */

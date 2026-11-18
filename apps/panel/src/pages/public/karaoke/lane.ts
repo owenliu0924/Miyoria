@@ -106,23 +106,5 @@ export function midiRange(
   return { lo, hi };
 }
 
-/** The lyric line sung at `t` (the last that started) and the one after it. */
-export function lyricAt<L extends { start: number; end: number | null }>(
-  lines: readonly L[],
-  t: number,
-): { current: number | null; next: number | null } {
-  let current: number | null = null;
-  for (let i = 0; i < lines.length; i++) {
-    if ((lines[i] as L).start <= t) current = i;
-    else break;
-  }
-  if (current !== null) {
-    const line = lines[current] as L;
-    // A line that has ended long before the next one starts is not shown as being sung.
-    if (line.end !== null && t > line.end + 1) {
-      return { current: null, next: current + 1 < lines.length ? current + 1 : null };
-    }
-  }
-  const next = current === null ? (lines.length > 0 ? 0 : null) : current + 1;
-  return { current, next: next !== null && next < lines.length ? next : null };
-}
+/** The lyric line sung at `t` (the last that started) and the one after it: shared with the stream. */
+export { lyricAt } from "@miyoria/play/karaoke/lyrics";

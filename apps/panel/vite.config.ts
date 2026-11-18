@@ -45,6 +45,10 @@ const config = defineConfig({
       "@miyoria/play/karaoke/score": fileURLToPath(
         new URL("../../packages/play/karaoke/src/score/index.ts", import.meta.url),
       ),
+      // The lyrics as a page shows them, shared with the stream's karaoke scene the same way.
+      "@miyoria/play/karaoke/lyrics": fileURLToPath(
+        new URL("../../packages/play/karaoke/src/lyrics/index.ts", import.meta.url),
+      ),
       "@miyoria/contracts/workers/karaoke": fileURLToPath(
         new URL("../../packages/contracts/workers/src/karaoke.ts", import.meta.url),
       ),
