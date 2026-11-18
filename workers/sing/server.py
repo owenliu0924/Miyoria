@@ -29,7 +29,19 @@
                                 share only) when no job is running and it is placed within
                                 SING_KARAOKE_VOICE_WAIT_S; a job that is about to start waits for it.
                                 While a job runs: on the CPU at once, the job is never paused.
-    GET    /library             -> {"entries": [...]}      the owner's local song folder
+    POST   /karaoke/stream      WorkersKaraokeStreamRequest {room, chunks: [{stream, at, audio, end?}] (<= 8),
+                                drop?} -> WorkersKaraokeStreamAnswer {hz: 50, streams: [{stream, from, midi,
+                                final, seconds, level_db, floor_db}], lost, device, method}: the live voices
+                                of a room's singers, about every 0.5 s (µ-law 16 kHz mono, base64; a chunk
+                                <= 4 s, the body <= 1 MiB). In memory only (karaoke_stream.py): RMVPE on a
+                                window around what is new, provisional 50 Hz frames from ``from``; a chunk
+                                with ``end``: the whole curve as /karaoke/voice makes it (``final``), and
+                                the stream is forgotten. Unknown streams (``at`` > 0), over
+                                SING_KARAOKE_STREAMS_MAX, longer than SING_MAX_SECONDS + 30 s or ahead of
+                                the clock: ``lost``. One placement a request, as /karaoke/voice but waiting
+                                SING_KARAOKE_STREAM_WAIT_S at most; the tracker stays loaded while streams
+                                are open. Never written to disk, never logged.
+    GET    /library            -> {"entries": [...]}      the owner's local song folder
     GET    /cache               -> {bytes, songs, sources, limits, last}   the song cache (cache.py)
     POST   /cache/prune         {dry_run?} -> what the cleanup removed (or would remove)
     GET    /health
@@ -168,6 +180,9 @@ Environment
     SING_KARAOKE_VIDEO_HEIGHT  tallest karaoke video              (default 720)
     SING_KARAOKE_VIDEO_KBPS    most kbps of a karaoke video       (default 1500)
     SING_KARAOKE_VOICE_WAIT_S  a singer's pitch not placed on the card this soon goes to the CPU (default 5)
+    SING_KARAOKE_STREAM_WAIT_S the same for a room's live voices, every request (default 0.3)
+    SING_KARAOKE_STREAM_IDLE_S a live stream nobody sends to for this long is forgotten (default 30)
+    SING_KARAOKE_STREAMS_MAX   live streams open at once; a new one over it is ``lost`` (default 16)
     SING_KEEP_MODELS       1 = keep models in VRAM between jobs   (default 0)
     SING_VIDEO             0 = no videos                          (default 1)
     SING_VIDEO_MAX_HEIGHT  tallest video                          (default 1080)
@@ -342,6 +357,10 @@ class MockBackend:
         self.idles: list[bool] = []  # each ``idle(more)``
         self.idle_hook: Callable[[bool], None] | None = None  # tests: runs in ``idle``
         self.karaoke_f0_inputs: list[tuple[str, str | None]] = []  # (file, device) of each karaoke pitch track
+        self.karaoke_stream_inputs: list[tuple[int, str | None]] = []  # (samples, device) of each stream window
+        self.stream_loaded = False  # the stream's pitch tracker is "loaded"
+        self.stream_loads = 0
+        self.stream_releases = 0
         self.karaoke_parts: list[list[str]] = []  # what each karaoke backing was made of
         self.lyrics_steps: list[tuple[str, str]] = []  # (step, device) of each karaoke lyrics step
         self.karaoke_shifts: list[int] = []
@@ -531,6 +550,46 @@ class MockBackend:
             if at < 30:
                 f0[i] = 440.0 * 2 ** ((scale[k % len(scale)] - 69) / 12)
         return f0
+
+    def karaoke_f0_audio(self, x, sr: int, device: str | None = None):
+        """A stream's pitch tracker (``POST /karaoke/stream``), local and exact in the samples: frame
+        ``i`` (centred on sample ``i * hop``, ``len(x) // hop + 1`` of them, zeros past the edges)
+        reads only the 40 ms around it, so a window of a signal answers what the whole signal does
+        for every frame 20 ms or more inside it. The frequency comes from the zero crossings
+        (interpolated) of those 40 ms; 0 when they are quieter than -60 dBFS."""
+        import numpy as np
+
+        x = np.asarray(x, dtype=np.float64).reshape(-1)
+        self.karaoke_stream_inputs.append((int(x.size), device))
+        if not self.stream_loaded:
+            self.stream_loaded = True
+            self.stream_loads += 1
+        hop = sr // 100
+        half = 2 * hop
+        frames = x.size // hop + 1
+        pad = np.concatenate((np.zeros(half), x, np.zeros(half + hop)))
+        # Energy: squares of int16 / 32768 summed 640 at a time are exact in float64, in any order.
+        sq = pad * pad
+        energy = np.lib.stride_tricks.sliding_window_view(sq, 2 * half)[::hop][:frames].sum(axis=1)
+        sign = pad >= 0
+        cross = np.flatnonzero(sign[1:] != sign[:-1])  # between sample j and j + 1
+        frac = pad[cross] / (pad[cross] - pad[cross + 1])
+        starts = np.arange(frames) * hop  # frame i reads padded samples [starts, starts + 2 * half)
+        lo = np.searchsorted(cross, starts, side="left")
+        hi = np.searchsorted(cross, starts + 2 * half - 1, side="left")
+        count = hi - lo
+        f0 = np.zeros(frames)
+        ok = (count >= 2) & (energy / (2 * half) > 1e-6)
+        first, last = lo[ok], hi[ok] - 1
+        # Integer distance plus the fractions: the same floats wherever the window starts.
+        span = (cross[last] - cross[first]).astype(np.float64) + (frac[last] - frac[first])
+        hz = (count[ok] - 1) * sr / (2.0 * np.maximum(span, 1e-9))
+        f0[ok] = np.where((hz >= 50.0) & (hz <= 1100.0), hz, 0.0)
+        return f0
+
+    def karaoke_stream_release(self) -> None:
+        self.stream_loaded = False
+        self.stream_releases += 1
 
     def karaoke_encode(self, parts: list[Path], out: Path) -> dict[str, Any]:
         """The real encoder when ffmpeg is there (the parts are tiny), else a few bytes of MP4 header."""
@@ -837,6 +896,7 @@ class State:
     # Held by the job loop around every job and by a singer's pitch on the card (POST /karaoke/voice).
     voice_lock: threading.Lock = threading.Lock()
     voice_dir: Path | None = None  # where a singer's recording waits for its pitch (karaoke.VOICE_DIR)
+    streams: Any = None  # karaoke_stream.Streams: the live voices of the rooms (POST /karaoke/stream)
     offload_post = staticmethod(http_post)  # replaced in tests
     busy_get = staticmethod(http_get)  # replaced in tests
 
@@ -2384,6 +2444,9 @@ async def lifespan(app: FastAPI):
     state.thread = threading.Thread(target=worker_loop, name="sing-worker", daemon=True)
     state.thread.start()
     threading.Thread(target=prefetch_loop, name="sing-prefetch", daemon=True).start()
+    state.streams = _new_streams()
+    threading.Thread(target=_stream_sweeper, args=(state.stopping, state.streams), name="sing-stream-sweep",
+                     daemon=True).start()
     yield
     state.janitor.stop()
     state.stopping.set()
@@ -2773,6 +2836,187 @@ async def karaoke_voice(request: Request) -> JSONResponse:
     finally:
         raw.unlink(missing_ok=True)
         wav.unlink(missing_ok=True)
+
+
+# ── a room's live voices (POST /karaoke/stream) ──────────────────────────────
+
+
+class _CardFailed(RuntimeError):
+    """The stream's pitch tracker failed on the card (out of VRAM included): the request goes on
+    on the CPU instead of waiting for the card again."""
+
+
+def _stream_release() -> None:
+    release = getattr(state.backend, "karaoke_stream_release", None)
+    if release is not None:
+        release()
+
+
+def _new_streams() -> Any:
+    import karaoke_stream
+
+    return karaoke_stream.Streams(on_empty=_stream_release)
+
+
+def _stream_book() -> Any:
+    if state.streams is None:
+        state.streams = _new_streams()
+    return state.streams
+
+
+def _stream_limits() -> Any:
+    import karaoke_stream
+
+    return karaoke_stream.Limits(max_streams=env_int("SING_KARAOKE_STREAMS_MAX", 16),
+                                 max_seconds=env_float("SING_MAX_SECONDS", 480.0) + 30.0,
+                                 idle_s=env_float("SING_KARAOKE_STREAM_IDLE_S", 30.0))
+
+
+def _stream_sweeper(stop: threading.Event, book: Any) -> None:
+    """Forgets the streams nobody sends to, also when no request comes (and so the tracker)."""
+    while not stop.wait(5.0):
+        try:
+            if len(book):
+                book.sweep(env_float("SING_KARAOKE_STREAM_IDLE_S", 30.0))
+        except Exception:  # noqa: BLE001
+            log.exception("karaoke stream: the sweep failed")
+
+
+def _stream_on_gpu(windows: list[Any], seconds: float) -> tuple[list[Any], str] | None:
+    """The windows of one request on the card, as one placement (the same invisible karaoke job as
+    ``_voice_on_gpu``: stage ``reference``, share only, never urgent, never her voice offline). Not
+    placed within SING_KARAOKE_STREAM_WAIT_S, or failed there: ``None``, and they go to the CPU."""
+    import karaoke_stream
+
+    b, arb = state.backend, _arbitration()
+    pseudo = Job(id=f"stream-{secrets.token_hex(4)}", request=JobRequest(query="karaoke stream", purpose="karaoke"))
+    started = threading.Event()
+    placed: dict[str, str] = {}
+
+    def run(device: str) -> list[Any]:
+        started.set()
+        placed["device"] = device
+        dev = "cpu" if device == "cpu" else None
+        try:
+            return [b.karaoke_f0_audio(w.x, karaoke_stream.RATE, dev) for w in windows]
+        except Exception as e:
+            if dev == "cpu":
+                raise
+            raise _CardFailed(f"the stream's pitch failed on the card ({type(e).__name__})") from e
+
+    def too_late() -> None:
+        if not started.is_set():
+            pseudo.cancel.set()  # the placement stops waiting (``_place``, lease.py ``place``)
+
+    timer = threading.Timer(env_float("SING_KARAOKE_STREAM_WAIT_S", 0.3), too_late)
+    timer.daemon = True
+    timer.start()
+    try:
+        f0s = _gpu_stage(pseudo, "reference", Path("karaoke-stream"), max(seconds, 0.01), run)
+    except _CardFailed as e:
+        log.warning("karaoke stream: %s; on the CPU", e)
+        try:
+            b.karaoke_stream_release()  # what is left of it on the card
+        except Exception:  # noqa: BLE001
+            pass
+        return None
+    except Exception as e:
+        if started.is_set():
+            raise  # the tracker itself failed (placed on the CPU)
+        log.debug("karaoke stream: not placed on the card in time (%s); on the CPU", type(e).__name__)
+        return None
+    finally:
+        timer.cancel()
+        if pseudo.gpu is not None:
+            try:
+                _give_gpu_back(pseudo)
+                arb.finish(pseudo)
+            except Exception:  # noqa: BLE001
+                log.exception("karaoke stream: giving the card back failed")
+    return f0s, _device_label(placed.get("device", "gpu"))
+
+
+def _stream_f0(windows: list[Any], seconds: float) -> tuple[list[Any], str]:
+    """(RMVPE's F0 of every window, where it ran), as ``_voice_f0`` places a recording: the card
+    only when no job is running; while one runs, the CPU at once, the job is never paused."""
+    import karaoke_stream
+
+    if state.voice_lock.acquire(blocking=False):
+        try:
+            got = _stream_on_gpu(windows, seconds)
+        finally:
+            state.voice_lock.release()
+        if got is not None:
+            return got
+    b = state.backend
+    return [b.karaoke_f0_audio(w.x, karaoke_stream.RATE, "cpu") for w in windows], "cpu"
+
+
+def _stream_answer(req: Any) -> JSONResponse:
+    """Decodes every chunk, appends them, reads the pitch of the new windows (one placement for the
+    whole request) and answers WorkersKaraokeStreamAnswer."""
+    import karaoke as kara
+    import karaoke_stream
+    import melody
+    from contracts import WorkersKaraokeStreamAnswer
+
+    try:
+        chunks = [karaoke_stream.Chunk(c.stream, c.at, karaoke_stream.decode_chunk(c.audio), c.end)
+                  for c in req.chunks]
+    except karaoke_stream.ChunkError as e:
+        return _error(e.status, str(e))
+    book, limits = _stream_book(), _stream_limits()
+    book.sweep(limits.idle_s)
+    clean = os.environ.get("SING_F0_CLEAN", "1") != "0"
+    t0 = time.perf_counter()
+    device = "cpu"
+    with book.room(req.room):
+        plan = book.plan(req.room, chunks, req.drop, limits)
+        f0s: list[Any] = []
+        if plan.windows:
+            try:
+                f0s, device = _stream_f0(plan.windows, plan.seconds)
+            except Exception as e:  # noqa: BLE001
+                log.warning("karaoke stream: the pitch could not be read: %s", type(e).__name__)
+                return _error(503, "the pitch of the streams could not be read")
+        frames = book.commit(plan, f0s, clean)
+    answer = WorkersKaraokeStreamAnswer.model_validate(
+        {"hz": melody.CURVE_HZ, "streams": frames, "lost": plan.lost, "device": device,
+         "method": kara.PITCH_METHOD})  # the format (karaoke.ts) before Core reads it
+    # (How much and where: nothing of what was sung.)
+    log.debug("karaoke stream: %d stream(s), %d lost, %.2f s read on %s in %.3f s", len(frames), len(plan.lost),
+              plan.seconds, device, time.perf_counter() - t0)
+    return JSONResponse(answer.model_dump(by_alias=True, mode="json"))
+
+
+@app.post("/karaoke/stream")
+async def karaoke_stream_post(request: Request) -> JSONResponse:
+    """New audio of a room's singers (WorkersKaraokeStreamRequest) -> their pitch so far
+    (WorkersKaraokeStreamAnswer). In memory only: never written, never logged."""
+    import karaoke_stream
+    from contracts import WorkersKaraokeStreamRequest
+    from pydantic import ValidationError
+    from starlette.concurrency import run_in_threadpool
+
+    too_big = f"the request is larger than {karaoke_stream.MAX_BODY} bytes"
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        return _error(400, "invalid content-length")
+    if declared > karaoke_stream.MAX_BODY:
+        return _error(413, too_big)
+    body = bytearray()
+    async for part in request.stream():
+        body += part
+        if len(body) > karaoke_stream.MAX_BODY:
+            return _error(413, too_big)
+    try:
+        req = WorkersKaraokeStreamRequest.model_validate_json(bytes(body))
+    except ValidationError as e:
+        first = e.errors()[0] if e.errors() else {}
+        where = ".".join(str(p) for p in first.get("loc", ()))
+        return _error(400, f"invalid request: {where or 'body'}: {first.get('msg', 'bad value')}")
+    return await run_in_threadpool(_stream_answer, req)
 
 
 @app.post("/gpu/context")
