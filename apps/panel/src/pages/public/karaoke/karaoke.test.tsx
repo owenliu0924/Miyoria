@@ -2,7 +2,7 @@
 // failed, the closed states, and the result with her comment. The audio is not reached here.
 
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { KaraokeOverview, KaraokeResult, KaraokeSongView } from "@miyoria/contracts/api";
@@ -656,6 +656,39 @@ describe("唱歌: the singing screen", () => {
     expect(f.voice?.offset_ms).toBe(12);
     expect(f.session).toBe("S9");
   });
+
+  it("fills the window, and puts the controls away while singing until the pointer moves", async () => {
+    singingSite();
+    const { r } = stubRecorder();
+    const { engine } = fakeEngine(r);
+    const { container } = renderPage(
+      <Singing
+        engine={() => engine}
+        song={song({ title: "紙船" })}
+        latency={{ latency_ms: 40, calibrated: true }}
+        floor={null}
+        onFinished={() => {}}
+        onQuit={() => {}}
+        onCalibrate={() => {}}
+      />,
+    );
+    const go = await screen.findByRole("button", { name: "開始" });
+    await waitFor(() => expect(go).toBeEnabled());
+    const stage = container.querySelector("[data-stage]") as HTMLElement;
+    expect(stage.className).toContain("fixed inset-0");
+    expect(document.documentElement.style.overflow).toBe("hidden");
+    // Before the start they show.
+    expect(stage).toHaveAttribute("data-chrome-shown");
+    fireEvent.click(go);
+    // Singing, untouched: away after 2.5 s, the cursor with them; the number stays.
+    await waitFor(() => expect(stage).not.toHaveAttribute("data-chrome-shown"), { timeout: 4000 });
+    expect(stage.className).toContain("cursor-none");
+    expect(screen.getByRole("toolbar", { name: "唱歌的控制" }).className).toContain("opacity-0");
+    expect(stage.querySelector("[data-score]")).toHaveTextContent("預估");
+    fireEvent.pointerMove(stage, { clientX: 400, clientY: 400 });
+    expect(stage).toHaveAttribute("data-chrome-shown");
+    expect(screen.getByRole("toolbar", { name: "唱歌的控制" }).className).toContain("opacity-100");
+  }, 10_000);
 
   it("without a video or a recording: the still, and nothing of the voice leaves", async () => {
     singingSite({ video: null, recording: null });

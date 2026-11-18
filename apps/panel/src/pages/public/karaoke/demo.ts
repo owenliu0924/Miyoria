@@ -9,11 +9,11 @@
 // clock, `Take`, `LiveScore`, the encoded track, and the score (`scoreSinging` runs here on what the
 // page sends, the way Core would).
 //
-// The songs: 紙船 has no video (the still behind the stage); 夜空中最亮的星 says it has one but its
-// link leads nowhere, so the stage falls back to the still. A singing goes 預估 → 正在算 → 正式分數
-// (a little higher than the estimate, which stays shown small); the second of 最近唱的 had the
-// backing in its recording (`bleed`). No real video is made: that would need a file or recording a
-// canvas for the whole song.
+// The songs: 紙船 has a video (a made-up test pattern, `demo-video.mp4`, which counts the
+// seconds so its sync with the song shows); 夜空中最亮的星 says it has one but its link leads nowhere,
+// so the stage falls back to the still; the others have none. A singing goes 預估 → 正在算 →
+// 正式分數 (a little higher than the estimate, which stays shown small); the second of 最近唱的 had
+// the backing in its recording (`bleed`).
 
 import type {
   KaraokeOverview,
@@ -29,6 +29,10 @@ import type {
 } from "@miyoria/contracts/workers/karaoke";
 import { decodeTrack, fromBase64, scoreSinging, TRACK_HZ } from "@miyoria/play/karaoke/score";
 import { type KaraokeEngine, setEngineFactory } from "./audio";
+// A 64 s test pattern with a seconds counter (ffmpeg's `testsrc`, 1280x720 at 12 fps, H.264, no
+// sound, ~260 KB), so the video's cover and its sync with the song can be seen. Only this file
+// refers to it, and this file is only in the dev server, so a production build has none of it.
+import demoVideo from "./demo-video.mp4?url";
 import type { Detection } from "./pitch";
 import { type RecorderState, type RecordingLimits, recordingOffsetMs, type VoiceRecorder, type VoiceTake } from "./recorder";
 
@@ -188,7 +192,7 @@ function overview(): KaraokeOverview {
     open: true,
     preparing: true,
     songs: [
-      song({ best: 84.6, sung: 4 }),
+      song({ best: 84.6, sung: 4, video: true }),
       song({ id: "d2", title: "夜空中最亮的星", artist: "逃跑計劃", duration_s: 252, best: 77.2, sung: 2, video: true }),
       song({ id: "d3", title: "群青", artist: "YOASOBI", duration_s: 248, lyrics_source: "heard" }),
       song({ id: "d4", title: "小幸運", artist: "田馥甄", duration_s: 265, lyrics: false, lyrics_source: null }),
@@ -325,8 +329,10 @@ function answer(method: string, path: string, body: unknown): Response | null {
     keys.set(id, shift);
     singingKey = shift;
     const backing = shift === 0 ? "karaoke.m4a" : `karaoke.k${shift > 0 ? "+" : "-"}${Math.abs(shift)}.m4a`;
-    // 夜空中最亮的星 "has" a video whose link leads nowhere: the stage shows the still instead.
-    const video = start[1] === "d2" ? `/karaoke-demo-missing-${id}.mp4` : null;
+    // 紙船 has a real (made-up) video; 夜空中最亮的星 "has" one whose link leads nowhere, so the
+    // stage shows the still; the others have none.
+    const video =
+      start[1] === "demo-song" ? demoVideo : start[1] === "d2" ? `/karaoke-demo-missing-${id}.mp4` : null;
     const s: KaraokeSession = {
       session: id,
       song: song({ video: video !== null }),

@@ -32,10 +32,14 @@ import {
 /** Words over a picture: an outline under the fill and a shadow, so any frame behind stays clear. */
 export const LYRIC_INK =
   "text-white [-webkit-text-stroke:3px_rgba(0,0,0,0.82)] [paint-order:stroke_fill] [text-shadow:0_2px_4px_rgba(0,0,0,0.85)] sm:[-webkit-text-stroke:4px_rgba(0,0,0,0.82)]";
-/** The line being sung. */
-export const LYRIC_MAIN = "text-[clamp(24px,3.6vw,52px)] font-semibold leading-[1.45] tracking-[0.02em]";
+/**
+ * The line being sung: sized by the stage (container units), by its width or, on a short stage (a
+ * phone held sideways), by its height, whichever is smaller.
+ */
+export const LYRIC_MAIN = "text-[clamp(22px,min(3.8cqw,7cqh),60px)] font-semibold leading-[1.45] tracking-[0.02em]";
 /** The line after it. */
-export const LYRIC_NEXT = "text-[clamp(18px,2.6vw,38px)] font-medium leading-[1.45] tracking-[0.02em] text-white/88";
+export const LYRIC_NEXT =
+  "text-[clamp(17px,min(2.8cqw,5.2cqh),44px)] font-medium leading-[1.45] tracking-[0.02em] text-white/88";
 /** A reading above a piece: never under 12 px. */
 export const LYRIC_RUBY =
   "text-[max(12px,0.36em)] font-normal tracking-normal text-white/85 [-webkit-text-stroke:2px_rgba(0,0,0,0.82)]";

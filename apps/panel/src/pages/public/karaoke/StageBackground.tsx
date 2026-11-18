@@ -117,7 +117,8 @@ export function StageBackground({
           onLoadedData={() => setShown(true)}
           onError={() => setFailed(true)}
           className={cn(
-            "absolute inset-0 size-full bg-[#06070b] object-contain transition-opacity duration-300 motion-reduce:transition-none sm:object-cover",
+            // Edge to edge in any shape of window or phone, upright or sideways: cropped, never letterboxed.
+            "absolute inset-0 size-full bg-[#06070b] object-cover transition-opacity duration-300 motion-reduce:transition-none",
             shown ? "opacity-100" : "opacity-0",
           )}
         />

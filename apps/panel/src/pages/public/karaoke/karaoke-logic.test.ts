@@ -59,6 +59,15 @@ import {
   videoStep,
   videoTarget,
 } from "./video-sync";
+import {
+  CHROME_EDGE,
+  CHROME_IDLE_MS,
+  CHROME_START,
+  chromeHidesIn,
+  chromeReduce,
+  chromeShown,
+  nearEdge,
+} from "./chrome";
 import { filterSongs, retryText } from "./SongList";
 import { stageWord } from "./stages";
 import { browserName, missingSupport } from "./support";
@@ -774,5 +783,52 @@ describe("預估 and 正式分數", () => {
     const v = voiceView(result({ source: "voice", voice: { state: "scored", estimate_total: 60, checks: ["quiet", "bleed"] } }));
     expect(v.checks).toEqual(["收到的聲音很小,分數可能不準", "間奏也收到了音高,可能是喇叭的伴奏,請戴耳機"]);
     for (const line of v.checks) expect(line).not.toMatch(/[!!]/);
+  });
+});
+
+describe("the controls on demand", () => {
+  const singing = { idle: false, focus: false, dialog: false };
+
+  it("always show before the start, after the end, with focus on a control or a dialog open", () => {
+    for (const hold of [
+      { ...singing, idle: true },
+      { ...singing, focus: true },
+      { ...singing, dialog: true },
+    ]) {
+      expect(chromeShown(CHROME_START, hold, 1e9)).toBe(true);
+      expect(chromeHidesIn(CHROME_START, hold, 1e9)).toBeNull();
+    }
+    // While singing nobody has asked for them yet: away.
+    expect(chromeShown(CHROME_START, singing, 0)).toBe(false);
+  });
+
+  it("come on movement and go 2.5 s after the last of it", () => {
+    expect(CHROME_IDLE_MS).toBe(2_500);
+    let s = chromeReduce(CHROME_START, { type: "activity", at: 1_000 });
+    expect(chromeShown(s, singing, 1_000)).toBe(true);
+    expect(chromeHidesIn(s, singing, 1_000)).toBe(2_500);
+    expect(chromeShown(s, singing, 3_400)).toBe(true);
+    expect(chromeHidesIn(s, singing, 3_400)).toBe(100);
+    expect(chromeShown(s, singing, 3_500)).toBe(false);
+    expect(chromeHidesIn(s, singing, 3_500)).toBeNull();
+    // Moving again starts the count over.
+    s = chromeReduce(s, { type: "activity", at: 3_000 });
+    expect(chromeShown(s, singing, 5_000)).toBe(true);
+  });
+
+  it("toggle on a tap", () => {
+    const away = chromeReduce(CHROME_START, { type: "tap", at: 500, shown: false });
+    expect(chromeShown(away, singing, 600)).toBe(true);
+    const back = chromeReduce(away, { type: "tap", at: 900, shown: true });
+    expect(back.shownAt).toBeNull();
+    expect(chromeShown(back, singing, 950)).toBe(false);
+  });
+
+  it("stay while the pointer rests near the top or bottom edge", () => {
+    expect(CHROME_EDGE).toBe(0.14);
+    expect(nearEdge(10, 800)).toBe(true);
+    expect(nearEdge(790, 800)).toBe(true);
+    expect(nearEdge(400, 800)).toBe(false);
+    expect(nearEdge(5, 0)).toBe(false);
   });
 });
