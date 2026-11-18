@@ -5194,6 +5194,22 @@
                   "type": "string"
                 }
               },
+              "source": {
+                "type": "string",
+                "enum": [
+                  "voice",
+                  "estimate"
+                ]
+              },
+              "voice_state": {
+                "$ref": "#/$defs/ApiKaraokeVoiceState"
+              },
+              "estimate_total": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
               "latency_ms": {
                 "type": "integer",
                 "minimum": -9007199254740991,
@@ -5219,6 +5235,9 @@
               "client_total",
               "unranked",
               "reasons",
+              "source",
+              "voice_state",
+              "estimate_total",
               "latency_ms",
               "calibrated",
               "browser",
@@ -5326,6 +5345,38 @@
       "properties": {
         "session": {
           "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "voice",
+            "estimate"
+          ]
+        },
+        "voice": {
+          "type": "object",
+          "properties": {
+            "state": {
+              "$ref": "#/$defs/ApiKaraokeVoiceState"
+            },
+            "estimate_total": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "checks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiKaraokeVoiceCheck"
+              }
+            }
+          },
+          "required": [
+            "state",
+            "estimate_total",
+            "checks"
+          ]
         },
         "song": {
           "type": "object",
@@ -5651,6 +5702,8 @@
       },
       "required": [
         "session",
+        "source",
+        "voice",
         "song",
         "at",
         "total",
@@ -5713,6 +5766,12 @@
         "reference_url": {
           "type": "string"
         },
+        "video_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "expires_at": {
           "type": "string"
         },
@@ -5728,6 +5787,32 @@
           "type": "integer",
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
+        },
+        "recording": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "max_bytes": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "max_seconds": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "max_bytes",
+                "max_seconds"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -5735,10 +5820,12 @@
         "song",
         "backing_url",
         "reference_url",
+        "video_url",
         "expires_at",
         "tolerance_cents",
         "frame_hz",
-        "shift"
+        "shift",
+        "recording"
       ]
     },
     "ApiKaraokeSongView": {
@@ -5819,6 +5906,9 @@
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
+        "video": {
+          "type": "boolean"
+        },
         "mine": {
           "type": "boolean"
         },
@@ -5847,6 +5937,7 @@
         "lyrics",
         "lyrics_source",
         "notes",
+        "video",
         "mine",
         "best",
         "sung"
@@ -5895,6 +5986,10 @@
           "default": "",
           "type": "string",
           "maxLength": 60
+        },
+        "recording": {
+          "default": false,
+          "type": "boolean"
         }
       },
       "required": [
@@ -5904,6 +5999,34 @@
         "client_total"
       ],
       "additionalProperties": false
+    },
+    "ApiKaraokeVoiceAccepted": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/ApiKaraokeVoiceState"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    },
+    "ApiKaraokeVoiceCheck": {
+      "type": "string",
+      "enum": [
+        "quiet",
+        "bleed"
+      ]
+    },
+    "ApiKaraokeVoiceState": {
+      "type": "string",
+      "enum": [
+        "none",
+        "waiting",
+        "scoring",
+        "scored",
+        "failed"
+      ]
     },
     "ApiKnowledgeDoc": {
       "type": "object",

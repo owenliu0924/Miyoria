@@ -351,6 +351,7 @@ describe("sing", () => {
       force: false,
       exclusive_ack: true,
       purpose: "cover",
+      karaoke_video: true,
     });
     expect(WorkersSingJobRequestSchema.parse({ url: "https://youtu.be/abc123" })).toMatchObject({
       key: 0,

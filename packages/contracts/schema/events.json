@@ -3972,6 +3972,14 @@
         },
         "unranked": {
           "type": "boolean"
+        },
+        "source": {
+          "default": "estimate",
+          "type": "string",
+          "enum": [
+            "estimate",
+            "voice"
+          ]
         }
       },
       "required": [

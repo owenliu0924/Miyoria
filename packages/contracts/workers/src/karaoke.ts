@@ -397,6 +397,43 @@ export const WorkersKaraokeSongSchema = z
     artist: z.string().nullable().catch(null),
     duration_s: z.number().nullable().catch(null),
     quality: WorkersKaraokeQualitySchema.nullable().catch(null),
+    /**
+     * The song has `video.mp4` (`KARAOKE_VIDEO_FILE`): the source's picture, no sound, at most
+     * 720p, on the backing's timeline (docs/design/karaoke.md 「做了什麼第三步」). A worker
+     * predating it, or a song without one: `false`.
+     */
+    video: z.boolean().catch(false).default(false),
   })
   .meta({ id: "WorkersKaraokeSong" });
 export type WorkersKaraokeSong = z.output<typeof WorkersKaraokeSongSchema>;
+
+/** A karaoke song's background video (`GET /karaoke/{id}/files/video.mp4`), when it has one. */
+export const KARAOKE_VIDEO_FILE = "video.mp4";
+
+/** Largest recording of a singer the worker takes (`POST /karaoke/voice`), in bytes. */
+export const KARAOKE_VOICE_MAX_BYTES = 8 * 1024 * 1024;
+
+/**
+ * The answer of `POST /karaoke/voice` (body: one recording of a singer's microphone, compressed,
+ * `content-type` `audio/webm`, `audio/ogg` or `audio/mp4`): RMVPE's pitch of it, gated by its own
+ * loudness and cleaned as a reference is (octave jumps, spikes), at 50 Hz from the recording's
+ * first sample. The worker deletes the recording before it answers, and never logs it.
+ *
+ * - `midi`: MIDI (fractional) a frame, `null` where nothing was sung.
+ * - `seconds`: the recording's length.
+ * - `level_db`: the median loudness (dBFS) of the voiced frames; `floor_db`: the 10th percentile
+ *   of all frames. Core's checks of a quiet or far-away voice (a singer on speakers) read them.
+ * - `device`: where RMVPE ran (`cuda` or `cpu`); `method`: `rmvpe`.
+ */
+export const WorkersKaraokeVoicePitchSchema = z
+  .object({
+    hz: z.literal(KARAOKE_FRAME_HZ),
+    midi: z.array(z.number().nullable()),
+    seconds: z.number(),
+    level_db: z.number().nullable(),
+    floor_db: z.number().nullable(),
+    device: z.string(),
+    method: z.string(),
+  })
+  .meta({ id: "WorkersKaraokeVoicePitch" });
+export type WorkersKaraokeVoicePitch = z.output<typeof WorkersKaraokeVoicePitchSchema>;

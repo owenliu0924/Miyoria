@@ -41,6 +41,11 @@ export const WorkersSingJobRequestSchema = z
     purpose: z.enum(["cover", "karaoke"]).default("cover"),
     /** A karaoke job: how its lyrics are checked and aligned; left out, the worker's defaults. */
     karaoke_lyrics: WorkersKaraokeLyricsOptionsSchema.nullable().optional(),
+    /**
+     * A karaoke job: keep the source's picture as the song's background video (`video.mp4`, at
+     * most 720p, no sound). Left out: yes (when the worker has videos on, `SING_VIDEO`).
+     */
+    karaoke_video: z.boolean().default(true),
   })
   .meta({ id: "WorkersSingJobRequest" });
 export type WorkersSingJobRequest = z.output<typeof WorkersSingJobRequestSchema>;

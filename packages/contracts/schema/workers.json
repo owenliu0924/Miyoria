@@ -866,6 +866,10 @@
               "type": "null"
             }
           ]
+        },
+        "video": {
+          "default": false,
+          "type": "boolean"
         }
       },
       "required": [
@@ -874,6 +878,54 @@
         "artist",
         "duration_s",
         "quality"
+      ]
+    },
+    "WorkersKaraokeVoicePitch": {
+      "type": "object",
+      "properties": {
+        "hz": {
+          "type": "number",
+          "const": 50
+        },
+        "midi": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "seconds": {
+          "type": "number"
+        },
+        "level_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "floor_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "device": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hz",
+        "midi",
+        "seconds",
+        "level_db",
+        "floor_db",
+        "device",
+        "method"
       ]
     },
     "WorkersLyricsHealth": {
@@ -1714,6 +1766,10 @@
               "type": "null"
             }
           ]
+        },
+        "karaoke_video": {
+          "default": true,
+          "type": "boolean"
         }
       }
     },

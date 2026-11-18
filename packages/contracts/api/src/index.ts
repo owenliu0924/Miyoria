@@ -426,6 +426,12 @@ export {
   KaraokeStartSchema,
   type KaraokeSubmit,
   KaraokeSubmitSchema,
+  type KaraokeVoiceAccepted,
+  KaraokeVoiceAcceptedSchema,
+  type KaraokeVoiceCheck,
+  KaraokeVoiceCheckSchema,
+  type KaraokeVoiceState,
+  KaraokeVoiceStateSchema,
 } from "./karaoke.js";
 export {
   type ConversationNote,
