@@ -117,6 +117,89 @@ export const EconomyConfigSchema = z
     screen_messages_per_day: coins.default(10),
     /** One screen message per person per this many seconds. */
     screen_message_cooldown_s: coins.default(600),
+    // Danmaku (docs/design/v5-play.md §11.6): a short line that crosses the stream overlay while she
+    // is live. Charged when sent, given back by itself when the overlay did not show it. She is
+    // never asked about each line: at most one note per `danmaku_note_s` with a few of them.
+    /** Members may send danmaku. */
+    danmaku_on: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "直播彈幕",
+          help: "直播時會員可以花魚幣發一則從畫面右邊飄過的短句",
+          group: "danmaku",
+        }),
+      ),
+    /** What one line costs. */
+    danmaku: coins.default(5).meta(setting({ kind: "coins", label: "一則彈幕", group: "danmaku" })),
+    /** Longest line, in characters. */
+    danmaku_max_chars: z
+      .number()
+      .int()
+      .min(1)
+      .max(100)
+      .default(30)
+      .meta(setting({ kind: "number", label: "最多幾個字", group: "danmaku" })),
+    /** One line per person per this many seconds. */
+    danmaku_cooldown_s: z
+      .number()
+      .int()
+      .min(0)
+      .max(3600)
+      .default(20)
+      .meta(
+        setting({ kind: "duration", unit: "s", label: "每個人隔多久能再發", group: "danmaku" }),
+      ),
+    /** Lines one person may send per local day (given-back ones do not count). */
+    danmaku_per_day: z
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(50)
+      .meta(setting({ kind: "number", label: "每個人一天最多幾則", group: "danmaku" })),
+    /** Lines on the screen at once; the rest wait their turn. */
+    danmaku_max_on_screen: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .default(12)
+      .meta(setting({ kind: "number", label: "畫面上最多幾則", group: "danmaku" })),
+    /** The sender's name small before the line. */
+    danmaku_show_names: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "顯示名字",
+          help: "彈幕前面用小字寫發的人",
+          group: "danmaku",
+        }),
+      ),
+    /** How often she gets one note with a few of the lines (seconds); none when nothing came. */
+    danmaku_note_s: z
+      .number()
+      .int()
+      .min(10)
+      .max(3600)
+      .default(60)
+      .meta(
+        setting({
+          kind: "duration",
+          unit: "s",
+          label: "多久告訴她一次",
+          help: "她不會每一則都被問,每隔這麼久收到一則摘要,裡面有幾則彈幕",
+          group: "danmaku",
+        }),
+      ),
+    /** Lines that may wait for a lane on the overlay; one more is given back at once. */
+    danmaku_queue_max: z.number().int().min(0).max(200).default(20),
+    /** A line that waited this long for a lane is dropped and given back (seconds). */
+    danmaku_max_wait_s: z.number().int().min(1).max(600).default(30),
     /** A fortune slip she writes for them. */
     fortune: coins
       .default(10)
@@ -206,5 +289,10 @@ export const EconomyConfigSchema = z
         message: "frame ids must be unique",
       }),
   })
-  .meta(settingGroups([{ id: "prices", label: "價格" }]));
+  .meta(
+    settingGroups([
+      { id: "prices", label: "價格" },
+      { id: "danmaku", label: "直播彈幕" },
+    ]),
+  );
 export type EconomyConfig = z.output<typeof EconomyConfigSchema>;

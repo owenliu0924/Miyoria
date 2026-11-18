@@ -6,6 +6,15 @@ export { BountyBoard } from "./bounties.js";
 export { EconomyCardWallet } from "./card-wallet.js";
 export { DEFAULT_FRAMES, type EconomyConfig, EconomyConfigSchema, type Frame } from "./config.js";
 export {
+  DANMAKU_KIND,
+  DANMAKU_REASON,
+  DANMAKU_REFUND_REASON,
+  DanmakuDesk,
+  type DanmakuOutcome,
+  danmakuText,
+  NO_DANMAKU_TAG,
+} from "./danmaku.js";
+export {
   ALREADY_CHECKED_IN,
   EconomyService,
   feedLabel,
@@ -77,6 +86,7 @@ export {
   type BoardLine,
   type BountyView,
   type CheckinResult,
+  type DanmakuView,
   type EarnLine,
   type EarnReason,
   type Economy,

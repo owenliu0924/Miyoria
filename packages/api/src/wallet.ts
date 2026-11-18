@@ -7,6 +7,9 @@
 //   on a day already checked in it buys the slip alone (`gained` 0, no second reward).
 // * `POST /api/member/feed` `{ item, count? }`,
 //   `POST /api/member/screen` `{ text }` (a message on the stream: 409 when she is not live), `POST /api/member/frame` `{ buy?, select? }`.
+// * `GET /api/member/danmaku` (what a danmaku line costs them now, and why they cannot send one),
+//   `POST /api/member/danmaku` `{ text }` (one line across her stream: 409 when she is not live;
+//   given back by itself when the overlay did not show it).
 // * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
 //   same words for every reason they cannot take them); `POST /api/member/board` `{ on }`: join or
 //   leave the sponsor board (`GET /api/public/board` is in `board.ts`).
@@ -17,6 +20,7 @@
 
 import {
   type CheckinResult,
+  type DanmakuView,
   type EarnLine,
   type Economy,
   EconomyError,
@@ -121,6 +125,20 @@ const spendResult = (r: SpendResult): SpendResult => ({
   message: r.message,
 });
 
+const danmakuView = (v: DanmakuView): DanmakuView => ({
+  open: v.open,
+  live: v.live,
+  currency: v.currency,
+  price: v.price,
+  max_chars: v.max_chars,
+  cooldown_s: v.cooldown_s,
+  per_day: v.per_day,
+  sent_today: v.sent_today,
+  wait_s: v.wait_s,
+  balance: v.balance,
+  why: v.why,
+});
+
 const feedResult = (r: FeedResult): FeedResult => ({
   accepted: r.accepted,
   eaten: r.eaten,
@@ -193,6 +211,14 @@ export const walletRpc = {
     const key = keyOf(input.headers["idempotency-key"]);
     const { text } = input.body;
     return spendResult(await withWallet(state, (e) => e.screenMessage(accountOf(c), text, key)));
+  }),
+  danmakuView: os.wallet.danmakuView.handler(async ({ context: { state, c } }) => {
+    return danmakuView(await withWallet(state, (e) => e.danmakuView(accountOf(c))));
+  }),
+  danmaku: os.wallet.danmaku.handler(async ({ input, context: { state, c } }) => {
+    const key = keyOf(input.headers["idempotency-key"]);
+    const { text } = input.body;
+    return spendResult(await withWallet(state, (e) => e.danmaku(accountOf(c), text, key)));
   }),
   transfer: os.wallet.transfer.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);

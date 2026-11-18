@@ -6,6 +6,7 @@ import {
   interval,
   type Module,
   type ModuleCard,
+  type ModuleCardAction,
   type ModuleCardFact,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
@@ -15,6 +16,7 @@ import {
   MarketWalletKey,
   ParticipationKey,
   PartyRewardsKey,
+  type Principal,
   type ProfileId,
 } from "@miyoria/types";
 import { agencyCapabilities } from "./agency-tools.js";
@@ -31,6 +33,15 @@ import { Economy2Key } from "./v2-types.js";
 
 /** How often a finished voice window is paid when nobody speaks to end it. */
 const VOICE_TICK_MS = 30_000;
+/** How often danmaku left in the middle are settled and her note is due. */
+const DANMAKU_TICK_MS = 5_000;
+/** The card's action that takes every danmaku line off the overlay. */
+export const CLEAR_DANMAKU = "danmaku_clear";
+const CLEAR_DANMAKU_ACTION: ModuleCardAction = {
+  id: CLEAR_DANMAKU,
+  label: "清空彈幕",
+  confirm: "畫面上的彈幕會全部拿掉,還在排隊、沒顯示的會退回。要清空嗎?",
+};
 
 /**
  * Module `economy` (docs/design/economy.md): coins people earn by being with her and spend on
@@ -149,6 +160,30 @@ export class EconomyModule implements Module {
         mount(); // the commands module may have been restarted with a new registry
       }
     });
+    // Danmaku (danmaku.ts): the stage's answers settle the charges; her broadcast ending clears the
+    // overlay; what a restart left in the middle is settled at once and then every few seconds,
+    // and she gets her note of the lines shown.
+    const danmaku = economy.danmakuDesk;
+    const stage = ctx.subscribe([
+      Events.StageDanmaku.type,
+      Events.StageStatus.type,
+      Events.ActivityChanged.type,
+    ]);
+    ctx.spawn("danmaku", async () => {
+      for await (const env of stage) await danmaku.onEvent(env);
+    });
+    ctx.spawn("danmaku-tick", async (signal) => {
+      const tick = async () => {
+        try {
+          await danmaku.sweep(ctx.clock.now());
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "the danmaku sweep failed");
+        }
+        danmaku.note(ctx.clock.now());
+      };
+      await tick();
+      for await (const _ of interval(DANMAKU_TICK_MS, signal)) await tick();
+    });
   }
 
   /**
@@ -170,11 +205,33 @@ export class EconomyModule implements Module {
       facts.push({ label: "今天發出", value: today?.issued ?? 0, unit: currency });
       facts.push({ label: "今天收回", value: today?.recovered ?? 0, unit: currency });
     }
+    // Danmaku shown today and what they took (lines given back are neither), while they are on.
+    const danmakuOn = economy.config.danmaku_on;
+    if (danmakuOn) {
+      const today = await economy.danmakuDesk.today();
+      facts.push({
+        label: "今天彈幕",
+        value: `${today.lines} 則 · ${today.coins}`,
+        unit: currency,
+      });
+    }
     const due = (await economy.bountyDesk.view())
       .map((b) => b.expires_at)
       .sort()
       .at(0);
-    return { facts, ...(due === undefined ? {} : { next: { label: "懸賞到期", at: due } }) };
+    return {
+      facts,
+      ...(due === undefined ? {} : { next: { label: "懸賞到期", at: due } }),
+      ...(danmakuOn ? { actions: [CLEAR_DANMAKU_ACTION] } : {}),
+    };
+  }
+
+  /** `danmaku_clear`: every danmaku line off the overlay (the waiting ones are given back). */
+  async act(action: string, _by: Principal): Promise<void> {
+    if (action !== CLEAR_DANMAKU) throw new Error(`unknown action ${action}`);
+    const economy = this.#economy;
+    if (economy === null) throw new Error("the economy is not running");
+    economy.danmakuDesk.clear();
   }
 
   async stop(): Promise<void> {

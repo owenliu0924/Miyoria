@@ -10,6 +10,7 @@
 import { CARD_REASONS, MARKET_REASONS } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
 import { type LedgerDayTotal, LedgerStatsKey, type LedgerStatsStore } from "./records.js";
+import { DANMAKU_REASON, DANMAKU_REFUND_REASON } from "./types.js";
 import type { HealthView } from "./v2-types.js";
 
 export { type LedgerDayTotal, LedgerStatsKey, type LedgerStatsStore };
@@ -42,18 +43,22 @@ export const RECOVERED_REASONS: readonly string[] = [
   MARKET_REASONS.songPriority,
   MARKET_REASONS.lotteryTicket,
   MARKET_REASONS.auctionWon,
+  // A danmaku line is burned (docs/design/v5-play.md §11.6); one the overlay did not show comes back.
+  DANMAKU_REASON,
 ];
 
 /**
  * Reasons that give back part of what a recovered reason took: a daily card or a song priority
- * ticket that was refunded, lottery tickets refunded in a week with too few buyers, and the
- * lottery prize (the share of the tickets that goes back to a person; the rest stays burned).
+ * ticket that was refunded, lottery tickets refunded in a week with too few buyers, the
+ * lottery prize (the share of the tickets that goes back to a person; the rest stays burned), and
+ * a danmaku line the overlay did not show.
  */
 export const GIVEN_BACK_REASONS: readonly string[] = [
   CARD_REASONS.refund,
   MARKET_REASONS.songPriorityRefund,
   MARKET_REASONS.lotteryRefund,
   MARKET_REASONS.lotteryPrize,
+  DANMAKU_REFUND_REASON,
 ];
 
 const WEEK = 7;

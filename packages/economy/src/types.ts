@@ -116,6 +116,30 @@ export interface SpendResult {
   message: string;
 }
 
+/** Ledger reasons of a danmaku line (danmaku.ts): the charge, and the charge given back. */
+export const DANMAKU_REASON = "danmaku";
+export const DANMAKU_REFUND_REASON = "danmaku_refund";
+
+/** `GET /api/member/danmaku`: what a danmaku line costs this person now. */
+export interface DanmakuView {
+  /** Danmaku are on (`danmaku_on`). */
+  open: boolean;
+  /** She is live and a line can reach the overlay. */
+  live: boolean;
+  currency: string;
+  price: number;
+  max_chars: number;
+  cooldown_s: number;
+  per_day: number;
+  /** Lines of theirs today that were not given back. */
+  sent_today: number;
+  /** Seconds until they may send the next one; `0` now. */
+  wait_s: number;
+  balance: number;
+  /** Why they cannot send one now, in the page's words; `null` when they can. */
+  why: string | null;
+}
+
 export interface FramesResult {
   owned: string[];
   selected: string | null;
@@ -156,6 +180,15 @@ export interface Economy {
    * down or the text does not pass.
    */
   screenMessage(account: AccountRef, text: string, key: string): Promise<SpendResult>;
+  /**
+   * A danmaku line on the stream while she is live (danmaku.ts): charged as `danmaku`, given back
+   * by itself when the overlay did not show it. `EconomyError`: 400 empty, too long or with a link
+   * or mention, 402 short, 403 a stranger, 409 off, muted or not live, 429 the cooldown or the
+   * day's limit; moderation's refusal is `accepted: false`, nothing charged.
+   */
+  danmaku(account: AccountRef, text: string, key: string): Promise<SpendResult>;
+  /** What a danmaku line costs this person now, and why they cannot send one (if so). */
+  danmakuView(account: AccountRef): Promise<DanmakuView>;
   frame(
     account: AccountRef,
     req: { buy?: string; select?: string | null },

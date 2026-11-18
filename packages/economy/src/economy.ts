@@ -55,6 +55,7 @@ import {
 import { setBoard, sponsorBoard } from "./board.js";
 import { BountyBoard } from "./bounties.js";
 import type { EconomyConfig } from "./config.js";
+import { DanmakuDesk } from "./danmaku.js";
 import { type EconomyDocStore, EconomyDocsKey, MemoryDocs } from "./docs.js";
 import { Purse } from "./purse.js";
 import {
@@ -71,6 +72,9 @@ import {
   type BoardLine,
   type BountyView,
   type CheckinResult,
+  DANMAKU_REASON,
+  DANMAKU_REFUND_REASON,
+  type DanmakuView,
   type EarnLine,
   type EarnReason,
   type Economy,
@@ -267,7 +271,8 @@ export function heartEvidence(
   }
 }
 
-function plainName(name: string): string {
+/** A display name for the overlay: one line, at most 32 characters (`有人` when nothing is left). */
+export function plainName(name: string): string {
   const flat = name.replace(CONTROL, " ").replace(/\s+/g, " ").trim();
   const cut = [...flat].slice(0, 32).join("");
   return cut === "" ? "有人" : cut;
@@ -336,6 +341,8 @@ export class EconomyService implements Economy {
   /** Her own coins (purse.ts), her crowdfunding goals (goals.ts) and her bounties (bounties.ts). */
   readonly purse: Purse;
   readonly bountyDesk: BountyBoard;
+  /** Danmaku on the stream overlay (danmaku.ts, docs/design/v5-play.md §11.6). */
+  readonly danmakuDesk: DanmakuDesk;
   /** Economy 2.0 (docs/design/v4-plan.md §10): play, quests, predictions, her room, ... */
   readonly v2: V2;
   /** Used when no store provides `EconomyDocsKey` (what is kept there is gone on restart). */
@@ -345,6 +352,7 @@ export class EconomyService implements Economy {
     this.#d = deps;
     this.purse = new Purse(this);
     this.bountyDesk = new BountyBoard(this);
+    this.danmakuDesk = new DanmakuDesk(this);
     this.v2 = new V2(this);
   }
 
@@ -501,6 +509,11 @@ export class EconomyService implements Economy {
   /** Whether the text passes the screen a paid message passes (moderation, input and output). */
   passes(who: Pick<Member, "account">, text: string): boolean {
     return this.#passes(who, text);
+  }
+
+  /** The stage link runs (its `stage.expression` is registered), as the screen message asks. */
+  stageUp(): boolean {
+    return this.#stageUp();
   }
 
   // ---- her bounties (§13) -------------------------------------------------------
@@ -745,6 +758,10 @@ export class EconomyService implements Economy {
         return `${otherName(r.ref) ?? "朋友"} 轉給你`;
       case "refund":
         return "退回";
+      case DANMAKU_REASON:
+        return "直播彈幕";
+      case DANMAKU_REFUND_REASON:
+        return "彈幕沒顯示,退回";
       case CARD_REASONS.daily:
         return "每日卡";
       case CARD_REASONS.refund:
@@ -1247,6 +1264,14 @@ export class EconomyService implements Economy {
       balance: spent.balance,
       message: "留言上螢幕了,她看得到",
     };
+  }
+
+  danmaku(account: AccountRef, text: string, key: string): Promise<SpendResult> {
+    return this.danmakuDesk.send(account, text, key);
+  }
+
+  danmakuView(account: AccountRef): Promise<DanmakuView> {
+    return this.danmakuDesk.view(account);
   }
 
   /** Moderation reads a text as input and as text on a page; without it nothing passes. */

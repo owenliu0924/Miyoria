@@ -4,10 +4,16 @@
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { CARD_MAX_FACTS, Supervisor } from "@miyoria/runtime/kernel";
 import { PeopleStoreKey, SqliteStore } from "@miyoria/store";
-import { AuthorizerKey, type JsonObject, SocialSignalsKey, toTimestamp } from "@miyoria/types";
+import {
+  AuthorizerKey,
+  type JsonObject,
+  Principals,
+  SocialSignalsKey,
+  toTimestamp,
+} from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LedgerDayTotal } from "../src/health.js";
-import { EconomyModule } from "../src/module.js";
+import { CLEAR_DANMAKU, EconomyModule } from "../src/module.js";
 import { type Bounty, BountyStoreKey, CoinLedgerStoreKey, LedgerStatsKey } from "../src/records.js";
 import { ledgerOf } from "./ledger.js";
 import { DAY, T0 } from "./rig.js";
@@ -82,21 +88,36 @@ describe("economy card", () => {
       { label: "七天回收率", value: 60, unit: "%" },
       { label: "今天發出", value: 100, unit: "貝殼" },
       { label: "今天收回", value: 40, unit: "貝殼" },
+      { label: "今天彈幕", value: "0 則 · 0", unit: "貝殼" },
     ]);
     expect(card.next).toEqual({ label: "懸賞到期", at: toTimestamp(T0 + DAY) });
+    expect(card.actions?.map((a) => a.id)).toEqual([CLEAR_DANMAKU]);
   });
 
   it("leaves out the rate of a week that issued nothing", async () => {
-    const module = await start({}, { totals: [] });
-    expect((await module.card()).facts).toEqual([
-      { label: "今天發出", value: 0, unit: "魚幣" },
-      { label: "今天收回", value: 0, unit: "魚幣" },
-    ]);
+    const module = await start({ danmaku_on: false }, { totals: [] });
+    expect(await module.card()).toEqual({
+      facts: [
+        { label: "今天發出", value: 0, unit: "魚幣" },
+        { label: "今天收回", value: 0, unit: "魚幣" },
+      ],
+    });
   });
 
   it("invents nothing without ledger totals or bounties", async () => {
     expect(await new EconomyModule("p").card()).toEqual({ facts: [] });
-    const module = await start({});
+    const module = await start({ danmaku_on: false });
     expect(await module.card()).toEqual({ facts: [] });
+  });
+
+  it("counts today's danmaku that were shown, and clears the overlay from the card", async () => {
+    const module = await start({});
+    const card = await module.card();
+    expect(card.facts).toEqual([{ label: "今天彈幕", value: "0 則 · 0", unit: "魚幣" }]);
+    const clear = card.actions?.[0];
+    expect(clear).toMatchObject({ id: CLEAR_DANMAKU, label: "清空彈幕" });
+    expect(clear?.confirm).toMatch(/沒顯示的會退回/);
+    await module.act(CLEAR_DANMAKU, Principals.panel("test"));
+    await expect(module.act("nope", Principals.panel("test"))).rejects.toThrow();
   });
 });
