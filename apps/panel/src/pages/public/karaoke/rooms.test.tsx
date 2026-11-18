@@ -241,6 +241,9 @@ beforeEach(() => {
 
 describe("一起唱: a singer's stage", () => {
   it("starts at the room's moment, shows their trend, and never a ranking even if a board arrives", async () => {
+    // The start is three seconds from here: measured from now, not from when the checks run (a
+    // slow machine takes its time to get there).
+    const due = performance.now() / 1000 + 3;
     const view = room({
       state: "countdown",
       round: 1,
@@ -255,8 +258,8 @@ describe("一起唱: a singer's stage", () => {
     await waitFor(() => expect(played).toHaveLength(1));
     const first = played[0] as { at: number; offset: number };
     expect(first.offset).toBe(0);
-    expect(first.at - performance.now() / 1000).toBeGreaterThan(2.5);
-    expect(first.at - performance.now() / 1000).toBeLessThan(3.2);
+    expect(first.at - due).toBeGreaterThan(-0.3);
+    expect(first.at - due).toBeLessThan(0.3);
     // The microphone's stream begins with the song.
     await waitFor(() => expect(pieces).toHaveLength(1));
     expect(await screen.findByRole("timer")).toHaveTextContent("秒後一起開始");
