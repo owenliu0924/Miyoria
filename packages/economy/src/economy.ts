@@ -36,6 +36,7 @@ import {
   holdsBack,
   inspectInput,
   type JsonValue,
+  KARAOKE_REASONS,
   MARKET_REASONS,
   ModerationKey,
   newId,
@@ -188,6 +189,14 @@ const MARKET_LABEL: Readonly<Record<string, string>> = {
   [MARKET_REASONS.lotteryPrize]: "每週樂透中獎",
   [MARKET_REASONS.auctionHold]: "拍賣出價(押著)",
   [MARKET_REASONS.auctionRelease]: "拍賣出價退回",
+};
+
+/** What karaoke rooms' rows say (docs/design/karaoke.md 「做了什麼第四步」). */
+const KARAOKE_LABEL: Readonly<Record<string, string>> = {
+  [KARAOKE_REASONS.room]: "開唱 K 房間",
+  [KARAOKE_REASONS.roomRefund]: "唱 K 房間退費",
+  [KARAOKE_REASONS.prize]: "唱 K 第一名",
+  [KARAOKE_REASONS.finish]: "唱 K 唱完一首",
 };
 
 /** A won lot's ref: `<lot kind>:<lot id>`. */
@@ -778,6 +787,11 @@ export class EconomyService implements Economy {
       case MARKET_REASONS.auctionHold:
       case MARKET_REASONS.auctionRelease:
         return MARKET_LABEL[r.reason] ?? r.reason;
+      case KARAOKE_REASONS.room:
+      case KARAOKE_REASONS.roomRefund:
+      case KARAOKE_REASONS.prize:
+      case KARAOKE_REASONS.finish:
+        return KARAOKE_LABEL[r.reason] ?? r.reason;
       case "checkin":
         return r.delta > c.checkin ? "每日簽到(連續 7 天)" : EARN_LABEL.checkin;
       default:

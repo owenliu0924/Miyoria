@@ -28,6 +28,7 @@ export {
   WALLET_NODE,
 } from "./economy.js";
 export { TaskRefusal } from "./guard.js";
+export { EconomyKaraokeWallet } from "./karaoke-wallet.js";
 export { EconomyMarketWallet } from "./market-wallet.js";
 export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
