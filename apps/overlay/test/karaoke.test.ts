@@ -7,14 +7,24 @@ import {
   clockText,
   coinsText,
   countdownLeft,
+  karaokeBlocks,
   karaokeMode,
+  karaokePhase,
   lobbyMembers,
   lobbyStatus,
   lyricsFor,
   memberSwatch,
+  partCells,
+  qrPixels,
+  qrPlace,
+  queueRows,
+  resultRows,
+  resultsDensity,
+  resultsTitle,
   resultTail,
   roundsLeftText,
   scoreText,
+  settlingText,
   songProgress,
 } from "../src/karaoke.js";
 import {
@@ -370,10 +380,13 @@ describe("what of the room shows", () => {
   it("says what the lobby waits for, singers first", () => {
     const m = (name: string, role: "singer" | "spectator", ready = false) => ({ name, color: 0, role, ready, opener: false });
     const song = scene().song;
-    expect(lobbyStatus({ members: [m("阿翔", "spectator")], song })).toBe("等人加入");
-    expect(lobbyStatus({ members: [m("Mia", "singer")], song: null })).toBe("等開房的人選歌");
-    expect(lobbyStatus({ members: [m("Mia", "singer", true), m("Kai", "singer")], song })).toBe("等大家準備好(1/2)");
-    expect(lobbyStatus({ members: [m("Mia", "singer", true), m("阿翔", "spectator")], song })).toBe("都準備好了,等開房的人按開始");
+    const queue: KaraokeScene["queue"] = [];
+    expect(lobbyStatus({ members: [m("阿翔", "spectator")], song, queue })).toBe("等人加入");
+    expect(lobbyStatus({ members: [m("Mia", "singer")], song: null, queue })).toBe("等大家點歌");
+    const preparing = [{ title: "群青", artist: null, by: "Mia", state: "preparing" as const }];
+    expect(lobbyStatus({ members: [m("Mia", "singer")], song: null, queue: preparing })).toBe("等歌準備好");
+    expect(lobbyStatus({ members: [m("Mia", "singer", true), m("Kai", "singer")], song, queue })).toBe("等大家準備好(1/2)");
+    expect(lobbyStatus({ members: [m("Mia", "singer", true), m("阿翔", "spectator")], song, queue })).toBe("都準備好了,等開房的人按開始");
     expect(lobbyMembers([m("阿翔", "spectator"), m("Mia", "singer"), m("Kai", "singer")]).map((x) => x.name)).toEqual([
       "Mia",
       "Kai",
@@ -410,6 +423,142 @@ describe("what of the room shows", () => {
     expect(resultTail({ coins: 18, finished: true }, "魚幣")).toBe("+18 魚幣");
     expect(resultTail({ coins: 0, finished: false }, "魚幣")).toBe("沒唱完");
     expect(resultTail({ coins: 0, finished: true }, "魚幣")).toBe("");
+  });
+});
+
+describe("the phases of a round on the stream", () => {
+  const URL = "https://example.com/karaoke/room/K7PQ2M";
+
+  it("reads settling as its own phase between the song and the results", () => {
+    expect(karaokePhase(scene({ state: "lobby" }))).toBe("lobby");
+    expect(karaokePhase(scene({ state: "countdown" }))).toBe("countdown");
+    expect(karaokePhase(scene({ state: "singing" }))).toBe("singing");
+    expect(karaokePhase(scene({ state: "singing", settling: { waiting: [] } }))).toBe("settling");
+    expect(karaokePhase(scene({ state: "results" }))).toBe("results");
+  });
+
+  it("shows each phase's pieces and nothing else", () => {
+    const shown = (s: KaraokeScene) =>
+      Object.entries(karaokeBlocks(s, true))
+        .filter(([k, v]) => k !== "qr" && v === true)
+        .map(([k]) => k);
+    expect(shown(scene({ state: "lobby" }))).toEqual(["lobby"]);
+    expect(shown(scene({ state: "countdown" }))).toEqual(["title", "lanes", "lyrics", "board"]);
+    expect(shown(scene({ state: "singing" }))).toEqual(["title", "lanes", "lyrics", "board"]);
+    expect(shown(scene({ state: "singing", settling: { waiting: ["Mia"] } }))).toEqual(["title", "board", "settling"]);
+    expect(shown(scene({ state: "results" }))).toEqual(["results"]);
+    expect(shown(scene({ state: "results" }))).not.toContain("board");
+    expect(karaokeBlocks(null, true)).toMatchObject({ lobby: false, results: false, qr: null });
+    expect(karaokeBlocks(scene({ state: "results", joinUrl: URL }), false)).toMatchObject({ results: false, qr: null });
+  });
+
+  it("puts the QR code by the code in the lobby, in a corner with the results, and away while sung unless asked", () => {
+    const at = (extra: Partial<KaraokeScene>) => qrPlace(scene({ joinUrl: URL, ...extra }));
+    expect(at({ state: "lobby" })).toBe("lobby");
+    expect(at({ state: "results" })).toBe("corner");
+    expect(at({ state: "countdown" })).toBeNull();
+    expect(at({ state: "singing" })).toBeNull();
+    expect(at({ state: "singing", settling: { waiting: [] } })).toBeNull();
+    expect(at({ state: "countdown", qrWhileSinging: true })).toBe("corner");
+    expect(at({ state: "singing", qrWhileSinging: true })).toBe("corner");
+    // No link, no code: the room code stays as text.
+    for (const state of ["lobby", "countdown", "singing", "results"] as const) {
+      expect(qrPlace(scene({ state, joinUrl: null, qrWhileSinging: true }))).toBeNull();
+    }
+    expect(karaokeBlocks(scene({ state: "lobby", joinUrl: URL }), true).qr).toBe("lobby");
+  });
+
+  it("whole pixels a module, near the size asked for (180 to 230 px in the lobby at 1080p)", () => {
+    // Version 4 (33 modules) plus the quiet zone: 41.
+    expect(qrPixels(41, 200)).toBe(205);
+    for (const modules of [29, 33, 37, 41, 45, 49, 53, 57, 61, 65, 69]) {
+      const px = qrPixels(modules, 200);
+      expect(px % modules).toBe(0);
+      expect(px).toBeGreaterThanOrEqual(180);
+      expect(px).toBeLessThanOrEqual(230);
+    }
+    expect(qrPixels(41, 120)).toBe(123);
+    expect(qrPixels(41, 10)).toBe(41);
+  });
+
+  it("says whom settling waits for, or that it is about done", () => {
+    expect(settlingText({ waiting: [] })).toBe("馬上就好");
+    expect(settlingText({ waiting: ["Mia"] })).toBe("還在等 Mia 的分數");
+    expect(settlingText({ waiting: ["Mia", "Kai"] })).toBe("還在等 Mia、Kai 的分數");
+    expect(settlingText({ waiting: ["a", "b", "c", "d", "e", "f"] })).toBe("還在等 a、b、c、d 等 6 人的分數");
+  });
+});
+
+describe("the lobby's queue", () => {
+  it("lists the chosen song, then the queue with who added it and a mark for preparing or failed", () => {
+    const rows = queueRows(
+      scene({
+        song: { id: "a", title: "夜に駆ける", artist: "YOASOBI", durationMs: null },
+        queue: [
+          { title: "群青", artist: null, by: "小明", state: "ready" },
+          { title: "怪物", artist: "YOASOBI", by: "Kai", state: "preparing" },
+          { title: "壞掉的", artist: null, by: "", state: "failed" },
+        ],
+      }),
+    );
+    expect(rows.map((r) => [r.title, r.by, r.mark, r.state])).toEqual([
+      ["夜に駆ける", null, null, "ready"],
+      ["群青", "小明", null, "ready"],
+      ["怪物", "Kai", "準備中", "preparing"],
+      ["壞掉的", null, "失敗", "failed"],
+    ]);
+    expect(queueRows(scene({ song: null, queue: [] }))).toEqual([]);
+    expect(queueRows(scene({ song: null, queue: [{ title: "群青", artist: null, by: "Mia", state: "preparing" }] }))).toHaveLength(1);
+  });
+});
+
+describe("the results", () => {
+  const line = (name: string, color: number, rank: number | null, total: number | null, extra = {}) => ({
+    name,
+    color,
+    rank,
+    total,
+    source: "voice" as const,
+    move: "same" as const,
+    winner: false,
+    coins: 0,
+    finished: true,
+    onAir: false,
+    parts: null,
+    pitch: null,
+    ...extra,
+  });
+
+  it("writes each part out of its most, with a bar of how much was won", () => {
+    expect(partCells(null)).toBeNull();
+    const cells = partCells({ pitch: 45, stability: 15, rhythm: null, expression: 12 });
+    expect(cells?.map((c) => [c.label, c.max, c.text, c.share])).toEqual([
+      ["音程", 60, "45.0", 0.75],
+      ["安定", 15, "15.0", 1],
+      ["節奏", 15, "—", 0],
+      ["表現", 10, "12.0", 1],
+    ]);
+  });
+
+  it("ranks the rows with their parts, the winner, the coins and who did not finish", () => {
+    const rows = resultRows(
+      [
+        line("Kai", 2, 2, 77.5, { coins: 3, parts: { pitch: 46, stability: 12, rhythm: 11, expression: 8.5 } }),
+        line("Mia", 0, 1, 88.04, { winner: true, coins: 18, parts: { pitch: 54, stability: 14, rhythm: 12, expression: 8 } }),
+        line("貓", 5, null, null, { finished: false }),
+      ],
+      "魚幣",
+    );
+    expect(rows.map((r) => [r.rank, r.name, r.score, r.winner, r.tail])).toEqual([
+      [1, "Mia", "88.0", true, "+18 魚幣"],
+      [2, "Kai", "77.5", false, "+3 魚幣"],
+      [null, "貓", "—", false, "沒唱完"],
+    ]);
+    expect(rows[0]?.parts?.[0]?.text).toBe("54.0");
+    expect(rows[2]?.parts).toBeNull();
+    expect(resultsTitle(3)).toBe("第 3 首結果");
+    expect(resultsTitle(0)).toBe("結果");
+    expect([1, 4, 5, 8, 9, 16].map(resultsDensity)).toEqual(["roomy", "roomy", "normal", "normal", "compact", "compact"]);
   });
 });
 
