@@ -453,6 +453,7 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 - **之後再跑**:切到已經有的 `Miyoria` 設定檔和場景集合,只補上缺的東西;已經有的設定檔不會再被改(你在裡面調的 FPS、編碼器都留著)。要它重新設 1920x1080 和重播緩衝:`--profile-settings`。
 - **OBS 在推流、錄影、虛擬攝影機或重播緩衝開著時**,要切換場景集合或設定檔(或改設定檔)就拒絕並說要先停哪幾個:切換會打斷輸出。已經在 `Miyoria` 上、不用切換時照常補齊。
 - 選項:`--collection <名稱>` / `--profile <名稱>` 換名稱(預設取 `[stage.obs] collection` / `profile`,沒設是 `Miyoria`);`--here` 直接建在 OBS 目前的場景集合裡(以前的做法);`--no-profile` 不換設定檔;`--relayout` 把已經有的項目擺回預設位置。
+- **overlay 的聲音**:overlay 的兩個瀏覽器來源(`…/overlay/`、`…/overlay/?layout=sing`)勾「透過 OBS 控制音訊」(`reroute_audio`),已經有的再跑一次也會改成勾選:唱 K 房間的伴奏和播出的歌聲是 overlay 這一頁放的,要進 OBS 的混音,Go Live(`GOLIVE_AUDIO=true`)才帶得到。OBS 預設不監聽這個來源,直播機的喇叭聽不到;她的 TTS 不在 OBS 的混音裡,在語音頻道。見 [design/karaoke.md](design/karaoke.md)「做了什麼第五步」。
 - OBS 換場景集合時會先送 `CurrentSceneCollectionChanging`,這段時間送別的請求會失敗,所以它等 `CurrentSceneCollectionChanged`(設定檔是 `CurrentProfileChanged`)才繼續,30 秒沒等到就停下來、不再送任何東西;等 OBS 換好(有對話框先關掉)再跑一次就好。
 
 **執行時**:`[stage.obs] collection` 有設、OBS 卻在別的場景集合上時(Stage 連上 OBS 時和開始直播時檢查),Stage 不在 OBS 建任何東西(包括自動建的字幕文字來源),也不幫你切換;log 記一次警告,狀態裡的 `obs_warning` 寫「OBS 不在「Miyoria」這份場景集合上(現在是「…」)」,面板「直播」和 `/stream status` 會顯示。`profile` 不一樣時只記一行 info(精華要的重播緩衝在設定檔裡)。
