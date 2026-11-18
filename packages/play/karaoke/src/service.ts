@@ -340,6 +340,15 @@ export class KaraokeService {
     return this.#view(song, person, person === null ? undefined : this.#d.store.bestsOf(person));
   }
 
+  /**
+   * A song as anyone sees it, with its preparation and nobody's own best (a room's queue shows it
+   * to everyone in the room); `null` when there is no such song.
+   */
+  songView(id: string): KaraokeSongView | null {
+    const song = this.#d.store.song(id);
+    return song === null ? null : this.#view(song, null);
+  }
+
   /** A link or a search: the song already known, or a new preparation. */
   async request(account: AccountRef, text: string, admin = false): Promise<KaraokeRequestResult> {
     const { person } = this.#person(account);

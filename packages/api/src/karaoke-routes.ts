@@ -22,7 +22,7 @@
 //   else). A session's signed `reference.json` of a song with an edit is the edit.
 // * Admin (`karaokeAdmin`): `GET /api/karaoke/results`, the latest results with their flags.
 // * Rooms (step 4, `karaokeRooms` over `KaraokeRoomsKey`): the table routes (open, join, ready,
-//   song, start, close, ...) and four plain member routes: the room's event stream (SSE, what each
+//   queue, start, close, ...) and four plain member routes: the room's event stream (SSE, what each
 //   connection gets is decided per person by the rooms: a singer of the running round never gets
 //   the board), the clock sync, a singer's microphone (µ-law, read with a cap, relayed, never
 //   stored) and a singer's own detected pitch. These are not counted against the member rate limit
@@ -231,7 +231,7 @@ export const karaokeRoomsRpc = {
       rooms(state).open(
         accountOf(c),
         memberOf(c).name,
-        input.body.song,
+        input.body.song ?? null,
         input.body.shift,
         adminOf(c),
       ),
@@ -256,6 +256,33 @@ export const karaokeRoomsRpc = {
   ),
   ready: os.karaokeRooms.ready.handler(({ input, context: { state, c } }) =>
     refusals(() => rooms(state).ready(input.params.code, accountOf(c), input.body)),
+  ),
+  queueAdd: os.karaokeRooms.queueAdd.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      rooms(state).queueAdd(
+        input.params.code,
+        accountOf(c),
+        memberOf(c).name,
+        input.body,
+        adminOf(c),
+      ),
+    ),
+  ),
+  queueRemove: os.karaokeRooms.queueRemove.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      rooms(state).queueRemove(input.params.code, accountOf(c), input.params.entry, adminOf(c)),
+    ),
+  ),
+  queueMove: os.karaokeRooms.queueMove.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      rooms(state).queueMove(
+        input.params.code,
+        accountOf(c),
+        input.params.entry,
+        input.body.to,
+        adminOf(c),
+      ),
+    ),
   ),
   relay: os.karaokeRooms.relay.handler(({ input, context: { state, c } }) =>
     refusals(() => rooms(state).relay(input.params.code, accountOf(c), input.body, adminOf(c))),

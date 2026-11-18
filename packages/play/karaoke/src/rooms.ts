@@ -3,9 +3,16 @@
 // hosts. `RoomDesk` holds the rooms in memory and keeps in the store only what the coins need
 // across a restart (the room and its opening charge, its rounds, what a settled round pays).
 //
-//   lobby ──start──▶ countdown ──start_at──▶ singing ──all in / time──▶ results ──song──▶ lobby
+//   lobby ──start──▶ countdown ──start_at──▶ singing ──all in / time──▶ results ──start──▶ countdown
 //     └───────────── closed: the opener, empty, idle, she left voice, Core restarted ──────────┘
 //
+// * A room opens with no song (「第四步之後的修改:先開房再點歌」). Everyone in it queues songs, in
+//   the lobby and after a round: one from the list (ready, or still being prepared), or a link or a
+//   search through the song request (with its daily limit). One still being prepared waits in its
+//   place until it is ready; one whose preparation failed is skipped, and dropped when a round
+//   starts. Each entry has its own key. Anyone takes out their own, the opener (or a panel admin)
+//   any, and orders the queue. A round plays the first ready entry, which leaves the queue then;
+//   once the room's rounds are used, the rest is dropped. The queue lives with the room, in memory.
 // * A round's singers each get a session of their own (the single-player one, bound to the room);
 //   their browser plays the backing from Core's `start_at` with its own latency taken off, and at
 //   the end submits its track as alone. While they sing, each browser streams its microphone here
@@ -37,6 +44,7 @@ import type {
   KaraokeClockReply,
   KaraokeRoomEvent,
   KaraokeRoomPlace,
+  KaraokeRoomQueueEntry,
   KaraokeRoomResult,
   KaraokeRooms,
   KaraokeRoomTerms,
@@ -49,6 +57,7 @@ import {
   KARAOKE_JOIN_URL_MAX,
   KARAOKE_NOTES_MAX,
   KARAOKE_PITCH_MAX_CHARS,
+  KARAOKE_QUEUE_MAX,
   type KaraokeStageLine,
   type KaraokeStageLyrics,
   type KaraokeStageScene,
@@ -56,6 +65,7 @@ import {
 } from "@miyoria/contracts/stage-link";
 import {
   KARAOKE_FRAME_HZ,
+  KARAOKE_MAX_SHIFT,
   KARAOKE_STREAM_MAX_CHUNK,
   KARAOKE_STREAM_RATE,
   shiftKaraokeReference,
@@ -156,6 +166,14 @@ const SAY = {
   notIn: "你不在這間房間裡",
   noMember: "房間裡沒有這個人",
   stranger: "她還不認識你,不能播你的聲音",
+  opening: "正在開房,等一下",
+  noEntry: "點歌的清單裡沒有這一首",
+  notYours: "只有點這首的人和開房的人可以拿掉",
+  noReady: "清單裡還沒有準備好的歌,先點一首",
+  oneOf: "選一首歌,或貼連結、打歌名(只要一樣)",
+  noSong: "沒有這首歌",
+  failedSong: "這首準備失敗了,換一首或重新點",
+  queueFull: "點歌的清單滿了,等唱完幾首再點",
 } as const;
 
 /** Why no voice can go out on the stream (`air.relay.reason`). */
@@ -222,11 +240,13 @@ export interface RoomNotice {
 export interface RoomBrief {
   code: string;
   state: "lobby" | "countdown" | "singing" | "results";
-  /** The song sung now, else the next one (`null`: none chosen yet). */
+  /** The song sung now, else the next ready one in the queue (`null`: none). */
   song: string | null;
   singers: number;
   max_singers: number;
   members: number;
+  /** The songs waiting, in order (titles and names are untrusted). */
+  queue: { title: string; by: string; state: "ready" | "preparing" | "failed" }[];
 }
 
 interface Member {
@@ -319,6 +339,16 @@ interface Round {
   stage: KaraokeStageLyrics | null;
 }
 
+/** One song waiting in a room's queue. */
+interface Entry {
+  id: string;
+  song: string;
+  shift: number;
+  /** Who added it: their key in the room, and their name. */
+  by: string;
+  byName: string;
+}
+
 interface Follower {
   account: AccountRef;
   key: string;
@@ -331,8 +361,10 @@ interface Room {
   opener: string;
   state: "lobby" | "countdown" | "singing" | "results" | "closed";
   closedReason: string | null;
-  song: SongRow | null;
-  shift: number;
+  /** The songs waiting, in order. */
+  queue: Entry[];
+  /** How the queue's songs' preparation looked at the last look (it moves on its own). */
+  queueSeen: string;
   members: Map<string, Member>;
   followers: Set<Follower>;
   rounds: number;
@@ -355,6 +387,8 @@ export class RoomDesk implements RoomLink {
   /** Session id → the room and member singing it. */
   readonly #sessions = new Map<string, { room: Room; member: string }>();
   #moneyBusy: Promise<void> | null = null;
+  /** People whose room is being opened now (a second press waits for nothing: it is refused). */
+  readonly #opening = new Set<string>();
   /** Batches on their way to the song worker. */
   readonly #inflight = new Set<Promise<void>>();
   /** The room and round the stream shows (`null`: none), and the JSON of the scene last sent. */
@@ -429,21 +463,43 @@ export class RoomDesk implements RoomLink {
     };
   }
 
-  /** Opens a room with a ready song, and charges the opener for it. */
+  /**
+   * Opens a room, with no song, and charges the opener for it. `songId` (and its `shift`): what
+   * clients from before the queue send; that song is checked first (a refusal costs nothing) and
+   * queued as the first entry. One opening per person at a time: a second press while the first is
+   * on its way is refused (it could otherwise charge twice).
+   */
   async open(
     account: AccountRef,
     name: string,
-    songId: string,
-    shift: number,
+    songId: string | null = null,
+    shift = 0,
     admin = false,
+  ): Promise<KaraokeRoomView> {
+    const { key } = this.#key(account);
+    if (this.#opening.has(key)) throw new KaraokeError(409, SAY.opening);
+    this.#opening.add(key);
+    try {
+      return await this.#open(account, name, songId, shift, admin);
+    } finally {
+      this.#opening.delete(key);
+    }
+  }
+
+  async #open(
+    account: AccountRef,
+    name: string,
+    songId: string | null,
+    shift: number,
+    admin: boolean,
   ): Promise<KaraokeRoomView> {
     const { key, who } = this.#key(account);
     const why = this.#why(admin);
     if (why !== null) throw new KaraokeError(409, why);
     if (this.#mine(account) !== null) throw new KaraokeError(409, SAY.already);
     if (this.#rooms.size >= this.#cfg.room_max) throw new KaraokeError(409, SAY.full);
-    // The song and its files first: a refusal here costs nothing.
-    const song = await this.#d.service.readySong(songId, shift);
+    // An old client's song and its files first: a refusal here costs nothing.
+    const song = songId === null ? null : await this.#d.service.readySong(songId, shift);
     const price = this.#cfg.room_price;
     const wallet = this.#d.wallet();
     if (price > 0 && wallet === null) throw new KaraokeError(503, SAY.noWallet);
@@ -494,8 +550,8 @@ export class RoomDesk implements RoomLink {
       opener: key,
       state: "lobby",
       closedReason: null,
-      song,
-      shift,
+      queue: [],
+      queueSeen: "",
       members: new Map([[key, member]]),
       followers: new Set(),
       rounds: 0,
@@ -506,9 +562,11 @@ export class RoomDesk implements RoomLink {
       lead: this.#cfg.relay_lead,
       notice: null,
     };
+    if (song !== null) room.queue.push(this.#entry(song.id, shift, member));
+    room.queueSeen = this.#queueLook(room);
     this.#rooms.set(code, room);
     this.#d.log.info({ room: id, code, price }, "karaoke: a room opened");
-    this.#note(`karaoke:room:${id}:open`, roomOpenedNote(name, code, song.title), true);
+    this.#note(`karaoke:room:${id}:open`, roomOpenedNote(name, code), true);
     this.#announce(room, member.name);
     this.#stage();
     return this.#view(room, account);
@@ -686,23 +744,153 @@ export class RoomDesk implements RoomLink {
     return this.#view(room, account);
   }
 
-  /** The opener picks the next song (in the lobby, or once a round's results are in). */
-  async song(
+  // ---- the queue -------------------------------------------------------------------------------
+
+  #entry(song: string, shift: number, by: Member): Entry {
+    return {
+      id: newId().slice(-12).toLowerCase(),
+      song,
+      shift,
+      by: by.key,
+      byName: by.name,
+    };
+  }
+
+  /** The state of an entry's song now (`failed` too when the song is gone). */
+  #stateOf(entry: Entry): "ready" | "preparing" | "failed" {
+    const status = this.#d.store.song(entry.song)?.status;
+    return status === "ready" || status === "preparing" ? status : "failed";
+  }
+
+  /** The entry the next round plays: the first whose song is ready (`null`: none). */
+  #next(room: Room): Entry | null {
+    return room.queue.find((e) => this.#stateOf(e) === "ready") ?? null;
+  }
+
+  /** The song (and key) a view shows: the running round's, else the next ready entry's. */
+  #shown(room: Room): { song: SongRow; shift: number } | null {
+    const round = room.round;
+    if ((room.state === "countdown" || room.state === "singing") && round !== null) {
+      return { song: round.song, shift: round.shift };
+    }
+    const next = this.#next(room);
+    const song = next === null ? null : this.#d.store.song(next.song);
+    return next === null || song === null ? null : { song, shift: next.shift };
+  }
+
+  /** How the queue's songs' preparation looks now (a change of it is pushed). */
+  #queueLook(room: Room): string {
+    return room.queue
+      .map((e) => {
+        const v = this.#d.service.songView(e.song);
+        return v === null ? `${e.id}:-` : `${e.id}:${v.state}:${v.stage}:${v.progress}:${v.title}`;
+      })
+      .join("|");
+  }
+
+  /** Entries waiting (not failed), all of them or one person's. */
+  #waiting(room: Room, by?: string): number {
+    return room.queue.filter(
+      (e) => (by === undefined || e.by === by) && this.#stateOf(e) !== "failed",
+    ).length;
+  }
+
+  /**
+   * Anyone in the room queues a song, in the lobby or after a round: exactly one of `song` (a song
+   * on the list, ready or still being prepared) or `text` (a link or a search, through the song
+   * request and its daily limit), in `shift` (a ready song's backing in that key is made now).
+   * The entry shows the name they have in the room (the caller's `_name` is not used: they are in
+   * it already).
+   */
+  async queueAdd(
     code: string,
     account: AccountRef,
-    songId: string,
-    shift: number,
+    _name: string,
+    body: { song?: string; text?: string; shift?: number },
+    admin = false,
   ): Promise<KaraokeRoomView> {
     const { key } = this.#key(account);
     const room = this.#room(code);
-    if (room.opener !== key) throw new KaraokeError(403, SAY.notOpener);
-    if (room.state !== "lobby" && room.state !== "results") throw new KaraokeError(409, SAY.notNow);
-    const song = await this.#d.service.readySong(songId, shift);
-    if (room.state !== "lobby" && room.state !== "results") throw new KaraokeError(409, SAY.notNow);
-    room.song = song;
-    room.shift = shift;
-    room.state = "lobby";
-    for (const m of room.members.values()) m.ready = false;
+    const c = this.#cfg;
+    if (!c.open && !admin) throw new KaraokeError(409, SAY.closed);
+    const check = (): Member => {
+      const me = room.members.get(key);
+      if (me === undefined) throw new KaraokeError(409, SAY.notIn);
+      if (room.state !== "lobby" && room.state !== "results")
+        throw new KaraokeError(409, SAY.notNow);
+      if (room.rounds >= c.room_rounds) throw new KaraokeError(409, SAY.roundsUsed);
+      if (this.#waiting(room, key) >= c.room_queue_per_person) {
+        throw new KaraokeError(409, `你已經點了 ${c.room_queue_per_person} 首在等,唱完再點`);
+      }
+      if (this.#waiting(room) >= c.room_queue_max) throw new KaraokeError(409, SAY.queueFull);
+      return me;
+    };
+    check();
+    const shift = body.shift ?? 0;
+    if (!Number.isInteger(shift) || Math.abs(shift) > KARAOKE_MAX_SHIFT) {
+      throw new KaraokeError(400, `升降調最多 ${KARAOKE_MAX_SHIFT} 個半音`);
+    }
+    const text = body.text?.trim() ?? "";
+    const hasSong = body.song !== undefined && body.song !== "";
+    if (hasSong === (text !== "")) throw new KaraokeError(400, SAY.oneOf);
+    let songId: string;
+    if (hasSong) {
+      const row = this.#d.store.song(body.song as string);
+      if (row === null) throw new KaraokeError(404, SAY.noSong);
+      if (row.status === "failed") throw new KaraokeError(409, SAY.failedSong);
+      songId = row.id;
+    } else {
+      // The song request's own way and limits (a known song is that song, a new one is prepared).
+      songId = (await this.#d.service.request(account, text, admin)).song.id;
+    }
+    // A ready song: its files, and its backing in that key, now (a refusal here adds nothing).
+    if (this.#d.store.song(songId)?.status === "ready") {
+      await this.#d.service.readySong(songId, shift);
+    }
+    const me = check();
+    room.queue.push(this.#entry(songId, shift, me));
+    room.queueSeen = this.#queueLook(room);
+    room.activity = this.#d.now();
+    me.seen = room.activity;
+    this.#changed(room);
+    return this.#view(room, account);
+  }
+
+  /** Takes an entry out: the one who added it, the opener or a panel admin. */
+  queueRemove(code: string, account: AccountRef, entry: string, admin = false): KaraokeRoomView {
+    const { key } = this.#key(account);
+    const room = this.#room(code);
+    const at = room.queue.findIndex((e) => e.id === entry);
+    if (at < 0) throw new KaraokeError(404, SAY.noEntry);
+    const e = room.queue[at] as Entry;
+    if (e.by !== key && room.opener !== key && !admin) throw new KaraokeError(403, SAY.notYours);
+    room.queue.splice(at, 1);
+    room.queueSeen = this.#queueLook(room);
+    room.activity = this.#d.now();
+    this.#changed(room);
+    return this.#view(room, account);
+  }
+
+  /** Moves an entry to place `to` (0 the first): the opener or a panel admin. */
+  queueMove(
+    code: string,
+    account: AccountRef,
+    entry: string,
+    to: number,
+    admin = false,
+  ): KaraokeRoomView {
+    const { key } = this.#key(account);
+    const room = this.#room(code);
+    if (room.opener !== key && !admin) throw new KaraokeError(403, SAY.notOpener);
+    const at = room.queue.findIndex((e) => e.id === entry);
+    if (at < 0) throw new KaraokeError(404, SAY.noEntry);
+    const [e] = room.queue.splice(at, 1) as [Entry];
+    const place = Math.max(
+      0,
+      Math.min(room.queue.length, Math.floor(Number.isFinite(to) ? to : 0)),
+    );
+    room.queue.splice(place, 0, e);
+    room.queueSeen = this.#queueLook(room);
     room.activity = this.#d.now();
     this.#changed(room);
     return this.#view(room, account);
@@ -713,20 +901,25 @@ export class RoomDesk implements RoomLink {
     const { key } = this.#key(account);
     const room = this.#room(code);
     if (room.opener !== key) throw new KaraokeError(403, SAY.notOpener);
-    if (room.state !== "lobby" || room.song === null) throw new KaraokeError(409, SAY.notNow);
+    const between = () => room.state === "lobby" || room.state === "results";
+    if (!between()) throw new KaraokeError(409, SAY.notNow);
     if (room.rounds >= this.#cfg.room_rounds) throw new KaraokeError(409, SAY.roundsUsed);
     if (!this.#d.inVoice()) throw new KaraokeError(409, SAY.noVoice);
     const ready = [...room.members.values()].filter((m) => m.role === "singer" && m.ready);
     if (ready.length === 0) throw new KaraokeError(409, SAY.noSingers);
-    const song = room.song;
-    const shift = room.shift;
+    // The first ready entry (one still being prepared keeps its place); its files and key now.
+    const entry = this.#next(room);
+    if (entry === null) throw new KaraokeError(409, SAY.noReady);
+    const shift = entry.shift;
+    const song = await this.#d.service.readySong(entry.song, shift);
+    if (!between() || !room.queue.includes(entry)) throw new KaraokeError(409, SAY.notNow);
     const reference = shiftKaraokeReference(await this.#d.service.reference(song.id), shift);
     // Each singer's session: the single-player one, bound to the room.
     const sessions = new Map<string, KaraokeSession>();
     for (const m of ready) {
       sessions.set(m.key, await this.#d.service.session(m.account, m.name, song, shift, room.id));
     }
-    if (room.state !== "lobby") throw new KaraokeError(409, SAY.notNow);
+    if (!between() || !room.queue.includes(entry)) throw new KaraokeError(409, SAY.notNow);
     const now = this.#d.now();
     const n = room.rounds + 1;
     const startAt = now + this.#cfg.room_countdown_secs * 1000;
@@ -756,7 +949,10 @@ export class RoomDesk implements RoomLink {
         await this.#d.service.session(m.account, m.name, song, shift, room.id),
       );
     }
-    if (room.state !== "lobby") throw new KaraokeError(409, SAY.notNow);
+    if (!between() || !room.queue.includes(entry)) throw new KaraokeError(409, SAY.notNow);
+    // The entry leaves the queue as its round starts; failed ones are dropped with it.
+    room.queue = room.queue.filter((e) => e !== entry && this.#stateOf(e) !== "failed");
+    room.queueSeen = this.#queueLook(room);
     for (const m of ready) {
       const session = sessions.get(m.key) as KaraokeSession;
       const input = this.#d.service.scoreInput(reference, m.latency_ms, m.calibrated);
@@ -1091,7 +1287,8 @@ export class RoomDesk implements RoomLink {
     const now = this.#d.now();
     const round = room.round;
     const running = room.state === "countdown" || room.state === "singing";
-    const song = running && round !== null ? round.song : room.song;
+    const shown = this.#shown(room);
+    const song = shown?.song ?? null;
     const onAir = running ? (round?.air?.onAir() ?? null) : null;
     let board: KaraokeStageLine[] = [];
     if (running && round !== null) {
@@ -1150,7 +1347,7 @@ export class RoomDesk implements RoomLink {
               duration_ms:
                 song.duration_ms !== null && song.duration_ms > 0 ? song.duration_ms : null,
             },
-      shift: running && round !== null ? round.shift : room.shift,
+      shift: shown?.shift ?? 0,
       members: [...room.members.values()]
         .sort((a, b) => a.joined - b.joined)
         .slice(0, 64)
@@ -1169,11 +1366,28 @@ export class RoomDesk implements RoomLink {
         onAir === null ? null : (round?.singers.get(onAir)?.member.name ?? null),
         running && round?.stage?.backing != null,
       ),
-      queue: [],
+      queue: this.#sceneQueue(room, running),
       join_url: this.#joinUrl(room),
       qr_while_singing: c.stream_qr_while_singing,
       settling: this.#sceneSettling(room),
     };
+  }
+
+  /** The next few songs waiting after the one the scene shows (it is not repeated). */
+  #sceneQueue(room: Room, running: boolean): KaraokeStageScene["queue"] {
+    const next = running ? null : this.#next(room);
+    return room.queue
+      .filter((e) => e !== next)
+      .slice(0, KARAOKE_QUEUE_MAX)
+      .map((e) => {
+        const row = this.#d.store.song(e.song);
+        return {
+          title: (row?.title || row?.source || "").slice(0, 200),
+          artist: row?.artist == null ? null : row.artist.slice(0, 200),
+          by: e.byName.slice(0, 60),
+          state: this.#stateOf(e),
+        };
+      });
   }
 
   /** The room's join link for the stream's QR code, when the site's address is set and it is on. */
@@ -1506,6 +1720,16 @@ export class RoomDesk implements RoomLink {
         }
       }
       if (room.state === "closed") continue;
+      // The queue's songs being prepared move on their own: everyone sees it (and a room waiting
+      // for its song to be prepared is not idle).
+      if (room.queue.length > 0) {
+        const look = this.#queueLook(room);
+        if (look !== room.queueSeen) {
+          room.queueSeen = look;
+          room.activity = now;
+          this.#changed(room);
+        }
+      }
       const idle = this.#cfg.room_idle_mins * 60_000;
       if ((room.state === "lobby" || room.state === "results") && now - room.activity > idle) {
         this.#close(room, CLOSE.idle);
@@ -1917,8 +2141,10 @@ export class RoomDesk implements RoomLink {
       entries.filter((e) => e.row === null).map((e) => e.s.session.session),
       now,
     );
-    // Everyone readies again for the next round.
+    // Everyone readies again for the next round; with no rounds left, nothing more is sung.
     for (const m of room.members.values()) m.ready = false;
+    if (room.rounds >= c.room_rounds) room.queue = [];
+    room.queueSeen = this.#queueLook(room);
     this.#endAir(room, round);
     // 「讓大家聽到我」 is asked for again every round.
     for (const m of room.members.values()) m.hear = false;
@@ -2076,7 +2302,7 @@ export class RoomDesk implements RoomLink {
       .map((room) => {
         const running = room.state === "countdown" || room.state === "singing";
         const round = room.round;
-        const song = running && round !== null ? round.song : room.song;
+        const song = this.#shown(room)?.song ?? null;
         return {
           code: room.code,
           state: room.state as RoomBrief["state"],
@@ -2087,6 +2313,14 @@ export class RoomDesk implements RoomLink {
               : [...room.members.values()].filter((m) => m.role === "singer").length,
           max_singers: this.#cfg.room_singers,
           members: room.members.size,
+          queue: room.queue.map((e) => {
+            const row = this.#d.store.song(e.song);
+            return {
+              title: row?.title || row?.source || "",
+              by: e.byName,
+              state: this.#stateOf(e),
+            };
+          }),
         };
       });
   }
@@ -2105,20 +2339,37 @@ export class RoomDesk implements RoomLink {
     const me = room.members.get(key) ?? null;
     const round = room.round;
     const running = room.state === "countdown" || room.state === "singing";
+    const shown = this.#shown(room);
     let song: KaraokeRoomView["song"] = null;
-    if (room.song !== null) {
+    if (shown !== null) {
       try {
-        song = this.#d.service.song(account, room.song.id);
+        song = this.#d.service.song(account, shown.song.id);
       } catch {
         song = null;
       }
+    }
+    const next = this.#next(room);
+    // Each entry's song as anyone sees it: nobody's score is in it.
+    const queue: KaraokeRoomQueueEntry[] = [];
+    for (const e of room.queue) {
+      const view = this.#d.service.songView(e.song);
+      if (view === null) continue;
+      queue.push({
+        id: e.id,
+        song: view,
+        shift: e.shift,
+        by: { member: room.members.get(e.by)?.id ?? null, name: e.byName },
+        mine: e.by === key,
+      });
     }
     return {
       code: room.code,
       state: room.state,
       closed_reason: room.closedReason,
       song,
-      shift: room.shift,
+      shift: shown?.shift ?? 0,
+      queue,
+      next: next?.id ?? null,
       members: [...room.members.values()]
         .sort((a, b) => a.joined - b.joined)
         .map((m) => ({
@@ -2149,8 +2400,6 @@ export class RoomDesk implements RoomLink {
       result: room.result,
       terms: this.#terms(),
       air: this.#air(room, me),
-      queue: [],
-      next: null,
       queue_limits: {
         per_person: this.#cfg.room_queue_per_person,
         max: this.#cfg.room_queue_max,

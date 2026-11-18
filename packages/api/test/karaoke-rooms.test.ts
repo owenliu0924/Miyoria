@@ -397,6 +397,56 @@ describe("karaoke rooms through the routes", () => {
     expect(lines.join(" ")).not.toContain(track.slice(0, 40));
   });
 
+  it("opens without a song, and queues, removes and moves songs through the routes", async () => {
+    const r = await makeRig();
+    rig = r;
+    const songId = r.service.overview(ALICE).songs[0]?.id as string;
+    const opened = await call<KaraokeRoomView>(r, ALICE, "/api/member/karaoke/rooms", post({}));
+    expect(opened.status).toBe(200);
+    expect(opened.body).toMatchObject({ song: null, queue: [], next: null, settling: null });
+    const code = opened.body.code;
+    const base = `/api/member/karaoke/rooms/${code}`;
+    await call(r, BOB, `${base}/join`, post({ as: "spectator" }));
+    // Anyone in the room queues; exactly one of song and text.
+    const added = await call<KaraokeRoomView>(r, BOB, `${base}/queue`, post({ song: songId }));
+    expect(added.status).toBe(200);
+    expect(added.body.queue[0]).toMatchObject({ mine: true, by: { name: "Bobby" } });
+    expect((await call(r, BOB, `${base}/queue`, post({}))).status).toBe(400);
+    expect((await call(r, BOB, `${base}/queue`, post({ song: songId, text: "x" }))).status).toBe(
+      400,
+    );
+    expect((await call(r, CAROL, `${base}/queue`, post({ song: songId }))).status).toBe(409);
+    const mine = await call<KaraokeRoomView>(
+      r,
+      ALICE,
+      `${base}/queue`,
+      post({ song: songId, shift: 0 }),
+    );
+    const [bobs, alices] = mine.body.queue.map((e) => e.id) as [string, string];
+    expect(mine.body.next).toBe(bobs);
+    // Only the opener (or an admin) moves; the adder, the opener or an admin removes.
+    expect((await call(r, BOB, `${base}/queue/${alices}/move`, post({ to: 0 }))).status).toBe(403);
+    const moved = await call<KaraokeRoomView>(
+      r,
+      ALICE,
+      `${base}/queue/${alices}/move`,
+      post({ to: 0 }),
+    );
+    expect(moved.body.queue.map((e) => e.id)).toEqual([alices, bobs]);
+    expect(
+      (await call(r, CAROL, `${base}/queue/${bobs}/move`, post({ to: 0 }), "admin")).status,
+    ).toBe(200);
+    expect((await call(r, BOB, `${base}/queue/${alices}`, { method: "DELETE" })).status).toBe(403);
+    const removed = await call<KaraokeRoomView>(r, BOB, `${base}/queue/${bobs}`, {
+      method: "DELETE",
+    });
+    expect(removed.status).toBe(200);
+    expect(removed.body.queue.map((e) => e.id)).toEqual([alices]);
+    expect((await call(r, BOB, `${base}/queue/nope`, { method: "DELETE" })).status).toBe(404);
+    // The old route to pick the song is gone.
+    expect((await r.hono.request(`${base}/song`, post({ song: songId }))).status).toBe(404);
+  });
+
   it("lets a panel admin use karaoke while it is closed to members", async () => {
     const r = await makeRig(false);
     rig = r;
