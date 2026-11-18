@@ -1,6 +1,6 @@
 // `/me play karaoke` and the room notices: the caller alone sees where karaoke is, whether it is
 // open to them (a panel admin may use it while it is closed), their coins, the terms and the rooms
-// open now with links (theirs first); without `site_url` there are no links, only
+// open now with links (theirs first, with its queue); without `site_url` there are no links, only
 // where to go. 開房 asks first and charges nothing until 確定, which opens the room the web's way
 // (once, however often it is pressed); `song:` queues in the caller's room or asks for the song.
 
@@ -217,6 +217,32 @@ describe("/me play karaoke", () => {
   it("says so without the karaoke module", async () => {
     const r = await rigWith();
     expect((await run(registryWith(null, r.config), BOB)).text).toContain("沒有開");
+  });
+});
+
+describe("/me play karaoke: the caller's room's queue", () => {
+  it("shows the next songs with who added them and which are still being prepared", async () => {
+    const r = await rigWith();
+    const room = await r.desk.open(ALICE, "Alice *A*", r.songId, 0);
+    await r.desk.queueAdd(room.code, ALICE, "Alice", { text: "https://youtu.be/next" });
+    const title = r.service.songView(r.songId)?.title as string;
+    const reply = await run(commandsOf(r), ALICE);
+    const queue = blocks(reply)[1];
+    expect(queue?.type).toBe("text");
+    if (queue?.type === "text") {
+      expect(queue.text).toContain("**點歌**");
+      expect(queue.text).toContain(`1. 「${title}」　Alice \\*A\\*`);
+      expect(queue.text).toMatch(/2\. 「.+」　Alice \\\*A\\\*　準備中/u);
+    }
+    // In a room: no 開房.
+    expect(openButton(reply)).toBeUndefined();
+  });
+
+  it("says how to pick a song when the queue is empty", async () => {
+    const r = await rigWith();
+    await r.desk.open(ALICE, "Alice", null, 0);
+    const reply = await run(commandsOf(r), ALICE);
+    expect(reply.text).toContain("還沒有人點歌:用 `/me play karaoke song:` 點一首");
   });
 });
 

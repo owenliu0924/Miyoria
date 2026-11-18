@@ -2,7 +2,7 @@
 // `/me play`, see `SLASH_REGROUP`) and the room notices in the comment channel. No new top-level
 // command: one entry beside the coin commands that tells the caller, only them, where karaoke is
 // (a link to the member site when `site_url` is set), whether it is open to them, their coins, what
-// a room costs and pays, the rooms open now with a link to each (theirs first),
+// a room costs and pays, the rooms open now with a link to each (theirs first, with its queue),
 // and lets them open a room and pick songs. Singing is on the member page; Discord only points
 // there.
 //
@@ -61,6 +61,8 @@ export const ROUTES = {
 const CONFIRM_TTL_MS = 2 * 60_000;
 /** A suggestion's value: a song picked from the list, not words typed. */
 export const SONG_ID = "id:";
+/** Entries of the caller's room's queue the notice shows. */
+const QUEUE_SHOWN = 5;
 /** Discord shows at most 25 suggestions. */
 const MAX_CHOICES = 25;
 
@@ -96,12 +98,28 @@ function briefLine(room: RoomBrief): string {
   return `**${room.code}**　${song}　${room.singers} / ${room.max_singers} 人唱${state}`;
 }
 
+/** The next few songs of a room's queue: title, who added it, preparing / failed marks. */
+function queueBlocks(room: RoomBrief, command: string): CardBlock[] {
+  if (room.queue.length === 0) {
+    return [{ type: "muted", text: `還沒有人點歌:用 \`${command} song:\` 點一首。` }];
+  }
+  const lines = room.queue.slice(0, QUEUE_SHOWN).map((e, i) => {
+    const mark = e.state === "preparing" ? "　準備中" : e.state === "failed" ? "　準備失敗" : "";
+    return `${i + 1}. ${songTitle(e.title)}　${md(e.by.slice(0, 40))}${mark}`;
+  });
+  const more = room.queue.length - QUEUE_SHOWN;
+  if (more > 0) lines.push(`還有 ${more} 首`);
+  return [{ type: "text", text: `**點歌**\n${lines.join("\n")}` }];
+}
+
 export interface KaraokeNoticeInput {
   config: Pick<KaraokeConfig, "site_url" | "open">;
   overview: KaraokeRooms;
   rooms: readonly RoomBrief[];
   /** The caller is a panel admin (karaoke is theirs to try while closed). */
   admin: boolean;
+  /** What the caller types for this command (`/me play karaoke` on Discord). */
+  command?: string;
 }
 
 /** The caller may open a room now: it is open to them, they are in none, they have the coins. */
@@ -114,6 +132,7 @@ export function mayOpen(overview: KaraokeRooms): boolean {
 /** The answer of `/me play karaoke` (only the caller sees it). */
 export function karaokeNotice(input: KaraokeNoticeInput): CommandReply {
   const { config, overview, rooms, admin } = input;
+  const command = input.command ?? typedCommand("me karaoke", "discord");
   const blocks: CardBlock[] = [];
   const mine =
     overview.mine === null ? null : (rooms.find((r) => r.code === overview.mine) ?? null);
@@ -125,6 +144,7 @@ export function karaokeNotice(input: KaraokeNoticeInput): CommandReply {
         ? { type: "text", text }
         : { type: "section", text, button: { id: "", label: "回到房間", url } },
     );
+    blocks.push(...queueBlocks(mine, command));
   }
   if (!config.open && admin) {
     blocks.push({ type: "text", text: "唱 K 還沒開放,只有管理員能用。" });
@@ -362,12 +382,13 @@ export interface KaraokeCommandDeps {
 async function answer(inv: Invocation, d: KaraokeCommandDeps): Promise<CommandReply> {
   const desk = d.rooms();
   if (desk === null) return notice("info", OFF);
+  const command = typedCommand("me karaoke", inv.invoker.platform);
   try {
     const admin = await inv.allowed(PANEL_ACCESS);
     const raw = inv.str("song")?.trim() ?? "";
     if (raw !== "") return await songAnswer(inv, d, desk, raw, admin);
     const overview = await desk.overview(inv.invoker, admin);
-    return karaokeNotice({ config: d.config(), overview, rooms: desk.briefs(), admin });
+    return karaokeNotice({ config: d.config(), overview, rooms: desk.briefs(), admin, command });
   } catch (error) {
     return refusal(error, "/me play karaoke");
   }
