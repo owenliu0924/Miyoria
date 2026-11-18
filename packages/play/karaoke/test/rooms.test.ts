@@ -887,6 +887,71 @@ describe("her stream (step 5)", () => {
     expect(dave.some((e) => e.type === "room" && e.room.air.relay.live)).toBe(true);
   });
 
+  it("gives the scene the join link, the pitch lanes, the round's notes and the four parts", async () => {
+    const site = await makeRig({
+      site_url: "https://miyo.example/",
+      stream_qr_while_singing: true,
+    });
+    try {
+      const room = await site.desk.open(ALICE, "Alice", site.songId, 2);
+      await site.desk.join(room.code, BOB, "Bob", "singer");
+      for (const a of [ALICE, BOB]) {
+        site.desk.ready(room.code, a, { ready: true, latency_ms: 0, calibrated: true });
+      }
+      expect(site.staged.scenes.at(-1)).toMatchObject({
+        join_url: `https://miyo.example/karaoke/room/${room.code}`,
+        qr_while_singing: true,
+      });
+      await site.desk.start(room.code, ALICE);
+      const tracks = new Map([
+        [ALICE, good(1)],
+        [BOB, great(2)],
+      ]);
+      await singRound(site, room.code, tracks);
+      // The round's reference notes, in its key, for the lanes.
+      const reference = await site.service.reference(site.songId);
+      const notes = site.staged.lyrics[0]?.notes ?? [];
+      expect(notes.length).toBe(reference.notes.length);
+      expect(notes[0]?.midi).toBeCloseTo((reference.notes[0]?.midi ?? 0) + 2, 2);
+      expect(notes.every((n) => n.start >= 0 && n.end >= n.start)).toBe(true);
+      // Each singer's recent pitch while sung, as the spectators' board has it.
+      const sung = site.staged.scenes.filter((x) => x.state === "singing");
+      const lanes = sung.flatMap((x) => x.board.filter((l) => l.pitch !== null));
+      expect(lanes.length).toBeGreaterThan(5);
+      expect(lanes[0]?.pitch).toEqual({ from: expect.any(Number), track: expect.any(String) });
+      expect(sung.every((x) => x.board.every((l) => l.parts === null))).toBe(true);
+      await submitAll(site, room.code, tracks);
+      const results = site.staged.scenes.at(-1);
+      expect(results?.state).toBe("results");
+      expect(results?.board).toHaveLength(2);
+      for (const line of results?.board ?? []) {
+        expect(line.pitch).toBeNull();
+        expect(line.parts).toEqual({
+          pitch: expect.any(Number),
+          stability: expect.any(Number),
+          rhythm: expect.any(Number),
+          expression: expect.any(Number),
+        });
+      }
+    } finally {
+      site.raw.close();
+      await rm(site.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("has no join link without the site's address, or with the QR off", async () => {
+    await rig.desk.open(ALICE, "Alice", rig.songId, 0);
+    expect(rig.staged.scenes.at(-1)).toMatchObject({ join_url: null, qr_while_singing: false });
+    const off = await makeRig({ site_url: "https://miyo.example", stream_qr: false });
+    try {
+      await off.desk.open(ALICE, "Alice", off.songId, 0);
+      expect(off.staged.scenes.at(-1)?.join_url).toBeNull();
+    } finally {
+      off.raw.close();
+      await rm(off.dir, { recursive: true, force: true });
+    }
+  });
+
   it("sends nothing when every singer opted out, and ends the scene with the room", async () => {
     const room = await lobby();
     rig.desk.relay(room.code, ALICE, { lead: true, skip: true });

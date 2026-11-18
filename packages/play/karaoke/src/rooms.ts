@@ -46,6 +46,9 @@ import type {
 } from "@miyoria/contracts/api";
 import {
   KARAOKE_BOARD_MAX,
+  KARAOKE_JOIN_URL_MAX,
+  KARAOKE_NOTES_MAX,
+  KARAOKE_PITCH_MAX_CHARS,
   type KaraokeStageLine,
   type KaraokeStageLyrics,
   type KaraokeStageScene,
@@ -71,7 +74,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { type AirSinger, lyricGaps, RoomAir } from "./air.js";
-import { commentContext, type KaraokeConfig } from "./config.js";
+import { commentContext, type KaraokeConfig, siteLink } from "./config.js";
 import { sungEnd } from "./lyrics/index.js";
 import { type RoundLine, roomOpenedNote, roundResultNote, roundStartNote } from "./notes.js";
 import {
@@ -507,6 +510,7 @@ export class RoomDesk implements RoomLink {
     this.#d.log.info({ room: id, code, price }, "karaoke: a room opened");
     this.#note(`karaoke:room:${id}:open`, roomOpenedNote(name, code, song.title), true);
     this.#announce(room, member.name);
+    this.#stage();
     return this.#view(room, account);
   }
 
@@ -818,7 +822,7 @@ export class RoomDesk implements RoomLink {
         gaps: lyricGaps(lines.map((l) => ({ start: l.start, end: sungEnd(l) }))),
         send: (piece) => this.#voice(room, round, piece),
       });
-      const files = this.#stageFiles(room, round, reference.lyrics).finally(() =>
+      const files = this.#stageFiles(room, round, reference.lyrics, reference.notes).finally(() =>
         this.#inflight.delete(files),
       );
       this.#inflight.add(files);
@@ -990,7 +994,12 @@ export class RoomDesk implements RoomLink {
   }
 
   /** The round's words, video and backing for the stream (fetched while it counts down). */
-  async #stageFiles(room: Room, round: Round, lyrics: KaraokeStageLyrics["lyrics"]): Promise<void> {
+  async #stageFiles(
+    room: Room,
+    round: Round,
+    lyrics: KaraokeStageLyrics["lyrics"],
+    notes: readonly { start: number; end: number; midi: number }[],
+  ): Promise<void> {
     let files: Awaited<ReturnType<KaraokeService["streamFiles"]>>;
     try {
       files = await this.#d.service.streamFiles(round.song, round.shift);
@@ -1005,7 +1014,7 @@ export class RoomDesk implements RoomLink {
       lyrics: lyricsForStage(lyrics),
       video: files.video,
       backing: this.#cfg.stream_backing ? files.backing : null,
-      notes: [],
+      notes: notesForStage(notes),
     };
     // A scene that showed this round before its files came gets them now.
     const f = this.#featured;
@@ -1100,7 +1109,7 @@ export class RoomDesk implements RoomLink {
           finished: false,
           on_air: onAir === s.member.key,
           parts: null,
-          pitch: null,
+          pitch: this.#recentPitch(s),
         }));
     } else if (room.state === "results" && room.result !== null) {
       board = room.result.places.map((p) => ({
@@ -1114,7 +1123,15 @@ export class RoomDesk implements RoomLink {
         coins: Math.max(0, p.coins),
         finished: p.finished,
         on_air: false,
-        parts: null,
+        parts:
+          p.total === null
+            ? null
+            : {
+                pitch: p.pitch,
+                stability: p.stability,
+                rhythm: p.rhythm,
+                expression: p.expression,
+              },
         pitch: null,
       }));
     }
@@ -1153,10 +1170,25 @@ export class RoomDesk implements RoomLink {
         running && round?.stage?.backing != null,
       ),
       queue: [],
-      join_url: null,
-      qr_while_singing: false,
+      join_url: this.#joinUrl(room),
+      qr_while_singing: c.stream_qr_while_singing,
       settling: this.#sceneSettling(room),
     };
+  }
+
+  /** The room's join link for the stream's QR code, when the site's address is set and it is on. */
+  #joinUrl(room: Room): string | null {
+    if (!this.#cfg.stream_qr) return null;
+    const url = siteLink(this.#cfg, `/karaoke/room/${room.code}`);
+    return url === null || url.length > KARAOKE_JOIN_URL_MAX ? null : url;
+  }
+
+  /** A singer's pitch lately for the stream's lanes, as the spectators' board has it. */
+  #recentPitch(s: Singer): KaraokeStageLine["pitch"] {
+    const r = s.recent;
+    if (r.frames.length === 0) return null;
+    const track = toBase64(encodeTrack(r.frames));
+    return track.length > KARAOKE_PITCH_MAX_CHARS ? null : { from: r.from, track };
   }
 
   /** The stream's side of settling: whom it waits for, names only. */
@@ -2136,6 +2168,20 @@ export class RoomDesk implements RoomLink {
       this.#d.log.warn({ err: String(error) }, "karaoke: cannot tell her about a room");
     }
   }
+}
+
+/** The round's reference notes for the stream's lanes (song seconds, MIDI), at most the cap. */
+function notesForStage(
+  notes: readonly { start: number; end: number; midi: number }[],
+): KaraokeStageLyrics["notes"] {
+  return notes
+    .filter((n) => Number.isFinite(n.start) && Number.isFinite(n.end) && Number.isFinite(n.midi))
+    .filter((n) => n.end > 0)
+    .slice(0, KARAOKE_NOTES_MAX)
+    .map((n) => {
+      const start = Math.max(0, n.start);
+      return { start, end: Math.max(start, n.end), midi: n.midi };
+    });
 }
 
 /** Lyrics this long (as JSON) go to the stream without their pieces (the stage link's frame cap). */
