@@ -385,6 +385,29 @@ export const KaraokeConfigSchema = z
       .max(8)
       .default(8)
       .meta(setting({ kind: "number", label: "一間房最多幾人唱", group: "rooms" })),
+    /** Songs one person may have waiting in a room's queue (one being prepared counts). */
+    room_queue_per_person: z
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(2)
+      .meta(
+        setting({
+          kind: "number",
+          label: "每人最多點幾首在等",
+          help: "房間裡的點歌佇列,一個人同時最多有幾首在等(準備中的也算)",
+          group: "rooms",
+        }),
+      ),
+    /** Songs a room's queue holds (failed ones are not counted). */
+    room_queue_max: z
+      .number()
+      .int()
+      .min(1)
+      .max(50)
+      .default(12)
+      .meta(setting({ kind: "number", label: "一間房最多排幾首", group: "rooms" })),
     /** Rooms open at once. */
     room_max: z
       .number()
@@ -459,6 +482,34 @@ export const KaraokeConfigSchema = z
           kind: "switch",
           label: "直播畫面顯示唱 K 房間",
           help: "房間等人時角落一塊,唱的時候整個場景:歌詞、背景影片、即時排名、結果",
+          group: "stream",
+        }),
+      ),
+    /**
+     * The stream's karaoke scene shows a QR code of the room's join link beside its code (in the
+     * lobby, small after a round), when `site_url` is set. Anyone who sees the stream may open it;
+     * the room's own rules decide who gets in.
+     */
+    stream_qr: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "直播上顯示加入房間的 QR 碼",
+          help: "等人時在房號旁邊,唱完後小小一塊;要填會員頁的網址。看得到直播的人都能掃,誰能進房間照房間的規則",
+          group: "stream",
+        }),
+      ),
+    /** The QR code stays (small, in a corner) while a round is sung too. */
+    stream_qr_while_singing: z
+      .boolean()
+      .default(false)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "唱的時候也顯示 QR 碼",
+          help: "唱的時候在角落留一個小的 QR 碼,中途進來的人只能旁觀",
           group: "stream",
         }),
       ),
