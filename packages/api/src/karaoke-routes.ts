@@ -56,7 +56,9 @@ export const karaokeRpc = {
     refusals(() => service(state).song(accountOf(c), input.params.id)),
   ),
   start: os.karaoke.start.handler(({ input, context: { state, c } }) =>
-    refusals(() => service(state).start(accountOf(c), memberOf(c).name, input.params.id)),
+    refusals(() =>
+      service(state).start(accountOf(c), memberOf(c).name, input.params.id, input.body?.shift ?? 0),
+    ),
   ),
   submit: os.karaoke.submit.handler(({ input, context: { state, c } }) =>
     refusals(() => service(state).submit(accountOf(c), input.params.id, input.body)),

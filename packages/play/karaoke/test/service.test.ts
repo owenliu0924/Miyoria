@@ -27,6 +27,7 @@ import {
   FakeKaraokeWorker,
   humanSinger,
   referenceOf,
+  referenceV1Of,
   type SynthSong,
   synthSong,
 } from "../src/testing.js";
@@ -44,6 +45,13 @@ const CHANNEL = "discord:111111:222222";
 const T0 = Date.UTC(2026, 10, 18, 4, 0, 0);
 
 const song = synthSong(2, 6);
+const LYRICS_DEFAULTS = {
+  aligner: "w2v",
+  matched: 0.75,
+  uncertain: 0.5,
+  keep_share: 0.5,
+  wrong_share: 0.2,
+};
 
 interface Rig {
   service: KaraokeService;
@@ -132,7 +140,7 @@ describe("asking for a song", () => {
     const asked = await rig.service.request(ALICE, "  https://youtu.be/abc#t=3 ");
     expect(asked.created).toBe(true);
     expect(asked.song.state).toBe("preparing");
-    expect(rig.worker.asked).toEqual([{ url: "https://youtu.be/abc" }]);
+    expect(rig.worker.asked).toEqual([{ url: "https://youtu.be/abc", lyrics: LYRICS_DEFAULTS }]);
     const job = rig.store.song(asked.song.id)?.job as string;
     rig.worker.progress(job, "separate", 0.4);
     await rig.service.tick(signal);
@@ -157,9 +165,46 @@ describe("asking for a song", () => {
 
   it("searches with words", async () => {
     await rig.service.request(ALICE, "某首 歌");
-    expect(rig.worker.asked).toEqual([{ query: "某首 歌" }]);
+    expect(rig.worker.asked).toEqual([{ query: "某首 歌", lyrics: LYRICS_DEFAULTS }]);
     expect(sourceOf("某首  歌")?.key).toBe("query:某首 歌");
     expect(sourceOf("")).toBeNull();
+  });
+
+  it("sends the lyrics settings with every song, and keeps where its lyrics came from", async () => {
+    rig = await makeRig({ aligner: "mms", lyrics_matched: 0.8, lyrics_uncertain: 0.9 });
+    const heard = await rig.service.request(ALICE, "heard");
+    expect(rig.worker.asked[0]?.lyrics).toEqual({
+      ...LYRICS_DEFAULTS,
+      aligner: "mms",
+      matched: 0.8,
+      uncertain: 0.8, // never above the matched threshold
+    });
+    rig.worker.finish(
+      rig.store.song(heard.song.id)?.job as string,
+      referenceOf(song, "k-heard", "聽來的", true),
+    );
+    // A song a step 1 worker made (reference.json version 1) is still sung.
+    const old = await rig.service.request(ALICE, "old");
+    rig.worker.finish(rig.store.song(old.song.id)?.job as string, referenceV1Of(song, "k-old"));
+    await rig.service.tick(signal);
+    expect(rig.service.song(ALICE, heard.song.id)).toMatchObject({
+      state: "ready",
+      lyrics: true,
+      lyrics_source: "heard",
+    });
+    expect(rig.service.song(ALICE, old.song.id)).toMatchObject({
+      state: "ready",
+      lyrics_source: "found",
+    });
+    const ref = await rig.service.reference(old.song.id);
+    expect(ref.version).toBe(2);
+    expect(ref.lyrics?.lines[0]).toMatchObject({
+      status: "unchecked",
+      source: "found",
+      pieces: null,
+    });
+    const { result } = await sing(rig, old.song.id);
+    expect(result.total).toBeGreaterThan(85);
   });
 
   it("holds each person to the day's limit, counted in her local day", async () => {
@@ -241,6 +286,47 @@ describe("singing", () => {
     expect(await rig.service.file(ALICE, sid as string, "meta.json", exp, sig)).toBeNull();
     rig.clock.t += 11 * 60_000;
     expect(await rig.service.file(ALICE, sid as string, name as string, exp, sig)).toBeNull();
+  });
+
+  it("sings in another key: the worker's backing in it, and the reference moved with it", async () => {
+    const id = await ready(rig);
+    await expect(rig.service.start(ALICE, "Alice", id, 7)).rejects.toMatchObject({ status: 400 });
+    const session = await rig.service.start(ALICE, "Alice", id, 3);
+    expect(session.shift).toBe(3);
+    const url = new URL(session.backing_url, "http://x");
+    const [, , , , , sid, name] = url.pathname.split("/");
+    expect(name).toBe("karaoke.k+3.m4a");
+    const exp = url.searchParams.get("exp") ?? undefined;
+    const sig = url.searchParams.get("sig") ?? undefined;
+    expect(await rig.service.file(ALICE, sid as string, name as string, exp, sig)).toMatchObject({
+      type: "audio/mp4",
+    });
+    expect(rig.worker.keys).toEqual([`${rig.store.song(id)?.worker_song}/3`]);
+    // The same key again is not made again; the key is only this session's.
+    const other = await rig.service.start(ALICE, "Alice", id, 3);
+    expect(rig.worker.keys).toHaveLength(1);
+    const plain = await rig.service.start(ALICE, "Alice", id);
+    expect(plain.backing_url).toContain("karaoke.m4a");
+    expect(await rig.service.file(ALICE, plain.session, "karaoke.k+3.m4a", exp, sig)).toBeNull();
+    // Sung three semitones up, it scores as the song; the song's own key does not.
+    const up = humanSinger(song);
+    const shifted = { ...up, midi: up.midi.map((m) => (m === null ? null : m + 3)) };
+    const rec = new TrackRecorder(shifted.hz);
+    shifted.midi.forEach((m, j) => {
+      rec.push(j / shifted.hz, m);
+    });
+    const body = {
+      track: rec.encode(),
+      latency_ms: 0,
+      calibrated: true,
+      client_total: null,
+      browser: "",
+    };
+    rig.clock.t += rec.seconds * 1000 + 2000;
+    expect((await rig.service.submit(ALICE, other.session, body)).total).toBeGreaterThan(85);
+    expect((await rig.service.submit(ALICE, plain.session, body)).total).toBeLessThan(50);
+    rig.worker.keyFails = true;
+    await expect(rig.service.start(ALICE, "Alice", id, -2)).rejects.toMatchObject({ status: 503 });
   });
 
   it("scores the track again, keeps it, tells her once and counts it as singing together", async () => {

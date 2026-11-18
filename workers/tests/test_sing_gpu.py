@@ -457,7 +457,8 @@ def test_a_karaoke_job_shares_the_card_when_it_fits(sing, machine):  # noqa: F81
     done = wait(sing, sing.post("/jobs", json={"query": "sim karaoke 24 gb", "purpose": "karaoke"}).json()["job"]["id"])
     assert done["state"] == "done", done
     assert card.calls == [] and done["exclusive"] == "shared" and done["karaoke"]["id"].startswith("k-")
-    assert done["gpu"]["mode"] == "share" and done["gpu"]["stage"] == "reference"
+    # Its last GPU stage is the lyrics' aligner (the mock answers for the align environment).
+    assert done["gpu"]["mode"] == "share" and done["gpu"]["stage"] == "lyrics_align"
 
 
 def test_without_cuda_nothing_is_asked_of_anyone(sing, machine, monkeypatch):  # noqa: F811

@@ -9,6 +9,7 @@
 // as one unreachable for too long. With a single worker none of the failover rules apply: it is
 // used as it is.
 
+import type { WorkersKaraokeKeyReply } from "@miyoria/contracts/workers";
 import {
   type GpuContext,
   type SingWorker,
@@ -256,6 +257,20 @@ export class FailoverSingWorker implements SingWorker {
       owner === undefined ? this.#all : [owner, ...this.#all.filter((e) => e !== owner)];
     const [ep] = await this.#find(order, (w) => w.karaokeFile(song, file, dest, signal));
     this.#karaoke.set(song, ep);
+  }
+
+  /** On the worker that made it when known, else the first that has it. */
+  async karaokeKey(
+    song: string,
+    semitones: number,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeKeyReply> {
+    const owner = this.#karaoke.get(song);
+    const order =
+      owner === undefined ? this.#all : [owner, ...this.#all.filter((e) => e !== owner)];
+    const [ep, reply] = await this.#find(order, (w) => w.karaokeKey(song, semitones, signal));
+    this.#karaoke.set(song, ep);
+    return reply;
   }
 
   /** Healthy while any worker is; otherwise why each one is not. */

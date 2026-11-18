@@ -100,8 +100,16 @@ CREATE INDEX \`karaoke_songs_status_idx\` ON \`karaoke_songs\` (\`status\`,\`cre
 CREATE INDEX \`karaoke_tracks_purge_idx\` ON \`karaoke_tracks\` (\`purge_at\`);
 `;
 
+/** Step 2: the key a session is sung in, and where a song's lyrics came from. */
+const KEY_AND_LYRICS = `ALTER TABLE \`karaoke_sessions\` ADD \`shift\` integer DEFAULT 0 NOT NULL;
+ALTER TABLE \`karaoke_songs\` ADD \`lyrics_source\` text;
+`;
+
 /** The songs, requests, sessions, tracks and results. */
 export const karaokeSchema: PluginSchema = {
   plugin: "karaoke",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "key_and_lyrics", sql: KEY_AND_LYRICS },
+  ],
 };

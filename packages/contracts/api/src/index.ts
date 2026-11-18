@@ -422,6 +422,8 @@ export {
   KaraokeSessionSchema,
   type KaraokeSongView,
   KaraokeSongViewSchema,
+  type KaraokeStart,
+  KaraokeStartSchema,
   type KaraokeSubmit,
   KaraokeSubmitSchema,
 } from "./karaoke.js";

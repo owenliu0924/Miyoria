@@ -5,7 +5,8 @@
 // - `karaoke_songs`: one row per song asked for (by its link or search): its worker job, the
 //   worker's karaoke id, whether it is ready, and what its reference holds.
 // - `karaoke_requests`: one row per preparation a person started, for the daily limit.
-// - `karaoke_sessions`: one singing of one song by one person (single-player in this milestone).
+// - `karaoke_sessions`: one singing of one song by one person (single-player in this milestone),
+//   in the key the singer chose (`shift`, migration 2).
 // - `karaoke_tracks`: the pitch track a session sent: 50 Hz, one byte a frame, base64; deleted
 //   after a week (`purge_at`).
 // - `karaoke_results`: Core's score of a session, and her comment on it.
@@ -44,6 +45,8 @@ export const karaokeSongs = sqliteTable(
     error: text(),
     error_detail: text(),
     lyrics: integer({ mode: "boolean" }).notNull().default(false),
+    /** `found` (looked up) or `heard` (transcribed: shown as 聽寫); `null` without lyrics or before step 2. */
+    lyrics_source: text(),
     notes: integer().notNull().default(0),
     /** Who asked for it first. */
     requested_by: text(),
@@ -85,6 +88,8 @@ export const karaokeSessions = sqliteTable(
     started_at: micros().notNull(),
     expires_at: micros().notNull(),
     scored_at: micros(),
+    /** Semitones the singer moved the key by (-6..6): the backing and the reference both moved. */
+    shift: integer().notNull().default(0),
   },
   (t) => [
     index("karaoke_sessions_account_idx").on(t.platform, t.account_id, t.started_at),

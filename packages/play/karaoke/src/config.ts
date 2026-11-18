@@ -112,6 +112,80 @@ export const KaraokeConfigSchema = z
         group: "comment",
       }),
     ),
+    /**
+     * How a song's lyrics are aligned to the singing (docs/design/karaoke.md 「做了什麼第二步」):
+     * `w2v`, a wav2vec2 CTC model per language (Apache-2.0); `mms`, torchaudio's MMS_FA weights,
+     * better on hard songs, licensed CC-BY-NC-4.0 (non-commercial use only: this project is
+     * non-commercial). Sent with every song asked for; a song prepared before keeps its own.
+     */
+    aligner: z
+      .enum(["w2v", "mms"])
+      .default("w2v")
+      .meta(
+        setting({
+          kind: "select",
+          label: "歌詞對齊",
+          help: "mms 在難的歌上準很多,但權重是 CC-BY-NC-4.0(只能非商業使用);w2v 是 Apache-2.0。只影響之後準備的歌",
+          labels: { w2v: "w2v(Apache-2.0)", mms: "mms(CC-BY-NC-4.0)" },
+          group: "lyrics",
+        }),
+      ),
+    /** A looked-up line at least this similar to what was heard is matched (aligned, notes per character). */
+    lyrics_matched: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.75)
+      .meta(
+        setting({
+          kind: "ratio",
+          label: "一行算對上",
+          help: "查到的一行和聽到的至少這麼像,才逐字對齊、照字切音符",
+          group: "lyrics",
+        }),
+      ),
+    /** Below `lyrics_matched` but at least this: uncertain (shown, not aligned); below: failed. */
+    lyrics_uncertain: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.5)
+      .meta(
+        setting({
+          kind: "ratio",
+          label: "一行算不確定",
+          help: "比這個低就算對不上",
+          group: "lyrics",
+        }),
+      ),
+    /** Of the looked-up lines, at least this share matched keeps them. */
+    lyrics_keep_share: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.5)
+      .meta(
+        setting({
+          kind: "ratio",
+          label: "整首留下查到的歌詞",
+          help: "對上的行至少這麼多,查到的歌詞就用",
+          group: "lyrics",
+        }),
+      ),
+    /** Fewer than this share matched: the wrong song, the lyrics become what was heard. */
+    lyrics_wrong_share: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.2)
+      .meta(
+        setting({
+          kind: "ratio",
+          label: "整首算查錯歌",
+          help: "對上的行比這個少,就不用查到的歌詞,改用聽寫",
+          group: "lyrics",
+        }),
+      ),
     /** Where the backing tracks and references are kept on Core, relative to `miyoria.toml`. */
     cache_dir: z.string().default("data/karaoke"),
   })
@@ -119,7 +193,25 @@ export const KaraokeConfigSchema = z
     settingGroups([
       { id: "songs", label: "點歌" },
       { id: "score", label: "評分" },
+      { id: "lyrics", label: "歌詞" },
       { id: "comment", label: "講評" },
     ]),
   );
+
+/** `karaoke_lyrics` of a song's job: the lyrics settings as the worker takes them. */
+export function lyricsOptions(cfg: KaraokeConfig): {
+  aligner: "w2v" | "mms";
+  matched: number;
+  uncertain: number;
+  keep_share: number;
+  wrong_share: number;
+} {
+  return {
+    aligner: cfg.aligner,
+    matched: cfg.lyrics_matched,
+    uncertain: Math.min(cfg.lyrics_uncertain, cfg.lyrics_matched),
+    keep_share: cfg.lyrics_keep_share,
+    wrong_share: Math.min(cfg.lyrics_wrong_share, cfg.lyrics_keep_share),
+  };
+}
 export type KaraokeConfig = z.output<typeof KaraokeConfigSchema>;

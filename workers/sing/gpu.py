@@ -78,6 +78,11 @@ SPILL_MARGIN_MB = 256  # over the free VRAM at which a spill was seen
 LOW_FREE_READS = 3  # readings in a row before low free VRAM counts
 RELOAD_PRIOR_S = 30.0
 RATE_PRIORS = {"separate": 0.05, "lead": 0.25, "convert": 0.3}  # seconds of work per second of audio
+# What a stage is assumed to need until it was measured here, where it is known to need more than
+# SING_SHARE_MIN_FREE_MB: the karaoke lyrics' recogniser (Qwen3-ASR-1.7B in fp16 peaked at 4.8 GB in
+# the 2026-11-18 experiment) and aligner (MMS_FA 1.8 GB, 2.9 GB on a 30 s window; wav2vec2 large
+# 2.8–3.9 GB in fp32).
+STAGE_NEED_PRIORS_MB = {"lyrics_asr": 5200, "lyrics_align": 4096}
 # Stages that can run on the CPU instead, so they never take her voice's card: one that does not fit
 # is done there (a spill in one sends the rest of the job's such stages to the CPU as well).
 CPU_STAGES = ("separate", "lead")
@@ -671,7 +676,7 @@ class GpuJob:
         waited = self.waiting_s()
         speech = self.speech.read()
         freed = m.profile.freed_mb()
-        need, _ = m.profile.need(stage, limits.prior_need_mb)
+        need, _ = m.profile.need(stage, max(limits.prior_need_mb, STAGE_NEED_PRIORS_MB.get(stage, 0)))
         return Facts(
             policy=self.policy, stage=stage, limits=limits, cuda=card.cuda, on_gpu=on_gpu, pauses=pauses,
             total_mb=card.total_mb,
