@@ -92,10 +92,12 @@ const session = (id = "S7"): KaraokeSession => ({
 
 const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 4, max_singers: 8 };
 
+/** `singers` left out: `room()` counts the room's singer members, as Core does outside a round. */
 const air = (over: Partial<Omit<KaraokeRoomView["air"], "relay">> & { relay?: Partial<KaraokeRoomView["air"]["relay"]> } = {}): KaraokeRoomView["air"] => ({
   backing: true,
   delay_ms: 2_000,
   lead: false,
+  singers: Number.NaN,
   ...over,
   relay: { allowed: true, reason: null, member: null, live: false, ...over.relay },
 });
@@ -111,7 +113,13 @@ const member = (over: Partial<KaraokeRoomView["members"][number]> & { id: string
   ...over,
 });
 
-const room = (over: Partial<KaraokeRoomView> = {}): KaraokeRoomView => ({
+const room = (over: Partial<KaraokeRoomView> = {}): KaraokeRoomView => {
+  const view = roomOf(over);
+  const counted = view.members.filter((m) => m.role === "singer").length;
+  return { ...view, air: { ...view.air, singers: Number.isNaN(view.air.singers) ? counted : view.air.singers } };
+};
+
+const roomOf = (over: Partial<KaraokeRoomView>): KaraokeRoomView => ({
   code: "KTV888",
   state: "lobby",
   closed_reason: null,
@@ -690,6 +698,14 @@ describe("一起唱: her stream on the stages", () => {
     await screen.findByRole("region", { name: "唱 紙船" });
     expect(screen.queryByRole("button", { name: "開啟" })).toBeNull();
     expect(screen.queryByText("你的聲音正在播出")).toBeNull();
+  });
+
+  it("a round's only singer is alone even when another member chose to sing and was not ready", async () => {
+    const two = [member({ id: "me", name: "小魚乾", opener: true, color: 0, hear: true }), member({ id: "a", name: "海苔", color: 1 })];
+    roomSite(stage(two, air({ singers: 1, relay: { member: "me", live: true } })));
+    renderRoom(fakeEngine().engine);
+    expect(await screen.findByText("你的聲音正在播出")).toBeInTheDocument();
+    expect(screen.queryByText("這間房會播出第一名的歌聲")).toBeNull();
   });
 
   it("with two or more singers a singer sees only the static line, even if given member and live for themselves", async () => {
