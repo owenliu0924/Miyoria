@@ -21,24 +21,34 @@ import {
 import { StoreKey } from "@miyoria/store";
 import {
   type Clock,
+  contextKeyString,
   EventLogKey,
   Events,
   HandleDirectoryKey,
   HeartKey,
   is,
+  KaraokeWalletKey,
   KaraokeWorkerKey,
   SocialSignalsKey,
   serviceKey,
+  VoicePlayerKey,
 } from "@miyoria/types";
 import { karaokeCard } from "./card.js";
 import { commentContext, KaraokeConfigSchema } from "./config.js";
+import { RoomDesk } from "./rooms.js";
 import { type KaraokeNote, KaraokeService } from "./service.js";
 import { karaokeTables } from "./store.js";
 
 export const KaraokeKey = serviceKey<KaraokeService>("Karaoke");
+/** The rooms (step 4), which the member routes of `packages/api` call. */
+export const KaraokeRoomsKey = serviceKey<RoomDesk>("KaraokeRooms");
 
 /** How often the jobs being prepared are looked at. */
 export const TICK_MS = 3_000;
+/** How often the rooms are looked at (countdowns, the relay, the board). */
+export const ROOM_TICK_MS = 250;
+/** Every this many looks at the rooms, what is owed is paid again (a wallet that was away). */
+const MONEY_EVERY = 40;
 /** Every this many looks, the upkeep (old tracks, idle files, comments not made). */
 const UPKEEP_EVERY = 20;
 /** Her working-context bucket for karaoke, and how many notes it keeps. */
@@ -51,6 +61,7 @@ export interface KaraokeModuleOptions {
   /** Replaces the module context's clock (tests). */
   clock?: Clock;
   tickMs?: number;
+  roomTickMs?: number;
 }
 
 export class KaraokeModule implements Module {
@@ -65,6 +76,7 @@ export class KaraokeModule implements Module {
   });
   readonly #options: KaraokeModuleOptions;
   #running: KaraokeService | null = null;
+  #rooms: RoomDesk | null = null;
 
   constructor(options: KaraokeModuleOptions = {}) {
     this.#options = options;
@@ -108,6 +120,68 @@ export class KaraokeModule implements Module {
     ctx.provide(KaraokeKey, service);
     this.#running = service;
 
+    // Rooms (step 4): only while she is in a voice channel. Where she is comes from the voice
+    // events; before any arrives (Core started while she was in one), the voice node is asked
+    // about the comment channel's server.
+    const voices = new Set<string>();
+    const inVoice = () => {
+      if (voices.size > 0) return true;
+      const guild = commentContext(config.comment_channel)?.scope ?? null;
+      return guild !== null && (ctx.services.get(VoicePlayerKey)?.channel(guild) ?? null) !== null;
+    };
+    const rooms = new RoomDesk({
+      config,
+      store: store.plugin(karaokeTables),
+      service,
+      worker: () => ctx.services.get(KaraokeWorkerKey) ?? null,
+      wallet: () => ctx.services.get(KaraokeWalletKey) ?? null,
+      inVoice,
+      who: (account) => {
+        const attitude = ctx.services.get(SocialSignalsKey)?.attitude(account) ?? null;
+        return { person: attitude?.person ?? null, blocked: attitude?.blocked ?? false };
+      },
+      tell: (note) => tell(ctx, note),
+      together: (person, detail, at, session) => {
+        try {
+          ctx.services.get(HeartKey)?.evidence?.({
+            person,
+            kind: "played_together",
+            detail,
+            weight: null,
+            at,
+            session: `karaoke:${session}`,
+          });
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "karaoke: cannot record singing together");
+        }
+      },
+      now: () => clock.now(),
+      log: ctx.log,
+    });
+    service.attachRooms(rooms);
+    // Rooms the last run left open are closed, and what they owe is paid, before any is served.
+    await rooms.recover();
+    ctx.provide(KaraokeRoomsKey, rooms);
+    this.#rooms = rooms;
+    const voice = ctx.subscribe([Events.VoiceJoined.type, Events.VoiceLeft.type]);
+    ctx.spawn("voice", async () => {
+      for await (const env of voice) {
+        if (is(Events.VoiceJoined, env)) voices.add(contextKeyString(env.data.context));
+        else if (is(Events.VoiceLeft, env)) voices.delete(contextKeyString(env.data.context));
+      }
+    });
+    ctx.spawn("rooms", async (signal) => {
+      let n = 0;
+      for await (const _ of interval(this.#options.roomTickMs ?? ROOM_TICK_MS, signal)) {
+        try {
+          await rooms.tick();
+          if (++n % MONEY_EVERY === 0) await rooms.settleMoney();
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "karaoke: the rooms' pass failed");
+        }
+      }
+    });
+
     // Her turns in the comment channel: the first after a note is her comment on it.
     const turns = ctx.subscribe([Events.AgentTurnCompleted.type]);
     ctx.spawn("comments", async () => {
@@ -144,11 +218,15 @@ export class KaraokeModule implements Module {
       ...service.counts(),
       worker: service.hasWorker(),
       comments: cfg.comment && commentContext(cfg.comment_channel) !== null,
+      rooms: this.#rooms?.counts().rooms ?? 0,
     });
   }
 
   async stop(): Promise<void> {
+    // Open rooms stay open in the store: the next start closes them and pays what they owe.
+    this.#running?.attachRooms(null);
     this.#running = null;
+    this.#rooms = null;
   }
 }
 

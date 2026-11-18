@@ -22,6 +22,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -94,6 +95,8 @@ export const karaokeSessions = sqliteTable(
     scored_at: micros(),
     /** Semitones the singer moved the key by (-6..6): the backing and the reference both moved. */
     shift: integer().notNull().default(0),
+    /** The room it was sung in (migration 4), `null` alone: the room tells her of it, not the session. */
+    room_id: text(),
   },
   (t) => [
     index("karaoke_sessions_account_idx").on(t.platform, t.account_id, t.started_at),
@@ -159,5 +162,105 @@ export const karaokeResults = sqliteTable(
     index("karaoke_results_person_idx").on(t.person_id, t.song_id, t.created_at),
     index("karaoke_results_comment_idx").on(t.comment_state, t.channel, t.noted_at),
     check("karaoke_results_comment_check", sql`${t.comment_state} IN ('waiting', 'said', 'none')`),
+  ],
+);
+
+/**
+ * A room (migration 4, docs/design/karaoke.md 「做了什麼第四步」): what has to outlive a restart of
+ * Core so the coins come out right. Who is in it, the song and the live scores are in memory only;
+ * a restart closes every open room.
+ *
+ * - `charge`: `charging` (the row is written before the opener is charged, so a crash in between
+ *   still knows to give back whatever was taken), `charged`, `free` (no price), `failed` (not
+ *   charged: nothing to give back).
+ * - `sung`: a round of it was sung through (results settled): then the opening is never given back.
+ * - `refund`: `none`, `due` (to give back: written with the room's end, in the same transaction),
+ *   `done`.
+ */
+export const karaokeRooms = sqliteTable(
+  "karaoke_rooms",
+  {
+    id: text().primaryKey(),
+    code: text().notNull(),
+    opener_person: text(),
+    opener_platform: text().notNull(),
+    opener_account: text().notNull(),
+    opener_name: text().notNull(),
+    state: text().notNull(),
+    charge: text().notNull(),
+    price: integer().notNull(),
+    sung: integer({ mode: "boolean" }).notNull().default(false),
+    rounds: integer().notNull().default(0),
+    refund: text().notNull().default("none"),
+    close_reason: text(),
+    created_at: micros().notNull(),
+    closed_at: micros(),
+  },
+  (t) => [
+    index("karaoke_rooms_state_idx").on(t.state, t.created_at),
+    check("karaoke_rooms_state_check", sql`${t.state} IN ('open', 'closed')`),
+    check(
+      "karaoke_rooms_charge_check",
+      sql`${t.charge} IN ('charging', 'charged', 'free', 'failed')`,
+    ),
+    check("karaoke_rooms_refund_check", sql`${t.refund} IN ('none', 'due', 'done')`),
+  ],
+);
+
+/**
+ * A round of a room: `singing` while it runs, `settled` once its ranking is final (its payouts
+ * written with it), `void` when it could not finish (she left, Core restarted): nothing paid.
+ */
+export const karaokeRoomRounds = sqliteTable(
+  "karaoke_room_rounds",
+  {
+    room_id: text().notNull(),
+    round: integer().notNull(),
+    song_id: text().notNull(),
+    shift: integer().notNull().default(0),
+    state: text().notNull(),
+    started_at: micros().notNull(),
+    settled_at: micros(),
+    /** The final ranking (`KaraokeRoomResult`, JSON) once settled. */
+    result: text(),
+  },
+  (t) => [
+    primaryKey({ name: "karaoke_room_rounds_pk", columns: [t.room_id, t.round] }),
+    index("karaoke_room_rounds_state_idx").on(t.state),
+    check("karaoke_room_rounds_state_check", sql`${t.state} IN ('singing', 'settled', 'void')`),
+  ],
+);
+
+/**
+ * What a settled round pays one person: written `due` with the settling, then `paid` (or
+ * `capped`, `refused`) once the wallet answered. A `due` row after a restart is paid again: the
+ * wallet's key (`<room>:<round>:<person>`) makes that the same payment.
+ */
+export const karaokeRoomPayouts = sqliteTable(
+  "karaoke_room_payouts",
+  {
+    room_id: text().notNull(),
+    round: integer().notNull(),
+    person_id: text().notNull(),
+    kind: text().notNull(),
+    platform: text().notNull(),
+    account_id: text().notNull(),
+    amount: integer().notNull(),
+    state: text().notNull(),
+    paid: integer().notNull().default(0),
+    created_at: micros().notNull(),
+    paid_at: micros(),
+  },
+  (t) => [
+    primaryKey({
+      name: "karaoke_room_payouts_pk",
+      columns: [t.room_id, t.round, t.person_id, t.kind],
+    }),
+    index("karaoke_room_payouts_state_idx").on(t.state),
+    check("karaoke_room_payouts_kind_check", sql`${t.kind} IN ('prize', 'finish')`),
+    check(
+      "karaoke_room_payouts_state_check",
+      sql`${t.state} IN ('due', 'paid', 'capped', 'refused')`,
+    ),
   ],
 );

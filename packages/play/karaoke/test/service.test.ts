@@ -511,7 +511,12 @@ describe("the official score from a recording", () => {
     expect(rig.worker.voices).toMatchObject([{ size: 4, type: WEBM }]);
     const official = rig.service.result(ALICE, result.session);
     expect(official.source).toBe("voice");
-    expect(official.voice).toEqual({ state: "scored", estimate_total: result.total, checks: [] });
+    expect(official.voice).toEqual({
+      state: "scored",
+      estimate_total: result.total,
+      checks: [],
+      upload: false,
+    });
     expect(official.total).toBeGreaterThan(85);
     expect(official.total).toBeGreaterThan(result.total);
     expect(rig.notes).toHaveLength(1);

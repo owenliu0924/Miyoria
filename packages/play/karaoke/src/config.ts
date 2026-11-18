@@ -1,7 +1,8 @@
 // `[modules.karaoke]` (docs/design/karaoke.md 「做了什麼(第一步)」): single-player karaoke on the
 // member page. The module's own switch is `enabled` (the system page); `open` closes asking for
-// and singing songs while the module keeps running (results and her comments still arrive). No
-// coins in this milestone: a person singing alone gets none (owner 2026-11-17).
+// and singing songs to members while the module keeps running (results and her comments still
+// arrive; a panel admin can still use everything, to try it first). A person singing alone gets no
+// coins (owner 2026-11-17); rooms (step 4) cost and pay coins through the economy's karaoke wallet.
 
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
 import { z } from "zod";
@@ -45,7 +46,7 @@ export const KaraokeConfigSchema = z
         setting({
           kind: "switch",
           label: "開放唱 K",
-          help: "關掉時會員頁不能點歌、不能開始唱;唱完的結果和她的講評照常",
+          help: "關掉時會員不能點歌、唱、開房間;唱完的結果和她的講評照常。面板管理員關著時也能用,可以先試",
           group: "songs",
         }),
       ),
@@ -250,6 +251,170 @@ export const KaraokeConfigSchema = z
           group: "lyrics",
         }),
       ),
+    /**
+     * Rooms (docs/design/karaoke.md 「做了什麼第四步」): up to `room_singers` people sing the same
+     * song at once, each in their own browser, while she is in a voice channel (the comment
+     * channel's server) and hosts. Opened and joined on the member page.
+     */
+    rooms: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "多人房間",
+          help: "她在語音頻道時,會員可以在會員頁開房間,大家同時唱同一首;要先設講評頻道(房間開在那個伺服器)",
+          group: "rooms",
+        }),
+      ),
+    /** What opening a room costs (burned). 0: free. */
+    room_price: z
+      .number()
+      .int()
+      .min(0)
+      .max(1000)
+      .default(20)
+      .meta(
+        setting({
+          kind: "number",
+          label: "開房費",
+          help: "開房的人付;一輪都沒唱完就關掉的房間全退",
+          group: "rooms",
+        }),
+      ),
+    /** What the winner of a round gets (two finishers at least, the official score). 0: none. */
+    room_prize: z
+      .number()
+      .int()
+      .min(0)
+      .max(1000)
+      .default(15)
+      .meta(
+        setting({
+          kind: "number",
+          label: "第一名獎勵",
+          help: "至少兩個人唱完才有;要是正式分數、沒有被標記;同分都給",
+          group: "rooms",
+        }),
+      ),
+    /** What everyone who sings a round through gets. 0: none. */
+    room_finish: z
+      .number()
+      .int()
+      .min(0)
+      .max(1000)
+      .default(3)
+      .meta(
+        setting({
+          kind: "number",
+          label: "唱完的獎勵",
+          help: "唱到原唱一半以上的人各拿這麼多",
+          group: "rooms",
+        }),
+      ),
+    /** Of the song's voice a singer must have sung for the round to count as finished. */
+    room_finish_share: z
+      .number()
+      .min(0.1)
+      .max(1)
+      .default(0.5)
+      .meta(
+        setting({
+          kind: "ratio",
+          label: "算唱完",
+          help: "原唱有聲的地方唱到這麼多才算唱完",
+          group: "rooms",
+        }),
+      ),
+    /** Prizes one person may win per day. */
+    room_prizes_per_day: z
+      .number()
+      .int()
+      .min(0)
+      .max(50)
+      .default(2)
+      .meta(setting({ kind: "number", label: "每人每天第一名獎勵幾次", group: "rooms" })),
+    /** Finishing rewards one person may get per day. */
+    room_finishes_per_day: z
+      .number()
+      .int()
+      .min(0)
+      .max(50)
+      .default(5)
+      .meta(setting({ kind: "number", label: "每人每天唱完獎勵幾次", group: "rooms" })),
+    /**
+     * Rounds one room may sing for its one opening charge; then it closes. (One charge per room,
+     * not per round: the simpler rule.)
+     */
+    room_rounds: z
+      .number()
+      .int()
+      .min(1)
+      .max(20)
+      .default(5)
+      .meta(
+        setting({
+          kind: "number",
+          label: "一間房最多唱幾首",
+          help: "開房費包含這麼多首,唱完要再開一間",
+          group: "rooms",
+        }),
+      ),
+    /** Singers in a room (spectators are not counted). */
+    room_singers: z
+      .number()
+      .int()
+      .min(2)
+      .max(8)
+      .default(8)
+      .meta(setting({ kind: "number", label: "一間房最多幾人唱", group: "rooms" })),
+    /** Rooms open at once. */
+    room_max: z
+      .number()
+      .int()
+      .min(1)
+      .max(10)
+      .default(2)
+      .meta(setting({ kind: "number", label: "同時最多幾間房", group: "rooms" })),
+    /** A room with nothing going on (no round started, nobody joining) closes after this. */
+    room_idle_mins: z
+      .number()
+      .int()
+      .min(2)
+      .max(120)
+      .default(10)
+      .meta(
+        setting({
+          kind: "duration",
+          unit: "min",
+          label: "房間閒置多久關掉",
+          group: "rooms",
+        }),
+      ),
+    /** Seconds from the start to the first beat, for everyone's browser to be ready. */
+    room_countdown_secs: z
+      .number()
+      .int()
+      .min(3)
+      .max(30)
+      .default(6)
+      .meta(setting({ kind: "duration", unit: "s", label: "開始前倒數", group: "rooms" })),
+    /**
+     * The singers' microphones are streamed to a song worker during the round and scored live (the
+     * official score); off, or a worker without it: the browser's estimate during the round and
+     * the recording each singer uploads at the end.
+     */
+    room_stream: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "唱的時候即時算正式分數",
+          help: "唱的時候把麥克風的聲音即時送到唱歌的機器算音高(不存);關掉時唱的時候只有預估,唱完再送錄音",
+          group: "rooms",
+        }),
+      ),
     /** Where the backing tracks and references are kept on Core, relative to `miyoria.toml`. */
     cache_dir: z.string().default("data/karaoke"),
   })
@@ -257,6 +422,7 @@ export const KaraokeConfigSchema = z
     settingGroups([
       { id: "songs", label: "點歌" },
       { id: "score", label: "評分" },
+      { id: "rooms", label: "多人房間" },
       { id: "lyrics", label: "歌詞" },
       { id: "video", label: "背景影片" },
       { id: "comment", label: "講評" },
