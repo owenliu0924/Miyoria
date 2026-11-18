@@ -51,6 +51,8 @@ import {
   songProgress,
 } from "./karaoke.js";
 import { KaraokePlayer } from "./karaoke-player.js";
+import { laneSingers } from "./lanes.js";
+import { LanesView } from "./lanes-view.js";
 import { present, reflow } from "./motion.js";
 import { SongClock } from "./song-clock.js";
 
@@ -128,6 +130,11 @@ class LyricsView {
     this.#nextAt = undefined;
     this.#left = undefined;
     this.el.classList.toggle("has-ruby", shown !== "off");
+  }
+
+  /** Readings show above the words (the lines take more room). */
+  get ruby(): boolean {
+    return this.#mode !== "off";
   }
 
   /** At song time `t` (seconds). */
@@ -299,6 +306,7 @@ export class KaraokeLayer {
   readonly #count: HTMLElement;
   readonly #countN: HTMLElement;
   readonly #lyricsView: LyricsView;
+  readonly #lanes: LanesView;
   readonly #board: HTMLElement;
   readonly #boardList: HTMLOListElement;
   readonly #boardEmpty: HTMLElement;
@@ -356,6 +364,9 @@ export class KaraokeLayer {
     this.#titleFill = el("span", "k-title__fill", bar);
     this.#titleTime = el("span", "k-title__time", this.#titleFoot);
 
+    // The pitch lanes, under the countdown and the words.
+    this.#lanes = new LanesView(this.#stage);
+
     this.#count = block("div", "k-count", this.#stage);
     this.#count.setAttribute("role", "timer");
     this.#countN = el("span", "k-count__n", this.#count);
@@ -405,7 +416,9 @@ export class KaraokeLayer {
     if (!sameRound) {
       this.#ranks = new Map();
       this.#resultsKey = "";
+      this.#lanes.clear();
     }
+    if (scene?.state === "singing") this.#lanes.take(scene.board);
     this.#setMode(karaokeMode(scene, true));
     this.#render();
     this.#player.sync();
@@ -425,6 +438,7 @@ export class KaraokeLayer {
     const reduced = prefersReduced();
     // The words run while the round counts down and is sung; the results hold still.
     if (scene.state !== "results") this.#lyricsView.frame((ms ?? Number.NEGATIVE_INFINITY) / 1000, reduced);
+    if (ms !== null) this.#lanes.frame(ms / 1000, reduced);
     const left = scene.state === "countdown" ? countdownLeft(ms) : null;
     if (left !== this.#shownLeft) {
       this.#shownLeft = left;
@@ -482,6 +496,10 @@ export class KaraokeLayer {
     if (live) this.#player.backing(words?.backing ?? null);
     this.#lyricsView.set(words?.lyrics ?? null, this.ruby);
     present(this.#lyricsView.el, live);
+    // A lane per singer while the round counts down and is sung.
+    const singers = live ? laneSingers(scene.members, scene.board) : [];
+    if (live) this.#lanes.set(singers, words?.notes ?? [], this.#lyricsView.ruby);
+    present(this.#lanes.el, singers.length > 0);
     this.#video.set(live ? (words?.video ?? null) : null, () => {
       const ms = this.#songMs(performance.now());
       const s = this.#scene;

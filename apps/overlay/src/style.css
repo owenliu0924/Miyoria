@@ -1474,6 +1474,108 @@ body {
 }
 
 /*
+ * The pitch lanes (§7.1, src/lanes-view.ts): a column across the screen between the song's plate
+ * and the lyrics (1080p: 68,240 to 1420,784; shorter when readings take room over the words), a
+ * lane per singer, centred; the name and running score at the left, the lane's glass at the right.
+ */
+.k-lanes {
+  position: absolute;
+  left: calc(var(--k-screen-x) + var(--k-inset));
+  top: calc(var(--k-screen-y) + 12.5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  width: calc(var(--k-screen-w) - var(--k-inset) * 2);
+  height: 34rem;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--t-enter) var(--ease-out),
+    transform var(--t-enter) var(--ease-out);
+}
+
+.k-lanes.has-ruby {
+  height: 29rem;
+}
+
+.k-lanes.is-out {
+  opacity: 0;
+  transform: translateY(var(--shift));
+  transition-duration: var(--t-exit);
+  transition-timing-function: var(--ease-exit);
+}
+
+.k-lane {
+  display: grid;
+  flex: none;
+  grid-template-columns: 10.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.k-lane__who {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.6rem;
+  background: rgb(12 12 14 / 0.5);
+}
+
+.k-lane__name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.k-lane__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.k-lane__score {
+  padding-left: 1.2rem;
+  color: var(--ink-dim);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.k-lanes.is-compact .k-lane__who {
+  padding: 0.2rem 0.6rem;
+}
+
+.k-lanes.is-compact .k-lane__name {
+  font-size: 1.05rem;
+}
+
+.k-lanes.is-compact .k-lane__score {
+  font-size: 0.9rem;
+}
+
+.k-lane__track {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+  border-radius: 0.6rem;
+  background: rgb(12 12 14 / 0.42);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.08);
+}
+
+.k-lane__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/*
  * The lyrics, low on the screen: the line being sung over the next one, white with a dark outline
  * so any frame behind stays clear, wiped in the primary colour as each piece is sung.
  */
