@@ -5,7 +5,8 @@
 // What it builds (sizes at 1920x1080, scaled to OBS's base resolution):
 //
 // * browser sources for the overlay's backdrop (`?layer=backdrop`, `&layout=sing`) and the overlay
-//   itself (plain and `?layout=sing`);
+//   itself (plain and `?layout=sing`), the overlay's sound in OBS's mix (`reroute_audio`: its
+//   karaoke scene plays the round's backing and the relayed singer's voice);
 // * `VTube Studio 透明`: a game capture of VTube Studio with transparency (VTube Studio itself
 //   must use a transparent background, which no API can set);
 // * the song video media source inside the frame scene `◇ 影片框`, rounded by an image mask
@@ -370,24 +371,32 @@ export function planObsSetup(snap: ObsSnapshot, options: ObsSetupOptions): Step[
     steps.push({ op: "create_scene", scene });
   };
 
-  const browser = (query: string) => ({
+  /**
+   * A browser source of the overlay page. `audio`: the page's sound is an OBS audio source
+   * ("Control audio via OBS"), in the mix the stream and Go Live carry; else it would play on the
+   * PC's output device and reach the stream only through a desktop audio capture, if there is one.
+   */
+  const browser = (query: string, audio = false) => ({
     url: pageUrl(options.overlayUrl, query),
     width: W,
     height: H,
     shutdown: false,
     restart_when_active: false,
-    reroute_audio: false,
+    reroute_audio: audio,
     css: "",
   });
 
+  // The overlay pages show the karaoke scene, which plays the round's backing and the relayed
+  // singer's voice (docs/design/karaoke.md 「做了什麼第五步」): their sound goes into OBS's mix. Only
+  // the source in the scene on air is heard there. The backdrop layers make no sound.
   const want: Record<string, { kind: string; settings: Record<string, unknown> }> = {
     [SOURCES.backdrop]: { kind: "browser_source", settings: browser("?layer=backdrop") },
     [SOURCES.backdropSing]: {
       kind: "browser_source",
       settings: browser("?layer=backdrop&layout=sing"),
     },
-    [SOURCES.overlay]: { kind: "browser_source", settings: browser("") },
-    [SOURCES.overlaySing]: { kind: "browser_source", settings: browser("?layout=sing") },
+    [SOURCES.overlay]: { kind: "browser_source", settings: browser("", true) },
+    [SOURCES.overlaySing]: { kind: "browser_source", settings: browser("?layout=sing", true) },
     [SOURCES.model]: {
       kind: "game_capture",
       settings: {
@@ -426,8 +435,8 @@ export function planObsSetup(snap: ObsSnapshot, options: ObsSetupOptions): Step[
   const keep: Record<string, string[]> = {
     [SOURCES.backdrop]: ["url"],
     [SOURCES.backdropSing]: ["url"],
-    [SOURCES.overlay]: ["url"],
-    [SOURCES.overlaySing]: ["url"],
+    [SOURCES.overlay]: ["url", "reroute_audio"],
+    [SOURCES.overlaySing]: ["url", "reroute_audio"],
     [SOURCES.model]: ["allow_transparency"],
   };
   for (const [name, fields] of Object.entries(keep)) {

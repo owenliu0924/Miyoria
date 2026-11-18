@@ -401,6 +401,21 @@ class Stage {
       case "beat":
         this.#avatar?.beat(msg.times_ms, msg.offset_ms);
         return;
+      case "karaoke": {
+        const { type: _, ...scene } = msg;
+        this.#overlay.karaoke(scene);
+        return;
+      }
+      case "karaoke_lyrics": {
+        const { type: _, ...lyrics } = msg;
+        this.#overlay.karaokeLyrics(lyrics);
+        return;
+      }
+      case "karaoke_voice": {
+        const { type: _, ...voice } = msg;
+        this.#overlay.karaokeVoice(voice);
+        return;
+      }
       case "clip":
         this.#answer(msg.id, async () => {
           const path = await this.#obsOrThrow().clip(msg.reason);
@@ -466,8 +481,11 @@ class Stage {
       const status = this.currentStatus();
       const core = this.core.get();
       const changed = this.status.set(status);
-      // Nobody tells the overlay what she is doing without Core.
-      if (!core) this.#overlay.clearActivity();
+      // Nobody tells the overlay what she is doing without Core, nor what the karaoke room does.
+      if (!core) {
+        this.#overlay.clearActivity();
+        this.#overlay.clearKaraoke();
+      }
       if (changed || lastCore !== core) {
         this.#overlay.status(status, core);
         lastCore = core;

@@ -248,6 +248,7 @@ export class StageLinkModule implements Module {
         if (beat) link.send(beat);
         const resting = forwarder.resumeResting();
         if (resting) link.send(resting);
+        for (const msg of forwarder.resumeKaraoke()) link.send(msg);
         const current = activity.resume(ctx.clock.now());
         if (current) link.send(current);
       }
@@ -267,6 +268,9 @@ export class StageLinkModule implements Module {
       DANMAKU_TOPIC,
       DANMAKU_CLEAR_TOPIC,
       Events.SingCue.type,
+      Events.KaraokeStage.type,
+      Events.KaraokeStageLyrics.type,
+      Events.KaraokeStageVoice.type,
       Events.SpeechPause.type,
       Events.AgentTurnStarted.type,
       Events.AgentTurnCompleted.type,
@@ -350,6 +354,12 @@ export class StageLinkModule implements Module {
 
       try {
         for await (const env of events) {
+          // The relayed karaoke voice (about four a second) only passes through: nothing else
+          // looks at it, and nothing of it is logged.
+          if (is(Events.KaraokeStageVoice, env)) {
+            for (const msg of forwarder.onEvent(env)) link.send(msg);
+            continue;
+          }
           // Chat lines only count towards highlights (nothing of their text is used).
           if (is(Events.PlatformMessageCreated, env)) {
             if (!env.data.author.is_bot) clip(highlights.message(ctx.clock.now()));
