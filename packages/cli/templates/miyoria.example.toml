@@ -535,6 +535,13 @@ dirs = ["extensions"]
 # comment = true              # 唱完讓她講評(她平常的一個回合,沒有另外的模型呼叫)
 # comment_channel = ""        # 講評的文字頻道,"discord:<伺服器 id>:<頻道 id>";留空 = 她只知道、不開口
 # cache_dir = "data/karaoke"  # 伴唱軌和參考旋律在 Core 上放哪(相對 miyoria.toml);一天沒人唱就刪
+# 歌詞:唱歌 worker 把查到的歌詞一行一行和主唱聽到的比對,對上的逐字對齊、照字切音符;
+# 查不到或對不上就用聽寫的。下面只影響之後準備的歌
+# aligner = "w2v"             # w2v(Apache-2.0)| mms(難的歌準很多,權重 CC-BY-NC-4.0,只能非商業使用)
+# lyrics_matched = 0.75       # 一行和聽到的至少這麼像才算對上
+# lyrics_uncertain = 0.5      # 比這個低算對不上
+# lyrics_keep_share = 0.5     # 對上的行至少這麼多,整首就用查到的歌詞
+# lyrics_wrong_share = 0.2    # 對上的行比這個少 = 查錯歌,改用聽寫
 
 # 遊戲內聊天變成獨立的對話(每個世界 / 伺服器一段歷史)。玩家在 Discord 用 /me link 拿代碼,
 # 在遊戲聊天室打 `!link <代碼>` 就跟 Discord 帳號連在一起;沒連的玩家是陌生人。
