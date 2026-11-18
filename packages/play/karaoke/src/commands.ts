@@ -2,20 +2,26 @@
 // `/me play`, see `SLASH_REGROUP`) and the room notices in the comment channel. No new top-level
 // command: one entry beside the coin commands that tells the caller, only them, where karaoke is
 // (a link to the member site when `site_url` is set), whether it is open to them, their coins, what
-// a room costs and pays, the rooms open now with a link to each (theirs first), and lets them open
-// a room. Singing is on the member page; Discord only points there.
+// a room costs and pays, the rooms open now with a link to each (theirs first),
+// and lets them open a room and pick songs. Singing is on the member page; Discord only points
+// there.
 //
 // - 開房 (on the notice, only when the caller may open one now and has the coins): an ephemeral
 //   confirmation with the price and their coins; nothing is charged before 確定. 確定 opens the
 //   room through `RoomDesk.open`, the web's own path (same charge, same refusals, one opening per
 //   person at a time), and the confirmation turns into the room's code and a link to it.
+// - `song:` (a link or words, or a ready song picked from the suggestions, `id:<song>`): in a room,
+//   it is queued there; otherwise it is only asked for (prepared into the shared list). No coins.
 //
-// Every answer is a neutral system card; names are people's and are escaped.
+// Every answer is a neutral system card; names and titles are people's and are escaped.
 
 import {
   type AnyComponentRoute,
+  ArgKind,
+  argSpec,
   type CardBlock,
   type CardButton,
+  type Choice,
   type CommandRegistry,
   type CommandReply,
   ComponentResult,
@@ -25,12 +31,13 @@ import {
   componentId,
   type Invocation,
   notice,
+  typedCommand,
 } from "@miyoria/commands";
-import type { KaraokeRooms } from "@miyoria/contracts/api";
+import type { KaraokeRooms, KaraokeSongView } from "@miyoria/contracts/api";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type KaraokeConfig, siteLink } from "./config.js";
 import type { RoomBrief, RoomDesk, RoomNotice } from "./rooms.js";
-import { KaraokeError } from "./service.js";
+import { KaraokeError, type KaraokeService } from "./service.js";
 
 const log = getLogger("karaoke.commands");
 
@@ -52,6 +59,22 @@ export const ROUTES = {
 } as const;
 /** A confirmation's buttons stay usable this long. */
 const CONFIRM_TTL_MS = 2 * 60_000;
+/** A suggestion's value: a song picked from the list, not words typed. */
+export const SONG_ID = "id:";
+/** Discord shows at most 25 suggestions. */
+const MAX_CHOICES = 25;
+
+/** The song worker's stages while it prepares a song, as short words (as on the member page). */
+const STAGE_WORDS: Readonly<Record<string, string>> = {
+  queued: "排隊中",
+  resolve: "下載中",
+  download: "下載中",
+  separate: "分離人聲",
+  lead: "分出主唱",
+  reference: "抓旋律",
+  encode: "做伴唱帶",
+  lyrics: "找歌詞",
+};
 
 /** Display names come from people: no Markdown in them. */
 export function md(text: string): string {
@@ -59,6 +82,7 @@ export function md(text: string): string {
 }
 
 const roomPath = (code: string) => `/karaoke/room/${encodeURIComponent(code)}`;
+const songTitle = (title: string) => `「${md(title.slice(0, 80))}」`;
 
 /** One room's line: its code, the song (or none yet), how many sing. */
 function briefLine(room: RoomBrief): string {
@@ -193,7 +217,11 @@ export function openConfirm(overview: KaraokeRooms): CommandReply {
 }
 
 /** What a confirmation turns into once the room is open: its code and where it is. */
-export function openedCard(config: Pick<KaraokeConfig, "site_url">, code: string): CommandReply {
+export function openedCard(
+  config: Pick<KaraokeConfig, "site_url">,
+  code: string,
+  command: string,
+): CommandReply {
   const url = siteLink(config, roomPath(code));
   const blocks: CardBlock[] = [
     { type: "text", text: `房間開好了,房號 **${code}**。` },
@@ -201,8 +229,8 @@ export function openedCard(config: Pick<KaraokeConfig, "site_url">, code: string
       type: "muted",
       text:
         url === null
-          ? "到會員頁的「唱 K」(/karaoke)就會看到你的房間。"
-          : "進房間後點歌,大家一起唱。",
+          ? `到會員頁的「唱 K」(/karaoke)就會看到你的房間;點歌也可以用 \`${command} song:\`。`
+          : `進房間後點歌,大家一起唱;點歌也可以用 \`${command} song:\`。`,
     },
   ];
   if (url !== null) {
@@ -252,9 +280,83 @@ function refusal(error: unknown, what: string): CommandReply {
   return notice("warn", FAILED);
 }
 
+/** How far a song being prepared is: its stage, and how many wait before it. */
+function stageText(song: KaraokeSongView): string {
+  const word = (song.stage ? STAGE_WORDS[song.stage] : undefined) ?? "準備中";
+  return song.position !== null && song.position > 0
+    ? `${word}(前面還有 ${song.position} 首)`
+    : word;
+}
+
+/** A song picked from the suggestions (`id:<song>`), else `null` (words or a link). */
+function pickedSong(raw: string): string | null {
+  if (!raw.startsWith(SONG_ID)) return null;
+  const id = raw.slice(SONG_ID.length).trim();
+  return id === "" ? null : id;
+}
+
+/** `song:` in a room: queued there, with its place and a link back to the room. */
+function queuedCard(
+  config: Pick<KaraokeConfig, "site_url">,
+  view: Awaited<ReturnType<RoomDesk["queueAdd"]>>,
+): CommandReply {
+  // The entry just added is the caller's last; its place counts the songs still to be sung.
+  const waiting = view.queue.filter((e) => e.song.state !== "failed");
+  const at = waiting.findLastIndex((e) => e.mine);
+  const entry = at < 0 ? null : (waiting[at] ?? null);
+  const blocks: CardBlock[] = [];
+  if (entry === null) {
+    blocks.push({ type: "text", text: `點好了,在房間 **${view.code}** 的點歌清單裡。` });
+  } else {
+    blocks.push({
+      type: "text",
+      text: `點好了:${songTitle(entry.song.title)},在房間 **${view.code}** 排第 ${at + 1} 首。`,
+    });
+    if (entry.song.state === "preparing") {
+      blocks.push({
+        type: "muted",
+        text: `這首還在準備(${stageText(entry.song)}),準備好才會輪到。`,
+      });
+    }
+  }
+  const url = siteLink(config, roomPath(view.code));
+  if (url !== null) {
+    blocks.push({ type: "buttons", buttons: [{ id: "", label: "回到房間", url }] });
+  }
+  return cardReply(blocks, { accent: "neutral", title: TITLE, ephemeral: true });
+}
+
+/** `song:` outside a room: the song asked for (prepared into the shared list), and the page. */
+function requestedCard(
+  config: Pick<KaraokeConfig, "site_url">,
+  song: KaraokeSongView,
+  created: boolean,
+): CommandReply {
+  const title = songTitle(song.title);
+  const text =
+    song.state === "ready"
+      ? `${title}已經準備好了,在唱 K 的歌單裡。`
+      : song.state === "failed"
+        ? `${title}準備失敗了${song.error ? `:${song.error}` : "。"}`
+        : created
+          ? `開始準備${title}了:${stageText(song)}。準備好就會在唱 K 的歌單裡。`
+          : `${title}正在準備:${stageText(song)}。`;
+  const blocks: CardBlock[] = [
+    { type: "text", text },
+    { type: "muted", text: "你現在不在房間裡:這首只放進歌單,進房間後再點。" },
+  ];
+  const page = siteLink(config, "/karaoke");
+  if (page !== null) {
+    blocks.push({ type: "buttons", buttons: [{ id: "", label: "打開唱 K", url: page }] });
+  }
+  return cardReply(blocks, { accent: "neutral", title: TITLE, ephemeral: true });
+}
+
 export interface KaraokeCommandDeps {
   rooms: () => RoomDesk | null;
   config: () => KaraokeConfig;
+  /** The song list (asking for songs, the suggestions); without it only a room's queue works. */
+  service: () => KaraokeService | null;
 }
 
 async function answer(inv: Invocation, d: KaraokeCommandDeps): Promise<CommandReply> {
@@ -262,11 +364,67 @@ async function answer(inv: Invocation, d: KaraokeCommandDeps): Promise<CommandRe
   if (desk === null) return notice("info", OFF);
   try {
     const admin = await inv.allowed(PANEL_ACCESS);
+    const raw = inv.str("song")?.trim() ?? "";
+    if (raw !== "") return await songAnswer(inv, d, desk, raw, admin);
     const overview = await desk.overview(inv.invoker, admin);
     return karaokeNotice({ config: d.config(), overview, rooms: desk.briefs(), admin });
   } catch (error) {
     return refusal(error, "/me play karaoke");
   }
+}
+
+async function songAnswer(
+  inv: Invocation,
+  d: KaraokeCommandDeps,
+  desk: RoomDesk,
+  raw: string,
+  admin: boolean,
+): Promise<CommandReply> {
+  const config = d.config();
+  const picked = pickedSong(raw);
+  const { mine } = await desk.overview(inv.invoker, admin);
+  if (mine !== null) {
+    const body = picked === null ? { text: raw } : { song: picked };
+    const view = await desk.queueAdd(mine, inv.invoker, inv.invoker_display_name, body, admin);
+    return queuedCard(config, view);
+  }
+  const service = d.service();
+  if (service === null) return notice("info", OFF);
+  if (picked !== null) {
+    service.openFor(admin);
+    return requestedCard(config, service.song(inv.invoker, picked), false);
+  }
+  const asked = await service.request(inv.invoker, raw, admin);
+  return requestedCard(config, asked.song, asked.created);
+}
+
+/** The ready songs matching what was typed (title · artist), each by its id. */
+async function suggestions(
+  inv: Invocation,
+  d: KaraokeCommandDeps,
+  typed: string,
+): Promise<Choice[]> {
+  const service = d.service();
+  if (service === null) return [];
+  const admin = await inv.allowed(PANEL_ACCESS);
+  if (!d.config().open && !admin) return [];
+  let songs: KaraokeSongView[];
+  try {
+    songs = service.overview(inv.invoker, admin).songs;
+  } catch {
+    return [];
+  }
+  const words = typed
+    .trim()
+    .toLowerCase()
+    .split(/\s+/u)
+    .filter((w) => w !== "");
+  return songs
+    .filter((s) => s.state === "ready")
+    .map((s) => ({ s, name: s.artist ? `${s.title} · ${s.artist}` : s.title }))
+    .filter(({ name }) => words.every((w) => name.toLowerCase().includes(w)))
+    .slice(0, MAX_CHOICES)
+    .map(({ s, name }) => ({ name: name.slice(0, 100), value: `${SONG_ID}${s.id}` }));
 }
 
 function routes(d: KaraokeCommandDeps): AnyComponentRoute[] {
@@ -314,7 +472,8 @@ function routes(d: KaraokeCommandDeps): AnyComponentRoute[] {
         try {
           const admin = await inv.allowed(PANEL_ACCESS);
           const room = await desk.open(inv.invoker, inv.invoker_display_name, null, 0, admin);
-          return ComponentResult.update(openedCard(d.config(), room.code));
+          const command = typedCommand("me karaoke", inv.invoker.platform);
+          return ComponentResult.update(openedCard(d.config(), room.code, command));
         } catch (error) {
           return ComponentResult.reply(refusal(error, "karaoke: opening a room"));
         }
@@ -328,19 +487,35 @@ function routes(d: KaraokeCommandDeps): AnyComponentRoute[] {
   ];
 }
 
+/**
+ * Registers `/me play karaoke`. `service` (the song list) is what `song:` asks songs of outside a
+ * room and what its suggestions come from; left out, only a room's queue takes songs.
+ */
 export function registerCommands(
   registry: CommandRegistry,
   rooms: () => RoomDesk | null,
   config: () => KaraokeConfig,
+  service: () => KaraokeService | null = () => null,
 ): void {
-  const d: KaraokeCommandDeps = { rooms, config };
+  const d: KaraokeCommandDeps = { rooms, config, service };
   registry.register(
-    commandSpec("me karaoke", "唱 K:會員頁的連結、開著的房間、開房和你的魚幣", {
+    commandSpec("me karaoke", "唱 K:會員頁的連結、開著的房間、開房、點歌和你的魚幣", {
+      args: [
+        argSpec(
+          "song",
+          "點歌:貼連結、打歌名,或從清單選一首準備好的(在房間裡就點進房間)",
+          ArgKind.string,
+          { required: false },
+        ),
+      ],
       permission: NODE,
       ephemeral: true,
     }),
     (inv) => answer(inv, d),
-    { components: routes(d) },
+    {
+      components: routes(d),
+      autocomplete: { song: (inv, typed) => suggestions(inv, d, typed) },
+    },
   );
 }
 

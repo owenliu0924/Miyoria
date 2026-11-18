@@ -1,8 +1,8 @@
 // `/me play karaoke` and the room notices: the caller alone sees where karaoke is, whether it is
 // open to them (a panel admin may use it while it is closed), their coins, the terms and the rooms
-// open now with links (theirs first); without `site_url` there are no links, only where to go.
-// 開房 asks first and charges nothing until 確定, which opens the room the web's way (once, however
-// often it is pressed).
+// open now with links (theirs first); without `site_url` there are no links, only
+// where to go. 開房 asks first and charges nothing until 確定, which opens the room the web's way
+// (once, however often it is pressed); `song:` queues in the caller's room or asks for the song.
 
 import { rm } from "node:fs/promises";
 import {
@@ -17,9 +17,16 @@ import {
 } from "@miyoria/commands";
 import type { AccountRef, ContextKey } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ROUTES, registerCommands, roomNotice, unregisterCommands } from "../src/commands.js";
+import {
+  ROUTES,
+  registerCommands,
+  roomNotice,
+  SONG_ID,
+  unregisterCommands,
+} from "../src/commands.js";
 import type { KaraokeConfig } from "../src/config.js";
 import type { RoomDesk } from "../src/rooms.js";
+import type { KaraokeService } from "../src/service.js";
 import { ALICE, BOB, CAROL, makeRig, type Rig, STRANGER } from "./room-rig.js";
 
 const SITE = "https://karaoke.example.com";
@@ -43,6 +50,7 @@ afterEach(async () => {
 function registryWith(
   desk: RoomDesk | null,
   config: KaraokeConfig,
+  service: KaraokeService | null = null,
   admins: readonly string[] = [ADMIN.id],
 ): CommandRegistry {
   const registry = new CommandRegistry(
@@ -52,12 +60,14 @@ function registryWith(
     registry,
     () => desk,
     () => config,
+    () => service,
   );
   return registry;
 }
 
-/** The registry with the rig's rooms. */
-const commandsOf = (r: Rig, admins?: readonly string[]) => registryWith(r.desk, r.config, admins);
+/** The registry with the rig's rooms and songs. */
+const commandsOf = (r: Rig, admins?: readonly string[]) =>
+  registryWith(r.desk, r.config, r.service, admins);
 
 const NAMES: Record<string, string> = { "1": "Alice", "2": "Bob", "3": "Carol", "9": "Stranger" };
 
@@ -100,6 +110,21 @@ const replyOf = (outcome: ComponentOutcome): CommandReply => {
   if (outcome.result.type === "modal") throw new Error("a modal");
   return outcome.result.reply;
 };
+
+function suggest(registry: CommandRegistry, account: AccountRef, typed: string) {
+  return registry.autocomplete(
+    {
+      path: ["me", "karaoke"],
+      args: {},
+      invoker: account,
+      invoker_display_name: "x",
+      context: ctx,
+      invoker_is_guild_admin: false,
+    },
+    "song",
+    typed,
+  );
+}
 
 const blocks = (reply: CommandReply): CardBlock[] => reply.card?.blocks ?? [];
 const buttons = (reply: CommandReply): CardButton[] =>
@@ -339,6 +364,103 @@ describe("/me play karaoke: 開房", () => {
     const card = replyOf(await press(commandsOf(r), BOB, ROUTES.yes));
     expect(links(card)).toEqual([]);
     expect(card.text).toContain("到會員頁的「唱 K」(/karaoke)就會看到你的房間");
+  });
+});
+
+describe("/me play karaoke song:", () => {
+  it("suggests the ready songs, by id, filtered by what was typed", async () => {
+    const r = await rigWith();
+    // A song still being prepared is not suggested.
+    await r.service.request(BOB, "https://youtu.be/other");
+    const registry = commandsOf(r);
+    const view = r.service.songView(r.songId) as NonNullable<
+      ReturnType<KaraokeService["songView"]>
+    >;
+    const name = view.artist ? `${view.title} · ${view.artist}` : view.title;
+    expect(await suggest(registry, BOB, "")).toEqual([{ name, value: `${SONG_ID}${r.songId}` }]);
+    expect(await suggest(registry, BOB, view.title.slice(0, 2).toUpperCase())).toHaveLength(1);
+    expect(await suggest(registry, BOB, "沒有這種歌")).toEqual([]);
+  });
+
+  it("suggests nothing to a member while karaoke is closed", async () => {
+    const r = await rigWith({ open: false });
+    expect(await suggest(commandsOf(r), BOB, "")).toEqual([]);
+    expect(await suggest(commandsOf(r), ADMIN, "")).toHaveLength(1);
+  });
+
+  it("in a room queues there: a picked song, then a link, up to the limit; no coins", async () => {
+    const r = await rigWith();
+    const registry = commandsOf(r);
+    const room = await r.desk.open(BOB, "Bob", null, 0);
+    const title = r.service.songView(r.songId)?.title as string;
+    const first = await run(registry, BOB, { song: `${SONG_ID}${r.songId}` });
+    expect(first.ephemeral).toBe(true);
+    expect(first.text).toContain(`點好了:「${title}」,在房間 **${room.code}** 排第 1 首`);
+    expect(links(first)).toEqual([
+      { id: "", label: "回到房間", url: `${SITE}/karaoke/room/${room.code}` },
+    ]);
+    const second = await run(registry, BOB, { song: "https://youtu.be/queued" });
+    expect(second.text).toContain("排第 2 首");
+    expect(second.text).toContain("這首還在準備(排隊中),準備好才會輪到");
+    expect(r.worker.asked.at(-1)).toMatchObject({ url: "https://youtu.be/queued" });
+    expect(r.desk.briefs()[0]?.queue.map((e) => e.state)).toEqual(["ready", "preparing"]);
+    const third = await run(registry, BOB, { song: `${SONG_ID}${r.songId}` });
+    expect(third.text).toContain("你已經點了 2 首在等,唱完再點");
+    expect(r.desk.briefs()[0]?.queue).toHaveLength(2);
+    // Only the room's opening was charged.
+    expect(charged(r, "p-bob")).toEqual([-20]);
+    expect(r.wallet.balances.get("p-bob")).toBe(80);
+  });
+
+  it("outside a room asks for the song: a link is prepared, a known one is said", async () => {
+    const r = await rigWith();
+    const registry = commandsOf(r);
+    const asked = await run(registry, BOB, { song: "https://youtu.be/fresh" });
+    expect(asked.text).toContain("開始準備「");
+    expect(asked.text).toContain("排隊中");
+    expect(asked.text).toContain("你現在不在房間裡");
+    expect(links(asked)).toEqual([{ id: "", label: "打開唱 K", url: `${SITE}/karaoke` }]);
+    expect(r.worker.asked.at(-1)).toMatchObject({ url: "https://youtu.be/fresh" });
+    const again = await run(registry, BOB, { song: "https://youtu.be/fresh" });
+    expect(again.text).toContain("正在準備:排隊中");
+    expect(r.worker.asked.filter((q) => q.url === "https://youtu.be/fresh")).toHaveLength(1);
+    const ready = await run(registry, BOB, { song: `${SONG_ID}${r.songId}` });
+    expect(ready.text).toContain("已經準備好了,在唱 K 的歌單裡");
+    expect(r.desk.briefs()).toEqual([]);
+    expect(r.wallet.rows).toEqual([]);
+  });
+
+  it("refuses in the service's words: the daily limit, closed to a member, a stranger, no such song", async () => {
+    const r = await rigWith({ daily_songs: 1 });
+    const registry = commandsOf(r);
+    await run(registry, BOB, { song: "https://youtu.be/one" });
+    expect((await run(registry, BOB, { song: "https://youtu.be/two" })).text).toContain(
+      "今天已經準備了 1 首(一天 1 首)",
+    );
+    expect((await run(registry, STRANGER, { song: "https://youtu.be/three" })).text).toContain(
+      "她還不認識你",
+    );
+    expect((await run(registry, BOB, { song: `${SONG_ID}nope` })).text).toContain("沒有這首歌");
+    const closed = await rigWith({ open: false });
+    const shut = commandsOf(closed);
+    expect((await run(shut, BOB, { song: "https://youtu.be/four" })).text).toContain(
+      "現在沒有開放唱 K",
+    );
+    expect((await run(shut, BOB, { song: `${SONG_ID}${closed.songId}` })).text).toContain(
+      "現在沒有開放唱 K",
+    );
+  });
+
+  it("without the song list, a room still takes songs and nothing else does", async () => {
+    const r = await rigWith();
+    await r.desk.open(BOB, "Bob", null, 0);
+    const registry = registryWith(r.desk, r.config, null);
+    expect((await run(registry, BOB, { song: `${SONG_ID}${r.songId}` })).text).toContain(
+      "排第 1 首",
+    );
+    expect((await run(registry, CAROL, { song: "https://youtu.be/x" })).text).toContain(
+      "唱 K 現在沒有開",
+    );
   });
 });
 
