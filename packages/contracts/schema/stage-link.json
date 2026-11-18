@@ -70,6 +70,16 @@
               "type": "null"
             }
           ]
+        },
+        "secondary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StageLinkActivitySide"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -81,6 +91,8 @@
       "enum": [
         "thinking",
         "synthesizing",
+        "tool",
+        "game",
         "song_prepare",
         "singing"
       ]
@@ -154,6 +166,16 @@
             }
           ]
         },
+        "secondary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StageLinkActivitySide"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "type": {
           "type": "string",
           "const": "activity"
@@ -162,6 +184,43 @@
       "required": [
         "kind",
         "type"
+      ]
+    },
+    "StageLinkActivitySide": {
+      "type": "object",
+      "properties": {
+        "label": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "detail": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "progress": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "label"
       ]
     },
     "StageLinkAvatarExpressionMessage": {

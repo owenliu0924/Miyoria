@@ -426,12 +426,22 @@ body {
 
 /* ── activity capsule (bottom left, right of the voice bars) ──────────── */
 
-.activity {
-  --dot: var(--ink-faint);
-  --label-max: 18rem;
+/* Holds the capsule and the small line beside it; the capsule keeps its own size and look. */
+.activity-dock {
   position: absolute;
   left: 10rem;
   bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  pointer-events: none;
+}
+
+.activity {
+  --dot: var(--ink-faint);
+  --label-max: 18rem;
+  position: relative;
+  flex: none;
   box-sizing: border-box;
   display: flex;
   align-items: center;
@@ -561,6 +571,107 @@ body {
   animation: shimmer 1.9s var(--ease-in-out) infinite;
 }
 
+/* The song being prepared while she does something else: smaller and quieter than the capsule. */
+.activity-side {
+  position: relative;
+  flex: none;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: 2.2rem;
+  max-width: 17rem;
+  padding: 0 0.9rem 0.4rem;
+  overflow: hidden;
+  background: var(--plate);
+  border: 1px solid var(--plate-edge);
+  border-radius: 999px;
+  color: var(--ink-dim);
+  font-size: 0.88rem;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--t-enter) var(--ease-out),
+    transform var(--t-enter) var(--ease-out);
+}
+
+.activity-side.is-out {
+  opacity: 0;
+  transform: translateY(var(--shift));
+  transition-duration: var(--t-exit);
+  transition-timing-function: var(--ease-exit);
+}
+
+.activity-side__text {
+  min-width: 0;
+}
+
+.activity-side__text .swap__item {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35em;
+  white-space: nowrap;
+}
+
+.activity-side__verb {
+  flex: none;
+}
+
+.activity-side__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink-faint);
+  text-overflow: ellipsis;
+}
+
+.activity-side__track {
+  position: absolute;
+  left: 0.9rem;
+  right: 0.9rem;
+  bottom: 0.38rem;
+  height: 0.2rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: oklch(1 0 0 / 0.1);
+}
+
+.activity-side__fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--ink-dim);
+  opacity: 0.75;
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition:
+    transform var(--t-progress) var(--ease-out),
+    opacity var(--t-change) var(--ease-out);
+}
+
+.activity-side__track::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 34%;
+  background: linear-gradient(90deg, transparent, oklch(1 0 0 / 0.42), transparent);
+  opacity: 0;
+  transform: translateX(-100%);
+  transition: opacity var(--t-change) var(--ease-out);
+}
+
+.activity-side__track.is-indeterminate .activity-side__fill {
+  opacity: 0;
+}
+
+.activity-side__track.is-indeterminate::after {
+  opacity: 1;
+  animation: shimmer 1.9s var(--ease-in-out) infinite;
+}
+
 @keyframes shimmer {
   to {
     transform: translateX(295%);
@@ -587,7 +698,7 @@ body {
 }
 
 /* The capsule sits just under the video, flush with its left edge. */
-[data-layout="sing"] .activity {
+[data-layout="sing"] .activity-dock {
   top: calc(var(--pad) + var(--video-h) + 1.25rem);
   bottom: auto;
   left: var(--pad);
@@ -878,11 +989,13 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .status__pulse,
   .activity.is-busy .activity__dot,
+  .activity-side__track.is-indeterminate::after,
   .activity__track.is-indeterminate::after {
     animation: none;
   }
 
   /* Still says "busy" without moving: a faint, still highlight. */
+  .activity-side__track.is-indeterminate::after,
   .activity__track.is-indeterminate::after {
     transform: translateX(95%);
     opacity: 0.6;

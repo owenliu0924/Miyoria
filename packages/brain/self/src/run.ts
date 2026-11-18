@@ -1013,6 +1013,7 @@ class Run {
     try {
       const verdict = await this.#p.guard.checkCall({ call, args, entry }, ctx);
       if (!verdict.allow) return this.#refused(call, "refused", verdict.code, verdict.text);
+      this.#emit({ type: "tool_start", turn: this.turn, name: call.name });
       result = await timeout(this.#limits.toolMs, this.#signal, (signal) =>
         this.#p.tools.run(
           call.name,

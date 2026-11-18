@@ -29,8 +29,17 @@ export const OverlayNoticeMessageSchema = z
   .meta({ id: "OverlayNoticeMessage" });
 
 export const OverlayActivityKindSchema = z
-  .enum(["thinking", "synthesizing", "song_prepare", "singing"])
+  .enum(["thinking", "synthesizing", "tool", "game", "song_prepare", "singing"])
   .meta({ id: "OverlayActivityKind" });
+
+/** What happens beside the main line (a song being prepared): `progress` `null` is waiting, no bar. */
+export const OverlayActivitySideSchema = z
+  .object({
+    label: z.string(),
+    detail: z.string().nullable().optional(),
+    progress: z.number().nullable().optional(),
+  })
+  .meta({ id: "OverlayActivitySide" });
 
 /**
  * What she is doing. `kind: null` hides the line (the other fields are then empty / null).
@@ -46,6 +55,8 @@ export const OverlayActivityMessageSchema = z
     progress: z.number().nullable(),
     elapsed_ms: z.number().nullable(),
     duration_ms: z.number().nullable(),
+    /** A song being prepared beside the main line; left out when there is none. */
+    secondary: OverlayActivitySideSchema.nullable().optional(),
   })
   .meta({ id: "OverlayActivityMessage" });
 

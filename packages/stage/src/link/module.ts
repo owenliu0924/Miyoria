@@ -229,7 +229,8 @@ export class StageLinkModule implements Module {
     const sendActivity = (): void => {
       if (!link.isConnected()) return;
       const msg = activity.next(ctx.clock.now());
-      if (msg) link.send(msg);
+      // A frame that could not go out is given again on the next tick, not taken as shown.
+      if (msg && !link.send(msg)) activity.unsent();
     };
     let nodeUp = false;
     const unsubscribe = link.subscribeStatus((status) => {
@@ -269,6 +270,7 @@ export class StageLinkModule implements Module {
       Events.SpeechPause.type,
       Events.AgentTurnStarted.type,
       Events.AgentTurnCompleted.type,
+      Events.AgentToolRunning.type,
       Events.VoicePlaybackEvent.type,
       Events.VoiceSynthesis.type,
       Events.VoiceUpcoming.type,
