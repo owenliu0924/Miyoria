@@ -19,7 +19,7 @@ import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Segmented } from "@/components/ui/segmented";
 import { cn } from "@/lib/utils";
-import { Fact, Refusal } from "./bits";
+import { ENTER, Fact, Refusal } from "./bits";
 import { keyLabel } from "./lyric-text";
 import { roomPage } from "./path";
 import { CHECK_LINES, PART_NAMES, score1 } from "./result-text";
@@ -353,6 +353,7 @@ export function RoomLobby({
 }) {
   return (
     <Page
+      className={ENTER}
       rail={
         <>
           <MyPart room={room} me={me} latency={latency} actions={actions} />
@@ -482,6 +483,7 @@ export function RoomResults({
 }) {
   return (
     <Page
+      className={ENTER}
       rail={
         me ? (
           <>

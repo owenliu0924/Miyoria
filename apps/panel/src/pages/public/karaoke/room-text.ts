@@ -6,6 +6,8 @@ import type {
   KaraokeRoomEvent,
   KaraokeRoomMember,
   KaraokeRoomState,
+  KaraokeRoomView,
+  KaraokeSession,
 } from "@miyoria/contracts/api";
 import { decodeTrack, fromBase64, TRACK_HZ } from "@miyoria/play/karaoke/score";
 
@@ -46,6 +48,64 @@ export const SOURCE_WORDS: Record<"voice" | "estimate", string> = { voice: "正�
 export function trendView(e: Pick<TrendEvent, "trend" | "source"> | null): TrendView | null {
   if (e === null) return null;
   return { ...TREND_WORDS[e.trend], source: SOURCE_WORDS[e.source] };
+}
+
+/** The singer's own running number on their stage: Core's, labelled by where it comes from. */
+export interface StageScore {
+  total: number;
+  source: "voice" | "estimate";
+}
+
+/**
+ * The number a room's singer sees: their own running total from the latest `trend` (正式 from the
+ * stream, 預估 from the browser), or `null` while there is none (the stage shows the browser's own
+ * number as 預估). Their own only: a trend never carries anyone else's.
+ */
+export function stageScore(e: Pick<TrendEvent, "source" | "total"> | null): StageScore | null {
+  if (e === null || e.total === null || !Number.isFinite(e.total)) return null;
+  return { total: e.total, source: e.source };
+}
+
+// ---- a singer's stage ------------------------------------------------------------------------
+
+/** A singer's stage of one round: its session and start, as the room gave them. */
+export interface HeldStage {
+  round: number;
+  session: KaraokeSession;
+  startAt: number;
+}
+
+/**
+ * The stage this person sings on now, or `null`: the room's own word while it gives one (a round
+ * running, they sing it, its session and start), else the one held from it for the same round while
+ * that round is still on, so a later view (the song over, 結算中) cannot end the stage before the
+ * take is sent. The results, a closed room or the next round let it go.
+ */
+export function stageOf(room: KaraokeRoomView, held: { current: HeldStage | null }): HeldStage | null {
+  const running = room.state === "countdown" || room.state === "singing";
+  const me = room.me;
+  if (running && me?.singing && me.session !== null && room.start_at_ms !== null) {
+    const now = held.current;
+    if (now === null || now.round !== room.round || now.session.session !== me.session.session || now.startAt !== room.start_at_ms) {
+      held.current = { round: room.round, session: me.session, startAt: room.start_at_ms };
+    }
+    return held.current;
+  }
+  return running && held.current?.round === room.round ? held.current : null;
+}
+
+// ---- 結算中 -------------------------------------------------------------------------------------
+
+/** The room's `settling`. */
+export type Settling = KaraokeRoomView["settling"];
+
+/** 「結算中…」 and whom it waits for: `等 海苔、Akari 的分數`, or 馬上就好 when no one. */
+export function settlingView(s: NonNullable<Settling>): { title: string; detail: string } {
+  const names = s.waiting.filter((n) => n.trim() !== "");
+  return {
+    title: "結算中…",
+    detail: names.length === 0 ? "馬上就好" : `等 ${names.join("、")} 的分數`,
+  };
 }
 
 // ---- colours -----------------------------------------------------------------------------------

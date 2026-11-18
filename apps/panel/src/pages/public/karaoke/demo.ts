@@ -23,9 +23,11 @@
 // the made-up room KTV888 in that scene (the address becomes `/karaoke/room/KTV888`); plain
 // `?karaoke-demo` starts at the list, where 一起唱 opens a room of your own. The room's event stream
 // is faked (`setRoomEventsFactory`): the singer's scene counts down five seconds and cycles their
-// trend (上升中 → 保持 → 下降中, 正式 and 預估); the spectator's has four made-up singers whose
-// ranking moves every second and whose pitch lines follow the tune, each a little off in its own
-// way; the results have a winner, a 預估 line, a check and a note. The stream and pitch posts are
+// trend (上升中 → 保持 → 下降中, 正式 and 預估) with their own running total; the spectator's has
+// four made-up singers whose ranking moves every second and whose pitch lines follow the tune, each a
+// little off in its own way. After the song the room is 結算中 for a few seconds (waiting for two
+// singers, then one, then no one) before the results, which have a winner, a 預估 line, a check and
+// a note. The stream and pitch posts are
 // answered `live` and 204; a room singer's result needs no recording upload (the stream held).
 
 import type {
@@ -381,6 +383,8 @@ interface DemoRoom {
   session: KaraokeSession | null;
   /** The opener's 「播出第一名的歌聲」. */
   lead: boolean;
+  /** 結算中: the song is over, these singers' results are waited for. */
+  settling: KaraokeRoomView["settling"];
 }
 
 const roomSessions = new Set<string>();
@@ -438,6 +442,7 @@ function roomView(r: DemoRoom): KaraokeRoomView {
     result: r.result,
     terms: TERMS,
     air: roomAir(r, me, running),
+    settling: running ? r.settling : null,
   };
 }
 
@@ -553,6 +558,7 @@ function startRound(r: DemoRoom, opts: { startIn: number; scene: "singer" | "spe
   clearRoomTimers();
   r.round++;
   r.result = null;
+  r.settling = null;
   r.state = "countdown";
   r.start_at_ms = coreNow() + opts.startIn;
   r.session = newSession(r.song?.id ?? "demo-song", r.shift);
@@ -571,9 +577,12 @@ function startRound(r: DemoRoom, opts: { startIn: number; scene: "singer" | "spe
     ] as const;
     let n = 0;
     every(3_000, () => {
-      if (r.state !== "singing") return;
+      if (r.state !== "singing" || r.settling !== null) return;
       const c = cycle[n++ % cycle.length] as (typeof cycle)[number];
-      emit({ type: "trend", round: r.round, trend: c.trend, source: c.source });
+      // Their own running total only: the first trend has none yet.
+      const t = r.start_at_ms === null ? 0 : (coreNow() - r.start_at_ms) / 1000;
+      const total = n === 1 ? null : Math.round((72 + 6 * Math.sin(t / 5)) * 10) / 10;
+      emit({ type: "trend", round: r.round, trend: c.trend, source: c.source, total });
     });
   } else {
     const ranks = new Map<string, number>();
@@ -582,11 +591,20 @@ function startRound(r: DemoRoom, opts: { startIn: number; scene: "singer" | "spe
       emit({ type: "board", round: r.round, at_ms: coreNow(), lines: boardNow(r, ranks) });
     });
   }
-  // The song ends for everyone: the ranking.
-  later(opts.startIn + (DURATION + 4) * 1000, () => {
+  // The song ends for everyone: 結算中 (two results waited for, then one, then none), the ranking.
+  const over = opts.startIn + (DURATION + 0.5) * 1000;
+  const settle = (waiting: string[]) => {
+    r.settling = { waiting, until_ms: (r.start_at_ms ?? coreNow()) + (DURATION + 110) * 1000 };
+    changed();
+  };
+  later(over, () => settle(["海苔", "Akari"]));
+  later(over + 2_000, () => settle(["Akari"]));
+  later(over + 4_000, () => settle([]));
+  later(over + 5_500, () => {
     clearRoomTimers();
     r.state = "results";
     r.start_at_ms = null;
+    r.settling = null;
     r.result = demoResult(r);
     changed();
   });
@@ -606,6 +624,7 @@ function lobbyRoom(opener: boolean): DemoRoom {
     start_at_ms: null,
     result: null,
     session: null,
+    settling: null,
   };
 }
 

@@ -1,7 +1,7 @@
 // Rooms (step 4) without a screen: the µ-law encoder and the downsampler the stream worklet runs,
 // the chunk scheduler (`at` / `song_ms`, the end, stopping on `estimate`), the pitch posts, the
-// clock offset, the trend plate's words, codes and addresses, the spectators' lines, and whether a
-// recording is uploaded.
+// clock offset, the trend plate's words, the singer's own number, 結算中, which stage a singer is
+// on, codes and addresses, the spectators' lines, and whether a recording is uploaded.
 
 import { describe, expect, it } from "vitest";
 import { decodeTrack, encodeTrack, fromBase64, toBase64 } from "@miyoria/play/karaoke/score";
@@ -25,7 +25,20 @@ import {
   PitchFeed,
   type StreamAnswer,
 } from "./room-stream";
-import { BoardLines, canPay, foldOctave, memberColor, readRoomCode, trendView, wantsUpload } from "./room-text";
+import type { KaraokeRoomView, KaraokeSession } from "@miyoria/contracts/api";
+import {
+  BoardLines,
+  canPay,
+  foldOctave,
+  type HeldStage,
+  memberColor,
+  readRoomCode,
+  settlingView,
+  stageOf,
+  stageScore,
+  trendView,
+  wantsUpload,
+} from "./room-text";
 
 const flush = async () => {
   for (let i = 0; i < 10; i++) await Promise.resolve();
@@ -342,6 +355,55 @@ describe("the room's words", () => {
     expect(canPay(19, 20)).toBe(false);
     expect(canPay(20, 20)).toBe(true);
     expect(canPay(null, 20)).toBe(true);
+  });
+});
+
+describe("a singer's own number and 結算中", () => {
+  it("shows the trend's own total by its source, and nothing to stand in for before there is one", () => {
+    expect(stageScore({ source: "voice", total: 81.25 })).toEqual({ total: 81.25, source: "voice" });
+    expect(stageScore({ source: "estimate", total: 0 })).toEqual({ total: 0, source: "estimate" });
+    expect(stageScore({ source: "voice", total: null })).toBeNull();
+    expect(stageScore(null)).toBeNull();
+  });
+
+  it("says whom the round waits for, or that it is nearly done", () => {
+    expect(settlingView({ waiting: ["海苔", "Akari"], until_ms: 0 })).toEqual({ title: "結算中…", detail: "等 海苔、Akari 的分數" });
+    expect(settlingView({ waiting: [], until_ms: 0 })).toEqual({ title: "結算中…", detail: "馬上就好" });
+    expect(settlingView({ waiting: [" "], until_ms: 0 })).toEqual({ title: "結算中…", detail: "馬上就好" });
+  });
+});
+
+describe("which stage a singer is on", () => {
+  const session = (id: string) => ({ session: id }) as KaraokeSession;
+  const view = (over: Partial<KaraokeRoomView>): KaraokeRoomView =>
+    ({
+      state: "singing",
+      round: 1,
+      start_at_ms: 1_000,
+      me: { id: "me", role: "singer", opener: false, singing: true, session: session("S1") },
+      ...over,
+    }) as KaraokeRoomView;
+
+  it("keeps the round's stage while the round is on, whatever a later view leaves out", () => {
+    const held: { current: HeldStage | null } = { current: null };
+    expect(stageOf(view({ state: "countdown" }), held)).toMatchObject({ round: 1, startAt: 1_000, session: { session: "S1" } });
+    const first = stageOf(view({}), held);
+    // The same stage object while nothing changed (it keys the stage).
+    expect(stageOf(view({}), held)).toBe(first);
+    // The song over, 結算中: a view without the session or the start keeps the stage until it is sent.
+    expect(stageOf(view({ me: { id: "me", role: "singer", opener: false, singing: false, session: null }, start_at_ms: null }), held)).toBe(first);
+    // The results, or the next round, let it go.
+    expect(stageOf(view({ state: "results", me: { id: "me", role: "singer", opener: false, singing: false, session: null } }), held)).toBeNull();
+    expect(stageOf(view({ round: 2, me: { id: "me", role: "singer", opener: false, singing: false, session: session("W2") } }), held)).toBeNull();
+    expect(stageOf(view({ round: 2, me: { id: "me", role: "singer", opener: false, singing: true, session: session("S2") } }), held)).toMatchObject({
+      round: 2,
+      session: { session: "S2" },
+    });
+  });
+
+  it("is no stage for someone who only watches", () => {
+    const held: { current: HeldStage | null } = { current: null };
+    expect(stageOf(view({ me: { id: "me", role: "spectator", opener: false, singing: false, session: session("W1") } }), held)).toBeNull();
   });
 });
 

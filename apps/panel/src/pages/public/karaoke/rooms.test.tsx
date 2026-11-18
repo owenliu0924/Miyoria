@@ -1,9 +1,10 @@
-// Rooms (step 4) on screen: a singer's stage shows their trend and never a ranking (even if a board
-// reached it), a spectator's stage shows the live ranking, the round's results, opening a room
+// Rooms (step 4) on screen: a singer's stage shows their trend and their own number and never a
+// ranking (even if a board reached it), a spectator's stage shows the live ranking, 結算中 and the
+// results coming up by themselves, the round's results, opening a room
 // (price and balance before paying), the admin's notice while karaoke is closed, and the recording
 // sent only when Core asks for it (and asked for again on a later look).
 
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -137,6 +138,7 @@ const roomOf = (over: Partial<KaraokeRoomView>): KaraokeRoomView => ({
   result: null,
   terms: TERMS,
   air: air(),
+  settling: null,
   ...over,
 });
 
@@ -276,9 +278,9 @@ describe("一起唱: a singer's stage", () => {
     expect(screen.queryByRole("button", { name: "從頭開始" })).toBeNull();
     expect(screen.queryByRole("group", { name: "升降調" })).toBeNull();
 
-    emit({ type: "trend", round: 1, trend: "rising", source: "voice" });
+    emit({ type: "trend", round: 1, trend: "rising", source: "voice", total: null });
     expect(await screen.findByRole("status", { name: "上升中,正式" })).toBeInTheDocument();
-    emit({ type: "trend", round: 1, trend: "dropping", source: "estimate" });
+    emit({ type: "trend", round: 1, trend: "dropping", source: "estimate", total: null });
     expect(await screen.findByRole("status", { name: "下降中,預估" })).toBeInTheDocument();
 
     emit(BOARD);
@@ -286,6 +288,120 @@ describe("一起唱: a singer's stage", () => {
     expect(container.querySelector("[data-board]")).toBeNull();
     expect(screen.queryByText("海苔")).toBeNull();
     expect(screen.queryByText("81.3")).toBeNull();
+  });
+});
+
+describe("一起唱: a singer's own number", () => {
+  it("shows their own total from the trend, 正式 or 預估, and the browser's own as 預估 before there is one", async () => {
+    const view = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 1_000,
+      me: { id: "me", role: "singer", opener: true, singing: true, session: session() },
+    });
+    roomSite(view);
+    const { container } = renderRoom(fakeEngine().engine);
+    await screen.findByRole("region", { name: "唱 紙船" });
+    const plate = () => container.querySelector("[data-score]") as HTMLElement;
+    // No trend yet: the browser's own running number, 預估.
+    await waitFor(() => expect(plate()).toHaveTextContent(/^預估0/));
+    emit({ type: "trend", round: 1, trend: "rising", source: "voice", total: 64.46 });
+    await waitFor(() => expect(plate()).toHaveTextContent(/^正式64\.5/));
+    emit({ type: "trend", round: 1, trend: "holding", source: "estimate", total: 58 });
+    await waitFor(() => expect(plate()).toHaveTextContent(/^預估58\.0/));
+    // A trend without a total yet: back to the browser's own.
+    emit({ type: "trend", round: 1, trend: "holding", source: "voice", total: null });
+    await waitFor(() => expect(plate()).toHaveTextContent(/^預估0/));
+    // Never anyone else's number or a rank, even if a board reached this page.
+    emit(BOARD);
+    expect(container.querySelector("[data-board]")).toBeNull();
+    expect(screen.queryByText("81.3")).toBeNull();
+    expect(screen.queryByText("海苔")).toBeNull();
+  });
+});
+
+describe("一起唱: 結算中 and the results", () => {
+  const coreResult = (): KaraokeResult =>
+    ({
+      session: "S7",
+      source: "voice",
+      voice: { state: "scored", estimate_total: 70, checks: [], upload: false },
+      song: { id: "k1", title: "紙船", artist: null },
+      at: "2026-11-18T01:00:00Z",
+      total: 72.4,
+      pitch: { score: 40, max: 60, hit: 0.7 },
+      stability: { score: 10, max: 15, wobble_cents: 20, held: 3 },
+      rhythm: { score: 12, max: 15, calibrated: true, measured: true, offset_ms: 10, spread_ms: 30, onsets: 9, found: 8, feel: "steady" },
+      expression: { score: 10.4, max: 10, vibrato_s: 1, long_tones: 1, scoops: 0, falls: 0 },
+      phrases: [],
+      facts: { coverage: 0.9, best: null, weakest: null, octave: 0, offset_cents: null, sung_s: 20, reference_s: 22 },
+      unranked: false,
+      client_total: 70,
+      latency_ms: 40,
+      best_before: null,
+      comment: { state: "none", text: null },
+    }) as KaraokeResult;
+  const ranking = (): KaraokeRoomView["result"] => ({
+    round: 1,
+    song: { id: "k1", title: "紙船", artist: "示範" },
+    settling: false,
+    note: null,
+    places: [
+      { member: "me", name: "小魚乾", color: 0, rank: 1, total: 72.4, pitch: 40, stability: 10, rhythm: 12, expression: 10.4, source: "voice", finished: true, checks: [], coins: 3, winner: false, note: null },
+    ],
+  });
+
+  it("a singer who is done sees 結算中 and whom it waits for, then the ranking by itself", async () => {
+    const singing = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 1_000,
+      me: { id: "me", role: "singer", opener: true, singing: true, session: session() },
+    });
+    const { posts } = roomSite(singing, (method, url) => {
+      if (url.pathname === "/api/member/karaoke/sessions/S7/result" && method === "POST") return { body: coreResult() };
+      if (url.pathname === "/api/member/karaoke/sessions/S7") return { body: coreResult() };
+      return undefined;
+    });
+    renderRoom(fakeEngine().engine);
+    await screen.findByRole("region", { name: "唱 紙船" });
+    const done = await screen.findByRole("button", { name: "唱完了" });
+    await waitFor(() => expect(done).toBeEnabled());
+    fireEvent.click(done);
+    // The take goes, and the stage gives way to their own take while the others finish.
+    await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/karaoke/sessions/S7/result")).toHaveLength(1), { timeout: 6_000 });
+    const card = await screen.findByRole("region", { name: "房間 KTV888" }, { timeout: 6_000 });
+    expect(card).toHaveTextContent("等其他人唱完");
+    expect(screen.queryByRole("region", { name: "唱 紙船" })).toBeNull();
+    // The song is over: 結算中, and for whom.
+    emit({ type: "room", room: { ...singing, settling: { waiting: ["海苔"], until_ms: Date.now() + 90_000 } } });
+    expect(await within(card).findByText("結算中…")).toBeInTheDocument();
+    expect(card).toHaveTextContent("等 海苔 的分數");
+    emit({ type: "room", room: { ...singing, settling: { waiting: [], until_ms: Date.now() + 90_000 } } });
+    expect(await within(card).findByText("馬上就好")).toBeInTheDocument();
+    // Settled: the ranking, with their own take beside it.
+    emit({ type: "room", room: room({ state: "results", round: 1, result: ranking() }) });
+    expect(await screen.findByRole("region", { name: "這一輪的名次" })).toHaveTextContent("小魚乾(你)");
+    expect(screen.getByRole("region", { name: "你這一輪" })).toHaveTextContent("72.4");
+    expect(screen.queryByText("結算中…")).toBeNull();
+  }, 15_000);
+
+  it("a spectator sees 結算中 on the stage, then the ranking replaces the stage by itself", async () => {
+    const watching = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 40_000,
+      me: { id: "b", role: "spectator", opener: false, singing: false, session: session() },
+      settling: { waiting: ["海苔", "Akari"], until_ms: Date.now() + 60_000 },
+    });
+    roomSite(watching);
+    renderRoom(fakeEngine().engine);
+    const stage = await screen.findByRole("region", { name: "看 紙船" });
+    const plate = within(stage).getByText("結算中…").closest("[data-settling]") as HTMLElement;
+    expect(plate).toHaveTextContent("等 海苔、Akari 的分數");
+    emit({ type: "room", room: room({ state: "results", round: 1, me: { id: "b", role: "spectator", opener: false, singing: false, session: null }, result: ranking() }) });
+    expect(await screen.findByRole("region", { name: "這一輪的名次" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "看 紙船" })).toBeNull();
   });
 });
 

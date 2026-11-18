@@ -338,23 +338,27 @@ function Closed({ children }: { children: string }) {
 
 function Body() {
   const overview = useOverview();
-  if (overview.isPending) {
+  const data = overview.data;
+  // Only a first answer that failed replaces the page. A failed look again (the window got focus,
+  // a song was sent) keeps what is on screen: a song being sung, a room's stage or a result waiting
+  // for its official score is not torn down for it.
+  if (data === undefined) {
+    if (overview.isError) {
+      if (isOff(overview.error)) return <Closed>現在沒有開放唱歌</Closed>;
+      return (
+        <Page>
+          <ErrorLine error={overview.error} onRetry={() => void overview.refetch()} />
+        </Page>
+      );
+    }
     return (
       <Page>
         <SkeletonRows count={5} />
       </Page>
     );
   }
-  if (overview.isError) {
-    if (isOff(overview.error)) return <Closed>現在沒有開放唱歌</Closed>;
-    return (
-      <Page>
-        <ErrorLine error={overview.error} onRetry={() => void overview.refetch()} />
-      </Page>
-    );
-  }
-  if (!overview.data.open && !overview.data.admin) return <Closed>現在沒有開放唱歌</Closed>;
-  return <Karaoke overview={overview.data} />;
+  if (!data.open && !data.admin) return <Closed>現在沒有開放唱歌</Closed>;
+  return <Karaoke overview={data} />;
 }
 
 /**
