@@ -21,7 +21,10 @@ export type KaraokeFileName =
   | "karaoke.m4a"
   | "reference.json"
   | "video.mp4"
-  | `karaoke.k${"+" | "-"}${number}.m4a`;
+  | `karaoke.k${"+" | "-"}${number}.m4a`
+  /** The backing as the voice node plays it (`karaokePlayName`), made by the worker when asked. */
+  | "play_karaoke.pcm"
+  | `play_karaoke.k${"+" | "-"}${number}.pcm`;
 
 /** How a song's lyrics are checked and aligned (`WorkersKaraokeLyricsOptions`). */
 export interface KaraokeLyricsOptions {

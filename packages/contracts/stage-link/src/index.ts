@@ -10,6 +10,7 @@
 // `type` against the union's tags before `parse` and ignores a type it does not know.
 
 import { z } from "zod";
+import { WorkersKaraokeLyricsV2Schema } from "../../workers/src/karaoke.js";
 
 /** Protocol version a `hello` carries. */
 export const STAGE_LINK_VERSION = 1;
@@ -454,6 +455,182 @@ export const StageLinkActivityMessageSchema = StageLinkActivitySchema.extend({
   type: z.literal("activity"),
 }).meta({ id: "StageLinkActivityMessage" });
 
+// ---- karaoke rooms on the stream (docs/design/karaoke.md 「做了什麼第五步」) ---------------------
+
+/** Longest room code, member name, song title / artist and note the karaoke messages carry. */
+export const KARAOKE_CODE_MAX = 12;
+export const KARAOKE_NAME_MAX = 60;
+export const KARAOKE_TITLE_MAX = 200;
+export const KARAOKE_NOTE_MAX = 200;
+/** Most people a karaoke room lists, and singers on its board. */
+export const KARAOKE_MEMBERS_MAX = 64;
+export const KARAOKE_BOARD_MAX = 16;
+
+/** One person in the room on the stream. Names are untrusted (shown as text). */
+export const StageLinkKaraokeMemberSchema = z
+  .object({
+    name: z.string().max(KARAOKE_NAME_MAX),
+    /** 0..7: their colour (the panel's category colours; 5–7 repeat 0–2 dashed). */
+    color: z.number().int().min(0).max(7),
+    role: z.enum(["singer", "spectator"]),
+    ready: z.boolean(),
+    opener: z.boolean(),
+  })
+  .meta({ id: "StageLinkKaraokeMember" });
+export type KaraokeStageMember = z.output<typeof StageLinkKaraokeMemberSchema>;
+
+/**
+ * One singer on the stream's board: the live ranking while a round is sung (`total` the running
+ * score, `move` since the last board), the final one after it (`winner`, `coins`, `finished`).
+ * `source`: `voice` the official score, `estimate` the browser's (預估); `null` no score yet.
+ */
+export const StageLinkKaraokeLineSchema = z
+  .object({
+    name: z.string().max(KARAOKE_NAME_MAX),
+    color: z.number().int().min(0).max(7),
+    rank: z.number().int().min(1).nullable(),
+    total: z.number().min(0).max(110).nullable(),
+    source: z.enum(["voice", "estimate"]).nullable(),
+    move: z.enum(["up", "down", "same"]),
+    winner: z.boolean(),
+    coins: z.number().int().min(0),
+    finished: z.boolean(),
+    /** Their voice is the one the stream plays now (`karaoke_voice`). */
+    on_air: z.boolean(),
+  })
+  .meta({ id: "StageLinkKaraokeLine" });
+export type KaraokeStageLine = z.output<typeof StageLinkKaraokeLineSchema>;
+
+/** The song of the room on the stream. Title and artist are untrusted (the song's source). */
+export const StageLinkKaraokeSongSchema = z
+  .object({
+    id: z.string().max(SONG_MAX),
+    title: z.string().max(KARAOKE_TITLE_MAX),
+    artist: z.string().max(KARAOKE_TITLE_MAX).nullable(),
+    duration_ms: z.number().positive().max(DAY_MS).nullable(),
+  })
+  .meta({ id: "StageLinkKaraokeSong" });
+export type KaraokeStageSong = z.output<typeof StageLinkKaraokeSongSchema>;
+
+/**
+ * What the stream's scene plays during the round (her own voice channel carries none of it: she is
+ * not the one singing). `backing`: the scene plays the round's backing (`karaoke_lyrics.backing`).
+ * `relay`: the name of the singer whose voice the scene plays now (`karaoke_voice`; one at a time:
+ * the round's one singer who asked for it, or the room's leader), `null` for nobody. `delay_ms`:
+ * how far the stream runs behind the singers (the room's fixed delay; `position_ms` already has
+ * it). The gains (0..1) are the owner's: the backing, the voice, and both while she speaks
+ * (`speaking`), so her hosting lines in the voice channel stay clear.
+ */
+export const StageLinkKaraokeAirSchema = z
+  .object({
+    backing: z.boolean(),
+    relay: z.string().max(KARAOKE_NAME_MAX).nullable(),
+    delay_ms: z.number().int().min(0).max(60_000),
+    backing_gain: z.number().min(0).max(1),
+    voice_gain: z.number().min(0).max(4),
+    duck_gain: z.number().min(0).max(1),
+  })
+  .meta({ id: "StageLinkKaraokeAir" });
+export type KaraokeStageAir = z.output<typeof StageLinkKaraokeAirSchema>;
+
+/**
+ * The karaoke room the stream shows (one at a time: a round being sung first, then the latest
+ * results, then a lobby). `room: null` ends the scene (no room, rooms off); the other fields are
+ * then empty. `position_ms`: during the countdown and the round, where the song is *on the stream*
+ * at the moment the message was sent (negative while it counts down): the singers' start plus the
+ * stream's delay (`stream_delay_ms`), so the voice channel's backing and the overlay agree;
+ * `null` otherwise. Sent on every change and once a second while a round is sung (the board).
+ */
+export const StageLinkKaraokeSceneSchema = z
+  .object({
+    room: z.string().max(KARAOKE_CODE_MAX).nullable(),
+    state: z.enum(["lobby", "countdown", "singing", "results"]).nullable(),
+    /** The round now, 1-based (0 before the first), and how many the room may still start. */
+    round: z.number().int().min(0),
+    rounds_left: z.number().int().min(0),
+    song: StageLinkKaraokeSongSchema.nullable(),
+    /** Semitones the backing is moved by (one key for everyone). */
+    shift: z.number().int().min(-12).max(12),
+    members: z.array(StageLinkKaraokeMemberSchema).max(KARAOKE_MEMBERS_MAX),
+    position_ms: z.number().min(-DAY_MS).max(DAY_MS).nullable(),
+    /** The live board while sung, the final ranking with the results; empty otherwise. */
+    board: z.array(StageLinkKaraokeLineSchema).max(KARAOKE_BOARD_MAX),
+    /** Why the round paid no prize, with the results (`null`: nothing to say). */
+    note: z.string().max(KARAOKE_NOTE_MAX).nullable(),
+    currency: z.string().max(16),
+    air: StageLinkKaraokeAirSchema,
+  })
+  .meta({ id: "StageLinkKaraokeScene" });
+export type KaraokeStageScene = z.output<typeof StageLinkKaraokeSceneSchema>;
+
+export const StageLinkKaraokeMessageSchema = StageLinkKaraokeSceneSchema.extend({
+  type: z.literal("karaoke"),
+}).meta({ id: "StageLinkKaraokeMessage" });
+
+/**
+ * The round's backing as the scene plays it: `path` an absolute file on the streaming PC (Core's
+ * karaoke cache), `format` `pcm` (s16le mono at `rate`, decoded by the song worker) or `m4a` (AAC,
+ * when the worker had no PCM: the page decodes it).
+ */
+export const StageLinkKaraokeBackingSchema = z
+  .object({
+    path: z.string().max(PATH_MAX),
+    format: z.enum(["pcm", "m4a"]),
+    rate: z.number().int().min(8_000).max(192_000),
+  })
+  .meta({ id: "StageLinkKaraokeBacking" });
+export type KaraokeStageBacking = z.output<typeof StageLinkKaraokeBackingSchema>;
+
+/**
+ * The words, picture and backing of a round, once when it starts (and again for a node that
+ * connects mid-round): the lyrics as the song's reference has them (untrusted text), `video` the
+ * absolute path of the round's background video on the streaming PC (Core's karaoke cache; no
+ * sound), `backing` the round's backing in its key; `null` without one. `round` and `song` say
+ * which round of `room` they belong to.
+ */
+export const StageLinkKaraokeLyricsSchema = z
+  .object({
+    room: z.string().max(KARAOKE_CODE_MAX),
+    round: z.number().int().min(1),
+    song: z.string().max(SONG_MAX),
+    lyrics: WorkersKaraokeLyricsV2Schema.nullable(),
+    video: z.string().max(PATH_MAX).nullable(),
+    backing: StageLinkKaraokeBackingSchema.nullable(),
+  })
+  .meta({ id: "StageLinkKaraokeLyrics" });
+export type KaraokeStageLyrics = z.output<typeof StageLinkKaraokeLyricsSchema>;
+
+export const StageLinkKaraokeLyricsMessageSchema = StageLinkKaraokeLyricsSchema.extend({
+  type: z.literal("karaoke_lyrics"),
+}).meta({ id: "StageLinkKaraokeLyricsMessage" });
+
+/** Sample rate of `karaoke_voice` audio (the singers' µ-law stream). */
+export const KARAOKE_VOICE_RATE = 16_000;
+/** Most audio one `karaoke_voice` carries: two seconds of µ-law, base64. */
+export const KARAOKE_VOICE_MAX_CHARS = 44_000;
+
+/**
+ * A piece of the relayed singer's voice for the scene to play: µ-law at `KARAOKE_VOICE_RATE`,
+ * base64, its first sample at song time `at_ms` (already placed on the backing's time by the
+ * singer's device latency). Core has already chosen whose voice it is, crossfaded a change of
+ * singer and buffered every singer to the room's fixed delay, so pieces follow each other without
+ * gaps (silence where nothing arrived in time). Sent about four times a second while a voice is on
+ * the stream; never kept anywhere.
+ */
+export const StageLinkKaraokeVoiceSchema = z
+  .object({
+    room: z.string().max(KARAOKE_CODE_MAX),
+    round: z.number().int().min(1),
+    at_ms: z.number().min(-DAY_MS).max(DAY_MS),
+    audio: z.string().max(KARAOKE_VOICE_MAX_CHARS),
+  })
+  .meta({ id: "StageLinkKaraokeVoice" });
+export type KaraokeStageVoice = z.output<typeof StageLinkKaraokeVoiceSchema>;
+
+export const StageLinkKaraokeVoiceMessageSchema = StageLinkKaraokeVoiceSchema.extend({
+  type: z.literal("karaoke_voice"),
+}).meta({ id: "StageLinkKaraokeVoiceMessage" });
+
 /** Asks for a `status` (with the same `id`). */
 export const StageLinkStatusRequestMessageSchema = z
   .object({ type: z.literal("status_request"), id: requestId })
@@ -481,6 +658,9 @@ export const StageLinkCoreMessageSchema = z
     StageLinkClipMessageSchema,
     StageLinkNoticeMessageSchema,
     StageLinkActivityMessageSchema,
+    StageLinkKaraokeMessageSchema,
+    StageLinkKaraokeLyricsMessageSchema,
+    StageLinkKaraokeVoiceMessageSchema,
     StageLinkStatusRequestMessageSchema,
     StageLinkPingMessageSchema,
     StageLinkPongMessageSchema,

@@ -386,6 +386,21 @@ export function karaokeBackingName(semitones: number): string {
   return `karaoke.k${semitones > 0 ? "+" : "-"}${Math.abs(semitones)}.m4a`;
 }
 
+/** Sample rate of the backing as the voice node plays it (`karaokePlayName`). */
+export const KARAOKE_PLAY_RATE = 48_000;
+
+/**
+ * The backing `semitones` away as raw PCM for the voice node: s16le mono at `KARAOKE_PLAY_RATE`
+ * (`play_karaoke.pcm`, `play_karaoke.k+3.pcm`), what Core plays in her voice channel during a
+ * room's round (docs/design/karaoke.md 「做了什麼第五步」). The worker decodes it from the
+ * matching `karaokeBackingName` file the first time it is asked for, and keeps it with the song;
+ * an older worker answers 404 and the round has no backing in voice.
+ */
+export function karaokePlayName(semitones: number): string {
+  if (semitones === 0) return "play_karaoke.pcm";
+  return `play_karaoke.k${semitones > 0 ? "+" : "-"}${Math.abs(semitones)}.pcm`;
+}
+
 /**
  * A finished karaoke job (`job.karaoke`): the song's id among the worker's karaoke songs (not one
  * of her covers: it is never listed by `GET /songs`), and what `reference.json` says of it.

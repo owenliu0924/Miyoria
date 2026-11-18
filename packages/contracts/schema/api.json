@@ -5259,10 +5259,14 @@
             "live",
             "estimate"
           ]
+        },
+        "relay": {
+          "type": "boolean"
         }
       },
       "required": [
-        "stream"
+        "stream",
+        "relay"
       ]
     },
     "ApiKaraokeBoardLine": {
@@ -5893,6 +5897,57 @@
         "at"
       ]
     },
+    "ApiKaraokeRoomAir": {
+      "type": "object",
+      "properties": {
+        "backing": {
+          "type": "boolean"
+        },
+        "delay_ms": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "lead": {
+          "type": "boolean"
+        },
+        "relay": {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "member": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "live": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "allowed",
+            "reason",
+            "member",
+            "live"
+          ]
+        }
+      },
+      "required": [
+        "backing",
+        "delay_ms",
+        "lead",
+        "relay"
+      ]
+    },
     "ApiKaraokeRoomEvent": {
       "oneOf": [
         {
@@ -6017,6 +6072,12 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 7
+        },
+        "hear": {
+          "type": "boolean"
+        },
+        "skip": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -6025,7 +6086,9 @@
         "role",
         "ready",
         "opener",
-        "color"
+        "color",
+        "hear",
+        "skip"
       ]
     },
     "ApiKaraokeRoomPlace": {
@@ -6160,6 +6223,25 @@
       "required": [
         "ready"
       ],
+      "additionalProperties": false
+    },
+    "ApiKaraokeRoomRelay": {
+      "type": "object",
+      "properties": {
+        "hear": {
+          "type": "boolean"
+        },
+        "skip": {
+          "type": "boolean"
+        },
+        "lead": {
+          "type": "boolean"
+        },
+        "member": {
+          "type": "string",
+          "maxLength": 32
+        }
+      },
       "additionalProperties": false
     },
     "ApiKaraokeRoomResult": {
@@ -6396,6 +6478,9 @@
         },
         "terms": {
           "$ref": "#/$defs/ApiKaraokeRoomTerms"
+        },
+        "air": {
+          "$ref": "#/$defs/ApiKaraokeRoomAir"
         }
       },
       "required": [
@@ -6410,7 +6495,8 @@
         "rounds_left",
         "start_at_ms",
         "result",
-        "terms"
+        "terms",
+        "air"
       ]
     },
     "ApiKaraokeRooms": {
