@@ -522,7 +522,7 @@ owner 接受在 Discord 裡的風險。能做的範圍:
 
 GPU(4070 SUPER,fp16):1.7B 驗證 17 秒、整首辨識 45 秒,VRAM 4.8 GB;MMS 一首 1.3 秒,1.8 GB(30 秒的窗 2.9 GB);w2v(只能 fp32)18 秒,2.8–3.9 GB。特殊讀法(即興劇=エチュード、詩=うた)會讓那幾行掉到 uncertain,把讀音寫進去對 MMS 幾乎沒差(95.7% → 95.7%)。
 
-**結論(owner 的決定)**:辨識只用 Qwen3-ASR-1.7B(驗證和聽寫同一個);對齊在 owner 的實例用 MMS_FA(非商業),repo 的預設是授權乾淨的 w2v;門檻照上面;Whisper 不用(幻聽)、Qwen3-ForcedAligner 不用。
+**結論(owner 的決定)**:辨識只用 Qwen3-ASR-1.7B(驗證和聽寫同一個);對齊用 MMS_FA(CC-BY-NC-4.0,只能非商業使用);2026-11-18 owner 決定 repo 的預設也是 `mms`(這個專案完全非商業),有收入的用途要自己把 `aligner` 改成授權乾淨的 `w2v`;門檻照上面;Whisper 不用(幻聽)、Qwen3-ForcedAligner 不用。
 
 ## 做了什麼第二步
 

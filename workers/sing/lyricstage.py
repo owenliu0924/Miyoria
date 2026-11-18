@@ -40,7 +40,7 @@ Runner = Callable[[str, dict[str, Any]], dict[str, Any]]
 class Options:
     """``WorkersKaraokeLyricsOptions``: Core's settings for this job, or the defaults."""
 
-    aligner: str = "w2v"
+    aligner: str = "mms"
     matched: float = L.MATCHED
     uncertain: float = L.UNCERTAIN
     keep_share: float = L.KEEP_SHARE
@@ -51,8 +51,8 @@ class Options:
         if value is None:
             return Options()
         get = value.get if isinstance(value, dict) else lambda k, d=None: getattr(value, k, d)
-        aligner = str(get("aligner", "w2v") or "w2v")
-        return Options(aligner=aligner if aligner in ("w2v", "mms") else "w2v",
+        aligner = str(get("aligner", "mms") or "mms")
+        return Options(aligner=aligner if aligner in ("w2v", "mms") else "mms",
                        matched=float(get("matched", L.MATCHED)), uncertain=float(get("uncertain", L.UNCERTAIN)),
                        keep_share=float(get("keep_share", L.KEEP_SHARE)),
                        wrong_share=float(get("wrong_share", L.WRONG_SHARE)))

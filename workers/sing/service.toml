@@ -80,7 +80,7 @@ optional = true
 # MMS: MahmoudAshraf's conversion of torchaudio's MMS_FA checkpoint (the same uroman alphabet) to
 # transformers; the torchaudio original is a pickle on dl.fbaipublicfiles.com, not a host files may
 # come from. CC-BY-NC-4.0: only for non-commercial use; Core's karaoke setting `aligner = "mms"`
-# picks it (the default `w2v` is Apache-2.0).
+# picks it and it is the default (`w2v` is Apache-2.0: the one for a use that earns money).
 [[install.files]]
 path = "karaoke/qwen3-asr-1.7b/config.json"
 hf = "Qwen/Qwen3-ASR-1.7B"

@@ -323,15 +323,16 @@ export function karaokeReferenceV2(ref: WorkersKaraokeReference): WorkersKaraoke
 
 /**
  * How a karaoke job checks and aligns its lyrics (`POST /jobs` `karaoke_lyrics`; Core's module
- * settings). `aligner`: `w2v`, a wav2vec2 CTC model per language (Apache-2.0, the default); `mms`,
- * torchaudio's MMS_FA weights (CC-BY-NC-4.0: non-commercial use only), better on hard songs.
+ * settings). `aligner`: `mms` (the default), torchaudio's MMS_FA weights (CC-BY-NC-4.0:
+ * non-commercial use only), far better on hard songs; `w2v`, a wav2vec2 CTC model per language
+ * (Apache-2.0).
  * `matched` / `uncertain`: a line's similarity thresholds; `keep_share` / `wrong_share`: of the
  * lines matched, at least this many keeps the looked-up lyrics, fewer than this many is the wrong
  * song.
  */
 export const WorkersKaraokeLyricsOptionsSchema = z
   .object({
-    aligner: z.enum(["w2v", "mms"]).default("w2v"),
+    aligner: z.enum(["w2v", "mms"]).default("mms"),
     matched: z.number().min(0).max(1).default(0.75),
     uncertain: z.number().min(0).max(1).default(0.5),
     keep_share: z.number().min(0).max(1).default(0.5),

@@ -567,7 +567,7 @@ dirs = ["extensions"]
 # stream_duck_gain = 0.35     # 她在語音頻道講話時,直播的唱 K 聲音降到這個比例
 # 歌詞:唱歌 worker 把查到的歌詞一行一行和主唱聽到的比對,對上的逐字對齊、照字切音符;
 # 查不到或對不上就用聽寫的。下面只影響之後準備的歌
-# aligner = "w2v"             # w2v(Apache-2.0)| mms(難的歌準很多,權重 CC-BY-NC-4.0,只能非商業使用)
+# aligner = "mms"             # mms(預設;難的歌準很多,權重 CC-BY-NC-4.0,只能非商業使用)| w2v(Apache-2.0;有收入的用途請用這個)
 # lyrics_matched = 0.75       # 一行和聽到的至少這麼像才算對上
 # lyrics_uncertain = 0.5      # 比這個低算對不上
 # lyrics_keep_share = 0.5     # 對上的行至少這麼多,整首就用查到的歌詞

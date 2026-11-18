@@ -49,7 +49,7 @@ const T0 = Date.UTC(2026, 10, 18, 4, 0, 0);
 
 const song = synthSong(2, 6);
 const LYRICS_DEFAULTS = {
-  aligner: "w2v",
+  aligner: "mms",
   matched: 0.75,
   uncertain: 0.5,
   keep_share: 0.5,

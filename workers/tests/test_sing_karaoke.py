@@ -326,7 +326,7 @@ def test_a_karaoke_job_makes_a_backing_track_and_a_reference(worker):
     assert set(n.midi for n in lyric) <= {60.0, 62.0, 64.0, 65.0, 67.0, 69.0, 71.0, 72.0}
     assert ref.notes[-1].end == pytest.approx(3.0)
     assert ref.made.model_dump() == {"pitch": "rmvpe", "notes": "lyric-units-1+pitch-runs-1", "lyrics": "found-checked",
-                                     "asr": "qwen3-asr-1.7b", "aligner": "w2v"}
+                                     "asr": "qwen3-asr-1.7b", "aligner": "mms"}
     assert ref.quality.model_dump() == q
     assert [s for s, _ in b.lyrics_steps[-2:]] == ["asr", "align"]
     lines = ref.lyrics.lines if ref.lyrics else []

@@ -404,7 +404,7 @@ def test_core_settings_reach_the_steps():
     o = lyricstage.Options.of({"aligner": "mms", "matched": 0.8, "uncertain": 0.4, "keep_share": 0.6,
                                "wrong_share": 0.1})
     assert o.thresholds() == {"matched": 0.8, "uncertain": 0.4, "keep_share": 0.6, "wrong_share": 0.1}
-    assert lyricstage.Options.of({"aligner": "other"}).aligner == "w2v"
+    assert lyricstage.Options.of({"aligner": "other"}).aligner == "mms"
     assert lyricstage.Options.of(None) == lyricstage.Options()
     req = contracts.WorkersSingJobRequest.model_validate({"query": "x", "purpose": "karaoke",
                                                           "karaoke_lyrics": {"aligner": "mms"}})
