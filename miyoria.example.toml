@@ -532,8 +532,12 @@ dirs = ["extensions"]
 # max_song_secs = 480         # 一首最長幾秒,超過的準備失敗
 # daily_songs = 10            # 每人每天能準備幾首新歌;已經準備好的歌不算(0 = 只能唱準備好的)
 # tolerance_cents = 50        # 離原唱幾 cents 內算唱對,兩倍遠就不算
+# voice_score = true          # 唱的時候錄下麥克風,唱完送唱歌 worker 讀音高算正式分數,算完兩邊都刪;false = 只有預估分數
 # comment = true              # 唱完讓她講評(她平常的一個回合,沒有另外的模型呼叫)
 # comment_channel = ""        # 講評的文字頻道,"discord:<伺服器 id>:<頻道 id>";留空 = 她只知道、不開口
+# voice_wait_secs = 90        # 講評最多等正式分數幾秒,等不到就用預估分數
+# video = true                # 背景影片:準備歌時留一份來源的畫面(最高 720p、沒有聲音),唱的時候放在歌詞後面
+# video_keep_hours = 24       # 影片在 Core 上最後一次唱過後留幾小時,再唱時從 worker 再拿
 # cache_dir = "data/karaoke"  # 伴唱軌和參考旋律在 Core 上放哪(相對 miyoria.toml);一天沒人唱就刪
 # 歌詞:唱歌 worker 把查到的歌詞一行一行和主唱聽到的比對,對上的逐字對齊、照字切音符;
 # 查不到或對不上就用聽寫的。下面只影響之後準備的歌
