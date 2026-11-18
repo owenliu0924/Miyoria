@@ -118,12 +118,78 @@ ALTER TABLE \`karaoke_songs\` ADD \`video\` integer DEFAULT false NOT NULL;
 ALTER TABLE \`karaoke_tracks\` ADD \`voice_frames\` text;
 `;
 
-/** The songs, requests, sessions, tracks and results. */
+/**
+ * Step 4: rooms, their rounds and what the rounds pay, and the room a session was sung in. (Written
+ * in drizzle-kit's form by hand: its pending mode asks whether a new table is a rename; the drift
+ * test checks it against the tables.)
+ */
+const ROOMS = `CREATE TABLE \`karaoke_rooms\` (
+	\`id\` text PRIMARY KEY,
+	\`code\` text NOT NULL,
+	\`opener_person\` text,
+	\`opener_platform\` text NOT NULL,
+	\`opener_account\` text NOT NULL,
+	\`opener_name\` text NOT NULL,
+	\`state\` text NOT NULL,
+	\`charge\` text NOT NULL,
+	\`price\` integer NOT NULL,
+	\`sung\` integer DEFAULT false NOT NULL,
+	\`rounds\` integer DEFAULT 0 NOT NULL,
+	\`refund\` text DEFAULT 'none' NOT NULL,
+	\`close_reason\` text,
+	\`created_at\` integer NOT NULL,
+	\`closed_at\` integer,
+	CONSTRAINT "karaoke_rooms_state_check" CHECK("state" IN ('open', 'closed')),
+	CONSTRAINT "karaoke_rooms_charge_check" CHECK("charge" IN ('charging', 'charged', 'free', 'failed')),
+	CONSTRAINT "karaoke_rooms_refund_check" CHECK("refund" IN ('none', 'due', 'done'))
+) STRICT;
+
+CREATE TABLE \`karaoke_room_rounds\` (
+	\`room_id\` text NOT NULL,
+	\`round\` integer NOT NULL,
+	\`song_id\` text NOT NULL,
+	\`shift\` integer DEFAULT 0 NOT NULL,
+	\`state\` text NOT NULL,
+	\`started_at\` integer NOT NULL,
+	\`settled_at\` integer,
+	\`result\` text,
+	CONSTRAINT \`karaoke_room_rounds_pk\` PRIMARY KEY(\`room_id\`, \`round\`),
+	CONSTRAINT "karaoke_room_rounds_state_check" CHECK("state" IN ('singing', 'settled', 'void'))
+) STRICT;
+
+CREATE TABLE \`karaoke_room_payouts\` (
+	\`room_id\` text NOT NULL,
+	\`round\` integer NOT NULL,
+	\`person_id\` text NOT NULL,
+	\`kind\` text NOT NULL,
+	\`platform\` text NOT NULL,
+	\`account_id\` text NOT NULL,
+	\`amount\` integer NOT NULL,
+	\`state\` text NOT NULL,
+	\`paid\` integer DEFAULT 0 NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`paid_at\` integer,
+	CONSTRAINT \`karaoke_room_payouts_pk\` PRIMARY KEY(\`room_id\`, \`round\`, \`person_id\`, \`kind\`),
+	CONSTRAINT "karaoke_room_payouts_kind_check" CHECK("kind" IN ('prize', 'finish')),
+	CONSTRAINT "karaoke_room_payouts_state_check" CHECK("state" IN ('due', 'paid', 'capped', 'refused'))
+) STRICT;
+
+ALTER TABLE \`karaoke_sessions\` ADD \`room_id\` text;
+
+CREATE INDEX \`karaoke_rooms_state_idx\` ON \`karaoke_rooms\` (\`state\`,\`created_at\`);
+
+CREATE INDEX \`karaoke_room_rounds_state_idx\` ON \`karaoke_room_rounds\` (\`state\`);
+
+CREATE INDEX \`karaoke_room_payouts_state_idx\` ON \`karaoke_room_payouts\` (\`state\`);
+`;
+
+/** The songs, requests, sessions, tracks and results; since migration 4 the rooms. */
 export const karaokeSchema: PluginSchema = {
   plugin: "karaoke",
   migrations: [
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "key_and_lyrics", sql: KEY_AND_LYRICS },
     { version: 3, name: "video_and_voice", sql: VIDEO_AND_VOICE },
+    { version: 4, name: "rooms", sql: ROOMS },
   ],
 };

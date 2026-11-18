@@ -8,6 +8,7 @@
 // - `expression.ts`: vibrato, long tones, scoops and falls.
 // - `live.ts`: `LiveScore`, the running number while singing.
 // - `voice.ts`: placing a recording of the singer in song time, and the checks of its voice.
+// - `stream.ts`: `StreamScore`, a room singer's official score while their voice streams in.
 
 export type { Span } from "./curve.js";
 export type { Expression } from "./expression.js";
@@ -28,6 +29,7 @@ export {
   type ScoreTuning,
   scoreSinging,
 } from "./score.js";
+export { StreamScore, type StreamScoreInput } from "./stream.js";
 export {
   asSubmitted,
   decodeTrack,

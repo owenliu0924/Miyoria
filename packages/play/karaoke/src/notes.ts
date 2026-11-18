@@ -29,6 +29,79 @@ function phrase(input: NoteInput, at: number | null): string | null {
   return `第 ${p.index + 1} 句${quoted}(${p.score} 分)`;
 }
 
+// ---- rooms (step 4) ---------------------------------------------------------------------------
+
+/** A room opened: she is its host and may greet people. */
+export function roomOpenedNote(opener: string, code: string, title: string | null): string {
+  const song = title === null ? "" : `,第一首是「${safeName(title, 40)}」`;
+  return `${safeName(opener)} 在會員頁開了一間唱 K 房間(房號 ${code})${song}。你是主持人:可以招呼大家用房號加入,一間最多八個人一起唱同一首。分數是系統算的。`;
+}
+
+/** A round starts in a few seconds. */
+export function roundStartNote(
+  code: string,
+  round: number,
+  title: string,
+  names: string[],
+): string {
+  const who = names.map((n) => safeName(n)).join("、");
+  return `唱 K 房間 ${code} 第 ${round} 首要開始了:「${safeName(title, 40)}」,${who} 一起唱。唱的時候不用說話,唱完系統會給分數,你再講評。`;
+}
+
+/** One singer's line of a round, for her. */
+export interface RoundLine {
+  name: string;
+  rank: number | null;
+  total: number | null;
+  /** `voice`: the official score; `estimate`: the browser's (預估). */
+  source: "voice" | "estimate" | null;
+  finished: boolean;
+  coins: number;
+  winner: boolean;
+  /** The best rank they reached during the song, and the worst. */
+  bestRank: number | null;
+  worstRank: number | null;
+  vibrato_s: number | null;
+  /** Their best phrase: `第 3 句「...」(95 分)`. */
+  best: string | null;
+}
+
+/** A round's results: the official scores, the prizes, and a few moments worth a word. */
+export function roundResultNote(
+  code: string,
+  round: number,
+  title: string,
+  lines: RoundLine[],
+  note: string | null,
+): string {
+  const ranked = lines
+    .filter((l) => l.total !== null)
+    .sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99))
+    .map(
+      (l) =>
+        `${l.rank}. ${safeName(l.name)} ${l.total} 分${l.source === "estimate" ? "(預估)" : ""}${l.winner ? `(第一名,${l.coins} 魚幣)` : ""}`,
+    );
+  const missing = lines.filter((l) => l.total === null).map((l) => safeName(l.name));
+  const moments: string[] = [];
+  for (const l of lines) {
+    if (l.rank !== null && l.worstRank !== null && l.worstRank - l.rank >= 2) {
+      moments.push(`${safeName(l.name)} 從第 ${l.worstRank} 名追上來`);
+    }
+    if (l.vibrato_s !== null && l.vibrato_s >= 3) {
+      moments.push(`${safeName(l.name)} 的顫音有 ${l.vibrato_s} 秒`);
+    }
+    if (l.best !== null && l.rank === 1) moments.push(`${safeName(l.name)} 唱得最好的是${l.best}`);
+  }
+  const parts = [
+    `唱 K 房間 ${code} 第 ${round} 首「${safeName(title, 40) || "一首歌"}」唱完了,系統分數:${ranked.join(";") || "沒有人交出分數"}。`,
+  ];
+  if (missing.length > 0) parts.push(`${missing.join("、")} 沒有唱完。`);
+  if (note !== null) parts.push(`${note}。`);
+  if (moments.length > 0) parts.push(`${moments.slice(0, 4).join(";")}。`);
+  parts.push("分數是系統算的,講評時照這些數字說;(預估)是瀏覽器算的,不算正式。");
+  return parts.join("");
+}
+
 /** The note: who sang what, the total and the four parts, then what stood out. */
 export function resultNote(input: NoteInput): string {
   const { result } = input;

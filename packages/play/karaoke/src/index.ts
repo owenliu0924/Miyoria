@@ -7,15 +7,26 @@
 //   sessions, tracks, results) and its event (`events.ts`).
 // - `service.ts`: `KaraokeService`: asking for a song, following its preparation, sessions and
 //   their signed links (`signing.ts`), scoring a submitted track, her comment.
-// - `notes.ts`: what she hears of a finished song.
-// - `module.ts`: module `karaoke` and `KaraokeKey`; `card.ts`: its card on the panel.
+// - `notes.ts`: what she hears of a finished song, and of a room's rounds.
+// - `rooms.ts`: `RoomDesk`, the rooms of step 4 (「做了什麼第四步」): lobby, rounds on one clock,
+//   the singers' live voices relayed to a song worker and scored, the board and the trends, the
+//   coins; `trend.ts`: what a singer is told about themselves.
+// - `module.ts`: module `karaoke`, `KaraokeKey` and `KaraokeRoomsKey`; `card.ts`: its card.
 
 export { karaokeCard } from "./card.js";
 export { commentContext, type KaraokeConfig, KaraokeConfigSchema } from "./config.js";
 export { KARAOKE_SOURCE, karaokeScoredWrite } from "./events.js";
 export { karaokeSchema } from "./migrations.js";
-export { KaraokeKey, KaraokeModule, type KaraokeModuleOptions, TICK_MS } from "./module.js";
-export { type NoteInput, resultNote } from "./notes.js";
+export {
+  KaraokeKey,
+  KaraokeModule,
+  type KaraokeModuleOptions,
+  KaraokeRoomsKey,
+  ROOM_TICK_MS,
+  TICK_MS,
+} from "./module.js";
+export { type NoteInput, resultNote, roomOpenedNote, roundResultNote } from "./notes.js";
+export { MAX_AUDIO_BYTES, type RoomDeps, RoomDesk } from "./rooms.js";
 export {
   COMMENT_WAIT_MS,
   FILES_KEEP_MS,
@@ -26,6 +37,7 @@ export {
   type KaraokeNote,
   KaraokeService,
   type KaraokeWho,
+  type RoomLink,
   type Submission,
   sourceOf,
   TRACK_KEEP_MS,

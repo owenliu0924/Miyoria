@@ -16,18 +16,33 @@
 //   `KARAOKE_VOICE_MAX_BYTES`, read with that cap and kept only in memory; one per session, after
 //   its result. `202 {state}`: a song worker reads it and Core scores it in the background.
 // * Admin (`karaokeAdmin`): `GET /api/karaoke/results`, the latest results with their flags.
+// * Rooms (step 4, `karaokeRooms` over `KaraokeRoomsKey`): the table routes (open, join, ready,
+//   song, start, close, ...) and four plain member routes: the room's event stream (SSE, what each
+//   connection gets is decided per person by the rooms: a singer of the running round never gets
+//   the board), the clock sync, a singer's microphone (µ-law, read with a cap, relayed, never
+//   stored) and a singer's own detected pitch. These are not counted against the member rate limit
+//   (a song is several requests a second); the rooms cap them per singer instead.
 //
-// Without the `karaoke` module every route is a `503` that names it.
+// A panel admin (session tier `admin`) may use everything while karaoke is not open, to try it;
+// members see it closed. Without the `karaoke` module every route is a `503` that names it.
 
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
+import { KARAOKE_ROOM_CODE, KaraokeClockSchema, KaraokePitchSchema } from "@miyoria/contracts/api";
 import { KARAOKE_VOICE_MAX_BYTES } from "@miyoria/contracts/workers";
-import { KaraokeError, KaraokeKey, type KaraokeService } from "@miyoria/play/karaoke";
-import type { AccountRef } from "@miyoria/types";
+import {
+  KaraokeError,
+  KaraokeKey,
+  KaraokeRoomsKey,
+  type KaraokeService,
+  MAX_AUDIO_BYTES,
+  type RoomDesk,
+} from "@miyoria/play/karaoke";
+import { type AccountRef, accountRefString } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { json, param, type Route } from "./route.js";
+import { json, noContent, param, type Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -53,19 +68,30 @@ async function refusals<T>(fn: () => T | Promise<T>): Promise<T> {
   }
 }
 
+/** A panel admin (their session's tier): they may use karaoke while it is not open. */
+function adminOf(c: ApiContext): boolean {
+  return memberOf(c).tier === "admin";
+}
+
 export const karaokeRpc = {
   overview: os.karaoke.overview.handler(({ context: { state, c } }) =>
-    refusals(() => service(state).overview(accountOf(c))),
+    refusals(() => service(state).overview(accountOf(c), adminOf(c))),
   ),
   request: os.karaoke.request.handler(({ input, context: { state, c } }) =>
-    refusals(() => service(state).request(accountOf(c), input.body.text)),
+    refusals(() => service(state).request(accountOf(c), input.body.text, adminOf(c))),
   ),
   song: os.karaoke.song.handler(({ input, context: { state, c } }) =>
     refusals(() => service(state).song(accountOf(c), input.params.id)),
   ),
   start: os.karaoke.start.handler(({ input, context: { state, c } }) =>
     refusals(() =>
-      service(state).start(accountOf(c), memberOf(c).name, input.params.id, input.body?.shift ?? 0),
+      service(state).start(
+        accountOf(c),
+        memberOf(c).name,
+        input.params.id,
+        input.body?.shift ?? 0,
+        adminOf(c),
+      ),
     ),
   ),
   submit: os.karaoke.submit.handler(({ input, context: { state, c } }) =>
@@ -81,6 +107,191 @@ export const karaokeAdminRpc = {
     service(state).adminResults(),
   ),
 };
+
+// ---- rooms (step 4) ---------------------------------------------------------------------------
+
+function rooms(state: ApiState): RoomDesk {
+  return state.service(KaraokeRoomsKey, "karaoke module");
+}
+
+export const karaokeRoomsRpc = {
+  overview: os.karaokeRooms.overview.handler(({ context: { state, c } }) =>
+    refusals(() => rooms(state).overview(accountOf(c), adminOf(c))),
+  ),
+  open: os.karaokeRooms.open.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      rooms(state).open(
+        accountOf(c),
+        memberOf(c).name,
+        input.body.song,
+        input.body.shift,
+        adminOf(c),
+      ),
+    ),
+  ),
+  room: os.karaokeRooms.room.handler(({ input, context: { state, c } }) =>
+    refusals(() => rooms(state).view(input.params.code, accountOf(c))),
+  ),
+  join: os.karaokeRooms.join.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      rooms(state).join(
+        input.params.code,
+        accountOf(c),
+        memberOf(c).name,
+        input.body.as,
+        adminOf(c),
+      ),
+    ),
+  ),
+  leave: os.karaokeRooms.leave.handler(({ input, context: { state, c } }) =>
+    refusals(() => rooms(state).leave(input.params.code, accountOf(c))),
+  ),
+  ready: os.karaokeRooms.ready.handler(({ input, context: { state, c } }) =>
+    refusals(() => rooms(state).ready(input.params.code, accountOf(c), input.body)),
+  ),
+  song: os.karaokeRooms.song.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      rooms(state).song(input.params.code, accountOf(c), input.body.song, input.body.shift),
+    ),
+  ),
+  start: os.karaokeRooms.start.handler(({ input, context: { state, c } }) =>
+    refusals(() => rooms(state).start(input.params.code, accountOf(c))),
+  ),
+  close: os.karaokeRooms.close.handler(({ input, context: { state, c } }) =>
+    refusals(() => rooms(state).close(input.params.code, accountOf(c))),
+  ),
+};
+
+/** Keep-alive comment interval of a room's event stream. */
+const ROOM_KEEP_ALIVE_MS = 15_000;
+/** Messages a room stream may fall behind by before it is closed (a reader that stopped). */
+const ROOM_MAX_BEHIND = 64;
+/** Room streams one account may hold open at once (a few tabs). */
+export const ROOM_STREAMS_PER_ACCOUNT = 3;
+const roomStreams = new WeakMap<ApiState, Map<string, number>>();
+
+const SSE_HEADERS = {
+  "content-type": "text/event-stream; charset=utf-8",
+  "cache-control": "no-store",
+  "x-content-type-options": "nosniff",
+  "x-accel-buffering": "no",
+};
+
+/** A room's code from the path, or a 404. */
+function codeOf(c: ApiContext): string {
+  const code = param(c, "code").toUpperCase();
+  if (!KARAOKE_ROOM_CODE.test(code)) throw ApiError.notFound("no such room");
+  return code;
+}
+
+/**
+ * `GET /api/member/karaoke/rooms/:code/events`: the room as this person sees it, the board or
+ * their own trend. What a connection gets is decided by the rooms (`RoomDesk.follow`), per
+ * person: a singer of the running round is never sent the board.
+ */
+async function roomEvents(state: ApiState, c: ApiContext): Promise<Response> {
+  const desk = rooms(state);
+  const code = codeOf(c);
+  const account = accountOf(c);
+  const who = accountRefString(account);
+  let open = roomStreams.get(state);
+  if (open === undefined) {
+    open = new Map();
+    roomStreams.set(state, open);
+  }
+  if ((open.get(who) ?? 0) >= ROOM_STREAMS_PER_ACCOUNT) throw ApiError.tooMany(5_000);
+  const counts = open;
+  const encoder = new TextEncoder();
+  const signal = c.req.raw.signal;
+  let stop: (() => void) | null = null;
+  let keepAlive: ReturnType<typeof setInterval> | undefined;
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    stop?.();
+    clearInterval(keepAlive);
+    signal.removeEventListener("abort", finish);
+    const left = (counts.get(who) ?? 1) - 1;
+    if (left <= 0) counts.delete(who);
+    else counts.set(who, left);
+  };
+  let refusal: unknown = null;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      const push = (text: string) => {
+        if (done) return;
+        if ((controller.desiredSize ?? 0) < -ROOM_MAX_BEHIND) {
+          finish();
+          controller.close();
+          return;
+        }
+        try {
+          controller.enqueue(encoder.encode(text));
+        } catch {
+          finish();
+        }
+      };
+      counts.set(who, (counts.get(who) ?? 0) + 1);
+      push("retry: 3000\n\n");
+      try {
+        stop = desk.follow(code, account, (event) =>
+          push(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`),
+        );
+      } catch (error) {
+        refusal = error;
+        finish();
+        return;
+      }
+      keepAlive = setInterval(() => push(":\n\n"), ROOM_KEEP_ALIVE_MS);
+      signal.addEventListener("abort", finish, { once: true });
+    },
+    cancel() {
+      finish();
+    },
+  });
+  if (refusal !== null) {
+    void stream.cancel().catch(() => undefined);
+    if (refusal instanceof KaraokeError) throw new ApiError(refusal.status, refusal.message);
+    throw refusal;
+  }
+  return new Response(stream, { status: 200, headers: SSE_HEADERS });
+}
+
+/** `POST /api/member/karaoke/rooms/:code/clock` `{t0}`: one round trip of the clock sync. */
+async function roomClock(state: ApiState, c: ApiContext): Promise<Response> {
+  const desk = rooms(state);
+  const body = KaraokeClockSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw new ApiError(400, "the body must be {t0}");
+  return json(desk.clock(body.data.t0));
+}
+
+/**
+ * `POST /api/member/karaoke/rooms/:code/audio?at=&song_ms=&end=`: a singer's microphone, µ-law
+ * 16 kHz mono, at most two seconds. Read with that cap, relayed to the song worker, never stored
+ * or logged.
+ */
+async function roomAudio(state: ApiState, c: ApiContext): Promise<Response> {
+  const desk = rooms(state);
+  const code = codeOf(c);
+  const at = Number(c.req.query("at") ?? "");
+  const songMs = Number(c.req.query("song_ms") ?? "");
+  const end = c.req.query("end") === "1";
+  const bytes = await bodyUpTo(c, MAX_AUDIO_BYTES);
+  if (bytes === null) throw new ApiError(413, "一次送太多了");
+  const reply = await refusals(() => desk.audio(code, accountOf(c), at, songMs, end, bytes));
+  return json(reply);
+}
+
+/** `POST /api/member/karaoke/rooms/:code/pitch` `{from, track}`: the browser's own pitch. */
+async function roomPitch(state: ApiState, c: ApiContext): Promise<Response> {
+  const desk = rooms(state);
+  const code = codeOf(c);
+  const body = KaraokePitchSchema.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) throw new ApiError(400, "the body must be {from, track}");
+  await refusals(() => desk.pitch(code, accountOf(c), body.data.from, body.data.track));
+  return noContent();
+}
 
 /** `GET /api/member/karaoke/files/:session/:name`. */
 async function file(state: ApiState, c: ApiContext): Promise<Response> {
@@ -212,6 +423,30 @@ export function karaokeRoutes(state: ApiState): Route[] {
       path: "/api/member/karaoke/sessions/:id/voice",
       member: true,
       handler: (c) => voice(state, c),
+    },
+    {
+      method: "GET",
+      path: "/api/member/karaoke/rooms/:code/events",
+      member: true,
+      handler: (c) => roomEvents(state, c),
+    },
+    {
+      method: "POST",
+      path: "/api/member/karaoke/rooms/:code/clock",
+      member: true,
+      handler: (c) => roomClock(state, c),
+    },
+    {
+      method: "POST",
+      path: "/api/member/karaoke/rooms/:code/audio",
+      member: true,
+      handler: (c) => roomAudio(state, c),
+    },
+    {
+      method: "POST",
+      path: "/api/member/karaoke/rooms/:code/pitch",
+      member: true,
+      handler: (c) => roomPitch(state, c),
     },
   ];
 }

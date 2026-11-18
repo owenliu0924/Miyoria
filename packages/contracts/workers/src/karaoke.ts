@@ -437,3 +437,88 @@ export const WorkersKaraokeVoicePitchSchema = z
   })
   .meta({ id: "WorkersKaraokeVoicePitch" });
 export type WorkersKaraokeVoicePitch = z.output<typeof WorkersKaraokeVoicePitchSchema>;
+
+// ---- the live voice of a room's singers (docs/design/karaoke.md 「做了什麼第四步」) -------------
+//
+// `POST /karaoke/stream` (JSON both ways): while a room sings, Core relays each singer's
+// microphone to one song worker in small batches (about every half second, all the room's singers
+// in one request); the worker keeps each stream's audio in memory only, runs RMVPE on a window
+// around what is new and answers 50 Hz pitch frames (`WorkersKaraokeStreamFrames`). Frames near the
+// end may still change: each answer starts at `from`, and replaces what an earlier one said from
+// there. A chunk with `end: true` closes its stream: the worker answers its whole curve made at
+// once from everything it read (`final: true`, the same treatment as `POST /karaoke/voice`) and
+// forgets the audio. A stream nobody sends to for a while is forgotten too. Nothing is written to
+// disk or logged. A worker without this endpoint answers 404: rooms then score from the browser's
+// estimate and the one recording each singer uploads at the end.
+
+/** Samples per second of a stream: 16 kHz mono (RMVPE reads 16 kHz). */
+export const KARAOKE_STREAM_RATE = 16_000;
+/** Bytes per sample: G.711 µ-law, one byte a sample (128 kbit/s). */
+export const KARAOKE_STREAM_BYTES_PER_SAMPLE = 1;
+/** Streams in one request (a room's singers). */
+export const KARAOKE_STREAM_MAX_STREAMS = 8;
+/** Samples in one chunk: at most four seconds (a batch late by that much is dropped by Core). */
+export const KARAOKE_STREAM_MAX_CHUNK = 4 * KARAOKE_STREAM_RATE;
+
+/** A stream (one singer of one round) or a room: letters, digits, `-` and `_`. */
+const streamId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/);
+
+/**
+ * New audio of one stream. `at`: the sample of the stream its first sample is (0 = the stream's
+ * first). A chunk that starts past what the worker has is padded with silence; what it already has
+ * is not read again (a retry is harmless).
+ */
+export const WorkersKaraokeStreamChunkSchema = z
+  .object({
+    stream: streamId,
+    at: z.number().int().min(0),
+    /** µ-law, 16 kHz mono, base64; may be empty (only `end`). */
+    audio: z.string(),
+    end: z.boolean().default(false),
+  })
+  .meta({ id: "WorkersKaraokeStreamChunk" });
+export type WorkersKaraokeStreamChunk = z.input<typeof WorkersKaraokeStreamChunkSchema>;
+
+/** Body of `POST /karaoke/stream`. `room`: the streams belong to it (they are counted per room). */
+export const WorkersKaraokeStreamRequestSchema = z
+  .object({
+    room: streamId,
+    chunks: z.array(WorkersKaraokeStreamChunkSchema).max(KARAOKE_STREAM_MAX_STREAMS),
+    /** Streams to forget without an answer (a singer who left). */
+    drop: z.array(streamId).max(KARAOKE_STREAM_MAX_STREAMS).default([]),
+  })
+  .meta({ id: "WorkersKaraokeStreamRequest" });
+export type WorkersKaraokeStreamRequest = z.input<typeof WorkersKaraokeStreamRequestSchema>;
+
+/**
+ * One stream's pitch: frames `from`, `from + 1`, ... at 50 Hz from the stream's first sample
+ * (MIDI, `null` not voiced), replacing what earlier answers said from `from` on. `final`: the whole
+ * curve from 0, made at once from everything read, with its loudness figures (as
+ * `WorkersKaraokeVoicePitch`); the stream is gone after it.
+ */
+export const WorkersKaraokeStreamFramesSchema = z
+  .object({
+    stream: z.string(),
+    from: z.number().int().min(0),
+    midi: z.array(z.number().nullable()),
+    final: z.boolean(),
+    /** Seconds of audio read so far. */
+    seconds: z.number(),
+    level_db: z.number().nullable(),
+    floor_db: z.number().nullable(),
+  })
+  .meta({ id: "WorkersKaraokeStreamFrames" });
+export type WorkersKaraokeStreamFrames = z.output<typeof WorkersKaraokeStreamFramesSchema>;
+
+/** The answer of `POST /karaoke/stream`: a stream the worker refused or lost is in `lost`. */
+export const WorkersKaraokeStreamAnswerSchema = z
+  .object({
+    hz: z.literal(KARAOKE_FRAME_HZ),
+    streams: z.array(WorkersKaraokeStreamFramesSchema),
+    /** Streams it does not have (forgotten, over a cap): Core scores them from the estimate. */
+    lost: z.array(z.string()).default([]),
+    device: z.string(),
+    method: z.string(),
+  })
+  .meta({ id: "WorkersKaraokeStreamAnswer" });
+export type WorkersKaraokeStreamAnswer = z.output<typeof WorkersKaraokeStreamAnswerSchema>;

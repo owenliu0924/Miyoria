@@ -1,7 +1,9 @@
 // `/karaoke`: a member sings on their own (docs/design/karaoke.md, the first milestone). Pick a
 // song (or ask for one), measure the device's latency once, sing over the backing track in this
 // browser, and get the system's score; she comments on it in Discord when she wants to.
-// Single player only: no rooms, nothing live, no coins.
+// Rooms (`/karaoke/room/<code>`, `RoomPage`): up to eight sing the same song at the same moment,
+// each in their own browser; opened (paid) and joined from 一起唱 on the song list.
+// While karaoke is closed members see it closed; an admin sees a quiet line and can use it all.
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CircleAlert } from "lucide-react";
@@ -23,15 +25,19 @@ import {
   type StoredLatency,
   saveLatency,
 } from "./latency";
+import { KARAOKE_PAGE, roomCodeIn, roomPage } from "./path";
 import { isOff, useOverview } from "./queries";
 import { Result } from "./Result";
+import { RoomPage } from "./RoomPage";
+import { RoomsEntry } from "./RoomsEntry";
 import { type Finished, Singing } from "./Singing";
 import { AskForSong, LatencyBlock, RecentResults, SongList } from "./SongList";
 import { micError, missingSupport } from "./support";
 
 type View =
   | { kind: "list" }
-  | { kind: "calibrate"; after: KaraokeSongView | null }
+  | { kind: "room"; code: string }
+  | { kind: "calibrate"; after: KaraokeSongView | null; room?: string }
   | { kind: "sing"; song: KaraokeSongView }
   | { kind: "result"; session: string; title: string; artist: string | null; song: string; pending?: Finished };
 
@@ -63,8 +69,22 @@ function keptLatency(key: string | null): StoredLatency | null {
   return key ? loadLatency(key) : null;
 }
 
+/** The page's query without `room` (the demo's flag stays). */
+function restOfQuery(): string {
+  const q = new URLSearchParams(window.location.search);
+  q.delete("room");
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
+/** What the address asks for: a room, or the list. */
+function viewFromAddress(): View {
+  const code = typeof window === "undefined" ? null : roomCodeIn(`${window.location.pathname}${window.location.search}`);
+  return code ? { kind: "room", code } : { kind: "list" };
+}
+
 function Karaoke({ overview }: { overview: KaraokeOverview }) {
-  const [view, setView] = useState<View>({ kind: "list" });
+  const [view, setView] = useState<View>(viewFromAddress);
   const [key, setKey] = useState<string | null>(() => lastDevice());
   const [stored, setStored] = useState<StoredLatency | null>(() => keptLatency(lastDevice()));
   const [estimate, setEstimate] = useState<number | null>(null);
@@ -86,6 +106,41 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
   );
 
   const latency = latencyFor(stored, estimate ?? engineRef.current?.estimateLatencyMs() ?? 40);
+
+  // A room has its own address; back and forward move between it and the list.
+  useEffect(() => {
+    const onPop = () => setView(viewFromAddress());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const enterRoom = useCallback((code: string) => {
+    window.history.pushState(null, "", `${roomPage(code)}${restOfQuery()}`);
+    setView({ kind: "room", code });
+  }, []);
+  const exitRoom = useCallback(() => {
+    window.history.pushState(null, "", `${KARAOKE_PAGE}${restOfQuery()}`);
+    setView({ kind: "list" });
+  }, []);
+
+  /** Opens the microphone for a room: the latency kept for it, else the browser's estimate. */
+  const prepareMic = useCallback(async () => {
+    const why = missingSupport();
+    if (why) throw new Error(why);
+    const audio = engine();
+    let mic: { deviceId?: string; groupId?: string };
+    try {
+      mic = await audio.openMic();
+    } catch (e) {
+      throw new Error(micError(e));
+    }
+    const guess = audio.estimateLatencyMs();
+    setEstimate(guess);
+    const k = deviceKey(mic);
+    const kept = loadLatency(k);
+    setKey(k);
+    setStored(kept);
+    return latencyFor(kept, guess);
+  }, [engine]);
 
   const sing = async (song: KaraokeSongView) => {
     setBlocked(null);
@@ -133,11 +188,11 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
           next={view.after?.title ?? null}
           onKey={setKey}
           onSaved={setStored}
-          onBack={() => setView({ kind: "list" })}
+          onBack={() => setView(view.room ? { kind: "room", code: view.room } : { kind: "list" })}
           onContinue={() => {
             const after = view.after;
             if (!after) {
-              setView({ kind: "list" });
+              setView(view.room ? { kind: "room", code: view.room } : { kind: "list" });
               return;
             }
             // Skipped: the estimate stands, and the question is not asked again on this device.
@@ -155,6 +210,22 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
           }}
         />
       </Page>
+    );
+  }
+
+  if (view.kind === "room") {
+    return (
+      <RoomPage
+        key={view.code}
+        code={view.code}
+        overview={overview}
+        engine={engine}
+        latency={key ? latency : null}
+        floor={stored?.floor ?? null}
+        prepareMic={prepareMic}
+        onCalibrate={() => setView({ kind: "calibrate", after: null, room: view.code })}
+        onExit={exitRoom}
+      />
     );
   }
 
@@ -213,6 +284,12 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
         </>
       }
     >
+      {!overview.open && overview.admin && (
+        <p role="status" className="text-[13px] text-muted-foreground">
+          還沒開放,只有管理員能用
+        </p>
+      )}
+      <RoomsEntry overview={overview} onEnter={enterRoom} />
       {(blocked ?? unsupported) && (
         <p role="alert" className="flex items-center gap-2 text-[13px]">
           <CircleAlert aria-hidden className="size-4 shrink-0 text-primary" />
@@ -254,7 +331,7 @@ function Body() {
       </Page>
     );
   }
-  if (!overview.data.open) return <Closed>現在沒有開放唱歌</Closed>;
+  if (!overview.data.open && !overview.data.admin) return <Closed>現在沒有開放唱歌</Closed>;
   return <Karaoke overview={overview.data} />;
 }
 

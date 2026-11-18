@@ -162,3 +162,52 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.roundRect(x, y, w, h, Math.min(r, w / 2, h / 2));
   ctx.fill();
 }
+
+/** One singer's line on the spectators' lane. */
+export interface SingerLine {
+  points: readonly TrailPoint[];
+  /** A colour the canvas understands. */
+  color: string;
+  dashed: boolean;
+}
+
+/**
+ * The room's singers over a lane already drawn (`drawLane` with no trail): each line in its own
+ * colour, dashed for colours six to eight, with a dot at its newest point near now.
+ */
+export function drawSingerLines(ctx: CanvasRenderingContext2D, view: LaneView, lines: readonly SingerLine[], dpr: number): void {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const { from } = visibleWindow(view);
+  const clampY = (m: number) => midiToY(Math.min(view.hi, Math.max(view.lo, m)), view);
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  for (const line of lines) {
+    ctx.strokeStyle = line.color;
+    ctx.setLineDash(line.dashed ? [6, 5] : []);
+    ctx.beginPath();
+    let prev: TrailPoint | null = null;
+    let tip: TrailPoint | null = null;
+    for (const p of line.points) {
+      if (p.midi === null || p.t < from - 0.1 || p.t > view.now + 0.05) {
+        prev = null;
+        continue;
+      }
+      if (prev !== null && prev.midi !== null && p.t - prev.t < GAP_S && Math.abs(p.midi - prev.midi) < GAP_JUMP) {
+        ctx.lineTo(timeToX(p.t, view), clampY(p.midi));
+      } else {
+        ctx.moveTo(timeToX(p.t, view), clampY(p.midi));
+      }
+      prev = p;
+      tip = p;
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (tip && tip.midi !== null && view.now - tip.t < 0.6) {
+      ctx.fillStyle = line.color;
+      ctx.beginPath();
+      ctx.arc(timeToX(tip.t, view), clampY(tip.midi), 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}

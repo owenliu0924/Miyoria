@@ -725,6 +725,9 @@ describe("the route table", () => {
       "GET /api/member/fortune",
       "GET /api/member/karaoke",
       "GET /api/member/karaoke/files/:session/:name",
+      "GET /api/member/karaoke/rooms",
+      "GET /api/member/karaoke/rooms/:code",
+      "GET /api/member/karaoke/rooms/:code/events",
       "GET /api/member/karaoke/sessions/:id",
       "GET /api/member/karaoke/songs/:id",
       "GET /api/member/market/auction",
@@ -741,6 +744,16 @@ describe("the route table", () => {
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
+      "POST /api/member/karaoke/rooms",
+      "POST /api/member/karaoke/rooms/:code/audio",
+      "POST /api/member/karaoke/rooms/:code/clock",
+      "POST /api/member/karaoke/rooms/:code/close",
+      "POST /api/member/karaoke/rooms/:code/join",
+      "POST /api/member/karaoke/rooms/:code/leave",
+      "POST /api/member/karaoke/rooms/:code/pitch",
+      "POST /api/member/karaoke/rooms/:code/ready",
+      "POST /api/member/karaoke/rooms/:code/song",
+      "POST /api/member/karaoke/rooms/:code/start",
       "POST /api/member/karaoke/sessions/:id/result",
       "POST /api/member/karaoke/sessions/:id/voice",
       "POST /api/member/karaoke/songs",
@@ -758,7 +771,8 @@ describe("the route table", () => {
     expect(all.filter((r) => !r.public && !r.member).length).toBeGreaterThan(90);
     // No member route takes a parameter that could name a person: a card's serial names a card,
     // and one that is not theirs is not found; a series names one of their own titles; a karaoke
-    // song is nobody's, and a karaoke session (and its files) that is not theirs is not found.
+    // song is nobody's, and a karaoke session (and its files) that is not theirs is not found; a
+    // room's code names a room, which anyone with the code may join or watch.
     const named = all.filter(
       (r) =>
         r.member &&
@@ -766,6 +780,7 @@ describe("the route table", () => {
           .replace(":serial", "")
           .replace(":series", "")
           .replace(/^\/api\/member\/karaoke\/(songs|sessions)\/:id/, "")
+          .replace(/^\/api\/member\/karaoke\/rooms\/:code/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .includes(":"),
     );

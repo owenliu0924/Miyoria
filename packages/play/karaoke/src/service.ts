@@ -32,6 +32,7 @@ import {
   shiftKaraokeReference,
   WorkersKaraokeReferenceSchema,
   type WorkersKaraokeReferenceV2,
+  type WorkersKaraokeVoicePitch,
   type WorkersSingJob,
 } from "@miyoria/contracts/workers";
 import {
@@ -53,6 +54,7 @@ import {
   fromBase64,
   placeRecording,
   recordingInSong,
+  type ScoreInput,
   type ScoreResult,
   scoreSinging,
   toBase64,
@@ -138,6 +140,16 @@ export interface KaraokeDeps {
   signer?: FileSigner;
 }
 
+/** What the service asks the rooms about a room's session (`rooms.ts`). */
+export interface RoomLink {
+  /** The singer's live stream gives (or gave) the official score: no recording is wanted. */
+  streams(session: string): boolean;
+  /** The stream's final pitch, once it came: the official score, when the result is in. */
+  finalOf(session: string): { pitch: WorkersKaraokeVoicePitch; offset_ms: number } | null;
+  /** A room's session changed: its result came, or its official score, or it failed. */
+  changed(session: string): void;
+}
+
 /** What the browser sends at the end of a song. */
 export interface Submission {
   track: string;
@@ -191,6 +203,7 @@ export class KaraokeService {
   readonly #videos = new Map<string, Promise<boolean>>();
   /** Recordings being read by a worker and scored, by session. */
   readonly #voices = new Map<string, Promise<void>>();
+  #rooms: RoomLink | null = null;
 
   constructor(deps: KaraokeDeps) {
     this.#d = deps;
@@ -246,7 +259,15 @@ export class KaraokeService {
     };
   }
 
-  overview(account: AccountRef): KaraokeOverview {
+  /**
+   * Refused while karaoke is not open, unless `admin` (a panel admin may use everything while it
+   * is closed, to try it before members can).
+   */
+  openFor(admin: boolean): void {
+    if (!this.#d.config.open && !admin) throw new KaraokeError(409, "現在沒有開放唱 K");
+  }
+
+  overview(account: AccountRef, admin = false): KaraokeOverview {
     const { person } = this.#person(account);
     const now = this.#d.now();
     const store = this.#d.store;
@@ -256,6 +277,7 @@ export class KaraokeService {
     const cfg = this.#d.config;
     return {
       open: cfg.open,
+      admin,
       preparing: this.#d.worker() !== null,
       songs: [...pending, ...ready].map((s) => this.#view(s, person, bests)),
       limits: {
@@ -287,10 +309,10 @@ export class KaraokeService {
   }
 
   /** A link or a search: the song already known, or a new preparation. */
-  async request(account: AccountRef, text: string): Promise<KaraokeRequestResult> {
+  async request(account: AccountRef, text: string, admin = false): Promise<KaraokeRequestResult> {
     const { person } = this.#person(account);
     const cfg = this.#d.config;
-    if (!cfg.open) throw new KaraokeError(409, "現在沒有開放唱 K");
+    this.openFor(admin);
     const source = sourceOf(text);
     if (source === null) throw new KaraokeError(400, "請貼一個連結,或打歌名");
     const store = this.#d.store;
@@ -548,9 +570,19 @@ export class KaraokeService {
     name: string,
     songId: string,
     shift = 0,
+    admin = false,
   ): Promise<KaraokeSession> {
-    const { person } = this.#person(account);
-    if (!this.#d.config.open) throw new KaraokeError(409, "現在沒有開放唱 K");
+    this.#person(account);
+    this.openFor(admin);
+    const song = await this.readySong(songId, shift);
+    return this.session(account, name, song, shift, null);
+  }
+
+  /**
+   * A ready song with its files on Core, and its backing in the key `shift` away (made by the
+   * worker that has the song, once): a refusal for people otherwise.
+   */
+  async readySong(songId: string, shift: number): Promise<SongRow> {
     if (!Number.isInteger(shift) || Math.abs(shift) > KARAOKE_MAX_SHIFT) {
       throw new KaraokeError(400, `升降調最多 ${KARAOKE_MAX_SHIFT} 個半音`);
     }
@@ -576,6 +608,21 @@ export class KaraokeService {
         throw new KaraokeError(503, "現在做不出這個調,換回原調或等一下再試");
       }
     }
+    return song;
+  }
+
+  /**
+   * One singing of a ready song (`readySong`) by `account`: a session and its signed links. `room`:
+   * the room it is a round of (its result is the room's to tell her of), or `null` alone.
+   */
+  async session(
+    account: AccountRef,
+    name: string,
+    song: SongRow,
+    shift: number,
+    room: string | null,
+  ): Promise<KaraokeSession> {
+    const { person } = this.#person(account);
     const now = this.#d.now();
     const duration = song.duration_ms ?? this.#d.config.max_song_secs * 1000;
     const id = newId();
@@ -589,6 +636,7 @@ export class KaraokeService {
       started_at: toTimestamp(now),
       expires_at: toTimestamp(now + duration * 3 + 30 * 60_000),
       shift,
+      room_id: room,
     });
     const exp = now + LINK_MS;
     // A video is read in ranges while it plays: its link lasts the session. One not on Core yet
@@ -688,26 +736,23 @@ export class KaraokeService {
     }
     const lines = reference.lyrics?.lines ?? [];
     const result = scoreSinging({
-      reference: {
-        hz: reference.pitch.hz,
-        start: reference.pitch.start,
-        midi: reference.pitch.midi,
-      },
+      ...this.scoreInput(reference, body.latency_ms, body.calibrated),
       sung: { hz: KARAOKE_FRAME_HZ, midi: decodeTrack(bytes) },
-      latency_ms: body.latency_ms,
-      calibrated: body.calibrated,
-      phrases: lines.length > 0 ? lines.map((l) => ({ start: l.start, end: l.end })) : null,
-      tuning: { tolerance_cents: this.#d.config.tolerance_cents },
     });
     const phraseText = lines.length > 0 ? lines.map((l) => l.text) : [];
     const unranked = result.flags.too_perfect;
     const bestBefore = person === null ? null : (store.bestsOf(person).get(song.id)?.best ?? null);
-    const context = this.#d.config.comment ? commentContext(this.#d.config.comment_channel) : null;
+    // A round of a room: the room tells her of it (all its singers together), not this session.
+    const inRoom = session.room_id !== null;
+    const context =
+      this.#d.config.comment && !inRoom ? commentContext(this.#d.config.comment_channel) : null;
     const speaks = context !== null && result.facts.coverage >= COMMENT_COVERAGE;
     const at = toTimestamp(now);
-    // A recording follows: she hears of the song once its official score is in, or the wait is over.
+    // A recording follows, or (a room's singer) the live stream gives the official score: she
+    // hears of the song once it is in, or the wait is over.
+    const streamed = inRoom && (this.#rooms?.streams(session.id) ?? false);
     const voice: KaraokeVoiceState =
-      body.recording && this.#d.config.voice_score && this.#d.worker() !== null
+      streamed || (body.recording && this.#d.config.voice_score && this.#d.worker() !== null)
         ? "waiting"
         : "none";
     const detail: StoredDetail = { result, lines: phraseText, latency_ms: body.latency_ms };
@@ -728,7 +773,7 @@ export class KaraokeService {
       comment_state: speaks ? "waiting" : "none",
       comment: null,
       channel: speaks ? context.channel : null,
-      noted_at: voice === "waiting" ? null : at,
+      noted_at: voice === "waiting" && !inRoom ? null : at,
       comment_at: null,
       created_at: at,
       source: "estimate",
@@ -764,6 +809,13 @@ export class KaraokeService {
       },
     );
     if (!stored) throw new KaraokeError(409, "這一次已經交過了");
+    if (inRoom) {
+      // The stream's final pitch may have come before the result did.
+      const final = this.#rooms?.finalOf(session.id) ?? null;
+      if (final !== null) this.streamFinal(session.id, final.pitch, final.offset_ms);
+      this.#rooms?.changed(session.id);
+      return this.#resultView(store.result(session.id) as ResultRow, song);
+    }
     if (voice === "none") this.#tell(store.result(session.id) as ResultRow, session, song);
     if (person !== null && result.facts.coverage >= TOGETHER_COVERAGE) {
       this.#d.together(
@@ -876,23 +928,98 @@ export class KaraokeService {
     await Promise.allSettled([...this.#voices.values()]);
   }
 
+  /** What every score of a song is scored against (the reference already in the session's key). */
+  scoreInput(
+    reference: WorkersKaraokeReferenceV2,
+    latencyMs: number,
+    calibrated: boolean,
+  ): Omit<ScoreInput, "sung"> {
+    const lines = reference.lyrics?.lines ?? [];
+    return {
+      reference: {
+        hz: reference.pitch.hz,
+        start: reference.pitch.start,
+        midi: reference.pitch.midi,
+      },
+      latency_ms: latencyMs,
+      calibrated,
+      phrases: lines.length > 0 ? lines.map((l) => ({ start: l.start, end: l.end })) : null,
+      tuning: { tolerance_cents: this.#d.config.tolerance_cents },
+    };
+  }
+
+  /** The rooms (`rooms.ts`), which this tells of their sessions' results. */
+  attachRooms(rooms: RoomLink | null): void {
+    this.#rooms = rooms;
+  }
+
+  /**
+   * The final pitch of a room singer's live stream (`offsetMs`: the song time of its first
+   * sample): scored as the official result, once, if the result is in and waiting for it (else the
+   * room hands it over again when the result comes).
+   */
+  streamFinal(sessionId: string, pitch: WorkersKaraokeVoicePitch, offsetMs: number): void {
+    const store = this.#d.store;
+    const session = store.session(sessionId);
+    const row = store.result(sessionId);
+    if (session === null || row === null || row.voice_state !== "waiting") return;
+    if (!store.claimVoice(sessionId)) return;
+    // The stream's samples are on the browser's own audio clock: placed as they are, no slide.
+    const work = this.#scorePitch(session, pitch, offsetMs, 0).finally(() => {
+      this.#voices.delete(sessionId);
+    });
+    this.#voices.set(sessionId, work);
+  }
+
+  /** A room singer's stream will not give the official score after all: the result waits no more. */
+  streamLost(sessionId: string): void {
+    const row = this.#d.store.result(sessionId);
+    if (row === null || row.voice_state !== "waiting") return;
+    // The browser is told (`voice.upload`) to send its recording; that is waited for as alone.
+    this.#rooms?.changed(sessionId);
+  }
+
   async #scoreVoice(
     session: SessionRow,
     bytes: Uint8Array,
     type: string,
     offsetMs: number,
   ): Promise<void> {
-    const store = this.#d.store;
-    const id = session.id;
+    let pitch: WorkersKaraokeVoicePitch;
     try {
       const worker = this.#d.worker();
       if (worker === null) throw new Error("no song worker");
-      let pitch: Awaited<ReturnType<typeof worker.voice>>;
       try {
         pitch = await worker.voice({ bytes, type }, AbortSignal.timeout(VOICE_READ_MS));
       } finally {
         bytes.fill(0); // nothing of the recording stays in Core's memory past this
       }
+    } catch (error) {
+      this.#d.log.warn(
+        { session: session.id, err: errorText(error) },
+        "karaoke: the recording was not read",
+      );
+      this.#d.store.voiceFailed(session.id);
+      this.#noteNow(session.id);
+      this.#rooms?.changed(session.id);
+      return;
+    }
+    await this.#scorePitch(session, pitch, offsetMs, 500);
+  }
+
+  /**
+   * A singer's pitch from the song worker (`pitch`, from its first sample at `offsetMs` of song
+   * time, slid within `rangeMs` to fit the browser's track) scored as the official result.
+   */
+  async #scorePitch(
+    session: SessionRow,
+    pitch: WorkersKaraokeVoicePitch,
+    offsetMs: number,
+    rangeMs: number,
+  ): Promise<void> {
+    const store = this.#d.store;
+    const id = session.id;
+    try {
       const song = store.song(session.song_id);
       const track = store.track(id);
       const row = store.result(id);
@@ -908,22 +1035,12 @@ export class KaraokeService {
         midi: decodeTrack(fromBase64(track.frames) ?? new Uint8Array()),
       };
       const recorded = { hz: pitch.hz, midi: pitch.midi };
-      const placed = placeRecording(live, recorded, offsetMs);
+      const placed = placeRecording(live, recorded, offsetMs, rangeMs);
       const inSong = recordingInSong(recorded, placed.offset_ms);
-      const curve = {
-        hz: reference.pitch.hz,
-        start: reference.pitch.start,
-        midi: reference.pitch.midi,
-      };
+      const input = this.scoreInput(reference, track.latency_ms, track.calibrated);
+      const curve = input.reference;
       const lines = reference.lyrics?.lines ?? [];
-      const result = scoreSinging({
-        reference: curve,
-        sung: { hz: KARAOKE_FRAME_HZ, midi: inSong },
-        latency_ms: track.latency_ms,
-        calibrated: track.calibrated,
-        phrases: lines.length > 0 ? lines.map((l) => ({ start: l.start, end: l.end })) : null,
-        tuning: { tolerance_cents: this.#d.config.tolerance_cents },
-      });
+      const result = scoreSinging({ ...input, sung: { hz: KARAOKE_FRAME_HZ, midi: inSong } });
       const checked = voiceChecks(
         curve,
         alignSung(curve, { hz: KARAOKE_FRAME_HZ, midi: inSong }, track.latency_ms),
@@ -996,6 +1113,7 @@ export class KaraokeService {
       store.voiceFailed(id);
     }
     this.#noteNow(id);
+    this.#rooms?.changed(id);
   }
 
   /** A result of the member's own. */
@@ -1019,6 +1137,8 @@ export class KaraokeService {
 
   #resultView(row: ResultRow, song: SongRow): KaraokeResult {
     const { result, lines, latency_ms } = JSON.parse(row.detail) as StoredDetail;
+    const room = this.#d.store.session(row.session_id)?.room_id ?? null;
+    const streamed = room !== null && (this.#rooms?.streams(row.session_id) ?? false);
     return {
       session: row.session_id,
       source: row.source === "voice" ? "voice" : "estimate",
@@ -1026,6 +1146,7 @@ export class KaraokeService {
         state: row.voice_state as KaraokeVoiceState,
         estimate_total: row.source === "voice" ? row.estimate_total : null,
         checks: JSON.parse(row.checks) as KaraokeVoiceCheck[],
+        upload: row.voice_state === "waiting" && !streamed,
       },
       song: { id: song.id, title: song.title, artist: song.artist },
       at: row.created_at,

@@ -15,6 +15,9 @@ import {
   WorkersHealthSchema,
   type WorkersKaraokeKeyReply,
   WorkersKaraokeKeyReplySchema,
+  type WorkersKaraokeStreamAnswer,
+  WorkersKaraokeStreamAnswerSchema,
+  type WorkersKaraokeStreamRequest,
   type WorkersKaraokeVoicePitch,
   WorkersKaraokeVoicePitchSchema,
   type WorkersSingGpuContext,
@@ -127,6 +130,11 @@ export interface SingWorker {
     type: string,
     signal?: AbortSignal,
   ): Promise<WorkersKaraokeVoicePitch>;
+  /** One batch of a karaoke room's live voice streams (`POST /karaoke/stream`). */
+  karaokeStream(
+    request: WorkersKaraokeStreamRequest,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeStreamAnswer>;
   /** `null` when healthy, else why not. */
   health(signal?: AbortSignal): Promise<string | null>;
 }
@@ -358,6 +366,26 @@ export class HttpSingWorker implements SingWorker {
     );
     const parsed = WorkersKaraokeVoicePitchSchema.safeParse(await res.json());
     if (!parsed.success) throw new SingWorkerError("song worker sent a malformed pitch");
+    return parsed.data;
+  }
+
+  async karaokeStream(
+    request: WorkersKaraokeStreamRequest,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeStreamAnswer> {
+    // The caller bounds it (a batch every half second): a slow answer is dropped by its signal.
+    const res = await this.#call(
+      "/karaoke/stream",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(request),
+      },
+      this.#timeoutMs,
+      signal,
+    );
+    const parsed = WorkersKaraokeStreamAnswerSchema.safeParse(await res.json());
+    if (!parsed.success) throw new SingWorkerError("song worker sent a malformed stream answer");
     return parsed.data;
   }
 

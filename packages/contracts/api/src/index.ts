@@ -33,6 +33,7 @@ import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { self, world } from "./inner.js";
 import { karaoke, karaokeAdmin } from "./karaoke.js";
+import { karaokeRooms } from "./karaoke-rooms.js";
 import { knowledge, mindDigests, reflection } from "./learning.js";
 import { life } from "./life.js";
 import { market, marketAdmin } from "./market.js";
@@ -433,6 +434,40 @@ export {
   type KaraokeVoiceState,
   KaraokeVoiceStateSchema,
 } from "./karaoke.js";
+export {
+  KARAOKE_ROOM_CODE,
+  type KaraokeAudioReply,
+  KaraokeAudioReplySchema,
+  type KaraokeBoardLine,
+  KaraokeBoardLineSchema,
+  type KaraokeClockReply,
+  KaraokeClockReplySchema,
+  KaraokeClockSchema,
+  type KaraokePitch,
+  KaraokePitchSchema,
+  type KaraokeRoomEvent,
+  KaraokeRoomEventSchema,
+  type KaraokeRoomJoin,
+  KaraokeRoomJoinSchema,
+  type KaraokeRoomMember,
+  KaraokeRoomMemberSchema,
+  type KaraokeRoomPlace,
+  KaraokeRoomPlaceSchema,
+  type KaraokeRoomReady,
+  KaraokeRoomReadySchema,
+  type KaraokeRoomResult,
+  KaraokeRoomResultSchema,
+  type KaraokeRoomSong,
+  KaraokeRoomSongSchema,
+  type KaraokeRoomState,
+  KaraokeRoomStateSchema,
+  type KaraokeRooms,
+  KaraokeRoomsSchema,
+  type KaraokeRoomTerms,
+  KaraokeRoomTermsSchema,
+  type KaraokeRoomView,
+  KaraokeRoomViewSchema,
+} from "./karaoke-rooms.js";
 export {
   type ConversationNote,
   ConversationNoteSchema,
@@ -1012,6 +1047,7 @@ export const contract = {
   marketAdmin,
   karaoke,
   karaokeAdmin,
+  karaokeRooms,
   eval: evalRoutes,
 };
 

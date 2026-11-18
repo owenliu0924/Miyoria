@@ -4,7 +4,9 @@
 //
 // Core's store opens this plugin (`STORE_PLUGINS`); the module `karaoke` (`module.ts`) owns it.
 // A person who asks to be forgotten loses their sessions, tracks, results and requests; the songs
-// stay (nobody's), with who asked for them cleared. A merge moves them.
+// stay (nobody's), with who asked for them cleared. A merge moves them. Rooms (step 4) keep what
+// the coins need across a restart: the room and its opening charge, its rounds, and what each
+// settled round pays whom.
 
 import {
   type CategoryData,
@@ -16,12 +18,15 @@ import {
   tablePart,
 } from "@miyoria/store";
 import { newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
-import { and, count, desc, eq, gte, inArray, isNull, lte, max } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, max, sql } from "drizzle-orm";
 import { type KaraokeScoredData, karaokeScoredWrite } from "./events.js";
 import { karaokeSchema } from "./migrations.js";
 import {
   karaokeRequests,
   karaokeResults,
+  karaokeRoomPayouts,
+  karaokeRoomRounds,
+  karaokeRooms,
   karaokeSessions,
   karaokeSongs,
   karaokeTracks,
@@ -49,6 +54,11 @@ export type SongRow = typeof karaokeSongs.$inferSelect;
 export type SessionRow = typeof karaokeSessions.$inferSelect;
 export type TrackRow = typeof karaokeTracks.$inferSelect;
 export type ResultRow = typeof karaokeResults.$inferSelect;
+export type RoomRow = typeof karaokeRooms.$inferSelect;
+export type RoundRow = typeof karaokeRoomRounds.$inferSelect;
+export type PayoutRow = typeof karaokeRoomPayouts.$inferSelect;
+export type RoomCharge = "charging" | "charged" | "free" | "failed";
+export type PayoutKey = Pick<PayoutRow, "room_id" | "round" | "person_id" | "kind">;
 
 /** What a song row may change once it is made. */
 export type SongPatch = Partial<Omit<SongRow, "id" | "source_key" | "source" | "created_at">>;
@@ -450,6 +460,189 @@ export class KaraokeStore {
     }));
   }
 
+  // ---- rooms (step 4) -------------------------------------------------------------------------
+
+  addRoom(row: Omit<RoomRow, "sung" | "rounds" | "refund" | "close_reason" | "closed_at">): void {
+    this.#write(() => {
+      this.#db.orm.insert(karaokeRooms).values(row).run();
+    });
+  }
+
+  room(id: string): RoomRow | null {
+    return this.#read().select().from(karaokeRooms).where(eq(karaokeRooms.id, id)).get() ?? null;
+  }
+
+  /** Rooms still open (a restart closes them all). */
+  openRooms(): RoomRow[] {
+    return this.#read().select().from(karaokeRooms).where(eq(karaokeRooms.state, "open")).all();
+  }
+
+  /** The opening charge's outcome. */
+  setCharge(id: string, charge: RoomCharge): void {
+    this.#write(() => {
+      this.#db.orm.update(karaokeRooms).set({ charge }).where(eq(karaokeRooms.id, id)).run();
+    });
+  }
+
+  /**
+   * A room ends: closed with its reason, and its opening `due` to be given back when no round of
+   * it was sung through and it was (or may have been) charged, in one transaction. `false` when it
+   * was closed already. Any round still `singing` becomes `void`.
+   */
+  closeRoom(id: string, reason: string, now: number): boolean {
+    return this.#write(() => {
+      const row = this.room(id);
+      if (row === null || row.state !== "open") return false;
+      const owes = !row.sung && (row.charge === "charged" || row.charge === "charging");
+      this.#db.orm
+        .update(karaokeRooms)
+        .set({
+          state: "closed",
+          close_reason: reason.slice(0, 200),
+          closed_at: at(now),
+          refund: owes ? "due" : row.refund,
+        })
+        .where(eq(karaokeRooms.id, id))
+        .run();
+      this.#db.orm
+        .update(karaokeRoomRounds)
+        .set({ state: "void", settled_at: at(now) })
+        .where(and(eq(karaokeRoomRounds.room_id, id), eq(karaokeRoomRounds.state, "singing")))
+        .run();
+      return true;
+    });
+  }
+
+  /** Rooms whose opening is still to be given back. */
+  refundsDue(): RoomRow[] {
+    return this.#read().select().from(karaokeRooms).where(eq(karaokeRooms.refund, "due")).all();
+  }
+
+  refundDone(id: string): void {
+    this.#write(() => {
+      this.#db.orm
+        .update(karaokeRooms)
+        .set({ refund: "done" })
+        .where(and(eq(karaokeRooms.id, id), eq(karaokeRooms.refund, "due")))
+        .run();
+    });
+  }
+
+  /** A round starts: its row, and the room's count of rounds. */
+  addRound(row: Omit<RoundRow, "state" | "settled_at" | "result">): void {
+    this.#write(() => {
+      this.#db.orm
+        .insert(karaokeRoomRounds)
+        .values({ ...row, state: "singing" })
+        .run();
+      this.#db.orm
+        .update(karaokeRooms)
+        .set({ rounds: row.round })
+        .where(eq(karaokeRooms.id, row.room_id))
+        .run();
+    });
+  }
+
+  round(room: string, round: number): RoundRow | null {
+    return (
+      this.#read()
+        .select()
+        .from(karaokeRoomRounds)
+        .where(and(eq(karaokeRoomRounds.room_id, room), eq(karaokeRoomRounds.round, round)))
+        .get() ?? null
+    );
+  }
+
+  /**
+   * A round's ranking is final: the round settled with it, what it pays written `due`, and the
+   * room marked sung (its opening is kept from now on), in one transaction. `false` when the round
+   * was not singing (settled already, or void).
+   */
+  settleRound(
+    room: string,
+    round: number,
+    result: string,
+    payouts: Omit<PayoutRow, "state" | "paid" | "paid_at">[],
+    now: number,
+  ): boolean {
+    return this.#write(() => {
+      const moved = this.#db.orm
+        .update(karaokeRoomRounds)
+        .set({ state: "settled", settled_at: at(now), result })
+        .where(
+          and(
+            eq(karaokeRoomRounds.room_id, room),
+            eq(karaokeRoomRounds.round, round),
+            eq(karaokeRoomRounds.state, "singing"),
+          ),
+        )
+        .run().changes;
+      if (Number(moved) === 0) return false;
+      for (const p of payouts) {
+        this.#db.orm
+          .insert(karaokeRoomPayouts)
+          .values({ ...p, state: "due", paid: 0 })
+          .run();
+      }
+      this.#db.orm.update(karaokeRooms).set({ sung: true }).where(eq(karaokeRooms.id, room)).run();
+      return true;
+    });
+  }
+
+  /** A round that cannot finish: nothing is paid for it. */
+  voidRound(room: string, round: number, now: number): void {
+    this.#write(() => {
+      this.#db.orm
+        .update(karaokeRoomRounds)
+        .set({ state: "void", settled_at: at(now) })
+        .where(
+          and(
+            eq(karaokeRoomRounds.room_id, room),
+            eq(karaokeRoomRounds.round, round),
+            eq(karaokeRoomRounds.state, "singing"),
+          ),
+        )
+        .run();
+    });
+  }
+
+  /** Payouts written but not answered by the wallet yet (oldest first). */
+  payoutsDue(): PayoutRow[] {
+    return this.#read()
+      .select()
+      .from(karaokeRoomPayouts)
+      .where(eq(karaokeRoomPayouts.state, "due"))
+      .orderBy(karaokeRoomPayouts.created_at)
+      .all();
+  }
+
+  payoutsOf(room: string, round: number): PayoutRow[] {
+    return this.#read()
+      .select()
+      .from(karaokeRoomPayouts)
+      .where(and(eq(karaokeRoomPayouts.room_id, room), eq(karaokeRoomPayouts.round, round)))
+      .all();
+  }
+
+  /** The wallet answered a payout. */
+  payoutDone(p: PayoutKey, state: "paid" | "capped" | "refused", paid: number, now: number): void {
+    this.#write(() => {
+      this.#db.orm
+        .update(karaokeRoomPayouts)
+        .set({ state, paid, paid_at: at(now) })
+        .where(
+          and(
+            eq(karaokeRoomPayouts.room_id, p.room_id),
+            eq(karaokeRoomPayouts.round, p.round),
+            eq(karaokeRoomPayouts.person_id, p.person_id),
+            eq(karaokeRoomPayouts.kind, p.kind),
+            eq(karaokeRoomPayouts.state, "due"),
+          ),
+        )
+        .run();
+    });
+  }
+
   // ---- upkeep -------------------------------------------------------------------------------
 
   /** Tracks past their week: deleted (the results stay). */
@@ -500,6 +693,18 @@ export class KaraokeStore {
             .where(inArray(karaokeSongs.requested_by, list))
             .run().changes,
         ),
+        // What was paid stays in the ledger; the room's own record of it goes with them.
+        karaoke_room_payouts: Number(
+          o.delete(karaokeRoomPayouts).where(inArray(karaokeRoomPayouts.person_id, list)).run()
+            .changes,
+        ),
+        karaoke_rooms: Number(
+          o
+            .update(karaokeRooms)
+            .set({ opener_person: null, opener_name: "" })
+            .where(inArray(karaokeRooms.opener_person, list))
+            .run().changes,
+        ),
       };
     });
   }
@@ -538,6 +743,30 @@ export class KaraokeStore {
               .set({ requested_by: keep })
               .where(eq(karaokeSongs.requested_by, absorb))
               .run(),
+          ),
+          karaoke_rooms: moved(
+            o
+              .update(karaokeRooms)
+              .set({ opener_person: keep })
+              .where(eq(karaokeRooms.opener_person, absorb))
+              .run(),
+          ),
+          // Two rows of one round for one person cannot both stay (the key): the absorbed one's
+          // go, the ledger keeps what was paid.
+          karaoke_room_payouts: moved(
+            o
+              .update(karaokeRoomPayouts)
+              .set({ person_id: keep })
+              .where(
+                and(
+                  eq(karaokeRoomPayouts.person_id, absorb),
+                  sql`NOT EXISTS (SELECT 1 FROM karaoke_room_payouts k WHERE k.person_id = ${keep} AND k.room_id = ${karaokeRoomPayouts.room_id} AND k.round = ${karaokeRoomPayouts.round} AND k.kind = ${karaokeRoomPayouts.kind})`,
+                ),
+              )
+              .run(),
+          ),
+          karaoke_room_payouts_dropped: moved(
+            o.delete(karaokeRoomPayouts).where(eq(karaokeRoomPayouts.person_id, absorb)).run(),
           ),
         },
       };
@@ -589,7 +818,62 @@ const karaokeData: readonly CategoryData[] = [
         expires_at: "ts",
         scored_at: "ts",
         shift: "num",
+        room_id: "text",
       }),
+      tablePart("karaoke_rooms", "karaoke_rooms", "node", "created_at", "created_at, id", {
+        id: "text",
+        code: "text",
+        opener_person: "text",
+        opener_platform: "text",
+        opener_account: "text",
+        opener_name: "text",
+        state: "text",
+        charge: "text",
+        price: "num",
+        sung: "bool",
+        rounds: "num",
+        refund: "text",
+        close_reason: "text",
+        created_at: "ts",
+        closed_at: "ts",
+      }),
+      tablePart(
+        "karaoke_room_rounds",
+        "karaoke_room_rounds",
+        "node",
+        "started_at",
+        "started_at, room_id, round",
+        {
+          room_id: "text",
+          round: "num",
+          song_id: "text",
+          shift: "num",
+          state: "text",
+          started_at: "ts",
+          settled_at: "ts",
+          result: "text",
+        },
+      ),
+      tablePart(
+        "karaoke_room_payouts",
+        "karaoke_room_payouts",
+        "node",
+        "created_at",
+        "created_at, room_id, round, person_id, kind",
+        {
+          room_id: "text",
+          round: "num",
+          person_id: "text",
+          kind: "text",
+          platform: "text",
+          account_id: "text",
+          amount: "num",
+          state: "text",
+          paid: "num",
+          created_at: "ts",
+          paid_at: "ts",
+        },
+      ),
       tablePart(
         "karaoke_tracks",
         "karaoke_tracks",

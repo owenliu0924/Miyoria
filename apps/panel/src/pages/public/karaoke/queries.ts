@@ -48,3 +48,18 @@ export function usePreparing(song: KaraokeSongView) {
     retry: retryUnlessOff,
   });
 }
+
+// ---- rooms (`/api/member/karaoke/rooms/*`, the route table's `karaokeRooms` group) -------------
+
+export const ROOMS = [...KARAOKE, "rooms"] as const;
+
+/** Whether a room can be opened now, its price, the balance and the room they are in. */
+export function useRooms(enabled = true) {
+  const api = useApi();
+  return useQuery({
+    queryKey: ROOMS,
+    queryFn: ({ signal }) => api.rpc.karaokeRooms.overview(undefined, { signal }),
+    retry: retryUnlessOff,
+    enabled,
+  });
+}
