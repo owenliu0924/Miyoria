@@ -5,7 +5,7 @@
 // does not hold. The one plate it adds is the singer's trend (上升中 / 下降中 / 保持, and whether the
 // live score is 正式 or 預估): never a rank, never anyone else's score.
 
-import type { KaraokeSession, KaraokeSongView } from "@miyoria/contracts/api";
+import type { KaraokeRoomView, KaraokeSession, KaraokeSongView } from "@miyoria/contracts/api";
 import { useMemo, useRef } from "react";
 import { useConnection } from "@/app/connection";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import type { KaraokeEngine, MicStream } from "./audio";
 import { useReducedMotion } from "./bits";
 import { postAudio, postPitch } from "./room-api";
 import { contextTimeFor } from "./room-clock";
+import { AirPlate } from "./RoomAir";
 import { ChunkScheduler, PitchFeed } from "./room-stream";
 import { type TrendEvent, trendView } from "./room-text";
 import { type Finished, PLATE, Singing, type StageRoom, type StageRun } from "./Singing";
@@ -103,6 +104,8 @@ function startRun(o: {
 }
 
 export function RoomStage({
+  room,
+  onRoom,
   code,
   session,
   song,
@@ -115,6 +118,9 @@ export function RoomStage({
   onFinished,
   onQuit,
 }: {
+  /** The room as this singer sees it (for what goes out on her stream). */
+  room: KaraokeRoomView;
+  onRoom: (room: KaraokeRoomView) => void;
   code: string;
   session: KaraokeSession;
   song: KaraokeSongView;
@@ -131,7 +137,12 @@ export function RoomStage({
   const { client } = useConnection();
   const offsetRef = useRef(offset);
   offsetRef.current = offset;
-  const plate = <TrendPlate trend={trend} />;
+  const plate = (
+    <>
+      <TrendPlate trend={trend} />
+      {room.me && <AirPlate room={room} me={room.me} onRoom={onRoom} />}
+    </>
+  );
   const base = useMemo<Omit<StageRoom, "plate">>(
     () => ({
       session,

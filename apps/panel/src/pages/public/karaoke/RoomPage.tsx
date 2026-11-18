@@ -355,6 +355,8 @@ export function RoomPage({
     return (
       <RoomStage
         key={session.session}
+        room={room}
+        onRoom={setRoom}
         code={code}
         session={session}
         song={session.song}
