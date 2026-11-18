@@ -225,17 +225,6 @@ class WorkersKaraokeSong(BaseModel):
     video: bool = False
 
 
-class WorkersKaraokeStreamAnswer(BaseModel):
-    model_config = ConfigDict(
-        extra="ignore",
-    )
-    hz: Literal[50]
-    streams: list[WorkersKaraokeStreamFrames]
-    lost: list[str] = []
-    device: str
-    method: str
-
-
 class WorkersKaraokeStreamChunk(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
@@ -733,6 +722,17 @@ class WorkersKaraokeReferenceV2(BaseModel):
     lyrics: WorkersKaraokeLyricsV2 | None
     quality: WorkersKaraokeQuality
     made: WorkersKaraokeMadeV2
+
+
+class WorkersKaraokeStreamAnswer(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    hz: Literal[50]
+    streams: list[WorkersKaraokeStreamFrames]
+    lost: list[str] = []
+    device: str
+    method: str
 
 
 class WorkersLyricsReply(BaseModel):
