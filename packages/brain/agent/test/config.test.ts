@@ -127,6 +127,8 @@ describe("config", () => {
         speak_ttl_ms: 30_000,
         text_chat: true,
         text_aside: true,
+        text_echo: false,
+        text_echo_text: "written",
         keep_in_voice: true,
         debounce_from_speech_end: true,
         speculate: true,

@@ -25,6 +25,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { PROFILES, serialiseMessages, serialiseTools } from "../../self/src/index.js";
 import { silentWaits } from "../src/index.js";
+import { joinSaid } from "../src/voice-outlet.js";
 import { notInVoice } from "../src/voice-texts.js";
 import { books } from "./books.js";
 import {
@@ -806,5 +807,67 @@ describe("links and code are written, not read aloud", () => {
     expect(chat(rig)).toEqual([]);
     const note = rig.entries(VC).find((e) => e.kind === "note");
     expect(note?.content).toContain("連結和程式碼念不出來");
+  });
+});
+
+// `[modules.agent.voice] text_echo`: her spoken reply is also written in the voice channel's
+// chat, as she wrote it or as it was said (`text_echo_text`), for people who read along while
+// `tts_translate` has her speak another language.
+describe("text_echo: what she said is also written in the voice channel's chat", () => {
+  const chat = (rig: Rig) => rig.sink.sent().filter(([channel]) => channel === "vc");
+  /** Her reply of two sentences, queued; nothing of it has played yet. */
+  const reply = async (voice: Record<string, JsonValue>): Promise<{ rig: Rig; turn: string }> => {
+    const rig = await voiceRig(voice);
+    rig.model.push(says("好喔。我去看看。"));
+    hear(rig, "owen", "小鯨魚幫我看一下");
+    await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+    expect(speeches(rig).map(([t]) => t)).toEqual(["好喔。", "我去看看。"]);
+    return { rig, turn: speeches(rig)[0]?.[2] as string };
+  };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+
+  it("writes a spoken reply once, whole, as soon as the run is over", async () => {
+    const { rig, turn } = await reply({ text_echo: true });
+    // Nothing has played yet: the text is there for people to read while she says it.
+    await until(() => chat(rig).length > 0, 3_000, "the echo");
+    for (const line of ["好喔。", "我去看看。"]) {
+      play(rig, turn, "started", line);
+      play(rig, turn, "finished", line);
+    }
+    await settle();
+    expect(chat(rig)).toEqual([["vc", "好喔。我去看看。"]]);
+    // Said once in the conversation: the written copy is not a second line of hers.
+    expect(rig.entries(VC).filter((e) => e.content === "好喔。我去看看。")).toEqual([]);
+  });
+
+  it("writes what she was heard to say with text_echo_text = spoken", async () => {
+    const { rig, turn } = await reply({ text_echo: true, text_echo_text: "spoken" });
+    play(rig, turn, "started", "好喔。", { said: "いいよ。" });
+    play(rig, turn, "finished", "好喔。");
+    await settle();
+    // What the last line is said as is not known before it starts.
+    expect(chat(rig)).toEqual([]);
+    // A line said as it was written carries no `said`.
+    play(rig, turn, "started", "我去看看。");
+    await until(() => chat(rig).length > 0, 3_000, "the echo");
+    play(rig, turn, "finished", "我去看看。");
+    await settle();
+    expect(chat(rig)).toEqual([["vc", "いいよ。我去看看。"]]);
+  });
+
+  it("joins the sentences, with a space only between two that would run into each other", () => {
+    expect(joinSaid(["好喔。", "OK.", "Sure thing.", " 走吧 ", ""])).toBe(
+      "好喔。OK. Sure thing.走吧",
+    );
+  });
+
+  it("writes nothing unless it is switched on", async () => {
+    const { rig, turn } = await reply({});
+    for (const line of ["好喔。", "我去看看。"]) {
+      play(rig, turn, "started", line);
+      play(rig, turn, "finished", line);
+    }
+    await settle();
+    expect(chat(rig)).toEqual([]);
   });
 });

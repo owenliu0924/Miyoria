@@ -8824,6 +8824,9 @@
         "text": {
           "type": "string"
         },
+        "said": {
+          "type": "string"
+        },
         "emotion": {
           "type": [
             "string",
