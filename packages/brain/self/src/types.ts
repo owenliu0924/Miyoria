@@ -333,6 +333,12 @@ export type RunEvent =
       message_id: string | null;
     }
   | {
+      /** A tool is about to run (after the guard let it through); `tool_call` follows when it ends. */
+      type: "tool_start";
+      turn: string;
+      name: string;
+    }
+  | {
       type: "tool_call";
       turn: string;
       round: number;

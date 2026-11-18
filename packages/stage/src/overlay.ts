@@ -93,8 +93,9 @@ export class OverlayHub {
     this.#send(frame({ type: "activity", ...activity }));
   }
 
-  /** Hides the activity line if it shows anything (Core went away). */
+  /** Hides the activity line and the notice if they show anything (Core went away). */
   clearActivity(): void {
+    if (this.#snapshot.notice !== null) this.notice("");
     if (this.#snapshot.activity === null) return;
     this.activity({
       kind: null,

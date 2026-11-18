@@ -905,7 +905,7 @@ describe("sing module", () => {
     await h.command("queue song request", { song: "https://youtu.be/abc" });
     await settle(1600);
     expect(prepares(h)).toEqual([
-      { no: 1, title: "夜に駆ける", stage: "queued", progress: 0, exclusive: null },
+      { no: 1, title: "夜に駆ける", stage: "queued", progress: 0, exclusive: null, by: "Owen" },
     ]);
     // The one the worker runs wins over the queued one; a link is no title until the worker
     // found one.
@@ -917,6 +917,7 @@ describe("sing module", () => {
       stage: "download",
       progress: 0.2,
       exclusive: null,
+      by: "Owen",
     });
     Object.assign(h.worker.jobs.get("j2") ?? {}, { source: { title: "アイドル", artist: null } });
     h.worker.exclusive("j2", "offloading");
@@ -935,6 +936,54 @@ describe("sing module", () => {
       progress: 0,
       exclusive: null,
     });
+  });
+
+  it("keeps showing one song, its progress never goes back, and another starts from its own", async () => {
+    h = await Harness.create();
+    await h.join();
+    await h.command("queue song request", { song: "夜に駆ける" });
+    await h.command("queue song request", { song: "アイドル" });
+    h.worker.progress("j1", 0.3, "separate");
+    await settle(1600);
+    expect(prepares(h).at(-1)).toMatchObject({ no: 1, stage: "separate", progress: 0.3 });
+    // The second job gets ahead: the overlay stays with the first (no flipping by rank).
+    h.worker.progress("j2", 0.6, "convert");
+    h.worker.progress("j1", 0.31, "separate");
+    await settle(1600);
+    expect(prepares(h).at(-1)).toMatchObject({ no: 1, progress: 0.31 });
+    // The worker's progress falls back (a stage that comes again): the song's does not.
+    h.worker.progress("j1", 0.2, "separate");
+    await settle(1600);
+    const shown = prepares(h)
+      .filter((p) => p.no === 1)
+      .map((p) => p.progress);
+    expect(shown).toEqual([...shown].sort((x, y) => x - y));
+    expect(prepares(h).every((p) => p.no !== 2)).toBe(true);
+    // It ends: the next song shows from its own progress.
+    h.worker.finish("j1", "夜に駆ける");
+    await settle(1600);
+    expect(prepares(h).at(-1)).toMatchObject({ no: 2, progress: 0.6 });
+  });
+
+  it("reports a worker that stopped answering as unreachable, and the song again when it answers", async () => {
+    h = await Harness.create();
+    await h.join();
+    await h.command("queue song request", { song: "夜に駆ける" });
+    h.worker.progress("j1", 0.4, "convert");
+    await settle(1600);
+    expect(prepares(h).at(-1)).toMatchObject({ stage: "convert", progress: 0.4 });
+    const job = h.worker.job.bind(h.worker);
+    (h.worker as { job: unknown }).job = async () => {
+      throw new Error("connect ECONNREFUSED");
+    };
+    await settle(5000);
+    expect(prepares(h).at(-1), "not yet").toMatchObject({ stage: "convert" });
+    await settle(20_000);
+    expect(prepares(h).at(-1)).toMatchObject({ no: 1, stage: "unreachable", progress: 0.4 });
+    (h.worker as { job: unknown }).job = job;
+    h.worker.progress("j1", 0.5, "convert");
+    await settle(1600);
+    expect(prepares(h).at(-1)).toMatchObject({ stage: "convert", progress: 0.5 });
   });
 
   it("without a word from her, or out of voice, the worker does not wait", async () => {

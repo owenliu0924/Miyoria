@@ -840,6 +840,33 @@
         "result"
       ]
     },
+    "EventsAgentToolRunning": {
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string"
+        },
+        "context": {
+          "$ref": "#/$defs/WireContextKey"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "started",
+            "ended"
+          ]
+        }
+      },
+      "required": [
+        "turn",
+        "context",
+        "tool",
+        "state"
+      ]
+    },
     "EventsArbiterDecision": {
       "type": "object",
       "properties": {
@@ -6602,6 +6629,9 @@
             "string",
             "null"
           ]
+        },
+        "by": {
+          "type": "string"
         }
       },
       "required": [

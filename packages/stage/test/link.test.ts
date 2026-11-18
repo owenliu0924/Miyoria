@@ -394,6 +394,42 @@ describe("stage.link", () => {
     });
   });
 
+  it("tells_the_node_she_uses_a_tool_and_plays_a_game", async () => {
+    const h = await Harness.start();
+    const node = await h.node();
+    node.sendJson({ type: "status", vts: false, obs: false, scene: null, streaming: false });
+    const turn = newId();
+    h.publish(Events.AgentToolRunning, {
+      turn,
+      context: voiceCtx(),
+      tool: "web_search",
+      state: "started",
+    });
+    expect(await node.recvJson()).toMatchObject({
+      type: "activity",
+      kind: "tool",
+      label: "查資料中",
+    });
+    h.publish(Events.AgentToolRunning, {
+      turn,
+      context: voiceCtx(),
+      tool: "web_search",
+      state: "ended",
+    });
+    expect(await node.recvJson()).toMatchObject({ type: "activity", kind: null });
+    h.publish(Events.GameDirectorSession, {
+      state: "started",
+      game: "minecraft",
+      game_name: "Minecraft",
+      context: voiceCtx(),
+    });
+    expect(await node.recvJson()).toMatchObject({
+      type: "activity",
+      kind: "game",
+      detail: "Minecraft",
+    });
+  });
+
   it("follows_go_live_with_obs", async () => {
     const h = await Harness.start({ golive_start_delay_ms: 0 });
     const node = await h.node();

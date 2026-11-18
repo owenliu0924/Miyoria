@@ -9,9 +9,11 @@
 //   {"type":"queue","items":[…]}                demo only (src/demo.ts); Core never sends it, the contract has no such message
 //   {"type":"levels","rms":0..1,"bands":[…]?}   her voice level, once per avatar frame (~60/s)
 //   {"type":"notice","text":"準備歌曲中…"}       a status line; "" clears it (older Cores)
-//   {"type":"activity","kind":"thinking"|"synthesizing"|"song_prepare"|"singing"|null,
-//    "label":"…","detail":"…"|null,"progress":0..1|null,"elapsed_ms":n|null,"duration_ms":n|null}
-//                                               what she is doing; kind null hides it
+//   {"type":"activity","kind":"thinking"|"synthesizing"|"tool"|"game"|"song_prepare"|"singing"|null,
+//    "label":"…","detail":"…"|null,"progress":0..1|null,"elapsed_ms":n|null,"duration_ms":n|null,
+//    "secondary":{"label":"…","detail":"…"|null,"progress":0..1|null}?}
+//                                               what she is doing; kind null hides it; `secondary`:
+//                                               a song being prepared beside the main line
 //   {"type":"gift","text":"Owen 餵了她一碗白飯"}  the gift line (the Stage merges gifts); "" hides it
 //   {"type":"screen","name":"Owen","text":"加油"}
 //                                               a paid message; not merged, queued here
@@ -61,6 +63,15 @@ export interface Activity {
   progress: number | null;
   elapsedMs: number | null;
   durationMs: number | null;
+  /** A song being prepared beside the main line (a small second indicator), or `null`. */
+  secondary?: ActivitySide | null;
+}
+
+/** What happens beside the main line: its label, the song and one overall progress (`null`: waiting). */
+export interface ActivitySide {
+  label: string;
+  detail: string | null;
+  progress: number | null;
 }
 
 export interface QueueItem {
@@ -372,8 +383,30 @@ function parseActivity(raw: Raw): Parsed["activity"] | null {
       progress,
       elapsedMs: durationMs === null ? null : (within(raw.elapsed_ms, 0, MAX_DAY_MS) ?? 0),
       durationMs,
+      ...sideOf(raw.secondary),
     },
   };
+}
+
+function sideOf(v: unknown): { secondary: ActivitySide } | null {
+  const side = parseSide(v);
+  return side === null ? null : { secondary: side };
+}
+
+/** The `secondary` of an `activity` frame; anything unusable is no secondary line. */
+function parseSide(v: unknown): ActivitySide | null {
+  if (v === null || typeof v !== "object") return null;
+  const side = v as Raw;
+  const label = nonEmpty(side.label);
+  if (!label) return null;
+  const progress =
+    typeof side.progress === "number" && Number.isFinite(side.progress) ? clamp01(side.progress) : null;
+  return { label: label.slice(0, MAX_LABEL), detail: nonEmpty(side.detail)?.slice(0, MAX_TITLE) ?? null, progress };
+}
+
+function sameSide(a: ActivitySide | null, b: ActivitySide | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.label === b.label && a.detail === b.detail && a.progress === b.progress;
 }
 
 function sameActivity(a: Activity | null, b: Activity | null): boolean {
@@ -384,7 +417,8 @@ function sameActivity(a: Activity | null, b: Activity | null): boolean {
     a.detail === b.detail &&
     a.progress === b.progress &&
     a.elapsedMs === b.elapsedMs &&
-    a.durationMs === b.durationMs
+    a.durationMs === b.durationMs &&
+    sameSide(a.secondary ?? null, b.secondary ?? null)
   );
 }
 
