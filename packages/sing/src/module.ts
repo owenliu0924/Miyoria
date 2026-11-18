@@ -345,6 +345,7 @@ export function karaokeWorker(worker: SingWorker): KaraokeWorker {
     file: (song, name, dest, signal) => worker.karaokeFile(song, name, dest, signal),
     key: (song, semitones, signal) => worker.karaokeKey(song, semitones, signal),
     voice: (voice, signal) => worker.karaokeVoice(voice.bytes, voice.type, signal),
+    stream: (request, signal) => worker.karaokeStream(request, signal),
   };
 }
 

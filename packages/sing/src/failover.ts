@@ -9,7 +9,12 @@
 // as one unreachable for too long. With a single worker none of the failover rules apply: it is
 // used as it is.
 
-import type { WorkersKaraokeKeyReply, WorkersKaraokeVoicePitch } from "@miyoria/contracts/workers";
+import type {
+  WorkersKaraokeKeyReply,
+  WorkersKaraokeStreamAnswer,
+  WorkersKaraokeStreamRequest,
+  WorkersKaraokeVoicePitch,
+} from "@miyoria/contracts/workers";
 import {
   type GpuContext,
   type SingWorker,
@@ -78,6 +83,8 @@ export class FailoverSingWorker implements SingWorker {
   readonly #songs = new Map<string, Endpoint>();
   /** Which worker made a karaoke song (its own namespace on the worker: never in `songs()`). */
   readonly #karaoke = new Map<string, Endpoint>();
+  /** The worker each karaoke room streams its singers' voices to. */
+  readonly #streams = new Map<string, Endpoint>();
   /** Jobs given up on (made again elsewhere, or cancelled while unreachable), to cancel later. */
   readonly #abandoned = new Map<string, Endpoint>();
 
@@ -294,6 +301,31 @@ export class FailoverSingWorker implements SingWorker {
     throw last ?? unreachable(this.#all.length === 0 ? NO_WORKER : "no song worker answers");
   }
 
+  /**
+   * A karaoke room's live voice streams go to one worker for the whole room (their audio lives
+   * there): the first that answers the room's first batch. That worker away, the batch fails at
+   * once; the room is never moved to another (the streams would start over half way).
+   */
+  async karaokeStream(
+    request: WorkersKaraokeStreamRequest,
+    signal?: AbortSignal,
+  ): Promise<WorkersKaraokeStreamAnswer> {
+    const owner = this.#streams.get(request.room);
+    if (owner !== undefined) {
+      if (this.#resting(owner)) {
+        throw unreachable(`the song worker at ${owner.name} is unreachable (room ${request.room})`);
+      }
+      return this.#attempt(owner, (w) => w.karaokeStream(request, signal));
+    }
+    const [ep] = this.#candidates();
+    if (ep === undefined) throw unreachable(NO_WORKER);
+    this.#streams.set(request.room, ep);
+    while (this.#streams.size > MAX_STREAM_ROOMS) {
+      this.#streams.delete(this.#streams.keys().next().value as string);
+    }
+    return this.#attempt(ep, (w) => w.karaokeStream(request, signal));
+  }
+
   /** Healthy while any worker is; otherwise why each one is not. */
   async health(signal?: AbortSignal): Promise<string | null> {
     const all = this.#list();
@@ -440,6 +472,8 @@ export class FailoverSingWorker implements SingWorker {
 }
 
 const NO_WORKER = "no song worker is known";
+/** Karaoke rooms whose stream worker is remembered (far more than ever sing at once). */
+const MAX_STREAM_ROOMS = 64;
 
 function isUnreachable(error: unknown): boolean {
   return error instanceof SingWorkerError && error.unreachable;

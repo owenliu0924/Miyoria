@@ -172,6 +172,15 @@ class FakeWorker implements SingWorker {
     };
   }
 
+  /** Rooms whose stream batches this worker answered. */
+  readonly streamed: string[] = [];
+
+  async karaokeStream(request: { room: string }) {
+    this.#call(`stream ${request.room}`);
+    this.streamed.push(request.room);
+    return { hz: 50 as const, streams: [], lost: [], device: "cpu", method: "fake" };
+  }
+
   async health(): Promise<string | null> {
     return this.up ? null : `unreachable at ${this.name}`;
   }
@@ -417,6 +426,22 @@ describe("FailoverSingWorker", () => {
       karaokeWorker(again.worker).voice({ bytes: new Uint8Array(3), type: "audio/ogg" }),
     ).rejects.toThrow(/timeout/);
     expect(again.local.voices).toEqual([]);
+  });
+
+  it("keeps a karaoke room's voice streams on one worker, failing at once while it is away", async () => {
+    const { remote, local, worker } = setup();
+    const kw = karaokeWorker(worker);
+    const batch = { room: "R1", chunks: [], drop: [] };
+    await kw.stream?.(batch);
+    expect(remote.streamed).toEqual(["R1"]);
+    remote.up = false;
+    await expect(kw.stream?.(batch)).rejects.toThrow(/unreachable/);
+    // Not moved: the next batch fails too, at once, and the other worker never sees the room.
+    await expect(kw.stream?.(batch)).rejects.toThrow(/unreachable/);
+    expect(local.streamed).toEqual([]);
+    // Another room starts on the worker that answers.
+    await kw.stream?.({ room: "R2", chunks: [], drop: [] });
+    expect(local.streamed).toEqual(["R2"]);
   });
 
   it("asks for a karaoke job without a video when told so", async () => {

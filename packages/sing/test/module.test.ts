@@ -252,6 +252,10 @@ class FakeWorker implements SingWorker {
     throw new SingWorkerError("no voice", { status: 503 });
   }
 
+  async karaokeStream(): Promise<never> {
+    throw new SingWorkerError("not found", { status: 404 });
+  }
+
   async health(): Promise<string | null> {
     return null;
   }
