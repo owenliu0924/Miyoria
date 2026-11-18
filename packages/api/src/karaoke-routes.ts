@@ -154,6 +154,9 @@ export const karaokeRoomsRpc = {
       rooms(state).song(input.params.code, accountOf(c), input.body.song, input.body.shift),
     ),
   ),
+  relay: os.karaokeRooms.relay.handler(({ input, context: { state, c } }) =>
+    refusals(() => rooms(state).relay(input.params.code, accountOf(c), input.body, adminOf(c))),
+  ),
   start: os.karaokeRooms.start.handler(({ input, context: { state, c } }) =>
     refusals(() => rooms(state).start(input.params.code, accountOf(c))),
   ),

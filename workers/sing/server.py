@@ -17,6 +17,9 @@
     GET    /karaoke             -> {"karaoke": [...]}      karaoke songs (job.karaoke + created_at), newest first
     GET    /karaoke/{id}/files/{name}   karaoke.m4a · reference.json (karaoke.py, packages/contracts karaoke.ts)
                                         · video.mp4 when the song has one (``video: true``; range requests)
+                                        · play_karaoke.pcm · play_karaoke.k±N.pcm (s16le mono 48 kHz, audio/L16;
+                                          decoded from the matching m4a on the first request; 404 for a key
+                                          that was not made; range requests)
                                         · karaoke.k±N.m4a once made by:
     POST   /karaoke/{id}/keys   {semitones: -6..6} -> {file, semitones, cached, method}   the backing in
                                 another key (Rubber Band), made once and kept with the song
@@ -2196,7 +2199,7 @@ def _run_karaoke(job: Job) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / kara.META_FILE).unlink(missing_ok=True)  # made again: not a finished song until it is written
     (out / kara.VIDEO_FILE).unlink(missing_ok=True)
-    for old in out.glob("karaoke.k*.m4a"):  # keys of the song made before
+    for old in (*out.glob("karaoke.k*.m4a"), *out.glob("play_karaoke*.pcm*")):  # keys (and the PCM of them) made before
         old.unlink(missing_ok=True)
     parts = _karaoke_parts(sdir, lead["used"])
     lengths = [s for s in (kara.wav_seconds(p) for p in parts) if s]
@@ -2641,14 +2644,37 @@ async def list_karaoke() -> dict[str, Any]:
 @app.get("/karaoke/{kid}/files/{name}")
 async def get_karaoke_file(kid: str, name: str):
     import karaoke as kara
+    from starlette.concurrency import run_in_threadpool
 
-    if name not in KARAOKE_SERVED_FILES and not kara.is_key_file(name):
+    play_from = kara.play_source(name)
+    if name not in KARAOKE_SERVED_FILES and not kara.is_key_file(name) and play_from is None:
         return _error(404, f"no file {name}")
     kid = safe_id(kid, 96)
     if state.karaoke.meta(kid) is None:  # unfinished, or being made again
         return _error(404, f"no karaoke song {kid}")
     p = state.karaoke.dir(kid) / name
     state.cache.touch(karaoke=kid)  # Core is about to hand it to a singer
+    if play_from is not None:
+        src = state.karaoke.dir(kid) / play_from
+        if not p.exists():
+            if not src.is_file():  # a key that was never made: Core asks for it first
+                return _error(404, f"karaoke song {kid} has no {play_from}")
+            with state.lock:
+                lock = _key_locks.setdefault(kid, threading.Lock())
+
+            def make() -> None:
+                with lock:
+                    if not p.exists():  # a request before this one made it
+                        kara.decode_play(src, p)
+
+            try:
+                await run_in_threadpool(make)
+            except JobError as e:
+                return _error(503, str(e))
+            except FileNotFoundError:  # the song was cleaned up meanwhile
+                return _error(404, f"karaoke song {kid} has no {play_from}")
+        return FileResponse(p, media_type=f"audio/L16; rate={kara.PLAY_RATE}; channels=1",
+                            headers={"X-Sample-Rate": str(kara.PLAY_RATE)})
     if not p.exists():  # (video.mp4: a song without one, or made before videos)
         return _error(404, f"karaoke song {kid} has no {name}")
     # FileResponse answers range requests: the browser streams the video and seeks in it.

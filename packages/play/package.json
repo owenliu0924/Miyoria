@@ -46,6 +46,11 @@
       "@miyoria/source": "./karaoke/src/score/index.ts",
       "types": "./dist/karaoke/src/score/index.d.ts",
       "default": "./dist/karaoke/src/score/index.js"
+    },
+    "./karaoke/lyrics": {
+      "@miyoria/source": "./karaoke/src/lyrics/index.ts",
+      "types": "./dist/karaoke/src/lyrics/index.d.ts",
+      "default": "./dist/karaoke/src/lyrics/index.js"
     }
   },
   "files": [

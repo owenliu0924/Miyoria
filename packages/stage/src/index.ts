@@ -206,7 +206,15 @@ export {
   type Step as ObsSetupStep,
   VTS_WINDOW,
 } from "./obs-setup.js";
-export { OverlayHub, serveOverlay } from "./overlay.js";
+export {
+  byteRange,
+  KARAOKE_BACKING_PATH,
+  KARAOKE_VIDEO_PATH,
+  karaokeBackingPath,
+  karaokeVideoPath,
+  OverlayHub,
+  serveOverlay,
+} from "./overlay.js";
 export {
   BODY_PARAMS,
   clampParam,
@@ -231,6 +239,9 @@ export {
   GIFT_EXPRESSION_MAX_S,
   GIFT_EXPRESSIONS,
   type GiftExpression,
+  type KaraokeStageLyrics,
+  type KaraokeStageScene,
+  type KaraokeStageVoice,
   type LevelFrame,
   parseCoreMessage,
   parseGazeTarget,

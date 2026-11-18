@@ -9,6 +9,11 @@
 // danmaku line (shown, or dropped and why), so a paid line that nobody saw is given back.
 
 import { z } from "zod";
+import {
+  StageLinkKaraokeLyricsSchema,
+  StageLinkKaraokeSceneSchema,
+  StageLinkKaraokeVoiceSchema,
+} from "../../stage-link/src/index.js";
 
 /** Most bands a `levels` frame carries. */
 export const OVERLAY_LEVEL_BANDS_MAX = 32;
@@ -143,6 +148,30 @@ export const OverlayStatusMessageSchema = z
   })
   .meta({ id: "OverlayStatusMessage" });
 
+/**
+ * The karaoke room the stream shows (docs/design/karaoke.md 「做了什麼第五步」), as the stage link
+ * carries it, with `position_ms` moved to the moment this frame was sent. The scene plays the
+ * round's sound itself (it is in the stream's own audio), so no lip-sync latency is taken off.
+ * `room: null` ends the scene. A page that connects gets the latest one.
+ */
+export const OverlayKaraokeMessageSchema = StageLinkKaraokeSceneSchema.extend({
+  type: z.literal("karaoke"),
+}).meta({ id: "OverlayKaraokeMessage" });
+
+/**
+ * The words, picture and backing of the round shown: `video` and `backing.path` are URLs on the
+ * overlay's own server (the stage serves the files Core named, while that round is shown), `null`
+ * without one.
+ */
+export const OverlayKaraokeLyricsMessageSchema = StageLinkKaraokeLyricsSchema.extend({
+  type: z.literal("karaoke_lyrics"),
+}).meta({ id: "OverlayKaraokeLyricsMessage" });
+
+/** A piece of the relayed voice, as the stage link carries it (not kept for later pages). */
+export const OverlayKaraokeVoiceMessageSchema = StageLinkKaraokeVoiceSchema.extend({
+  type: z.literal("karaoke_voice"),
+}).meta({ id: "OverlayKaraokeVoiceMessage" });
+
 /** Every frame of the feed. */
 export const OverlayMessageSchema = z
   .discriminatedUnion("type", [
@@ -158,6 +187,9 @@ export const OverlayMessageSchema = z
     OverlaySpeakingMessageSchema,
     OverlayLevelsMessageSchema,
     OverlayStatusMessageSchema,
+    OverlayKaraokeMessageSchema,
+    OverlayKaraokeLyricsMessageSchema,
+    OverlayKaraokeVoiceMessageSchema,
   ])
   .meta({ id: "OverlayMessage" });
 export type OverlayMessage = z.output<typeof OverlayMessageSchema>;

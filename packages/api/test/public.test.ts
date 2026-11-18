@@ -752,6 +752,7 @@ describe("the route table", () => {
       "POST /api/member/karaoke/rooms/:code/leave",
       "POST /api/member/karaoke/rooms/:code/pitch",
       "POST /api/member/karaoke/rooms/:code/ready",
+      "POST /api/member/karaoke/rooms/:code/relay",
       "POST /api/member/karaoke/rooms/:code/song",
       "POST /api/member/karaoke/rooms/:code/start",
       "POST /api/member/karaoke/sessions/:id/result",

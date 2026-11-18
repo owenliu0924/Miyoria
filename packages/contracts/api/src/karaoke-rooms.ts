@@ -38,6 +38,16 @@ export const KaraokeRoomMemberSchema = z
     opener: z.boolean(),
     /** 0..7: their colour on the board and their pitch line. */
     color: z.number().int().min(0).max(7),
+    /**
+     * 「讓大家聽到我」 (step 5): they asked for their voice to be on the stream when they are the
+     * round's one singer. Off by default and again for every round.
+     */
+    hear: z.boolean(),
+    /**
+     * 「不要播我的聲音」: when the room plays the leader's voice (`air.lead`), theirs is skipped (the
+     * best-ranked singer who allows it is played instead).
+     */
+    skip: z.boolean(),
   })
   .meta({ id: "ApiKaraokeRoomMember" });
 export type KaraokeRoomMember = z.output<typeof KaraokeRoomMemberSchema>;
@@ -58,6 +68,32 @@ export const KaraokeRoomTermsSchema = z
   })
   .meta({ id: "ApiKaraokeRoomTerms" });
 export type KaraokeRoomTerms = z.output<typeof KaraokeRoomTermsSchema>;
+
+/**
+ * What her stream plays of a round (docs/design/karaoke.md 「做了什麼第五步」): the stream's
+ * karaoke scene, not her voice connection (she is not the one singing). `backing`: the scene plays
+ * the round's backing, `delay_ms` after the singers' start (one fixed delay per room, so the
+ * relayed voice lines up with it). `lead`: the opener's 「播出第一名的歌聲」 (for rounds of two or
+ * more singers). `relay`: whether a voice may go out (`allowed`, else `reason`), and, where this
+ * person may know it, whose (`member`: the lone singer who asked for it, going out during the
+ * round when `live`). A singer of a round with two or more singers never gets `member` or `live`
+ * (it would tell them they lead); they see `lead` only.
+ */
+export const KaraokeRoomAirSchema = z
+  .object({
+    backing: z.boolean(),
+    delay_ms: z.number().int(),
+    lead: z.boolean(),
+    relay: z.object({
+      allowed: z.boolean(),
+      reason: z.string().nullable(),
+      member: z.string().nullable(),
+      /** That voice is on the stream right now (during the round). */
+      live: z.boolean(),
+    }),
+  })
+  .meta({ id: "ApiKaraokeRoomAir" });
+export type KaraokeRoomAir = z.output<typeof KaraokeRoomAirSchema>;
 
 /** One singer's line of a round's final ranking. */
 export const KaraokeRoomPlaceSchema = z
@@ -134,6 +170,8 @@ export const KaraokeRoomViewSchema = z
     /** The last round's ranking, once it is sung. */
     result: KaraokeRoomResultSchema.nullable(),
     terms: KaraokeRoomTermsSchema,
+    /** What her voice channel carries (step 5). */
+    air: KaraokeRoomAirSchema,
   })
   .meta({ id: "ApiKaraokeRoomView" });
 export type KaraokeRoomView = z.output<typeof KaraokeRoomViewSchema>;
@@ -168,6 +206,23 @@ export const KaraokeRoomJoinSchema = z
   .strictObject({ as: z.enum(["singer", "spectator"]).default("singer") })
   .meta({ id: "ApiKaraokeRoomJoin" });
 export type KaraokeRoomJoin = z.input<typeof KaraokeRoomJoinSchema>;
+
+/**
+ * Body of `POST .../rooms/{code}/relay` (step 5), each field optional: `hear` a singer's own
+ * 「讓大家聽到我」 (rounds they sing alone; off by default and again every round; can be turned off
+ * mid-song), `skip` their own 「不要播我的聲音」 (rounds with two or more singers), `lead` the
+ * opener's 「播出第一名的歌聲」 for the room (in the lobby or after a round). `member`: the opener
+ * (or a panel admin) turns that person's voice off (`hear` off, `skip` on); never on.
+ */
+export const KaraokeRoomRelaySchema = z
+  .strictObject({
+    hear: z.boolean().optional(),
+    skip: z.boolean().optional(),
+    lead: z.boolean().optional(),
+    member: z.string().max(32).optional(),
+  })
+  .meta({ id: "ApiKaraokeRoomRelay" });
+export type KaraokeRoomRelay = z.input<typeof KaraokeRoomRelaySchema>;
 
 /** Body of `POST .../rooms/{code}/ready`: their device's latency comes with it. */
 export const KaraokeRoomReadySchema = z
@@ -241,11 +296,12 @@ export type KaraokeClockReply = z.output<typeof KaraokeClockReplySchema>;
 
 /**
  * The answer to a singer's microphone chunk (`POST .../rooms/{code}/audio?at=&song_ms=&end=`, body:
- * µ-law 16 kHz mono): `live` keep streaming; `estimate` stop (the stream is not scored now: keep
- * the recording for the end).
+ * µ-law 16 kHz mono): `live` keep streaming; `estimate` the stream is not scored now (keep the
+ * recording for the end). `relay`: the chunks may go out on the stream this round (the singer
+ * allows it), so keep sending them even when `stream` is `estimate`; stop only when both are off.
  */
 export const KaraokeAudioReplySchema = z
-  .object({ stream: z.enum(["live", "estimate"]) })
+  .object({ stream: z.enum(["live", "estimate"]), relay: z.boolean() })
   .meta({ id: "ApiKaraokeAudioReply" });
 export type KaraokeAudioReply = z.output<typeof KaraokeAudioReplySchema>;
 
@@ -289,6 +345,11 @@ export const karaokeRooms = {
   song: member()
     .route({ method: "POST", path: "/api/member/karaoke/rooms/{code}/song" })
     .input(z.object({ params: code, body: KaraokeRoomSongSchema }))
+    .output(KaraokeRoomViewSchema),
+  /** A singer's 「讓大家聽到我」 / 「不要播我的聲音」, the opener's 「播出第一名的歌聲」, or cutting someone. */
+  relay: member()
+    .route({ method: "POST", path: "/api/member/karaoke/rooms/{code}/relay" })
+    .input(z.object({ params: code, body: KaraokeRoomRelaySchema }))
     .output(KaraokeRoomViewSchema),
   /** The opener starts the round: a countdown to one moment for everyone. */
   start: member()

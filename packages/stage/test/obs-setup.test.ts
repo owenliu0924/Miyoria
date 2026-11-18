@@ -347,6 +347,12 @@ describe("obs-setup", () => {
     expect(obs.inputs.get(SOURCES.backdropSing)?.settings.url).toBe(
       "http://127.0.0.1:7884/overlay/?layer=backdrop&layout=sing",
     );
+    // The overlay pages' sound (the karaoke scene's backing and relayed voice) is in OBS's mix;
+    // the backdrops make none.
+    expect(obs.inputs.get(SOURCES.overlay)?.settings.reroute_audio).toBe(true);
+    expect(obs.inputs.get(SOURCES.overlaySing)?.settings.reroute_audio).toBe(true);
+    expect(obs.inputs.get(SOURCES.backdrop)?.settings.reroute_audio).toBe(false);
+    expect(obs.inputs.get(SOURCES.backdropSing)?.settings.reroute_audio).toBe(false);
     expect(obs.inputs.get(SOURCES.model)?.settings).toMatchObject({
       window: VTS_WINDOW,
       allow_transparency: true,
@@ -389,8 +395,14 @@ describe("obs-setup", () => {
       SOURCES.model,
       SOURCES.overlay,
     ]);
-    // The existing overlay kept its place but points at this Stage now.
+    // The existing overlay kept its place but points at this Stage now, its sound in OBS's mix.
     expect(obs.inputs.get(SOURCES.overlay)?.settings.url).toBe(OPTIONS.overlayUrl);
+    expect(obs.inputs.get(SOURCES.overlay)?.settings.reroute_audio).toBe(true);
+    expect(steps).toContainEqual({
+      op: "set_input",
+      name: SOURCES.overlay,
+      settings: { url: OPTIONS.overlayUrl, reroute_audio: true },
+    });
     expect(steps.filter((s) => s.op === "hide").map((s) => s.source)).toEqual([
       "視窗擷取 3",
       "視窗擷取 3",

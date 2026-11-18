@@ -20,6 +20,7 @@ import {
   BACKLOG_MAX,
   CHUNK_MAX,
   CHUNK_MIN,
+  answerOf,
   ChunkScheduler,
   PitchFeed,
   type StreamAnswer,
@@ -175,6 +176,32 @@ describe("the chunk scheduler", () => {
     expect(t.state).toBe("stopped");
     await t.end();
     expect(failing.sent).toHaveLength(1);
+  });
+
+  it("keeps streaming while the voice may go out on her stream: stops only when `estimate` and no relay", async () => {
+    expect(answerOf({ stream: "live", relay: false })).toBe("live");
+    expect(answerOf({ stream: "live", relay: true })).toBe("live");
+    expect(answerOf({ stream: "estimate", relay: true })).toBe("live");
+    expect(answerOf({ stream: "estimate", relay: false })).toBe("estimate");
+    // An older Core that does not say `relay` is the same as no relay.
+    expect(answerOf({ stream: "estimate" })).toBe("estimate");
+
+    const replies = [
+      { stream: "estimate", relay: true },
+      { stream: "estimate", relay: true },
+      { stream: "estimate", relay: false },
+    ] as const;
+    const sent: AudioChunk[] = [];
+    const s = new ChunkScheduler(async (c) => {
+      sent.push(c);
+      return answerOf(replies[sent.length - 1] ?? { stream: "estimate", relay: false });
+    }, songTimeOf);
+    for (let i = 1; i < 30; i++) {
+      s.push(piece(i));
+      await flush();
+    }
+    expect(sent).toHaveLength(3);
+    expect(s.state).toBe("stopped");
   });
 
   it("keeps one chunk in flight and at most two seconds a chunk; far behind, it gives up", async () => {

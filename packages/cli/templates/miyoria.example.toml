@@ -547,12 +547,24 @@ dirs = ["extensions"]
 # room_finish_share = 0.5     # 原唱有聲的地方唱到這麼多(而且音比亂唱準)才算唱完
 # room_prizes_per_day = 2     # 每人每天第一名獎勵最多幾次
 # room_finishes_per_day = 5   # 每人每天唱完獎勵最多幾次
-# room_rounds = 5             # 一間房最多唱幾首(開房費只收一次)
+# room_rounds = 4             # 一間房最多唱幾首(開房費只收一次)
 # room_singers = 8            # 一間房最多幾個人唱(旁觀不算)
 # room_max = 2                # 同時最多幾間房
 # room_idle_mins = 10         # 房間閒置多久(沒有開始唱)就關掉
 # room_countdown_secs = 6     # 按開始後倒數幾秒,大家的伴奏同時開始
 # room_stream = true          # 唱的時候把麥克風即時送到唱歌 worker 算正式分數(不存);false = 唱的時候只有預估,唱完送錄音
+# 直播(第五步):她的直播(Go Live,OBS 的唱 K 場景)播伴奏和最多一個人的歌聲;她自己的語音頻道不播。
+# overlay 的瀏覽器來源要「讓 OBS 控制音訊」(stage obs-setup 會設好),聲音才進得了直播
+# stream_scene = true         # 直播畫面顯示唱 K 房間:等人時角落一塊,唱的時候歌詞、背景影片、即時排名、結果
+# stream_backing = true       # 直播的唱 K 場景播伴奏
+# stream_delay_ms = 2000      # 直播比唱的人晚多少(一間房固定一個);播出的歌聲太晚到的那一段是靜音,不會越拖越晚
+# relay_solo = true           # 一個人唱時可以播出他的歌聲(他自己勾「讓大家聽到我」,每一首預設不勾;聲音不存)
+# relay_lead = false          # 新房間預設「播出第一名的歌聲」(兩個人以上唱時一次播一個人;開房的人可以改,每人可以選不要播)
+# relay_hold_secs = 4         # 新的第一名要連續領先幾秒才換成他的聲音(盡量換在兩句中間)
+# relay_fade_ms = 200         # 換人時淡入淡出多久
+# stream_backing_gain = 0.8   # 直播伴奏的音量(0–1)
+# stream_voice_gain = 1.5     # 直播歌聲的音量(0–4)
+# stream_duck_gain = 0.35     # 她在語音頻道講話時,直播的唱 K 聲音降到這個比例
 # 歌詞:唱歌 worker 把查到的歌詞一行一行和主唱聽到的比對,對上的逐字對齊、照字切音符;
 # 查不到或對不上就用聽寫的。下面只影響之後準備的歌
 # aligner = "w2v"             # w2v(Apache-2.0)| mms(難的歌準很多,權重 CC-BY-NC-4.0,只能非商業使用)

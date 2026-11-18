@@ -7,7 +7,7 @@
 // contiguous from 0), and `song_ms`, that sample's song time on the audio clock the pitch track is
 // placed by. Samples from before the song's start are not sent. One chunk is in flight at a time;
 // what arrives meanwhile waits and goes in the next, at most two seconds a chunk. An answer of
-// `estimate` (or any failure) stops the stream for the round: Core scores this singer from the
+// `estimate` without `relay` (or any failure) stops the stream for the round: Core scores this singer from the
 // browser's estimate and the recording kept for the end.
 
 import { encodeTrack, TRACK_HZ, toBase64 } from "@miyoria/play/karaoke/score";
@@ -34,6 +34,14 @@ export interface AudioChunk {
 }
 
 export type StreamAnswer = "live" | "estimate";
+
+/**
+ * What to do after Core's answer to a chunk: keep going while the stream is scored (`live`) or while
+ * the voice may go out on her stream (`relay`); stop only when it is neither.
+ */
+export function answerOf(reply: { stream: "live" | "estimate"; relay?: boolean }): StreamAnswer {
+  return reply.stream === "live" || reply.relay === true ? "live" : "estimate";
+}
 export type ChunkSender = (chunk: AudioChunk) => Promise<StreamAnswer>;
 
 /** `live` sending; `stopped` (Core said `estimate`, or a send failed, or the singer left); `ended`. */

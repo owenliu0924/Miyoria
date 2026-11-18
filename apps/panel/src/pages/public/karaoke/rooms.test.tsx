@@ -90,7 +90,26 @@ const session = (id = "S7"): KaraokeSession => ({
   recording: { max_bytes: 8_000_000, max_seconds: 600 },
 });
 
-const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 5, max_singers: 8 };
+const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 4, max_singers: 8 };
+
+const air = (over: Partial<Omit<KaraokeRoomView["air"], "relay">> & { relay?: Partial<KaraokeRoomView["air"]["relay"]> } = {}): KaraokeRoomView["air"] => ({
+  backing: true,
+  delay_ms: 2_000,
+  lead: false,
+  ...over,
+  relay: { allowed: true, reason: null, member: null, live: false, ...over.relay },
+});
+
+const member = (over: Partial<KaraokeRoomView["members"][number]> & { id: string }): KaraokeRoomView["members"][number] => ({
+  name: over.id,
+  role: "singer",
+  ready: false,
+  opener: false,
+  color: 2,
+  hear: false,
+  skip: false,
+  ...over,
+});
 
 const room = (over: Partial<KaraokeRoomView> = {}): KaraokeRoomView => ({
   code: "KTV888",
@@ -99,16 +118,17 @@ const room = (over: Partial<KaraokeRoomView> = {}): KaraokeRoomView => ({
   song: song(),
   shift: 0,
   members: [
-    { id: "me", name: "小魚乾", role: "singer", ready: false, opener: true, color: 0 },
-    { id: "a", name: "海苔", role: "singer", ready: true, opener: false, color: 1 },
-    { id: "b", name: "路過的人", role: "spectator", ready: false, opener: false, color: 5 },
+    { id: "me", name: "小魚乾", role: "singer", ready: false, opener: true, color: 0, hear: false, skip: false },
+    { id: "a", name: "海苔", role: "singer", ready: true, opener: false, color: 1, hear: false, skip: false },
+    { id: "b", name: "路過的人", role: "spectator", ready: false, opener: false, color: 5, hear: false, skip: false },
   ],
   me: { id: "me", role: "singer", opener: true, singing: false, session: null },
   round: 0,
-  rounds_left: 5,
+  rounds_left: 4,
   start_at_ms: null,
   result: null,
   terms: TERMS,
+  air: air(),
   ...over,
 });
 
@@ -177,7 +197,7 @@ function roomSite(view: KaraokeRoomView, extra?: Parameters<typeof mockFetch>[0]
     if (more) return more;
     if (path === "/api/member/karaoke/rooms/KTV888") return { body: view };
     if (path === "/api/member/karaoke/rooms/KTV888/clock") return { body: { t0: (body as { t0: number }).t0, server_ms: Date.now() } };
-    if (path === "/api/member/karaoke/rooms/KTV888/audio") return { body: { stream: "live" } };
+    if (path === "/api/member/karaoke/rooms/KTV888/audio") return { body: { stream: "live", relay: false } };
     if (path === "/api/member/karaoke/rooms/KTV888/pitch") return { status: 204 };
     if (path.endsWith("/reference.json")) return { body: REFERENCE };
     if (path === "/api/member/karaoke/songs/k1/sessions" && method === "POST") return { body: session("W1") };
@@ -221,6 +241,9 @@ beforeEach(() => {
 
 describe("一起唱: a singer's stage", () => {
   it("starts at the room's moment, shows their trend, and never a ranking even if a board arrives", async () => {
+    // The start is three seconds from here: measured from now, not from when the checks run (a
+    // slow machine takes its time to get there).
+    const due = performance.now() / 1000 + 3;
     const view = room({
       state: "countdown",
       round: 1,
@@ -235,8 +258,8 @@ describe("一起唱: a singer's stage", () => {
     await waitFor(() => expect(played).toHaveLength(1));
     const first = played[0] as { at: number; offset: number };
     expect(first.offset).toBe(0);
-    expect(first.at - performance.now() / 1000).toBeGreaterThan(2.5);
-    expect(first.at - performance.now() / 1000).toBeLessThan(3.2);
+    expect(first.at - due).toBeGreaterThan(-0.3);
+    expect(first.at - due).toBeLessThan(0.3);
     // The microphone's stream begins with the song.
     await waitFor(() => expect(pieces).toHaveLength(1));
     expect(await screen.findByRole("timer")).toHaveTextContent("秒後一起開始");
@@ -503,5 +526,221 @@ describe("the recording goes only when Core asks for it", () => {
     await screen.findByLabelText("預估 70.0");
     await new Promise((r) => setTimeout(r, 300));
     expect(uploads).toEqual([]);
+  });
+});
+
+// ---- what goes out on her stream (step 5) -------------------------------------------------------
+
+describe("一起唱: her stream (the lobby's switches)", () => {
+  const soloMembers = [member({ id: "me", name: "小魚乾", opener: true, color: 0 }), member({ id: "b", name: "路過的人", role: "spectator", color: 5 })];
+  const relayReply = (view: KaraokeRoomView) => (method: string, url: URL) =>
+    url.pathname.endsWith("/relay") && method === "POST" ? { body: view } : undefined;
+  const relayPosts = (posts: { path: string; body: unknown }[]) => posts.filter((p) => p.path.endsWith("/relay")).map((p) => p.body);
+
+  it("a lone singer opts in with the switch: off at first, the route is called, the answer updates the room", async () => {
+    const on = room({ members: [{ ...(soloMembers[0] as KaraokeRoomView["members"][number]), hear: true }, soloMembers[1] as KaraokeRoomView["members"][number]] });
+    const { posts } = roomSite(room({ members: soloMembers }), relayReply(on));
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    const toggle = within(card).getByRole("switch", { name: "讓大家聽到我" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(card).toHaveTextContent("晚約 2 秒");
+    expect(card).toHaveTextContent("不會錄下來");
+    await userEvent.click(toggle);
+    await waitFor(() => expect(relayPosts(posts)).toEqual([{ hear: true }]));
+    await waitFor(() => expect(within(card).getByRole("switch", { name: "讓大家聽到我" })).toHaveAttribute("aria-checked", "true"));
+  });
+
+  it("tells singers to mute the stream while they sing", async () => {
+    roomSite(room());
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    expect(card).toHaveTextContent("唱的時候請把直播靜音(或不要看直播):你會聽到晚兩秒的伴奏和歌聲");
+  });
+
+  it("the opener's lead switch is shown, states the room's setting to everyone, and calls the route", async () => {
+    const off = room({ air: air({ lead: false }) });
+    const { posts } = roomSite(off, relayReply(room({ air: air({ lead: true }) })));
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    const lead = within(card).getByRole("switch", { name: "播出第一名的歌聲" });
+    expect(lead).toHaveAttribute("aria-checked", "false");
+    expect(card).toHaveTextContent("同一時間只會播出一個人的聲音");
+    await userEvent.click(lead);
+    await waitFor(() => expect(relayPosts(posts)).toEqual([{ lead: true }]));
+    expect(await within(card).findByText("這間房會播出第一名的歌聲")).toBeInTheDocument();
+  });
+
+  it("someone who did not open the room sees the lead setting but has no switch for it", async () => {
+    roomSite(
+      room({
+        members: [member({ id: "a", name: "海苔", opener: true, color: 1 }), member({ id: "me", name: "小魚乾", color: 0 })],
+        me: { id: "me", role: "singer", opener: false, singing: false, session: null },
+        air: air({ lead: true }),
+      }),
+    );
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    expect(card).toHaveTextContent("這間房會播出第一名的歌聲");
+    expect(within(card).queryByRole("switch", { name: "播出第一名的歌聲" })).toBeNull();
+    expect(within(card).queryByRole("switch", { name: "讓大家聽到我" })).toBeNull();
+  });
+
+  it("a singer of a room with several can opt out for themselves", async () => {
+    const members = [member({ id: "a", name: "海苔", opener: true, color: 1 }), member({ id: "me", name: "小魚乾", color: 0 })];
+    const view = room({ members, me: { id: "me", role: "singer", opener: false, singing: false, session: null }, air: air({ lead: true }) });
+    const out = room({ ...view, members: [members[0] as KaraokeRoomView["members"][number], { ...(members[1] as KaraokeRoomView["members"][number]), skip: true }] });
+    const { posts } = roomSite(view, relayReply(out));
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    expect(within(card).queryByRole("switch", { name: "讓大家聽到我" })).toBeNull();
+    await userEvent.click(within(card).getByRole("switch", { name: "不要播我的聲音" }));
+    await waitFor(() => expect(relayPosts(posts)).toEqual([{ skip: true }]));
+    await waitFor(() => expect(within(card).getByRole("switch", { name: "不要播我的聲音" })).toHaveAttribute("aria-checked", "true"));
+  });
+
+  it("the opener can turn another member's voice off, and an admin who did not open the room can too", async () => {
+    const members = [member({ id: "me", name: "小魚乾", opener: true, color: 0 }), member({ id: "a", name: "海苔", color: 1 }), member({ id: "c", name: "Akari", color: 3 })];
+    const view = room({ members, air: air({ lead: true }) });
+    const { posts } = roomSite(view, relayReply(view));
+    const first = renderRoom(fakeEngine().engine);
+    await userEvent.click(await screen.findByRole("button", { name: "關掉海苔的聲音" }));
+    await waitFor(() => expect(relayPosts(posts)).toEqual([{ member: "a" }]));
+    first.unmount();
+
+    const plain = room({
+      members: [member({ id: "a", name: "海苔", opener: true, color: 1 }), member({ id: "me", name: "小魚乾", color: 0 }), member({ id: "c", name: "Akari", color: 3, skip: true })],
+      me: { id: "me", role: "singer", opener: false, singing: false, session: null },
+      air: air({ lead: true }),
+    });
+    roomSite(plain);
+    const asMember = renderPage(
+      <RoomPage code="KTV888" overview={overview()} engine={() => fakeEngine().engine} latency={null} floor={null} prepareMic={async () => ({ latency_ms: 0, calibrated: false })} onCalibrate={() => {}} onExit={() => {}} />,
+    );
+    await screen.findByRole("region", { name: "成員" });
+    expect(screen.queryByRole("button", { name: /關掉.*的聲音/ })).toBeNull();
+    asMember.unmount();
+
+    roomSite(plain);
+    renderPage(
+      <RoomPage code="KTV888" overview={overview({ admin: true })} engine={() => fakeEngine().engine} latency={null} floor={null} prepareMic={async () => ({ latency_ms: 0, calibrated: false })} onCalibrate={() => {}} onExit={() => {}} />,
+    );
+    // The admin can cut the opener's voice; Akari already skips, so no button for her.
+    expect(await screen.findByRole("button", { name: "關掉海苔的聲音" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "關掉Akari的聲音" })).toBeNull();
+  });
+
+  it("shows why nothing goes out instead of the switches", async () => {
+    roomSite(room({ members: soloMembers, air: air({ relay: { allowed: false, reason: "她還不認識你,不能播出你的聲音" } }) }));
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    expect(card).toHaveTextContent("她還不認識你,不能播出你的聲音");
+    expect(within(card).queryByRole("switch")).toBeNull();
+    expect(card).not.toHaveTextContent("唱的時候請把直播靜音");
+  });
+
+  it("shows the error when the route refuses, and the switch stays as it was", async () => {
+    roomSite(room({ members: soloMembers }), (method, url) =>
+      url.pathname.endsWith("/relay") && method === "POST" ? { status: 409, body: { error: "這一輪已經開始了" } } : undefined,
+    );
+    renderRoom(fakeEngine().engine);
+    const card = await screen.findByRole("region", { name: "直播播出" });
+    await userEvent.click(within(card).getByRole("switch", { name: "讓大家聽到我" }));
+    expect(await within(card).findByRole("alert")).toHaveTextContent("這一輪已經開始了");
+    expect(within(card).getByRole("switch", { name: "讓大家聽到我" })).toHaveAttribute("aria-checked", "false");
+  });
+});
+
+describe("一起唱: her stream on the stages", () => {
+  const stage = (members: KaraokeRoomView["members"], a: KaraokeRoomView["air"]) =>
+    room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 1_000,
+      members,
+      me: { id: "me", role: "singer", opener: true, singing: true, session: session() },
+      air: a,
+    });
+  const alone = (hear: boolean) => [member({ id: "me", name: "小魚乾", opener: true, color: 0, hear })];
+
+  it("a lone singer on air sees the notice with a stop button that turns it off", async () => {
+    const view = stage(alone(true), air({ relay: { member: "me", live: true } }));
+    const { posts } = roomSite(view, (method, url) =>
+      url.pathname.endsWith("/relay") && method === "POST" ? { body: stage(alone(false), air()) } : undefined,
+    );
+    renderRoom(fakeEngine().engine);
+    expect(await screen.findByText("你的聲音正在播出")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "停止播出" }));
+    await waitFor(() => expect(posts.filter((p) => p.path.endsWith("/relay")).map((p) => p.body)).toEqual([{ hear: false }]));
+    await waitFor(() => expect(screen.queryByText("你的聲音正在播出")).toBeNull());
+  });
+
+  it("a lone singer who is off can turn it on mid-song when allowed, and cannot when not", async () => {
+    const { posts } = roomSite(stage(alone(false), air()), (method, url) =>
+      url.pathname.endsWith("/relay") && method === "POST" ? { body: stage(alone(true), air({ relay: { member: "me", live: true } })) } : undefined,
+    );
+    const first = renderRoom(fakeEngine().engine);
+    await userEvent.click(await screen.findByRole("button", { name: "開啟" }));
+    await waitFor(() => expect(posts.filter((p) => p.path.endsWith("/relay")).map((p) => p.body)).toEqual([{ hear: true }]));
+    expect(await screen.findByText("你的聲音正在播出")).toBeInTheDocument();
+    first.unmount();
+
+    roomSite(stage(alone(false), air({ relay: { allowed: false, reason: "不播" } })));
+    renderRoom(fakeEngine().engine);
+    await screen.findByRole("region", { name: "唱 紙船" });
+    expect(screen.queryByRole("button", { name: "開啟" })).toBeNull();
+    expect(screen.queryByText("你的聲音正在播出")).toBeNull();
+  });
+
+  it("with two or more singers a singer sees only the static line, even if given member and live for themselves", async () => {
+    const two = [member({ id: "me", name: "小魚乾", opener: true, color: 0 }), member({ id: "a", name: "海苔", color: 1 })];
+    roomSite(stage(two, air({ lead: true, relay: { member: "me", live: true } })));
+    renderRoom(fakeEngine().engine);
+    expect(await screen.findByText("這間房會播出第一名的歌聲")).toBeInTheDocument();
+    expect(screen.queryByText("你的聲音正在播出")).toBeNull();
+    expect(screen.queryByRole("button", { name: "停止播出" })).toBeNull();
+    expect(screen.queryByText(/播出中/)).toBeNull();
+  });
+
+  it("with several singers and the lead setting off a singer sees nothing about the stream", async () => {
+    const two = [member({ id: "me", name: "小魚乾", opener: true, color: 0 }), member({ id: "a", name: "海苔", color: 1 })];
+    roomSite(stage(two, air({ lead: false })));
+    renderRoom(fakeEngine().engine);
+    await screen.findByRole("region", { name: "唱 紙船" });
+    expect(screen.queryByText("這間房會播出第一名的歌聲")).toBeNull();
+    expect(screen.queryByRole("button", { name: "開啟" })).toBeNull();
+  });
+
+  it("a spectator sees who is on air on the board, with a small mark", async () => {
+    const view = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 5_000,
+      me: { id: "b", role: "spectator", opener: false, singing: false, session: session() },
+      air: air({ lead: true, relay: { member: "a", live: true } }),
+    });
+    roomSite(view);
+    renderRoom(fakeEngine().engine);
+    const stage = await screen.findByRole("region", { name: "看 紙船" });
+    emit(BOARD);
+    const board = await within(stage).findByRole("list", { name: "即時排名" });
+    const rows = within(board).getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("播出中");
+    expect(rows[1]).not.toHaveTextContent("播出中");
+  });
+
+  it("a spectator sees no mark when nobody is on air", async () => {
+    const view = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 5_000,
+      me: { id: "b", role: "spectator", opener: false, singing: false, session: session() },
+    });
+    roomSite(view);
+    renderRoom(fakeEngine().engine);
+    const stage = await screen.findByRole("region", { name: "看 紙船" });
+    emit(BOARD);
+    await within(stage).findByRole("list", { name: "即時排名" });
+    expect(within(stage).queryByText("播出中")).toBeNull();
   });
 });

@@ -25,6 +25,7 @@ import { roomPage } from "./path";
 import { CHECK_LINES, PART_NAMES, score1 } from "./result-text";
 import { coins, roleWord, SOURCE_WORDS, STATE_WORDS } from "./room-text";
 import { KeyStepper, SongPicker } from "./RoomsEntry";
+import { AirCard, CutVoice } from "./RoomAir";
 import { Swatch } from "./SpectatorStage";
 
 type Me = NonNullable<KaraokeRoomView["me"]>;
@@ -118,7 +119,7 @@ function RoomCode({ code }: { code: string }) {
   );
 }
 
-function Members({ room }: { room: KaraokeRoomView }) {
+function Members({ room, canCut, onRoom }: { room: KaraokeRoomView; canCut: boolean; onRoom: (room: KaraokeRoomView) => void }) {
   const singers = room.members.filter((m) => m.role === "singer").length;
   return (
     <Card aria-label="成員">
@@ -142,6 +143,7 @@ function Members({ room }: { room: KaraokeRoomView }) {
                 {m.id === room.me?.id && <span className="text-muted-foreground">(你)</span>}
               </span>
               {m.opener && <Crown aria-label="房主" className="size-3.5 shrink-0 text-muted-foreground" />}
+              {canCut && <CutVoice room={room} member={m} onRoom={onRoom} />}
               <span className="w-14 shrink-0 text-xs text-muted-foreground">{roleWord({ ...m, opener: false })}</span>
               {m.role === "singer" ? (
                 <span className="flex w-16 shrink-0 items-center gap-1.5 text-xs">
@@ -354,6 +356,7 @@ export function RoomLobby({
       rail={
         <>
           <MyPart room={room} me={me} latency={latency} actions={actions} />
+          <AirCard room={room} me={me} onRoom={actions.onRoom} />
           <Card aria-label="這間房">
             <CardHeader>
               <CardTitle>這間房</CardTitle>
@@ -381,7 +384,7 @@ export function RoomLobby({
           </OpenerPart>
         </div>
       </Card>
-      <Members room={room} />
+      <Members room={room} canCut={me.opener || overview.admin} onRoom={actions.onRoom} />
       <Ranking room={room} />
     </Page>
   );
@@ -483,6 +486,7 @@ export function RoomResults({
         me ? (
           <>
             <MyPart room={room} me={me} latency={latency} actions={actions} />
+            <AirCard room={room} me={me} onRoom={actions.onRoom} />
             <Card aria-label="這間房">
               <CardHeader>
                 <CardTitle>這間房</CardTitle>

@@ -57,7 +57,16 @@ export function Swatch({ color, className }: { color: number; className?: string
 }
 
 /** The live ranking for spectators: place, colour, name, running total, movement, 預估. */
-export function Leaderboard({ lines, compact = false }: { lines: readonly KaraokeBoardLine[]; compact?: boolean }) {
+export function Leaderboard({
+  lines,
+  compact = false,
+  onAir = null,
+}: {
+  lines: readonly KaraokeBoardLine[];
+  compact?: boolean;
+  /** The member whose voice is on her stream now (spectators may know it). */
+  onAir?: string | null;
+}) {
   const sorted = [...lines].sort((a, b) => a.rank - b.rank);
   return (
     <ol aria-label="即時排名" className={cn("grid gap-x-3", compact ? "grid-cols-2 gap-y-0.5" : "gap-y-1")} data-board>
@@ -66,6 +75,11 @@ export function Leaderboard({ lines, compact = false }: { lines: readonly Karaok
           <span className="w-4 shrink-0 text-right font-mono text-xs text-muted-foreground tabular-nums">{l.rank}</span>
           <Swatch color={l.color} />
           <span className="min-w-0 flex-1 truncate">{l.name}</span>
+          {onAir !== null && l.member === onAir && (
+            <span className="shrink-0 rounded-[5px] bg-control px-1 text-[11px] text-primary" data-on-air>
+              播出中
+            </span>
+          )}
           {l.source === "estimate" && (
             <span className="shrink-0 rounded-[5px] bg-control px-1 text-[11px] text-muted-foreground">{SOURCE_WORDS.estimate}</span>
           )}
@@ -366,7 +380,7 @@ export function SpectatorStage({
           {boardLines.length === 0 ? (
             <p className="text-xs text-muted-foreground">開始唱之後會出現</p>
           ) : (
-            <Leaderboard lines={boardLines} compact={compact} />
+            <Leaderboard lines={boardLines} compact={compact} onAir={room.air.relay.member} />
           )}
         </div>
       </div>

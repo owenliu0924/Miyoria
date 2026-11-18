@@ -351,7 +351,7 @@ export const KaraokeConfigSchema = z
       .int()
       .min(1)
       .max(20)
-      .default(5)
+      .default(4)
       .meta(
         setting({
           kind: "number",
@@ -415,6 +415,126 @@ export const KaraokeConfigSchema = z
           group: "rooms",
         }),
       ),
+    /**
+     * Her stream shows the karaoke room (the overlay's karaoke scene, step 5): the lobby, then the
+     * round's lyrics, background video and board, and the results. Off: the overlay is as before.
+     */
+    stream_scene: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "直播畫面顯示唱 K 房間",
+          help: "房間等人時角落一塊,唱的時候整個場景:歌詞、背景影片、即時排名、結果",
+          group: "stream",
+        }),
+      ),
+    /** The stream's scene plays the round's backing (in the stream's audio, not her voice). */
+    stream_backing: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "直播播伴奏",
+          help: "直播的唱 K 場景播這一首的伴奏(OBS 的瀏覽器來源要讓 OBS 控制音訊)。她自己的語音頻道不播",
+          group: "stream",
+        }),
+      ),
+    /**
+     * How far the stream runs behind the singers, one fixed delay per round: every relayed voice
+     * is buffered to it (late audio is dropped, the delay never grows), and the backing, lyrics
+     * and board on the stream follow the same delayed clock.
+     */
+    stream_delay_ms: z
+      .number()
+      .int()
+      .min(1_000)
+      .max(8_000)
+      .default(2_000)
+      .meta(
+        setting({
+          kind: "duration",
+          unit: "ms",
+          label: "直播比唱的人晚多少",
+          help: "播出的歌聲要在這之前到;太晚到的那一段就是靜音,不會越拖越晚",
+          group: "stream",
+        }),
+      ),
+    /** A round's one singer may have their voice on the stream (they still opt in every round). */
+    relay_solo: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "一個人唱時可以播出歌聲",
+          help: "唱的人自己勾「讓大家聽到我」才播,每一首預設不勾;聲音不存",
+          group: "stream",
+        }),
+      ),
+    /** A new room plays its leader's voice (the opener can switch it in the lobby). */
+    relay_lead: z
+      .boolean()
+      .default(false)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "新房間預設播出第一名的歌聲",
+          help: "兩個人以上唱時,直播一次播一個人:即時排名第一、沒有選「不要播我的聲音」的那位。開房的人在房間裡可以改",
+          group: "stream",
+        }),
+      ),
+    /** A new leader is put on the stream only after holding first place this long. */
+    relay_hold_secs: z
+      .number()
+      .min(1)
+      .max(30)
+      .default(4)
+      .meta(
+        setting({
+          kind: "duration",
+          unit: "s",
+          label: "換人前要領先多久",
+          help: "新的第一名要連續領先這麼久才換成他的聲音,而且盡量換在兩句歌詞中間",
+          group: "stream",
+        }),
+      ),
+    /** The crossfade between two voices. */
+    relay_fade_ms: z
+      .number()
+      .int()
+      .min(50)
+      .max(1_000)
+      .default(200)
+      .meta(setting({ kind: "duration", unit: "ms", label: "換人的淡入淡出", group: "stream" })),
+    /** Gains of the stream's karaoke sound (0..1; the voice may go above 1). */
+    stream_backing_gain: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.8)
+      .meta(setting({ kind: "number", label: "直播伴奏的音量", group: "stream" })),
+    stream_voice_gain: z
+      .number()
+      .min(0)
+      .max(4)
+      .default(1.5)
+      .meta(setting({ kind: "number", label: "直播歌聲的音量", group: "stream" })),
+    stream_duck_gain: z
+      .number()
+      .min(0)
+      .max(1)
+      .default(0.35)
+      .meta(
+        setting({
+          kind: "number",
+          label: "她說話時唱 K 聲音降到",
+          help: "她在語音頻道講話時,直播的伴奏和歌聲降到這個比例",
+          group: "stream",
+        }),
+      ),
     /** Where the backing tracks and references are kept on Core, relative to `miyoria.toml`. */
     cache_dir: z.string().default("data/karaoke"),
   })
@@ -423,6 +543,7 @@ export const KaraokeConfigSchema = z
       { id: "songs", label: "點歌" },
       { id: "score", label: "評分" },
       { id: "rooms", label: "多人房間" },
+      { id: "stream", label: "直播" },
       { id: "lyrics", label: "歌詞" },
       { id: "video", label: "背景影片" },
       { id: "comment", label: "講評" },

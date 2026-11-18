@@ -498,6 +498,58 @@ def test_the_backing_is_made_in_another_key_once(worker):
     assert not (root / "_karaoke" / k["id"] / "karaoke.k+3.m4a").exists()
 
 
+@pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+                    reason="ffmpeg / ffprobe not installed")
+def test_the_backing_is_served_as_pcm_for_her_voice_channel(worker):
+    client, server, root = worker
+    k = karaoke_job(client, "karaoke pcm")["karaoke"]
+    kid, folder = k["id"], root / "_karaoke" / k["id"]
+    url = f"/karaoke/{kid}/files/play_karaoke.pcm"
+    seconds = float(probe(folder / "karaoke.m4a")["format"]["duration"])
+    assert not (folder / "play_karaoke.pcm").exists()
+
+    r = client.get(url)  # the first request makes it
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "audio/L16; rate=48000; channels=1"
+    assert r.headers["x-sample-rate"] == "48000"
+    assert len(r.content) % 2 == 0
+    assert len(r.content) == pytest.approx(seconds * 48_000 * 2, abs=0.1 * 48_000 * 2)
+    assert (folder / "play_karaoke.pcm").read_bytes() == r.content
+    assert not list(folder.glob("*.part"))
+
+    # The second is served from the file: it is not decoded again.
+    stamp = (folder / "play_karaoke.pcm").stat().st_mtime_ns
+    assert client.get(url).content == r.content
+    assert (folder / "play_karaoke.pcm").stat().st_mtime_ns == stamp
+
+    # A key that was not made: 404, and nothing is written.
+    assert client.get(f"/karaoke/{kid}/files/play_karaoke.k+3.pcm").status_code == 404
+    assert not (folder / "play_karaoke.k+3.pcm").exists()
+    assert client.post(f"/karaoke/{kid}/keys", json={"semitones": 3}).status_code == 200
+    up = client.get(f"/karaoke/{kid}/files/play_karaoke.k+3.pcm")
+    assert up.status_code == 200 and len(up.content) == pytest.approx(len(r.content), abs=0.1 * 48_000 * 2)
+    assert (folder / "play_karaoke.k+3.pcm").is_file()
+
+    for name in ("play_karaoke.k+7.pcm", "play_karaoke.k+0.pcm", "play_karaoke.k3.pcm", "play_karaoke.wav",
+                 "play_karaoke.pcm.part", "play_karaoke.k-9.pcm", "play_mix.pcm"):
+        assert client.get(f"/karaoke/{kid}/files/{name}").status_code == 404, name
+    assert client.get("/karaoke/k-nosuch/files/play_karaoke.pcm").status_code == 404
+
+    # Made again: the PCM goes with the song's old keys.
+    karaoke_job(client, "karaoke pcm", force=True)
+    assert not list(folder.glob("play_karaoke*.pcm"))
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_the_play_names_are_karaoke_ts_ones():
+    assert karaoke.play_source("play_karaoke.pcm") == "karaoke.m4a"
+    assert karaoke.play_source("play_karaoke.k+3.pcm") == "karaoke.k+3.m4a"
+    assert karaoke.play_source("play_karaoke.k-6.pcm") == "karaoke.k-6.m4a"
+    for bad in ("play_karaoke.k+7.pcm", "play_karaoke.k+0.pcm", "play_karaoke.k3.pcm", "play_karaoke.pcm.part",
+                "../play_karaoke.pcm", "karaoke.m4a", "play_karaoke.k+1.m4a"):
+        assert karaoke.play_source(bad) is None, bad
+
+
 def test_the_key_names_are_karaoke_ts_ones():
     assert karaoke.key_file(0) == "karaoke.m4a" and karaoke.key_file(2) == "karaoke.k+2.m4a"
     assert karaoke.key_file(-6) == "karaoke.k-6.m4a"

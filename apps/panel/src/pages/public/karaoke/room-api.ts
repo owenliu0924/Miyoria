@@ -5,7 +5,7 @@
 
 import type { KaraokeAudioReply, KaraokeClockReply, KaraokeRoomEvent } from "@miyoria/contracts/api";
 import { ApiError, type ApiClient, seg } from "@/api/http";
-import type { AudioChunk, StreamAnswer } from "./room-stream";
+import { type AudioChunk, answerOf, type StreamAnswer } from "./room-stream";
 
 export const roomPath = (code: string) => `/api/member/karaoke/rooms/${seg(code)}`;
 
@@ -112,7 +112,7 @@ export async function postAudio(client: ApiClient, code: string, chunk: AudioChu
   if (!res.ok) throw new ApiError("http", res.status, path, "聲音沒有送出");
   try {
     const reply = (await res.json()) as KaraokeAudioReply;
-    return reply.stream === "live" ? "live" : "estimate";
+    return answerOf(reply);
   } catch {
     return "estimate";
   }

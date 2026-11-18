@@ -374,10 +374,20 @@ export {
   LegacySnapshotSchema,
 } from "./identity.js";
 export {
+  KARAOKE_BUS_EVENTS,
   KARAOKE_EVENTS,
   KaraokeScored,
   type KaraokeScoredData,
   KaraokeScoredSchema,
+  KaraokeStage,
+  type KaraokeStageData,
+  KaraokeStageLyrics,
+  type KaraokeStageLyricsData,
+  KaraokeStageLyricsSchema,
+  KaraokeStageSchema,
+  KaraokeStageVoice,
+  type KaraokeStageVoiceData,
+  KaraokeStageVoiceSchema,
 } from "./karaoke.js";
 export {
   LlmBudget,

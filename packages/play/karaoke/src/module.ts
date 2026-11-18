@@ -157,6 +157,12 @@ export class KaraokeModule implements Module {
       },
       now: () => clock.now(),
       log: ctx.log,
+      // Her stream's karaoke scene (step 5): the stage link passes these on to the stage node.
+      stage: {
+        scene: (scene) => ctx.publish(Events.KaraokeStage, scene),
+        lyrics: (lyrics) => ctx.publish(Events.KaraokeStageLyrics, lyrics),
+        voice: (voice) => ctx.publish(Events.KaraokeStageVoice, voice),
+      },
     });
     service.attachRooms(rooms);
     // Rooms the last run left open are closed, and what they owe is paid, before any is served.
@@ -223,7 +229,9 @@ export class KaraokeModule implements Module {
   }
 
   async stop(): Promise<void> {
-    // Open rooms stay open in the store: the next start closes them and pays what they owe.
+    // Open rooms stay open in the store: the next start closes them and pays what they owe. The
+    // stream's scene ends now.
+    this.#rooms?.endScene();
     this.#running?.attachRooms(null);
     this.#running = null;
     this.#rooms = null;

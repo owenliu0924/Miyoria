@@ -22,8 +22,21 @@
 //   {"type":"danmaku","id":"…","name":"Owen"|null,"text":"…","max_on_screen":n,"queue_max":n,"max_wait_ms":n}
 //                                               a paid line that crosses the screen (src/danmaku.ts); the page answers it
 //   {"type":"danmaku_clear"}                    every danmaku line off the screen, the waiting ones dropped
+//   {"type":"karaoke","room":"K7PQ2M"|null,"state":"lobby"|"countdown"|"singing"|"results",…}
+//                                               the karaoke room on the stream (src/karaoke-view.ts); room null ends it
+//   {"type":"karaoke_lyrics","room","round","song","lyrics":{…}|null,"video":"karaoke/video?r=…"|null,
+//    "backing":{"path":"karaoke/backing?r=…","format":"pcm"|"m4a","rate":n}|null}
+//                                               the words, background video and backing of a round
+//   {"type":"karaoke_voice","room","round","at_ms":n,"audio":"<base64 µ-law 16 kHz>"}
+//                                               a piece of the relayed singer's voice, played and forgotten
 
 import type { OverlayMessage } from "@miyoria/contracts/overlay";
+import type {
+  WorkersKaraokeLineStatus,
+  WorkersKaraokeLineV2,
+  WorkersKaraokeLyricsV2,
+  WorkersKaraokePiece,
+} from "@miyoria/contracts/workers";
 import { parseTouch } from "./touch.js";
 
 // The frames Core sends are written once, in `@miyoria/contracts/overlay`. This page takes that
@@ -90,6 +103,105 @@ export interface ScreenCard {
   text: string;
 }
 
+/** Where a karaoke room on the stream is. */
+export type KaraokeRoomState = "lobby" | "countdown" | "singing" | "results";
+
+/** One person in the room. `color` 0..7 (5–7 are the first three again, drawn hollow). */
+export interface KaraokeMember {
+  name: string;
+  color: number;
+  role: "singer" | "spectator";
+  ready: boolean;
+  opener: boolean;
+}
+
+/**
+ * One singer on the board: the live ranking while sung (`move` since the last board), the final
+ * one with the results (`winner`, `coins`, `finished`). `source` null: no score yet.
+ */
+export interface KaraokeLine {
+  name: string;
+  color: number;
+  rank: number | null;
+  total: number | null;
+  source: "voice" | "estimate" | null;
+  move: "up" | "down" | "same";
+  winner: boolean;
+  coins: number;
+  finished: boolean;
+  /** Their voice is the one the stream plays now (`karaoke_voice`). */
+  onAir: boolean;
+}
+
+export interface KaraokeSong {
+  id: string;
+  title: string;
+  artist: string | null;
+  durationMs: number | null;
+}
+
+/**
+ * The karaoke room on the stream, as the overlay uses it. `positionMs`: where the song is (on the
+ * stream) at the moment the frame was sent, negative while it counts down; `null` outside a round.
+ */
+export interface KaraokeScene {
+  room: string;
+  state: KaraokeRoomState;
+  /** The round now (1-based, 0 before the first) and how many the room may still start. */
+  round: number;
+  roundsLeft: number;
+  song: KaraokeSong | null;
+  shift: number;
+  members: KaraokeMember[];
+  positionMs: number | null;
+  board: KaraokeLine[];
+  note: string | null;
+  currency: string;
+  air: KaraokeAir;
+}
+
+/**
+ * What this scene plays into the stream during the round: the backing, and whose voice (or none).
+ * `delayMs`: how far the stream runs behind the singers (already in `positionMs`). The gains (0..1,
+ * the voice up to 4): the backing, the voice, and both while she speaks.
+ */
+export interface KaraokeAir {
+  backing: boolean;
+  relay: string | null;
+  delayMs: number;
+  backingGain: number;
+  voiceGain: number;
+  duckGain: number;
+}
+
+/** The round's backing: a URL on this page's own server, raw s16le mono (`pcm`) or AAC (`m4a`). */
+export interface KaraokeBacking {
+  url: string;
+  format: "pcm" | "m4a";
+  rate: number;
+}
+
+/**
+ * The words, the background video and the backing (URLs on this page's own server, or `null`) of
+ * a round.
+ */
+export interface KaraokeLyrics {
+  room: string;
+  round: number;
+  song: string;
+  lyrics: WorkersKaraokeLyricsV2 | null;
+  video: string | null;
+  backing: KaraokeBacking | null;
+}
+
+/** A piece of the relayed singer's voice: µ-law at 16 kHz, base64, its first sample at `atMs`. */
+export interface KaraokeVoice {
+  room: string;
+  round: number;
+  atMs: number;
+  audio: string;
+}
+
 export interface OverlayState {
   /** The WebSocket to the Stage is up. */
   connected: boolean;
@@ -144,6 +256,12 @@ interface Parsed {
   danmaku: Wire<"danmaku">;
   /** Every danmaku line off the screen. */
   danmaku_clear: Wire<"danmaku_clear">;
+  /** The karaoke room on the stream (src/karaoke-view.ts); `null` ends the scene. Not reduced. */
+  karaoke: { type: "karaoke"; scene: KaraokeScene | null };
+  /** The words and picture of a round. Not reduced. */
+  karaoke_lyrics: { type: "karaoke_lyrics"; lyrics: KaraokeLyrics };
+  /** A piece of the relayed voice, played by the scene and never kept. Not reduced. */
+  karaoke_voice: { type: "karaoke_voice"; voice: KaraokeVoice };
 }
 
 /**
@@ -312,7 +430,242 @@ const PARSERS: { [K in OverlayMessage["type"]]: (raw: Raw) => Parsed[K] | null }
   danmaku_clear() {
     return { type: "danmaku_clear" };
   },
+  karaoke: parseKaraoke,
+  karaoke_lyrics: parseKaraokeLyrics,
+  karaoke_voice: parseKaraokeVoice,
 };
+
+// ---- karaoke -----------------------------------------------------------------------------------
+
+const KARAOKE_CODE_MAX = 12;
+const KARAOKE_NAME_MAX = 60;
+const KARAOKE_TITLE_MAX = 200;
+const KARAOKE_MEMBERS_MAX = 64;
+const KARAOKE_BOARD_MAX = 16;
+const LYRIC_LINES_MAX = 2000;
+const LYRIC_PIECES_MAX = 400;
+const LYRIC_TEXT_MAX = 500;
+const KARAOKE_STATES: readonly KaraokeRoomState[] = ["lobby", "countdown", "singing", "results"];
+const LINE_STATUSES: readonly WorkersKaraokeLineStatus[] = ["matched", "uncertain", "failed", "unchecked"];
+
+/** A whole number in [min, max], else `fallback`. */
+function whole(v: unknown, min: number, max: number, fallback: number): number {
+  return typeof v === "number" && Number.isInteger(v) && v >= min && v <= max ? v : fallback;
+}
+
+/** A finite number, else null. */
+function finite(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function cut(v: unknown, max: number): string | null {
+  return nonEmpty(v)?.slice(0, max) ?? null;
+}
+
+function parseMember(raw: unknown): KaraokeMember | null {
+  if (!isRecord(raw)) return null;
+  const name = cut(raw.name, KARAOKE_NAME_MAX);
+  if (!name) return null;
+  return {
+    name,
+    color: whole(raw.color, 0, 7, 0),
+    role: raw.role === "spectator" ? "spectator" : "singer",
+    ready: raw.ready === true,
+    opener: raw.opener === true,
+  };
+}
+
+function parseBoardLine(raw: unknown): KaraokeLine | null {
+  if (!isRecord(raw)) return null;
+  const name = cut(raw.name, KARAOKE_NAME_MAX);
+  if (!name) return null;
+  const total = within(raw.total, 0, 110);
+  return {
+    name,
+    color: whole(raw.color, 0, 7, 0),
+    rank: whole(raw.rank, 1, 999, 0) || null,
+    total,
+    source: raw.source === "voice" || raw.source === "estimate" ? raw.source : null,
+    move: raw.move === "up" || raw.move === "down" ? raw.move : "same",
+    winner: raw.winner === true,
+    coins: whole(raw.coins, 0, 1_000_000, 0),
+    finished: raw.finished === true,
+    onAir: raw.on_air === true,
+  };
+}
+
+function parseSong(raw: unknown): KaraokeSong | null {
+  if (!isRecord(raw)) return null;
+  const title = cut(raw.title, KARAOKE_TITLE_MAX);
+  if (!title) return null;
+  return {
+    id: str(raw.id)?.slice(0, 200) ?? "",
+    title,
+    artist: cut(raw.artist, KARAOKE_TITLE_MAX),
+    durationMs: within(raw.duration_ms, 1, MAX_DAY_MS),
+  };
+}
+
+function list<T>(raw: unknown, max: number, parse: (v: unknown) => T | null): T[] {
+  if (!Array.isArray(raw)) return [];
+  const out: T[] = [];
+  for (const v of raw.slice(0, max)) {
+    const item = parse(v);
+    if (item !== null) out.push(item);
+  }
+  return out;
+}
+
+/**
+ * `karaoke` frame: `room: null` ends the scene; a frame without a usable room code or state is
+ * skipped. Everything else is clamped or dropped item by item, so one odd member or line does
+ * not take the room off the stream.
+ */
+function parseKaraoke(raw: Raw): Parsed["karaoke"] | null {
+  if (raw.room === null) return { type: "karaoke", scene: null };
+  const room = nonEmpty(raw.room);
+  const state = KARAOKE_STATES.find((s) => s === raw.state);
+  if (!room || room.length > KARAOKE_CODE_MAX || state === undefined) return null;
+  const air = isRecord(raw.air) ? raw.air : {};
+  return {
+    type: "karaoke",
+    scene: {
+      room,
+      state,
+      round: whole(raw.round, 0, 10_000, 0),
+      roundsLeft: whole(raw.rounds_left, 0, 10_000, 0),
+      song: parseSong(raw.song),
+      shift: whole(raw.shift, -12, 12, 0),
+      members: list(raw.members, KARAOKE_MEMBERS_MAX, parseMember),
+      positionMs: within(raw.position_ms, -MAX_DAY_MS, MAX_DAY_MS),
+      board: list(raw.board, KARAOKE_BOARD_MAX, parseBoardLine),
+      note: cut(raw.note, MAX_TITLE),
+      currency: str(raw.currency)?.trim().slice(0, 16) ?? "",
+      air: {
+        backing: air.backing === true,
+        relay: cut(air.relay, KARAOKE_NAME_MAX),
+        delayMs: whole(air.delay_ms, 0, 60_000, 0),
+        // A gain that is not one plays nothing rather than too loud.
+        backingGain: within(air.backing_gain, 0, 1) ?? 0,
+        voiceGain: within(air.voice_gain, 0, 4) ?? 0,
+        duckGain: within(air.duck_gain, 0, 1) ?? 0,
+      },
+    },
+  };
+}
+
+function parsePiece(raw: unknown): WorkersKaraokePiece | null {
+  if (!isRecord(raw)) return null;
+  const text = str(raw.text);
+  if (text === null) return null;
+  return {
+    text: text.slice(0, LYRIC_TEXT_MAX),
+    sung: raw.sung === true,
+    start: finite(raw.start),
+    end: finite(raw.end),
+    reading: cut(raw.reading, 64),
+    roman: cut(raw.roman, 64),
+  };
+}
+
+/** One line of version-2 lyrics; one with a piece that is not one shows as its plain text. */
+function parseLyricLine(raw: unknown): WorkersKaraokeLineV2 | null {
+  if (!isRecord(raw)) return null;
+  const start = finite(raw.start);
+  const text = str(raw.text);
+  if (start === null || text === null) return null;
+  let pieces: WorkersKaraokePiece[] | null = null;
+  if (Array.isArray(raw.pieces) && raw.pieces.length <= LYRIC_PIECES_MAX) {
+    const parsed = raw.pieces.map(parsePiece);
+    if (parsed.every((p) => p !== null)) pieces = parsed as WorkersKaraokePiece[];
+  }
+  return {
+    start,
+    end: finite(raw.end),
+    text: text.slice(0, LYRIC_TEXT_MAX),
+    status: LINE_STATUSES.find((s) => s === raw.status) ?? "unchecked",
+    source: raw.source === "heard" ? "heard" : "found",
+    similarity: finite(raw.similarity),
+    heard: null,
+    aligned: raw.aligned === true && pieces !== null,
+    pieces,
+    edited: raw.edited === true,
+  };
+}
+
+/** The lyrics of a reference (version 2's shape), lines in time order; anything else is none. */
+function parseLyricsBody(raw: unknown): WorkersKaraokeLyricsV2 | null {
+  if (!isRecord(raw)) return null;
+  const lines = list(raw.lines, LYRIC_LINES_MAX, parseLyricLine);
+  // The two lines shown are found by start time.
+  lines.sort((a, b) => a.start - b.start);
+  return {
+    provider: cut(raw.provider, 64),
+    source: raw.source === "heard" ? "heard" : "found",
+    language: cut(raw.language, 16),
+    timing: raw.timing === "char" ? "char" : "line",
+    check: null,
+    lines,
+  };
+}
+
+/**
+ * A media URL (the video, the backing) the page may load: relative to the page, or plain http(s);
+ * anything else is none.
+ */
+export function videoUrl(v: unknown): string | null {
+  const s = nonEmpty(v);
+  if (!s || s.length > 2048) return null;
+  try {
+    const u = new URL(s, "http://overlay.invalid/overlay/");
+    return u.protocol === "http:" || u.protocol === "https:" ? s : null;
+  } catch {
+    return null;
+  }
+}
+
+/** `karaoke_lyrics` frame: skipped without its room and round; unusable lyrics are none. */
+function parseKaraokeLyrics(raw: Raw): Parsed["karaoke_lyrics"] | null {
+  const room = nonEmpty(raw.room);
+  const round = whole(raw.round, 1, 10_000, 0);
+  if (!room || room.length > KARAOKE_CODE_MAX || round === 0) return null;
+  return {
+    type: "karaoke_lyrics",
+    lyrics: {
+      room,
+      round,
+      song: str(raw.song)?.slice(0, 200) ?? "",
+      lyrics: parseLyricsBody(raw.lyrics),
+      video: videoUrl(raw.video),
+      backing: parseBacking(raw.backing),
+    },
+  };
+}
+
+/** The `backing` of a `karaoke_lyrics` frame (`path` is the page's URL for it); else none. */
+function parseBacking(raw: unknown): KaraokeBacking | null {
+  if (!isRecord(raw)) return null;
+  const url = videoUrl(raw.path);
+  const format = raw.format === "pcm" || raw.format === "m4a" ? raw.format : null;
+  const rate = whole(raw.rate, 8_000, 192_000, 0);
+  if (url === null || format === null || rate === 0) return null;
+  return { url, format, rate };
+}
+
+/** Most base64 one `karaoke_voice` carries (two seconds of µ-law). */
+const VOICE_MAX_CHARS = 44_000;
+
+/** `karaoke_voice` frame: skipped unless it has its round, a time and base64 audio. */
+function parseKaraokeVoice(raw: Raw): Parsed["karaoke_voice"] | null {
+  const room = nonEmpty(raw.room);
+  const round = whole(raw.round, 1, 10_000, 0);
+  const atMs = within(raw.at_ms, -MAX_DAY_MS, MAX_DAY_MS);
+  const audio = str(raw.audio);
+  if (!room || room.length > KARAOKE_CODE_MAX || round === 0 || atMs === null) return null;
+  if (audio === null || audio.length === 0 || audio.length > VOICE_MAX_CHARS) return null;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(audio)) return null;
+  return { type: "karaoke_voice", voice: { room, round, atMs, audio } };
+}
 
 /**
  * `danmaku` frame. A line without a usable id or text cannot be shown or answered: null. The
@@ -465,6 +818,9 @@ export function reduce(state: OverlayState, action: Action): OverlayState {
     case "touch":
     case "danmaku":
     case "danmaku_clear":
+    case "karaoke":
+    case "karaoke_lyrics":
+    case "karaoke_voice":
       return state;
   }
 }

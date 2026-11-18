@@ -15,7 +15,7 @@
 // 正式分數 (a little higher than the estimate, which stays shown small); the second of 最近唱的 had
 // the backing in its recording (`bleed`).
 //
-// Rooms (step 4) without a Core: `?karaoke-demo=lobby`, `=singer`, `=spectator` or `=results` opens
+// Rooms (step 4) without a Core: `?karaoke-demo=lobby`, `=singer`, `=solo` (alone, on air), `=spectator` or `=results` opens
 // the made-up room KTV888 in that scene (the address becomes `/karaoke/room/KTV888`); plain
 // `?karaoke-demo` starts at the list, where 一起唱 opens a room of your own. The room's event stream
 // is faked (`setRoomEventsFactory`): the singer's scene counts down five seconds and cycles their
@@ -354,7 +354,7 @@ const ROOM = "KTV888";
 const CORE_AHEAD_MS = 37;
 const coreNow = () => Date.now() + CORE_AHEAD_MS;
 const COUNTDOWN_MS = 5_000;
-const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 5, max_singers: 8 };
+const TERMS = { currency: "魚幣", price: 20, prize: 15, finish: 3, rounds: 4, max_singers: 8 };
 const ME = "m-me";
 
 interface DemoRoom {
@@ -369,6 +369,8 @@ interface DemoRoom {
   start_at_ms: number | null;
   result: KaraokeRoomResult | null;
   session: KaraokeSession | null;
+  /** The opener's 「播出第一名的歌聲」. */
+  lead: boolean;
 }
 
 const roomSessions = new Set<string>();
@@ -377,11 +379,26 @@ const listeners = new Set<RoomEventsHandlers>();
 let roomTimers: number[] = [];
 
 const others: KaraokeRoomMember[] = [
-  { id: "m-a", name: "海苔", role: "singer", ready: true, opener: false, color: 1 },
-  { id: "m-b", name: "鯨魚寶寶", role: "singer", ready: false, opener: false, color: 2 },
-  { id: "m-c", name: "Akari", role: "singer", ready: true, opener: false, color: 3 },
-  { id: "m-d", name: "路過的人", role: "spectator", ready: false, opener: false, color: 4 },
+  { id: "m-a", name: "海苔", role: "singer", ready: true, opener: false, color: 1, hear: false, skip: false },
+  { id: "m-b", name: "鯨魚寶寶", role: "singer", ready: false, opener: false, color: 2, hear: false, skip: false },
+  { id: "m-c", name: "Akari", role: "singer", ready: true, opener: false, color: 3, hear: false, skip: false },
+  { id: "m-d", name: "路過的人", role: "spectator", ready: false, opener: false, color: 4, hear: false, skip: false },
 ];
+
+/** The voice on her stream, as Core tells this person: a singer of a round of several never learns it. */
+function roomAir(r: DemoRoom, me: KaraokeRoomMember | null, running: boolean): KaraokeRoomView["air"] {
+  const singers = r.members.filter((m) => m.role === "singer");
+  const solo = singers.length <= 1;
+  const heard = solo ? (singers.find((m) => m.hear) ?? null) : r.lead ? (singers.find((m) => !m.skip) ?? null) : null;
+  const hidden = !solo && running && me?.role === "singer";
+  const member = heard && !hidden ? heard.id : null;
+  return {
+    backing: true,
+    delay_ms: 2_000,
+    lead: r.lead,
+    relay: { allowed: true, reason: null, member, live: member !== null && r.state === "singing" },
+  };
+}
 
 function roomView(r: DemoRoom): KaraokeRoomView {
   const me = r.members.find((m) => m.id === r.me) ?? null;
@@ -409,6 +426,7 @@ function roomView(r: DemoRoom): KaraokeRoomView {
     start_at_ms: running ? r.start_at_ms : null,
     result: r.result,
     terms: TERMS,
+    air: roomAir(r, me, running),
   };
 }
 
@@ -570,7 +588,8 @@ function lobbyRoom(opener: boolean): DemoRoom {
     closed_reason: null,
     song: song({ video: true }),
     shift: 0,
-    members: [{ id: ME, name: "小魚乾", role: "singer", ready: false, opener, color: 0 }, ...others.map((m) => ({ ...m, opener: false }))],
+    members: [{ id: ME, name: "小魚乾", role: "singer", ready: false, opener, color: 0, hear: false, skip: false }, ...others.map((m) => ({ ...m, opener: false }))],
+    lead: true,
     me: ME,
     round: 0,
     start_at_ms: null,
@@ -584,12 +603,18 @@ function roomScene(scene: string): void {
   const r = lobbyRoom(true);
   demoRoom = r;
   if (scene === "singer") startRound(r, { startIn: COUNTDOWN_MS, scene: "singer" });
+  if (scene === "solo") {
+    // Alone, with their voice on the stream.
+    r.members = r.members.filter((m) => m.id === ME || m.role === "spectator");
+    (r.members[0] as KaraokeRoomMember).hear = true;
+    startRound(r, { startIn: COUNTDOWN_MS, scene: "singer" });
+  }
   if (scene === "spectator") {
     const me = r.members[0] as KaraokeRoomMember;
     me.role = "spectator";
     me.opener = false;
     (r.members[1] as KaraokeRoomMember).opener = true;
-    r.members.push({ id: "m-e", name: "很長很長的名字的人", role: "singer", ready: true, opener: false, color: 5 });
+    r.members.push({ id: "m-e", name: "很長很長的名字的人", role: "singer", ready: true, opener: false, color: 5, hear: false, skip: false });
     startRound(r, { startIn: -8_000, scene: "spectator" });
   }
   if (scene === "results") {
@@ -624,13 +649,13 @@ function roomAnswer(method: string, path: string, body: unknown): Response | nul
   const what = m[2];
   if (!what) return json(roomView(r));
   if (what === "clock") return json({ t0: (body as { t0: number }).t0, server_ms: coreNow() });
-  if (what === "audio") return json({ stream: "live" });
+  if (what === "audio") return json({ stream: "live", relay: false });
   if (what === "pitch") return new Response(null, { status: 204 });
   const me = r.members.find((x) => x.id === ME);
   if (what === "join") {
     const as = (body as { as?: "singer" | "spectator" }).as ?? "singer";
     if (me) me.role = as;
-    else r.members.push({ id: ME, name: "小魚乾", role: as, ready: false, opener: false, color: 6 });
+    else r.members.push({ id: ME, name: "小魚乾", role: as, ready: false, opener: false, color: 6, hear: false, skip: false });
     r.me = ME;
     return json(changed());
   }
@@ -638,6 +663,18 @@ function roomAnswer(method: string, path: string, body: unknown): Response | nul
     r.members = r.members.filter((x) => x.id !== ME);
     r.me = null;
     clearRoomTimers();
+    return json(changed());
+  }
+  if (what === "relay" && me) {
+    const b = body as { hear?: boolean; skip?: boolean; lead?: boolean; member?: string };
+    if (b.hear !== undefined) me.hear = b.hear;
+    if (b.skip !== undefined) me.skip = b.skip;
+    if (b.lead !== undefined && me.opener) r.lead = b.lead;
+    const cut = b.member ? r.members.find((x) => x.id === b.member) : undefined;
+    if (cut && me.opener) {
+      cut.hear = false;
+      cut.skip = true;
+    }
     return json(changed());
   }
   if (what === "ready" && me) {
@@ -917,7 +954,7 @@ export function installDemo(): void {
   setEngineFactory(() => new DemoEngine());
   // A room's scene: the room's own address, the scene kept in the query.
   const scene = new URLSearchParams(window.location.search).get("karaoke-demo") ?? "";
-  if (["lobby", "singer", "spectator", "results"].includes(scene)) {
+  if (["lobby", "singer", "solo", "spectator", "results"].includes(scene)) {
     roomScene(scene);
     window.history.replaceState(null, "", `/karaoke/room/${ROOM}?karaoke-demo=${scene}`);
   }

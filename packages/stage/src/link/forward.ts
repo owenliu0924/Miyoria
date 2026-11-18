@@ -87,6 +87,12 @@ interface SongBeat {
   sentAt: number;
 }
 
+/** The karaoke room on the stream: its latest `karaoke` message, and when that was sent. */
+interface KaraokeScene {
+  msg: Extract<CoreMessage, { type: "karaoke" }>;
+  sentAt: number;
+}
+
 const clampIntensity = (i: unknown): number =>
   typeof i === "number" && Number.isFinite(i) ? Math.min(Math.max(i, 0), 1) : 1;
 
@@ -113,6 +119,12 @@ const clampIntensity = (i: unknown): number =>
  * Songs (`Events.SingCue`) with a video also send `song_video` `play` when they start and `stop`
  * when they end; a node that connects mid-song gets the `play` again (`resumeSongVideo`). Songs
  * with a known beat send `beat` the same way (empty `times_ms` at the end; `resumeBeat`).
+ *
+ * The karaoke room on the stream (`Events.KaraokeStage`, `Events.KaraokeStageLyrics`) goes out as
+ * `karaoke` and `karaoke_lyrics`; the latest of each is kept, so a node that connects mid-round
+ * gets both again (`resumeKaraoke`) with the song moved on to that moment. A scene with
+ * `room: null` ends it and forgets both. The relayed singer's voice (`Events.KaraokeStageVoice`)
+ * goes out as `karaoke_voice` as it comes and is never kept.
  */
 export class Forwarder {
   readonly #textTurns: boolean;
@@ -122,6 +134,8 @@ export class Forwarder {
   readonly #now: () => number;
   #video: SongVideo | null = null;
   #beat: SongBeat | null = null;
+  #karaoke: KaraokeScene | null = null;
+  #karaokeLyrics: Extract<CoreMessage, { type: "karaoke_lyrics" }> | null = null;
   #resting: PendingEmotion | null = null;
 
   constructor(textTurns: boolean, options: ForwarderOptions = {}) {
@@ -146,6 +160,46 @@ export class Forwarder {
       ...b.msg,
       offset_ms: Math.round(b.msg.offset_ms + Math.max(this.#now() - b.sentAt, 0)),
     };
+  }
+
+  /**
+   * The karaoke room on the stream, for a node that just connected: the scene with its song moved
+   * on by the time since it was sent, then the words of its round (when they are that room's).
+   * Empty without a room.
+   */
+  resumeKaraoke(): CoreMessage[] {
+    const k = this.#karaoke;
+    if (k === null) return [];
+    const position = k.msg.position_ms;
+    const out: CoreMessage[] = [
+      {
+        ...k.msg,
+        position_ms:
+          position === null ? null : Math.round(position + Math.max(this.#now() - k.sentAt, 0)),
+      },
+    ];
+    const lyrics = this.#karaokeLyrics;
+    if (lyrics !== null && lyrics.room === k.msg.room) out.push(lyrics);
+    return out;
+  }
+
+  #onKaraoke(msg: Extract<CoreMessage, { type: "karaoke" }>): CoreMessage[] {
+    if (msg.room === null) {
+      this.#karaoke = null;
+      this.#karaokeLyrics = null;
+    } else {
+      this.#karaoke = { msg, sentAt: this.#now() };
+      // Another room's words are not this one's.
+      if (this.#karaokeLyrics !== null && this.#karaokeLyrics.room !== msg.room) {
+        this.#karaokeLyrics = null;
+      }
+    }
+    return [msg];
+  }
+
+  #onKaraokeLyrics(msg: Extract<CoreMessage, { type: "karaoke_lyrics" }>): CoreMessage[] {
+    this.#karaokeLyrics = msg;
+    return [msg];
   }
 
   /** Her resting face, for a node that just connected. */
@@ -234,6 +288,13 @@ export class Forwarder {
       const out = this.#onPlayback(turn, state, text);
       if (state === "started") out.push(...this.#playbackEmotion(turn, emotion));
       return out;
+    } else if (is(Events.KaraokeStage, event)) {
+      return this.#onKaraoke({ type: "karaoke", ...event.data });
+    } else if (is(Events.KaraokeStageLyrics, event)) {
+      return this.#onKaraokeLyrics({ type: "karaoke_lyrics", ...event.data });
+    } else if (is(Events.KaraokeStageVoice, event)) {
+      // Passed straight on: a voice is never kept, so a node that connects later gets none of it.
+      return [{ type: "karaoke_voice", ...event.data }];
     } else if (is(Events.AgentTurnCompleted, event)) {
       const { turn, context, text } = event.data;
       const voice = context.kind === "voice";
