@@ -295,7 +295,7 @@ describe("karaoke rooms through the routes", () => {
           },
         );
         expect(audio.status).toBe(200);
-        expect(await audio.json()).toEqual({ stream: "live" });
+        expect(await audio.json()).toEqual({ stream: "live", relay: false });
         const pitch = await call(
           r,
           a,

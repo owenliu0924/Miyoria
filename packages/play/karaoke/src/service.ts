@@ -25,9 +25,11 @@ import type {
 import {
   KARAOKE_FRAME_HZ,
   KARAOKE_MAX_SHIFT,
+  KARAOKE_PLAY_RATE,
   KARAOKE_VIDEO_FILE,
   KARAOKE_VOICE_MAX_BYTES,
   karaokeBackingName,
+  karaokePlayName,
   karaokeReferenceV2,
   shiftKaraokeReference,
   WorkersKaraokeReferenceSchema,
@@ -609,6 +611,55 @@ export class KaraokeService {
       }
     }
     return song;
+  }
+
+  /**
+   * The files the stream's karaoke scene plays a round with (step 5), as paths on this machine
+   * (the stage node runs on the streaming PC with Core and serves them to its overlay page): the
+   * backing in the round's key as raw PCM when the worker can decode it (`karaokePlayName`, fetched
+   * once and kept with the song), else the AAC file the members get; the background video when it
+   * is on Core. Never throws: what is missing is `null`.
+   */
+  async streamFiles(
+    song: SongRow,
+    shift: number,
+    signal?: AbortSignal,
+  ): Promise<{
+    backing: { path: string; format: "pcm" | "m4a"; rate: number } | null;
+    video: string | null;
+  }> {
+    const dir = this.#dir(song.id);
+    const video =
+      song.video && this.#d.config.video && (await exists(join(dir, KARAOKE_VIDEO_FILE)))
+        ? join(dir, KARAOKE_VIDEO_FILE)
+        : null;
+    const pcm = join(dir, karaokePlayName(shift));
+    if (!(await exists(pcm))) {
+      const worker = this.#d.worker();
+      if (worker !== null && song.worker_song !== null) {
+        try {
+          await worker.file(
+            song.worker_song,
+            karaokePlayName(shift) as KaraokeFileName,
+            pcm,
+            signal,
+          );
+        } catch (error) {
+          this.#d.log.info(
+            { song: song.id, shift, err: errorText(error) },
+            "karaoke: no PCM backing for the stream, the scene decodes the AAC one",
+          );
+        }
+      }
+    }
+    if (await exists(pcm)) {
+      return { backing: { path: pcm, format: "pcm", rate: KARAOKE_PLAY_RATE }, video };
+    }
+    const m4a = join(dir, karaokeBackingName(shift));
+    return {
+      backing: (await exists(m4a)) ? { path: m4a, format: "m4a", rate: KARAOKE_PLAY_RATE } : null,
+      video,
+    };
   }
 
   /**

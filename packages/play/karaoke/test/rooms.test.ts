@@ -7,6 +7,11 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { KaraokeRoomEvent, KaraokeRoomView } from "@miyoria/contracts/api";
+import type {
+  KaraokeStageLyrics,
+  KaraokeStageScene,
+  KaraokeStageVoice,
+} from "@miyoria/contracts/stage-link";
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import type { AccountRef, PersonId } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -58,6 +63,12 @@ interface Rig {
   dir: string;
   config: KaraokeConfig;
   songId: string;
+  /** What went to her stream's scene. */
+  staged: {
+    scenes: KaraokeStageScene[];
+    lyrics: KaraokeStageLyrics[];
+    voices: KaraokeStageVoice[];
+  };
   /** Another desk on the same store and wallet: Core after a restart. */
   restart(): RoomDesk;
 }
@@ -81,6 +92,7 @@ async function makeRig(overrides: Partial<KaraokeConfig> = {}): Promise<Rig> {
     blocked: false,
   });
   const log = { info: () => {}, warn: () => {} };
+  const staged: Rig["staged"] = { scenes: [], lyrics: [], voices: [] };
   const service = new KaraokeService({
     config,
     store,
@@ -105,6 +117,11 @@ async function makeRig(overrides: Partial<KaraokeConfig> = {}): Promise<Rig> {
       together: () => {},
       now: () => clock.t,
       log,
+      stage: {
+        scene: (x) => staged.scenes.push(structuredClone(x)),
+        lyrics: (x) => staged.lyrics.push(structuredClone(x)),
+        voice: (x) => staged.voices.push(structuredClone(x)),
+      },
       random: (() => {
         let x = 0.1;
         return () => {
@@ -134,6 +151,7 @@ async function makeRig(overrides: Partial<KaraokeConfig> = {}): Promise<Rig> {
     dir,
     config,
     songId: asked.song.id,
+    staged,
     restart: desk,
   };
 }
@@ -673,6 +691,155 @@ describe("a round", () => {
     expect(rig.wallet.of("p-alice", "karaoke_finish")).toEqual([3]);
     // A round was sung through: the opening is kept, even though the room closed on the restart.
     expect(rig.wallet.of("p-alice", "karaoke_room_refund")).toEqual([]);
+  });
+});
+
+describe("her stream (step 5)", () => {
+  /** µ-law of a steady, audible level. */
+  const voiced = (n: number) => new Uint8Array(n).fill(0x9f);
+
+  it("plays a lone singer's voice only when they ask for it, and stops when they turn it off", async () => {
+    const room = await lobby(rig, []);
+    const asked = rig.desk.relay(room.code, ALICE, { hear: true });
+    expect(asked.members[0]).toMatchObject({ hear: true, skip: false });
+    expect(asked.air.relay).toMatchObject({ allowed: true, member: asked.me?.id, live: false });
+    const started = await rig.desk.start(room.code, ALICE);
+    const startAt = started.start_at_ms as number;
+    rig.clock.t = startAt;
+    await rig.desk.tick();
+    await rig.desk.idle();
+    // The round's words and backing went to the stream once, the backing as PCM.
+    expect(rig.staged.lyrics).toHaveLength(1);
+    expect(rig.staged.lyrics[0]?.backing).toMatchObject({ format: "pcm", rate: 48_000 });
+    const post = async (fromMs: number, toMs: number) => {
+      const replies: boolean[] = [];
+      for (let ms = fromMs; ms < toMs; ms += 500) {
+        rig.clock.t = startAt + ms + 500;
+        replies.push(rig.desk.audio(room.code, ALICE, ms * 16, ms, false, voiced(8_000)).relay);
+        await rig.desk.tick();
+        await rig.desk.idle();
+      }
+      return replies;
+    };
+    expect(await post(0, 6_000)).not.toContain(false);
+    expect(rig.staged.voices.length).toBeGreaterThan(5);
+    const scene = rig.staged.scenes.at(-1);
+    expect(scene?.air).toMatchObject({ relay: "Alice", backing: true, delay_ms: 2_000 });
+    expect(scene?.board[0]?.on_air).toBe(true);
+    expect(scene?.position_ms).toBe(rig.clock.t - startAt - 2_000);
+    // The stream's pieces follow each other on the song's time, ahead of the stream by the lead.
+    const v = rig.staged.voices;
+    for (let i = 1; i < v.length; i++) {
+      const prev = v[i - 1] as KaraokeStageVoice;
+      const bytes = Buffer.from(prev.audio, "base64").length;
+      expect((v[i] as KaraokeStageVoice).at_ms).toBeCloseTo(prev.at_ms + bytes / 16, 0);
+    }
+    const mine = rig.desk.view(room.code, ALICE);
+    expect(mine.air.relay).toMatchObject({ live: true, member: mine.me?.id });
+    // Off mid-song: it fades out, and nothing more goes out.
+    rig.desk.relay(room.code, ALICE, { hear: false });
+    expect(await post(6_000, 7_000)).toEqual([false, false]);
+    const sent = rig.staged.voices.length;
+    await post(7_000, 9_000);
+    expect(rig.staged.voices.length).toBe(sent);
+    expect(rig.desk.view(room.code, ALICE).air.relay.live).toBe(false);
+  });
+
+  it("sends nothing of a singer who did not ask, and refuses a stranger's voice", async () => {
+    const room = await rig.desk.open(ALICE, "Alice", rig.songId, 0);
+    await rig.desk.join(room.code, STRANGER, "Someone", "singer");
+    await refused(() => rig.desk.relay(room.code, STRANGER, { hear: true }), 403);
+    await refused(() => rig.desk.relay(room.code, BOB, { hear: true }), 409);
+    rig.desk.ready(room.code, ALICE, { ready: true, latency_ms: 0, calibrated: true });
+    const started = await rig.desk.start(room.code, ALICE);
+    rig.clock.t = (started.start_at_ms as number) + 500;
+    await rig.desk.tick();
+    expect(rig.desk.audio(room.code, ALICE, 0, 0, false, voiced(8_000)).relay).toBe(false);
+    for (let i = 0; i < 12; i++) {
+      rig.clock.t += 500;
+      await rig.desk.tick();
+    }
+    expect(rig.staged.voices).toEqual([]);
+    expect(rig.staged.scenes.at(-1)?.air.relay).toBeNull();
+  });
+
+  it("lets only the opener switch the leader's voice on, and the opener or an admin cut someone", async () => {
+    const room = await lobby();
+    const bob = rig.desk.view(room.code, BOB).me?.id as string;
+    const alice = rig.desk.view(room.code, ALICE).me?.id as string;
+    await refused(() => rig.desk.relay(room.code, BOB, { lead: true }), 403);
+    await refused(() => rig.desk.relay(room.code, BOB, { member: alice }), 403);
+    const on = rig.desk.relay(room.code, ALICE, { lead: true });
+    expect(on.air).toMatchObject({ lead: true, relay: { allowed: true } });
+    const cut = rig.desk.relay(room.code, ALICE, { member: bob });
+    expect(cut.members.find((m) => m.id === bob)).toMatchObject({ hear: false, skip: true });
+    rig.desk.relay(room.code, BOB, { skip: false });
+    const admin = rig.desk.relay(room.code, BOB, { member: alice }, true);
+    expect(admin.members.find((m) => m.id === alice)).toMatchObject({ skip: true });
+    rig.desk.relay(room.code, ALICE, { lead: false });
+    expect(rig.desk.view(room.code, ALICE).air.relay).toMatchObject({
+      allowed: false,
+      reason: "開房的人沒有開「播出第一名的歌聲」",
+    });
+  });
+
+  it("with two or more singers plays the leader who allows it, and never tells a singer", async () => {
+    const room = await lobby(rig, [BOB, CAROL]);
+    rig.desk.relay(room.code, ALICE, { lead: true });
+    rig.desk.relay(room.code, BOB, { skip: true });
+    await rig.desk.start(room.code, ALICE);
+    const alice = follow(rig, room.code, ALICE);
+    const carol = follow(rig, room.code, CAROL);
+    await rig.desk.join(room.code, DAVE, "Dave", "spectator");
+    const dave = follow(rig, room.code, DAVE);
+    // Bob sings best but opted out; Carol is next; Alice (first to join) is on before any score.
+    const tracks = new Map([
+      [ALICE, noise(1)],
+      [BOB, great(2)],
+      [CAROL, great(3)],
+    ]);
+    await singRound(rig, room.code, tracks);
+    const sung = rig.staged.scenes.filter((x) => x.state === "singing");
+    const onAir = sung.flatMap((x) => x.board.filter((l) => l.on_air).map((l) => l.name));
+    expect(onAir).not.toContain("P2");
+    expect(onAir[0]).toBe("Alice");
+    expect(onAir.at(-1)).toBe("P3");
+    // One voice at a time, and the change came only after a hold, not at the first lead.
+    expect(sung.every((x) => x.board.filter((l) => l.on_air).length <= 1)).toBe(true);
+    expect(onAir.filter((n) => n === "Alice").length).toBeGreaterThanOrEqual(4);
+    expect(rig.staged.voices.length).toBeGreaterThan(10);
+    // The singers' streams carry nothing of whose voice is on, nor of their rank.
+    for (const events of [alice, carol]) {
+      for (const e of events) {
+        if (e.type === "room") {
+          expect(e.room.air.relay.member).toBeNull();
+          expect(e.room.air.relay.live).toBe(false);
+        } else {
+          expect(e.type).toBe("trend");
+          expect(JSON.stringify(e)).not.toMatch(/on_air|"rank"|"total"|relay/);
+        }
+      }
+    }
+    // The spectator sees it.
+    expect(dave.some((e) => e.type === "room" && e.room.air.relay.live)).toBe(true);
+  });
+
+  it("sends nothing when every singer opted out, and ends the scene with the room", async () => {
+    const room = await lobby();
+    rig.desk.relay(room.code, ALICE, { lead: true, skip: true });
+    rig.desk.relay(room.code, BOB, { skip: true });
+    await rig.desk.start(room.code, ALICE);
+    await singRound(
+      rig,
+      room.code,
+      new Map([
+        [ALICE, great(1)],
+        [BOB, good(2)],
+      ]),
+    );
+    expect(rig.staged.voices).toEqual([]);
+    rig.desk.close(room.code, ALICE);
+    expect(rig.staged.scenes.at(-1)).toMatchObject({ room: null, state: null, board: [] });
   });
 });
 
