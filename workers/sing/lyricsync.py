@@ -212,6 +212,28 @@ def unit_spans(token_spans: Sequence[tuple[int, int]], tokens_per_unit: Sequence
     return out
 
 
+def fill_untimed(spans: Sequence[tuple[float, float] | None]) -> list[tuple[float, float] | None]:
+    """A unit the model could not say (no letter in its vocabulary) shares the time of the unit
+    before it (or, first in the line, after it): the two split that span in half. All ``None``
+    stays so."""
+    out = list(spans)
+    for i, sp in enumerate(out):
+        if sp is not None:
+            continue
+        j = next((k for k in range(i - 1, -1, -1) if out[k] is not None), None)
+        if j is None:
+            j = next((k for k in range(i + 1, len(out)) if out[k] is not None), None)
+        if j is None:
+            return out
+        a, b = out[j]  # type: ignore[misc]
+        mid = round((a + b) / 2, 3)
+        if j < i:
+            out[j], out[i] = (a, mid), (mid, b)
+        else:
+            out[i], out[j] = (a, mid), (mid, b)
+    return out
+
+
 # ── bars and the whole-line checks ───────────────────────────────────────────
 
 

@@ -99,6 +99,23 @@ def test_units_get_seconds_from_their_tokens_frames():
     assert got == [(10.0, 10.06), None, (10.1, 10.2)]
 
 
+def test_a_unit_the_model_cannot_say_shares_its_neighbours_time():
+    assert L.fill_untimed([(1.0, 2.0), None, (2.0, 2.5)]) == [(1.0, 1.5), (1.5, 2.0), (2.0, 2.5)]
+    assert L.fill_untimed([None, (1.0, 2.0)]) == [(1.0, 1.5), (1.5, 2.0)]
+    assert L.fill_untimed([None, None]) == [None, None]
+
+
+def test_the_japanese_model_gets_the_nearest_kana_it_has():
+    import run
+
+    aligner = object.__new__(run.CtcAligner)
+    aligner.mms, aligner.upper = False, False
+    aligner.vocab = {"<pad>": 0, "ぶ": 1, "い": 2, "ら": 3}
+    lang = Lang("ja", words=lambda t: [], romaji=romaji)
+    assert aligner.tokens("ぷ", lang) == [1] and aligner.tokens("ぃ", lang) == [2] and aligner.tokens("ら", lang) == [3]
+    assert aligner.tokens("ん", lang) == []
+
+
 # ── bars and the whole-line checks ───────────────────────────────────────────
 
 

@@ -40,6 +40,10 @@ import lyricsync as L  # noqa: E402
 from readings import LANGUAGE_NAMES, Lang, detect  # noqa: E402
 
 SR = 16_000
+# Kana the Japanese wav2vec2 model has no letter for (its vocabulary lacks small vowels, ぢ, ぷ and
+# a few old ones): the nearest it has.
+KANA_STANDINS = {"ぃ": "い", "ぅ": "う", "ぇ": "え", "ぉ": "お", "ぢ": "じ", "ぷ": "ぶ", "ゎ": "わ", "ゐ": "い",
+                 "ゑ": "え", "ゔ": "ぶ", "ゕ": "か", "ゖ": "け"}
 NAME_TO_CODE = {v: k for k, v in LANGUAGE_NAMES.items()}
 
 
@@ -138,7 +142,8 @@ class CtcAligner:
         text = lang.roman(unit) if self.mms else unit
         if self.upper:
             text = text.upper()
-        out = [self.vocab[c] for c in text if c in self.vocab]
+        out = [self.vocab[c] for c in (c if c in self.vocab else KANA_STANDINS.get(c, c) for c in text)
+               if c in self.vocab]
         if out and not self.mms and lang.language == "en" and "|" in self.vocab:
             out.append(self.vocab["|"])  # the English model's word boundary
         return out
@@ -154,7 +159,7 @@ class CtcAligner:
         spans = L.ctc_align(lp, seq, blank=self.blank)
         if self.mms:
             spans = spans[1:-1]
-        return L.unit_spans(spans, [len(ts) for ts in per_unit], len(clip) / SR / lp.shape[0], offset)
+        return L.fill_untimed(L.unit_spans(spans, [len(ts) for ts in per_unit], len(clip) / SR / lp.shape[0], offset))
 
 
 def align_step(job: dict[str, Any], y: np.ndarray) -> dict[str, Any]:
