@@ -16,7 +16,7 @@ import {
   tablePart,
 } from "@miyoria/store";
 import { newId, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
-import { and, count, desc, eq, gte, inArray, lte, max } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lte, max } from "drizzle-orm";
 import { type KaraokeScoredData, karaokeScoredWrite } from "./events.js";
 import { karaokeSchema } from "./migrations.js";
 import {
@@ -29,6 +29,21 @@ import {
 
 export type SongStatus = "preparing" | "ready" | "failed";
 export type CommentState = "waiting" | "said" | "none";
+export type VoiceState = "none" | "waiting" | "scoring" | "scored" | "failed";
+
+/** What the recording's score changes of a result row. */
+export type VoicePatch = Pick<
+  ResultRow,
+  | "total"
+  | "pitch"
+  | "stability"
+  | "rhythm"
+  | "expression"
+  | "unranked"
+  | "reasons"
+  | "detail"
+  | "checks"
+>;
 
 export type SongRow = typeof karaokeSongs.$inferSelect;
 export type SessionRow = typeof karaokeSessions.$inferSelect;
@@ -203,6 +218,124 @@ export class KaraokeStore {
       this.#events.appendNow(karaokeScoredWrite(event, result.person_id, result.created_at));
       return true;
     });
+  }
+
+  /** A session's track (the browser's), while it is kept. */
+  track(session: string): TrackRow | null {
+    return (
+      this.#read()
+        .select()
+        .from(karaokeTracks)
+        .where(eq(karaokeTracks.session_id, session))
+        .get() ?? null
+    );
+  }
+
+  /**
+   * The recording of a session arrived: `waiting` → `scoring`, once. `false` when it was not
+   * waiting for one (none expected, sent already, or given up on).
+   */
+  claimVoice(session: string): boolean {
+    return this.#write(
+      () =>
+        Number(
+          this.#db.orm
+            .update(karaokeResults)
+            .set({ voice_state: "scoring" })
+            .where(
+              and(
+                eq(karaokeResults.session_id, session),
+                eq(karaokeResults.voice_state, "waiting"),
+              ),
+            )
+            .run().changes,
+        ) > 0,
+    );
+  }
+
+  /**
+   * The recording scored: the result becomes the official one (`source: voice`), its pitch is kept
+   * beside the browser's track, and one more `karaoke.scored`, in one transaction. `false` when the
+   * session was not being scored (given up on meanwhile).
+   */
+  voiceScored(
+    session: string,
+    patch: VoicePatch,
+    frames: string | null,
+    event: KaraokeScoredData,
+    now: number,
+  ): boolean {
+    return this.#write(() => {
+      const moved = this.#db.orm
+        .update(karaokeResults)
+        .set({ ...patch, source: "voice", voice_state: "scored" })
+        .where(
+          and(eq(karaokeResults.session_id, session), eq(karaokeResults.voice_state, "scoring")),
+        )
+        .run().changes;
+      if (Number(moved) === 0) return false;
+      if (frames !== null) {
+        this.#db.orm
+          .update(karaokeTracks)
+          .set({ voice_frames: frames })
+          .where(eq(karaokeTracks.session_id, session))
+          .run();
+      }
+      const row = this.result(session) as ResultRow;
+      this.#events.appendNow(karaokeScoredWrite(event, row.person_id, at(now)));
+      return true;
+    });
+  }
+
+  /** The recording of a session did not get scored: the result stays the estimate. */
+  voiceFailed(session: string): void {
+    this.#write(() => {
+      this.#db.orm
+        .update(karaokeResults)
+        .set({ voice_state: "failed" })
+        .where(
+          and(
+            eq(karaokeResults.session_id, session),
+            inArray(karaokeResults.voice_state, ["waiting", "scoring"]),
+          ),
+        )
+        .run();
+    });
+  }
+
+  /** Results still waiting for their recording that were made before `before`. */
+  voiceOverdue(before: number): ResultRow[] {
+    return this.#read()
+      .select()
+      .from(karaokeResults)
+      .where(
+        and(eq(karaokeResults.voice_state, "waiting"), lte(karaokeResults.created_at, at(before))),
+      )
+      .all();
+  }
+
+  /** Results she has not been told of yet (waiting for the official score), oldest first. */
+  untold(): ResultRow[] {
+    return this.#read()
+      .select()
+      .from(karaokeResults)
+      .where(isNull(karaokeResults.noted_at))
+      .orderBy(karaokeResults.created_at)
+      .all();
+  }
+
+  /** She is told of a result now: `false` when she was told already. */
+  markNoted(session: string, now: number): boolean {
+    return this.#write(
+      () =>
+        Number(
+          this.#db.orm
+            .update(karaokeResults)
+            .set({ noted_at: at(now) })
+            .where(and(eq(karaokeResults.session_id, session), isNull(karaokeResults.noted_at)))
+            .run().changes,
+        ) > 0,
+    );
   }
 
   result(session: string): ResultRow | null {
@@ -432,6 +565,7 @@ const karaokeData: readonly CategoryData[] = [
         lyrics: "bool",
         lyrics_source: "text",
         notes: "num",
+        video: "bool",
         requested_by: "text",
         created_at: "ts",
         ready_at: "ts",
@@ -471,6 +605,7 @@ const karaokeData: readonly CategoryData[] = [
           browser: "text",
           submitted_at: "ts",
           purge_at: "ts",
+          voice_frames: "text",
         },
       ),
       tablePart(
@@ -499,6 +634,10 @@ const karaokeData: readonly CategoryData[] = [
           noted_at: "ts",
           comment_at: "ts",
           created_at: "ts",
+          source: "text",
+          voice_state: "text",
+          estimate_total: "num",
+          checks: "text",
         },
       ),
     ],

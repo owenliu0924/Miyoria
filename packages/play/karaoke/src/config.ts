@@ -88,6 +88,23 @@ export const KaraokeConfigSchema = z
           group: "score",
         }),
       ),
+    /**
+     * The official score from a recording of the singer (docs/design/karaoke.md 「做了什麼第三步」):
+     * the browser records the microphone during the song and sends it once at the end; the song
+     * worker reads its pitch (RMVPE) and Core scores that. The recording is deleted on both as soon
+     * as it is scored. Off: only the browser's estimate (預估).
+     */
+    voice_score: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "用錄音算正式分數",
+          help: "唱的時候錄下麥克風,唱完送到唱歌的機器讀音高、算正式分數,算完兩邊都刪掉;關掉時只有瀏覽器的預估分數",
+          group: "score",
+        }),
+      ),
     /** She comments on a finished song (one model call, through her usual turn). */
     comment: z
       .boolean()
@@ -112,6 +129,53 @@ export const KaraokeConfigSchema = z
         group: "comment",
       }),
     ),
+    /** Her comment waits this long for the official score; then she hears of the estimate. */
+    voice_wait_secs: z
+      .number()
+      .int()
+      .min(0)
+      .max(600)
+      .default(90)
+      .meta(
+        setting({
+          kind: "duration",
+          unit: "s",
+          label: "講評等正式分數",
+          help: "唱完後最多等正式分數這麼久再告訴她;等不到就用預估分數",
+          group: "comment",
+        }),
+      ),
+    /**
+     * A background video for the songs prepared from now on: the source's picture, no sound, at
+     * most 720p, played muted behind the lyrics on the backing's clock. Off: none is made, and
+     * none already made is shown.
+     */
+    video: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "背景影片",
+          help: "準備歌時留一份來源的畫面(最高 720p、沒有聲音),唱的時候放在歌詞後面;關掉時不做也不放",
+          group: "video",
+        }),
+      ),
+    /** Hours a song's video stays on Core after it was last sung (the worker keeps its own). */
+    video_keep_hours: z
+      .number()
+      .int()
+      .min(1)
+      .max(720)
+      .default(24)
+      .meta(
+        setting({
+          kind: "number",
+          label: "影片在 Core 留幾小時",
+          help: "最後一次唱過後這麼久就刪掉 Core 上的那一份,再唱時從唱歌的機器再拿",
+          group: "video",
+        }),
+      ),
     /**
      * How a song's lyrics are aligned to the singing (docs/design/karaoke.md 「做了什麼第二步」):
      * `w2v`, a wav2vec2 CTC model per language (Apache-2.0); `mms`, torchaudio's MMS_FA weights,
@@ -194,6 +258,7 @@ export const KaraokeConfigSchema = z
       { id: "songs", label: "點歌" },
       { id: "score", label: "評分" },
       { id: "lyrics", label: "歌詞" },
+      { id: "video", label: "背景影片" },
       { id: "comment", label: "講評" },
     ]),
   );

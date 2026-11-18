@@ -7,6 +7,7 @@
 // - `score.ts`: `scoreSinging`, the four parts, phrases and the facts her comment uses.
 // - `expression.ts`: vibrato, long tones, scoops and falls.
 // - `live.ts`: `LiveScore`, the running number while singing.
+// - `voice.ts`: placing a recording of the singer in song time, and the checks of its voice.
 
 export type { Span } from "./curve.js";
 export type { Expression } from "./expression.js";
@@ -42,3 +43,15 @@ export {
   TrackRecorder,
   toBase64,
 } from "./track.js";
+export {
+  BLEED_SHARE,
+  type Placement,
+  placeRecording,
+  QUIET_ABOVE_FLOOR_DB,
+  QUIET_DB,
+  recordingInSong,
+  type VoiceCheck,
+  type VoiceCheckResult,
+  type VoiceLevels,
+  voiceChecks,
+} from "./voice.js";

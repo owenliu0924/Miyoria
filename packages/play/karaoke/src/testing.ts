@@ -9,9 +9,10 @@ import {
   type WorkersKaraokeReference,
   type WorkersKaraokeReferenceV1,
   type WorkersKaraokeReferenceV2,
+  type WorkersKaraokeVoicePitch,
   type WorkersSingJob,
 } from "@miyoria/contracts/workers";
-import type { KaraokeFileName, KaraokeQuery, KaraokeWorker } from "@miyoria/types";
+import type { KaraokeFileName, KaraokeQuery, KaraokeVoice, KaraokeWorker } from "@miyoria/types";
 import type { SynthSong } from "./synth.js";
 
 export {
@@ -125,7 +126,13 @@ export function referenceV1Of(
 /** A few bytes standing in for the backing track. */
 export const FAKE_BACKING = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112]);
 
-/** A song worker in memory: jobs wait until `finish` or `fail`; files are written from memory. */
+/** A few bytes standing in for a background video. */
+export const FAKE_VIDEO = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 109, 112, 52, 50]);
+
+/**
+ * A song worker in memory: jobs wait until `finish` or `fail`; files are written from memory; a
+ * recording is "read" by `readVoice` (the test's), else it fails as a worker that is down would.
+ */
 export class FakeKaraokeWorker implements KaraokeWorker {
   readonly jobs = new Map<string, WorkersSingJob>();
   readonly references = new Map<string, WorkersKaraokeReference>();
@@ -137,6 +144,14 @@ export class FakeKaraokeWorker implements KaraokeWorker {
   keyFails = false;
   /** The next `prepare` answers this error. */
   refuse: { message: string; status?: number } | null = null;
+  /** Songs that have a background video. */
+  readonly videos = new Set<string>();
+  /** The recordings it was sent (their sizes and types; the bytes as they were when sent). */
+  readonly voices: { size: number; type: string; bytes: Uint8Array }[] = [];
+  /** How a recording is read; `null`: the worker cannot be reached. */
+  readVoice:
+    | ((voice: KaraokeVoice) => WorkersKaraokeVoicePitch | Promise<WorkersKaraokeVoicePitch>)
+    | null = null;
   #next = 1;
 
   async prepare(query: KaraokeQuery): Promise<WorkersSingJob> {
@@ -182,9 +197,10 @@ export class FakeKaraokeWorker implements KaraokeWorker {
     Object.assign(this.jobs.get(id) ?? {}, { state: "running", stage, progress, position: null });
   }
 
-  /** The job is done with `reference` (its id is the karaoke song's). */
-  finish(id: string, reference: WorkersKaraokeReference): void {
+  /** The job is done with `reference` (its id is the karaoke song's), with a video when `video`. */
+  finish(id: string, reference: WorkersKaraokeReference, video = false): void {
     this.references.set(reference.id, reference);
+    if (video) this.videos.add(reference.id);
     Object.assign(this.jobs.get(id) ?? {}, {
       state: "done",
       stage: "done",
@@ -196,6 +212,7 @@ export class FakeKaraokeWorker implements KaraokeWorker {
         artist: reference.artist,
         duration_s: reference.duration_s,
         quality: reference.quality,
+        video,
       },
     });
   }
@@ -209,8 +226,26 @@ export class FakeKaraokeWorker implements KaraokeWorker {
     if (reference === undefined) {
       throw Object.assign(new Error(`no karaoke ${song}`), { status: 404 });
     }
+    if (name === "video.mp4" && !this.videos.has(song)) {
+      throw Object.assign(new Error(`karaoke ${song} has no video`), { status: 404 });
+    }
     this.fetched.push(`${song}/${name}`);
-    await writeFile(dest, name === "reference.json" ? JSON.stringify(reference) : FAKE_BACKING);
+    await writeFile(
+      dest,
+      name === "reference.json"
+        ? JSON.stringify(reference)
+        : name === "video.mp4"
+          ? FAKE_VIDEO
+          : FAKE_BACKING,
+    );
+  }
+
+  async voice(voice: KaraokeVoice): Promise<WorkersKaraokeVoicePitch> {
+    this.voices.push({ size: voice.bytes.length, type: voice.type, bytes: voice.bytes.slice() });
+    if (this.readVoice === null) {
+      throw Object.assign(new Error("song worker unreachable"), { unreachable: true });
+    }
+    return this.readVoice(voice);
   }
 
   async key(song: string, semitones: number): Promise<{ file: string }> {

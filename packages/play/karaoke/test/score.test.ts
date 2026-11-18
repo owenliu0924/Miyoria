@@ -6,12 +6,15 @@ import {
   fromBase64,
   LiveScore,
   type PitchTrack,
+  placeRecording,
+  recordingInSong,
   resampleTrack,
   type ScoreInput,
   scoreSinging,
   TRACK_HZ,
   TrackRecorder,
   toBase64,
+  voiceChecks,
 } from "../src/score/index.js";
 import {
   copySinger,
@@ -298,5 +301,76 @@ describe("the running number", () => {
     });
     expect(live.octave).toBe(-12);
     expect(live.score).toBeGreaterThan(80);
+  });
+});
+
+describe("a recording of the singer (the official score)", () => {
+  const live = humanSinger(song, { wanderCents: 60 });
+  /** The same singing as RMVPE would read it off a recording that started `startS` in. */
+  const recorded = (startS: number, transpose = 0) => ({
+    hz: 50,
+    midi: resampleTrack(humanSinger(song, { transpose }), 50)
+      .slice(Math.round(startS * 50))
+      .map((m) => m),
+  });
+
+  it("is placed where its pitch meets the browser's track, near the browser's start", () => {
+    const placed = placeRecording(live, recorded(0.4), 300);
+    expect(placed.found).toBe(true);
+    expect(Math.abs(placed.offset_ms - 400)).toBeLessThanOrEqual(20);
+    // An octave apart (one of them heard an octave off) still meets.
+    expect(
+      Math.abs(placeRecording(live, recorded(0.4, -12), 500).offset_ms - 400),
+    ).toBeLessThanOrEqual(20);
+    // Nothing to meet: the browser's start as given.
+    expect(placeRecording(silentSinger(song), recorded(0.4), 300)).toEqual({
+      offset_ms: 300,
+      agreed: 0,
+      found: false,
+    });
+  });
+
+  it("scores the same as the browser's track once placed", () => {
+    const placed = placeRecording(live, recorded(0.4), 350);
+    const inSong = recordingInSong(recorded(0.4), placed.offset_ms);
+    const official = scoreSinging({
+      reference: song.reference,
+      sung: { hz: 50, midi: inSong },
+      latency_ms: 0,
+      calibrated: true,
+      phrases: song.lines,
+    });
+    const direct = score(humanSinger(song));
+    expect(Math.abs(official.total - direct.total)).toBeLessThanOrEqual(1);
+  });
+
+  it("finds a quiet voice and pitch in the song's long rests", () => {
+    // A reference with a six-second interlude in the middle.
+    const hz = 50;
+    const midi: (number | null)[] = [];
+    for (let i = 0; i < 20 * hz; i++)
+      midi.push(i >= 7 * hz && i < 13 * hz ? null : 60 + (i % 50) / 50);
+    const reference = { hz, start: 0, midi };
+    const singer = midi.map((m) => (m === null ? null : m + 0.05));
+    const loud = { level_db: -22, floor_db: -60 };
+    expect(voiceChecks(reference, singer, loud).checks).toEqual([]);
+    const bleed = midi.map((m, i) => m ?? 55 + (i % 7) / 10);
+    const found = voiceChecks(reference, bleed, loud);
+    expect(found.checks).toEqual(["bleed"]);
+    expect(found.rest_voiced).toBe(1);
+    expect(voiceChecks(reference, singer, { level_db: -55, floor_db: -70 }).checks).toEqual([
+      "quiet",
+    ]);
+    expect(voiceChecks(reference, singer, { level_db: -30, floor_db: -34 }).checks).toEqual([
+      "quiet",
+    ]);
+    // Nothing sung: nothing to say about it.
+    expect(
+      voiceChecks(
+        reference,
+        midi.map(() => null),
+        { level_db: null, floor_db: -60 },
+      ).checks,
+    ).toEqual([]);
   });
 });

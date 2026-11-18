@@ -7,10 +7,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import type { AccountRef, PersonId } from "@miyoria/types";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type KaraokeConfig, KaraokeConfigSchema } from "../src/config.js";
 import { karaokeSchema } from "../src/migrations.js";
-import { TrackRecorder } from "../src/score/index.js";
+import { type PitchTrack, resampleTrack, TrackRecorder } from "../src/score/index.js";
 import {
   COMMENT_WAIT_MS,
   FILES_KEEP_MS,
@@ -20,6 +20,7 @@ import {
   KaraokeService,
   sourceOf,
   TRACK_KEEP_MS,
+  VOICE_UPLOAD_MS,
 } from "../src/service.js";
 import { KaraokeStore } from "../src/store.js";
 import {
@@ -114,7 +115,12 @@ async function sing(
   r: Rig,
   songId: string,
   track = humanSinger(song),
-  options: { latency_ms?: number; calibrated?: boolean; who?: AccountRef } = {},
+  options: {
+    latency_ms?: number;
+    calibrated?: boolean;
+    who?: AccountRef;
+    recording?: boolean;
+  } = {},
 ) {
   const who = options.who ?? ALICE;
   const session = await r.service.start(who, "Alice", songId);
@@ -131,16 +137,38 @@ async function sing(
       calibrated: options.calibrated ?? true,
       client_total: 90,
       browser: "Chrome",
+      recording: options.recording ?? false,
     }),
   };
 }
+
+/**
+ * What the worker reads off a recording of `singer` that started `startS` seconds into the song:
+ * the singer's pitch from then on, at 50 Hz, as RMVPE's answer.
+ */
+function recordingOf(singer: PitchTrack, startS: number, levels = { level: -20, floor: -62 }) {
+  const frames = resampleTrack(singer, 50).slice(Math.round(startS * 50));
+  return {
+    hz: 50 as const,
+    midi: frames,
+    seconds: frames.length / 50,
+    level_db: levels.level,
+    floor_db: levels.floor,
+    device: "cuda",
+    method: "rmvpe",
+  };
+}
+
+const WEBM = "audio/webm";
 
 describe("asking for a song", () => {
   it("prepares a new song, follows it, and makes it ready", async () => {
     const asked = await rig.service.request(ALICE, "  https://youtu.be/abc#t=3 ");
     expect(asked.created).toBe(true);
     expect(asked.song.state).toBe("preparing");
-    expect(rig.worker.asked).toEqual([{ url: "https://youtu.be/abc", lyrics: LYRICS_DEFAULTS }]);
+    expect(rig.worker.asked).toEqual([
+      { url: "https://youtu.be/abc", lyrics: LYRICS_DEFAULTS, video: true },
+    ]);
     const job = rig.store.song(asked.song.id)?.job as string;
     rig.worker.progress(job, "separate", 0.4);
     await rig.service.tick(signal);
@@ -165,7 +193,7 @@ describe("asking for a song", () => {
 
   it("searches with words", async () => {
     await rig.service.request(ALICE, "某首 歌");
-    expect(rig.worker.asked).toEqual([{ query: "某首 歌", lyrics: LYRICS_DEFAULTS }]);
+    expect(rig.worker.asked).toEqual([{ query: "某首 歌", lyrics: LYRICS_DEFAULTS, video: true }]);
     expect(sourceOf("某首  歌")?.key).toBe("query:某首 歌");
     expect(sourceOf("")).toBeNull();
   });
@@ -455,5 +483,184 @@ describe("upkeep", () => {
     expect(counts).toMatchObject({ karaoke_results: 1, karaoke_sessions: 1, karaoke_tracks: 1 });
     expect(rig.store.song(id)?.requested_by).toBeNull();
     expect(rig.service.overview(ALICE).recent).toEqual([]);
+  });
+});
+
+describe("the official score from a recording", () => {
+  it("replaces the estimate with the recording's score, and tells her once with it", async () => {
+    const id = await ready(rig);
+    // The browser's own detection is sloppy; the recording's pitch is clean.
+    const { result, session } = await sing(rig, id, humanSinger(song, { wanderCents: 70 }), {
+      recording: true,
+    });
+    expect(session.recording).toEqual({
+      max_bytes: 8 * 1024 * 1024,
+      max_seconds: expect.any(Number),
+    });
+    expect(result).toMatchObject({ source: "estimate", voice: { state: "waiting", checks: [] } });
+    expect(rig.notes).toHaveLength(0); // waits for the official score
+    // The same singing (the same timing), its recording started 0.3 s into the song; the browser
+    // thought 0.25 s (the recorder's own start lag).
+    rig.worker.readVoice = () => recordingOf(humanSinger(song), 0.3);
+    const bytes = new Uint8Array([1, 2, 3, 4]);
+    expect(rig.service.voice(ALICE, result.session, bytes, "audio/webm;codecs=opus", 250)).toEqual({
+      state: "scoring",
+    });
+    await rig.service.voiceSettled();
+    expect(bytes).toEqual(new Uint8Array(4)); // not kept in memory
+    expect(rig.worker.voices).toMatchObject([{ size: 4, type: WEBM }]);
+    const official = rig.service.result(ALICE, result.session);
+    expect(official.source).toBe("voice");
+    expect(official.voice).toEqual({ state: "scored", estimate_total: result.total, checks: [] });
+    expect(official.total).toBeGreaterThan(85);
+    expect(official.total).toBeGreaterThan(result.total);
+    expect(rig.notes).toHaveLength(1);
+    expect(rig.notes[0]?.summary).toContain(`系統分數 ${official.total} 分`);
+    // The recording's pitch is kept beside the browser's track; never the sound.
+    expect(rig.store.track(result.session)?.voice_frames).toEqual(expect.any(String));
+    const detail = JSON.parse(rig.store.result(result.session)?.detail ?? "{}");
+    expect(detail.voice).toMatchObject({ found: true });
+    expect(Math.abs(detail.voice.offset_ms - 300)).toBeLessThanOrEqual(20);
+    await rig.service.tick(signal);
+    expect(rig.notes).toHaveLength(1);
+    expect(rig.service.adminResults().results[0]).toMatchObject({
+      source: "voice",
+      voice_state: "scored",
+      estimate_total: result.total,
+    });
+  });
+
+  it("takes one recording, after the result, of a known kind and size", async () => {
+    const id = await ready(rig);
+    const started = await rig.service.start(ALICE, "Alice", id);
+    const bytes = () => new Uint8Array([1]);
+    expect(() => rig.service.voice(ALICE, started.session, bytes(), WEBM, 0)).toThrow(/先交/);
+    const { result } = await sing(rig, id, humanSinger(song), { recording: true });
+    rig.worker.readVoice = () => recordingOf(humanSinger(song), 0);
+    const refuse = (f: () => unknown, status: number) => {
+      try {
+        f();
+        expect.unreachable();
+      } catch (error) {
+        expect((error as KaraokeError).status).toBe(status);
+      }
+    };
+    refuse(() => rig.service.voice(BOB, result.session, bytes(), WEBM, 0), 404);
+    refuse(() => rig.service.voice(ALICE, result.session, bytes(), "video/mp4", 0), 415);
+    refuse(() => rig.service.voice(ALICE, result.session, new Uint8Array(), WEBM, 0), 400);
+    refuse(
+      () => rig.service.voice(ALICE, result.session, new Uint8Array(8 * 1024 * 1024 + 1), WEBM, 0),
+      413,
+    );
+    rig.service.voice(ALICE, result.session, bytes(), "audio/ogg", 0);
+    refuse(() => rig.service.voice(ALICE, result.session, bytes(), WEBM, 0), 409);
+    await rig.service.voiceSettled();
+    expect(rig.worker.voices).toHaveLength(1);
+    // A session that announced none takes none.
+    const plain = await sing(rig, id);
+    expect(plain.result.voice.state).toBe("none");
+    refuse(() => rig.service.voice(ALICE, plain.result.session, bytes(), WEBM, 0), 409);
+  });
+
+  it("stays 預估 when the worker cannot read it, and tells her then", async () => {
+    const id = await ready(rig);
+    const { result } = await sing(rig, id, humanSinger(song), { recording: true });
+    rig.worker.readVoice = null;
+    rig.service.voice(ALICE, result.session, new Uint8Array([1]), WEBM, 0);
+    await rig.service.voiceSettled();
+    const after = rig.service.result(ALICE, result.session);
+    expect(after).toMatchObject({ source: "estimate", total: result.total });
+    expect(after.voice.state).toBe("failed");
+    expect(rig.notes).toHaveLength(1);
+  });
+
+  it("does not wait for her beyond the bound, nor for a recording that never comes", async () => {
+    const id = await ready(rig);
+    const { result } = await sing(rig, id, humanSinger(song), { recording: true });
+    await rig.service.tick(signal);
+    expect(rig.notes).toHaveLength(0);
+    rig.clock.t += rig.service.config.voice_wait_secs * 1000 + 1000;
+    await rig.service.tick(signal);
+    expect(rig.notes).toHaveLength(1); // the estimate, after the wait
+    expect(rig.service.result(ALICE, result.session).voice.state).toBe("waiting");
+    rig.clock.t += VOICE_UPLOAD_MS;
+    await rig.service.tick(signal);
+    expect(rig.service.result(ALICE, result.session).voice.state).toBe("failed");
+    expect(rig.notes).toHaveLength(1);
+    expect(() => rig.service.voice(ALICE, result.session, new Uint8Array([1]), WEBM, 0)).toThrow(
+      KaraokeError,
+    );
+  });
+
+  it("takes no recording when the setting is off", async () => {
+    rig = await makeRig({ voice_score: false });
+    const id = await ready(rig);
+    const { result, session } = await sing(rig, id, humanSinger(song), { recording: true });
+    expect(session.recording).toBeNull();
+    expect(result.voice.state).toBe("none");
+    expect(rig.notes).toHaveLength(1);
+  });
+
+  it("keeps a quiet or far-away voice off the bests, and says so", async () => {
+    const id = await ready(rig);
+    const { result } = await sing(rig, id, humanSinger(song), { recording: true });
+    rig.worker.readVoice = () => recordingOf(humanSinger(song), 0, { level: -58, floor: -63 });
+    rig.service.voice(ALICE, result.session, new Uint8Array([1]), WEBM, 0);
+    await rig.service.voiceSettled();
+    const after = rig.service.result(ALICE, result.session);
+    expect(after.voice.checks).toEqual(["quiet"]);
+    expect(after.unranked).toBe(true);
+    expect(rig.service.song(ALICE, id).best).toBeNull();
+  });
+});
+
+describe("the background video", () => {
+  async function readyWithVideo(r: Rig): Promise<string> {
+    const asked = await r.service.request(ALICE, "https://youtu.be/v");
+    const job = r.store.song(asked.song.id)?.job as string;
+    r.worker.finish(job, referenceOf(song, `k-${job}`), true);
+    await r.service.tick(signal);
+    await vi.waitFor(() => expect(r.worker.fetched).toContain(`k-${job}/video.mp4`));
+    return asked.song.id;
+  }
+
+  it("is fetched after the song, served on a link that lasts the session, as video/mp4", async () => {
+    const id = await readyWithVideo(rig);
+    expect(rig.service.song(ALICE, id).video).toBe(true);
+    const session = await vi.waitFor(async () => {
+      const s = await rig.service.start(ALICE, "Alice", id);
+      expect(s.video_url).not.toBeNull();
+      return s;
+    });
+    const url = new URL(session.video_url as string, "http://x");
+    const [, , , , , sid, name] = url.pathname.split("/");
+    const exp = url.searchParams.get("exp") ?? undefined;
+    const sig = url.searchParams.get("sig") ?? undefined;
+    rig.clock.t += 11 * 60_000; // past the other links
+    expect(await rig.service.file(ALICE, sid as string, name as string, exp, sig)).toMatchObject({
+      type: "video/mp4",
+    });
+    expect(await rig.service.file(BOB, sid as string, name as string, exp, sig)).toBeNull();
+  });
+
+  it("is neither asked for nor shown when videos are off; a song without one has the still", async () => {
+    rig = await makeRig({ video: false });
+    const asked = await rig.service.request(ALICE, "https://youtu.be/v");
+    expect(rig.worker.asked[0]?.video).toBe(false);
+    const job = rig.store.song(asked.song.id)?.job as string;
+    rig.worker.finish(job, referenceOf(song, `k-${job}`), true);
+    await rig.service.tick(signal);
+    expect(rig.service.song(ALICE, asked.song.id).video).toBe(false);
+    expect((await rig.service.start(ALICE, "Alice", asked.song.id)).video_url).toBeNull();
+    const plain = await ready(rig, "https://youtu.be/plain");
+    expect((await rig.service.start(ALICE, "Alice", plain)).video_url).toBeNull();
+  });
+
+  it("goes from Core after its own hours, before the other files", async () => {
+    rig = await makeRig({ video_keep_hours: 1 });
+    const id = await readyWithVideo(rig);
+    rig.clock.t += 2 * 3_600_000;
+    await rig.service.tick(signal, true);
+    expect((await readdir(join(rig.dir, id))).sort()).toEqual(["karaoke.m4a", "reference.json"]);
   });
 });

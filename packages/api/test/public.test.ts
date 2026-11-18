@@ -742,6 +742,7 @@ describe("the route table", () => {
       "POST /api/member/forget",
       "POST /api/member/frame",
       "POST /api/member/karaoke/sessions/:id/result",
+      "POST /api/member/karaoke/sessions/:id/voice",
       "POST /api/member/karaoke/songs",
       "POST /api/member/karaoke/songs/:id/sessions",
       "POST /api/member/live/pat",
