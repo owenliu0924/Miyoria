@@ -43,7 +43,7 @@ import {
   START_LEAD_S,
   VOICE_AHEAD_S,
 } from "../src/karaoke-audio.js";
-import { demoBacking, demoLyrics, demoVoice } from "../src/karaoke-demo.js";
+import { demoBacking, demoLyrics, demoNotes, demoPitch, demoVoice } from "../src/karaoke-demo.js";
 import { CLOCK_EASE_MS, CLOCK_JUMP_MS, SongClock } from "../src/song-clock.js";
 
 /** A `karaoke` frame as the Stage sends it. */
@@ -640,6 +640,27 @@ describe("the demo's words", () => {
     expect(pieces[0]?.start).toBe(1);
     expect((pieces[0]?.end ?? 0) < (pieces[1]?.start ?? 0)).toBe(true);
     expect(pieces[0]?.reading).toBe("ほし");
+  });
+});
+
+describe("the demo's lanes", () => {
+  it("has a reference note per sung piece, and singers on, under and off them", () => {
+    const words = demoLyrics({
+      id: "s",
+      title: "t",
+      artist: "a",
+      language: "ja",
+      seconds: 10,
+      doubtful: null,
+      lines: [[1, [["星", "ほし", "hoshi"], ["の", null, "no"]]]],
+    });
+    const notes = demoNotes(words);
+    expect(notes.map((n) => n.midi)).toEqual([69, 71]);
+    expect(notes[0]?.start).toBe(1);
+    const t = 1.5;
+    expect(Math.abs((demoPitch(notes, "Mia", t) ?? 0) - 69)).toBeLessThan(0.2);
+    expect(Math.round(((demoPitch(notes, "小明", t) ?? 0) - 69) / 12)).toBe(-1);
+    expect(demoPitch(notes, "Mia", 8)).toBeNull();
   });
 });
 
