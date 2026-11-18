@@ -880,6 +880,144 @@
         "quality"
       ]
     },
+    "WorkersKaraokeStreamAnswer": {
+      "type": "object",
+      "properties": {
+        "hz": {
+          "type": "number",
+          "const": 50
+        },
+        "streams": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersKaraokeStreamFrames"
+          }
+        },
+        "lost": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "device": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "hz",
+        "streams",
+        "device",
+        "method"
+      ]
+    },
+    "WorkersKaraokeStreamChunk": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "audio": {
+          "type": "string"
+        },
+        "end": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "stream",
+        "at",
+        "audio"
+      ]
+    },
+    "WorkersKaraokeStreamFrames": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "type": "string"
+        },
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "midi": {
+          "type": "array",
+          "items": {
+            "type": [
+              "number",
+              "null"
+            ]
+          }
+        },
+        "final": {
+          "type": "boolean"
+        },
+        "seconds": {
+          "type": "number"
+        },
+        "level_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "floor_db": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "stream",
+        "from",
+        "midi",
+        "final",
+        "seconds",
+        "level_db",
+        "floor_db"
+      ]
+    },
+    "WorkersKaraokeStreamRequest": {
+      "type": "object",
+      "properties": {
+        "room": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,64}$"
+        },
+        "chunks": {
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersKaraokeStreamChunk"
+          }
+        },
+        "drop": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$"
+          }
+        }
+      },
+      "required": [
+        "room",
+        "chunks"
+      ]
+    },
     "WorkersKaraokeVoicePitch": {
       "type": "object",
       "properties": {

@@ -3,7 +3,8 @@
 // the song worker; its backing track and reference are fetched through short-lived signed links
 // bound to the member's session; the pitch track the browser detected is sent once at the end,
 // and Core scores it again with the same module. Without the `karaoke` module these are a `503`
-// that names it. A member sees only their own results; there is no ranking of anyone else.
+// that names it. A member sees only their own results; there is no ranking of anyone else outside
+// a room (`karaoke-rooms.ts`).
 
 import { z } from "zod";
 import { route } from "./route.js";
@@ -61,8 +62,13 @@ export type KaraokeResultSummary = z.output<typeof KaraokeResultSummarySchema>;
 /** `GET /api/member/karaoke`. */
 export const KaraokeOverviewSchema = z
   .object({
-    /** Songs can be asked for and sung now. */
+    /** Songs can be asked for and sung now (by members). */
     open: z.boolean(),
+    /**
+     * This person is a panel admin: they may use everything while it is not open (`open: false`),
+     * to try it before members can. Members see it closed.
+     */
+    admin: z.boolean().default(false),
     /** A song worker is there to prepare songs. */
     preparing: z.boolean(),
     /** Ready songs (newest first) and the member's own that are preparing or failed lately. */
@@ -204,6 +210,11 @@ export const KaraokeResultSchema = z
       /** Core's score of the browser's track, kept once the recording's replaced it. */
       estimate_total: z.number().nullable(),
       checks: z.array(KaraokeVoiceCheckSchema),
+      /**
+       * Core wants the recording now (`POST .../voice`): `waiting` for one, and no live stream of
+       * this singing will give the official score (a room's singer whose stream held needs none).
+       */
+      upload: z.boolean().default(false),
     }),
     song: z.object({ id: z.string(), title: z.string(), artist: z.string().nullable() }),
     at: z.string(),

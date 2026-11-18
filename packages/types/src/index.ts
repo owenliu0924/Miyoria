@@ -113,9 +113,15 @@ export {
 } from "./imagegen.js";
 export { isJsonObject, type JsonObject, type JsonPrimitive, type JsonValue } from "./json.js";
 export {
+  KARAOKE_REASONS,
+  type KaraokeCharge,
   type KaraokeFileName,
+  type KaraokePaid,
+  type KaraokePayoutKind,
   type KaraokeQuery,
   type KaraokeVoice,
+  type KaraokeWallet,
+  KaraokeWalletKey,
   type KaraokeWorker,
   KaraokeWorkerKey,
 } from "./karaoke.js";

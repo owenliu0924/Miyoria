@@ -225,6 +225,49 @@ class WorkersKaraokeSong(BaseModel):
     video: bool = False
 
 
+class WorkersKaraokeStreamAnswer(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    hz: Literal[50]
+    streams: list[WorkersKaraokeStreamFrames]
+    lost: list[str] = []
+    device: str
+    method: str
+
+
+class WorkersKaraokeStreamChunk(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    stream: constr(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    at: conint(ge=0, le=9007199254740991)
+    audio: str
+    end: bool = False
+
+
+class WorkersKaraokeStreamFrames(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    stream: str
+    from_: conint(ge=0, le=9007199254740991) = Field(..., alias="from")
+    midi: list[float | None]
+    final: bool
+    seconds: float
+    level_db: float | None
+    floor_db: float | None
+
+
+class WorkersKaraokeStreamRequest(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    room: constr(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    chunks: list[WorkersKaraokeStreamChunk] = Field(..., max_length=8)
+    drop: list[constr(pattern=r"^[A-Za-z0-9_-]{1,64}$")] = Field([], max_length=8)
+
+
 class WorkersKaraokeVoicePitch(BaseModel):
     model_config = ConfigDict(
         extra="ignore",

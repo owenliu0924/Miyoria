@@ -5250,10 +5250,129 @@
         "results"
       ]
     },
+    "ApiKaraokeAudioReply": {
+      "type": "object",
+      "properties": {
+        "stream": {
+          "type": "string",
+          "enum": [
+            "live",
+            "estimate"
+          ]
+        }
+      },
+      "required": [
+        "stream"
+      ]
+    },
+    "ApiKaraokeBoardLine": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "rank": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "total": {
+          "type": "number"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "voice",
+            "estimate"
+          ]
+        },
+        "move": {
+          "type": "string",
+          "enum": [
+            "up",
+            "down",
+            "same"
+          ]
+        },
+        "pitch": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "track": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from",
+                "track"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "member",
+        "name",
+        "color",
+        "rank",
+        "total",
+        "source",
+        "move",
+        "pitch"
+      ]
+    },
+    "ApiKaraokeClock": {
+      "type": "object",
+      "properties": {
+        "t0": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "t0"
+      ],
+      "additionalProperties": false
+    },
+    "ApiKaraokeClockReply": {
+      "type": "object",
+      "properties": {
+        "t0": {
+          "type": "number"
+        },
+        "server_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "t0",
+        "server_ms"
+      ]
+    },
     "ApiKaraokeOverview": {
       "type": "object",
       "properties": {
         "open": {
+          "type": "boolean"
+        },
+        "admin": {
+          "default": false,
           "type": "boolean"
         },
         "preparing": {
@@ -5310,6 +5429,25 @@
         "comments",
         "recent"
       ]
+    },
+    "ApiKaraokePitch": {
+      "type": "object",
+      "properties": {
+        "from": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "track": {
+          "type": "string",
+          "maxLength": 4000
+        }
+      },
+      "required": [
+        "from",
+        "track"
+      ],
+      "additionalProperties": false
     },
     "ApiKaraokeRequest": {
       "type": "object",
@@ -5370,6 +5508,10 @@
               "items": {
                 "$ref": "#/$defs/ApiKaraokeVoiceCheck"
               }
+            },
+            "upload": {
+              "default": false,
+              "type": "boolean"
             }
           },
           "required": [
@@ -5749,6 +5891,562 @@
         "total",
         "unranked",
         "at"
+      ]
+    },
+    "ApiKaraokeRoomEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "room"
+            },
+            "room": {
+              "$ref": "#/$defs/ApiKaraokeRoomView"
+            }
+          },
+          "required": [
+            "type",
+            "room"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "board"
+            },
+            "round": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "at_ms": {
+              "type": "number"
+            },
+            "lines": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiKaraokeBoardLine"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "round",
+            "at_ms",
+            "lines"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "trend"
+            },
+            "round": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "trend": {
+              "type": "string",
+              "enum": [
+                "rising",
+                "dropping",
+                "holding"
+              ]
+            },
+            "source": {
+              "type": "string",
+              "enum": [
+                "voice",
+                "estimate"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "round",
+            "trend",
+            "source"
+          ]
+        }
+      ]
+    },
+    "ApiKaraokeRoomJoin": {
+      "type": "object",
+      "properties": {
+        "as": {
+          "default": "singer",
+          "type": "string",
+          "enum": [
+            "singer",
+            "spectator"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApiKaraokeRoomMember": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "enum": [
+            "singer",
+            "spectator"
+          ]
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "opener": {
+          "type": "boolean"
+        },
+        "color": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "role",
+        "ready",
+        "opener",
+        "color"
+      ]
+    },
+    "ApiKaraokeRoomPlace": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "color": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "rank": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "pitch": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "stability": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "rhythm": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "expression": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "voice",
+                "estimate"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "finished": {
+          "type": "boolean"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKaraokeVoiceCheck"
+          }
+        },
+        "coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "winner": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "member",
+        "name",
+        "color",
+        "rank",
+        "total",
+        "pitch",
+        "stability",
+        "rhythm",
+        "expression",
+        "source",
+        "finished",
+        "checks",
+        "coins",
+        "winner",
+        "note"
+      ]
+    },
+    "ApiKaraokeRoomReady": {
+      "type": "object",
+      "properties": {
+        "ready": {
+          "type": "boolean"
+        },
+        "latency_ms": {
+          "default": 0,
+          "type": "integer",
+          "minimum": -500,
+          "maximum": 1500
+        },
+        "calibrated": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ready"
+      ],
+      "additionalProperties": false
+    },
+    "ApiKaraokeRoomResult": {
+      "type": "object",
+      "properties": {
+        "round": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "song": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "artist": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "title",
+            "artist"
+          ]
+        },
+        "settling": {
+          "type": "boolean"
+        },
+        "places": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKaraokeRoomPlace"
+          }
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "round",
+        "song",
+        "settling",
+        "places",
+        "note"
+      ]
+    },
+    "ApiKaraokeRoomSong": {
+      "type": "object",
+      "properties": {
+        "song": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "shift": {
+          "default": 0,
+          "type": "integer",
+          "minimum": -6,
+          "maximum": 6
+        }
+      },
+      "required": [
+        "song"
+      ],
+      "additionalProperties": false
+    },
+    "ApiKaraokeRoomState": {
+      "type": "string",
+      "enum": [
+        "lobby",
+        "countdown",
+        "singing",
+        "results",
+        "closed"
+      ]
+    },
+    "ApiKaraokeRoomTerms": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "prize": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "finish": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "rounds": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "max_singers": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "currency",
+        "price",
+        "prize",
+        "finish",
+        "rounds",
+        "max_singers"
+      ]
+    },
+    "ApiKaraokeRoomView": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/ApiKaraokeRoomState"
+        },
+        "closed_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "song": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiKaraokeSongView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "shift": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiKaraokeRoomMember"
+          }
+        },
+        "me": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "singer",
+                    "spectator"
+                  ]
+                },
+                "opener": {
+                  "type": "boolean"
+                },
+                "singing": {
+                  "type": "boolean"
+                },
+                "session": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ApiKaraokeSession"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "role",
+                "opener",
+                "singing",
+                "session"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "round": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "rounds_left": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "start_at_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiKaraokeRoomResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "terms": {
+          "$ref": "#/$defs/ApiKaraokeRoomTerms"
+        }
+      },
+      "required": [
+        "code",
+        "state",
+        "closed_reason",
+        "song",
+        "shift",
+        "members",
+        "me",
+        "round",
+        "rounds_left",
+        "start_at_ms",
+        "result",
+        "terms"
+      ]
+    },
+    "ApiKaraokeRooms": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "terms": {
+          "$ref": "#/$defs/ApiKaraokeRoomTerms"
+        },
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mine": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "reason",
+        "terms",
+        "balance",
+        "mine"
       ]
     },
     "ApiKaraokeSession": {
