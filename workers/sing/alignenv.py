@@ -89,7 +89,7 @@ def run_step(step: str, payload: dict[str, Any], device: str, audio: Path, work:
     if step == "asr":
         model = model_dir(ASR_DIR, e)
     else:
-        model = aligner_dir(str(payload.get("aligner") or "w2v"), payload.get("language"), e)
+        model = aligner_dir(str(payload.get("aligner") or "mms"), payload.get("language"), e)
         if model is None and any(s.get("align") for s in payload.get("segments") or []):
             raise StepFailed(f"no {payload.get('aligner')} model for language {payload.get('language')}")
     job = {**payload, "step": step, "audio": str(audio), "device": "cuda" if device != "cpu" else "cpu",

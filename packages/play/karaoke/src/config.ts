@@ -179,18 +179,19 @@ export const KaraokeConfigSchema = z
       ),
     /**
      * How a song's lyrics are aligned to the singing (docs/design/karaoke.md 「做了什麼第二步」):
-     * `w2v`, a wav2vec2 CTC model per language (Apache-2.0); `mms`, torchaudio's MMS_FA weights,
-     * better on hard songs, licensed CC-BY-NC-4.0 (non-commercial use only: this project is
-     * non-commercial). Sent with every song asked for; a song prepared before keeps its own.
+     * `mms` (the default), torchaudio's MMS_FA weights, far better on hard songs, licensed
+     * CC-BY-NC-4.0 (non-commercial use only: this project is non-commercial; an instance that earns
+     * money must switch to `w2v`); `w2v`, a wav2vec2 CTC model per language (Apache-2.0). Sent with
+     * every song asked for; a song prepared before keeps its own.
      */
     aligner: z
       .enum(["w2v", "mms"])
-      .default("w2v")
+      .default("mms")
       .meta(
         setting({
           kind: "select",
           label: "歌詞對齊",
-          help: "mms 在難的歌上準很多,但權重是 CC-BY-NC-4.0(只能非商業使用);w2v 是 Apache-2.0。只影響之後準備的歌",
+          help: "預設 mms:難的歌準很多,但權重是 CC-BY-NC-4.0,只能非商業使用;有收入的用途請改成 w2v(Apache-2.0)。只影響之後準備的歌",
           labels: { w2v: "w2v(Apache-2.0)", mms: "mms(CC-BY-NC-4.0)" },
           group: "lyrics",
         }),

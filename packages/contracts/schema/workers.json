@@ -384,7 +384,7 @@
       "type": "object",
       "properties": {
         "aligner": {
-          "default": "w2v",
+          "default": "mms",
           "type": "string",
           "enum": [
             "w2v",

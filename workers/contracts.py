@@ -124,7 +124,7 @@ class WorkersKaraokeLyricsOptions(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
     )
-    aligner: Literal["w2v", "mms"] = "w2v"
+    aligner: Literal["w2v", "mms"] = "mms"
     matched: confloat(ge=0.0, le=1.0) = 0.75
     uncertain: confloat(ge=0.0, le=1.0) = 0.5
     keep_share: confloat(ge=0.0, le=1.0) = 0.5
