@@ -407,6 +407,10 @@ describe("FailoverSingWorker", () => {
     expect((await kw.job(job.id)).karaoke?.id).toBe("k-1");
     await kw.file("k-1", "reference.json", "x");
     expect(remote.calls).toContain("karaoke k-1 reference.json");
+    await kw.file("k-1", "play_karaoke.pcm", "x");
+    await kw.file("k-1", "play_karaoke.k+3.pcm", "x");
+    expect(remote.calls).toContain("karaoke k-1 play_karaoke.pcm");
+    expect(remote.calls).toContain("karaoke k-1 play_karaoke.k+3.pcm");
     expect(local.calls.some((c) => c.startsWith("karaoke"))).toBe(false);
     // Never one of her covers.
     expect((await worker.songs()).map((s) => s.id)).not.toContain("k-1");

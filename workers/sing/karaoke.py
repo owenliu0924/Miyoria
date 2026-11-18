@@ -4,6 +4,8 @@
     <root>/_karaoke/<karaoke id>/       one karaoke song, apart from her covers: ``GET /songs``
         karaoke.m4a                     never lists it (songs.Store skips ``_`` dirs)
         karaoke.k+3.m4a                 the backing in another key, made when a singer asks (``keys``)
+        play_karaoke.pcm                the backing as s16le mono 48 kHz for her voice channel, decoded
+        play_karaoke.k+3.pcm            from the matching m4a when Core first asks (``decode_play``)
         video.mp4                       the source's picture on the backing's timeline, no sound
                                         (``make_video``); only when the source has one
         reference.json                  WorkersKaraokeReference (version 2: WorkersKaraokeReferenceV2)
@@ -258,6 +260,45 @@ def key_file(semitones: int) -> str:
 def is_key_file(name: str) -> bool:
     m = KEY_FILE.match(name)
     return m is not None and int(m.group(2)) <= KEY_MAX
+
+
+# The backing as raw PCM for her voice channel (karaoke.ts karaokePlayName): s16le mono 48 kHz, made
+# from the matching m4a when Core first asks and kept next to it.
+PLAY_RATE = 48_000
+PLAY_FILE = re.compile(r"^play_karaoke(?:\.k([+-])([1-9]|1[0-2]))?\.pcm$")
+
+
+def play_source(name: str) -> str | None:
+    """The m4a a ``play_karaoke*.pcm`` name is made from, or ``None`` when ``name`` is not one of
+    them (or its key is beyond KEY_MAX)."""
+    m = PLAY_FILE.match(name)
+    if m is None:
+        return None
+    if m.group(1) is None:
+        return BACKING_FILE
+    if int(m.group(2)) > KEY_MAX:
+        return None
+    return f"karaoke.k{m.group(1)}{m.group(2)}.m4a"
+
+
+def decode_play(src: Path, out: Path) -> None:
+    """``src`` (an m4a) decoded to s16le mono 48 kHz in ``out``: written beside it and renamed, so a
+    request never sees half a file."""
+    from engine import JobError
+
+    if shutil.which("ffmpeg") is None:
+        raise JobError("ffmpeg is not installed: the backing cannot be decoded")
+    part = out.with_name(out.name + ".part")
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
+           "-vn", "-ac", "1", "-ar", str(PLAY_RATE), "-f", "s16le", str(part)]
+    try:
+        r = subprocess.run(cmd, capture_output=True)
+        if r.returncode != 0:
+            raise JobError(f"ffmpeg could not decode the karaoke backing: "
+                           f"{r.stderr.decode('utf-8', 'replace').strip()[:300]}")
+        os.replace(part, out)
+    finally:
+        part.unlink(missing_ok=True)
 
 
 def shift_backing(src: Path, out: Path, semitones: int) -> str:
