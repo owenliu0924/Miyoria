@@ -149,6 +149,29 @@ class FakeWorker implements SingWorker {
     return { file: `karaoke.k+${semitones}.m4a`, semitones, cached: false, method: "fake" };
   }
 
+  /** Recordings this worker read (their sizes). */
+  readonly voices: number[] = [];
+
+  async karaokeVoice(bytes: Uint8Array) {
+    this.#call("voice");
+    if (this.slow) {
+      throw new SingWorkerError(`song worker unreachable at ${this.name}: timeout`, {
+        unreachable: true,
+        maybeReceived: true,
+      });
+    }
+    this.voices.push(bytes.length);
+    return {
+      hz: 50 as const,
+      midi: [60, null],
+      seconds: 0.04,
+      level_db: -20,
+      floor_db: -60,
+      device: "cpu",
+      method: "fake",
+    };
+  }
+
   async health(): Promise<string | null> {
     return this.up ? null : `unreachable at ${this.name}`;
   }
@@ -378,6 +401,34 @@ describe("FailoverSingWorker", () => {
     expect(local.calls.some((c) => c.startsWith("karaoke"))).toBe(false);
     // Never one of her covers.
     expect((await worker.songs()).map((s) => s.id)).not.toContain("k-1");
+  });
+
+  it("reads a recording on the first worker that answers, never sending it twice", async () => {
+    const { remote, local, worker } = setup();
+    const kw = karaokeWorker(worker);
+    remote.up = false;
+    const pitch = await kw.voice({ bytes: new Uint8Array(10), type: "audio/webm" });
+    expect(pitch.midi).toEqual([60, null]);
+    expect(local.voices).toEqual([10]);
+    // One that timed out may be reading it: the next is not asked.
+    const again = setup();
+    again.remote.slow = true;
+    await expect(
+      karaokeWorker(again.worker).voice({ bytes: new Uint8Array(3), type: "audio/ogg" }),
+    ).rejects.toThrow(/timeout/);
+    expect(again.local.voices).toEqual([]);
+  });
+
+  it("asks for a karaoke job without a video when told so", async () => {
+    const { remote, worker } = setup();
+    const submitted: unknown[] = [];
+    const submit = remote.submit.bind(remote);
+    remote.submit = async (q) => {
+      submitted.push(q);
+      return submit(q);
+    };
+    await karaokeWorker(worker).prepare({ query: "a", video: false });
+    expect(submitted[0]).toMatchObject({ purpose: "karaoke", karaoke_video: false });
   });
 
   it("fetches a song from another worker that has it when its own is unreachable", async () => {
