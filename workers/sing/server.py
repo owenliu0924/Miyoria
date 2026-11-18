@@ -1,7 +1,7 @@
 """Miyoria song worker: song requests → AI covers in her voice (docs/protocols/voice-link.md, 「歌曲 Worker」).
 
     POST   /jobs                {query | url | path, title?, artist?, pitch?, key?, backing?, force?, exclusive_ack?,
-                                 purpose?: cover | karaoke} -> {"job"}
+                                 purpose?: cover | karaoke, karaoke_lyrics?, karaoke_video?} -> {"job"}
     POST   /jobs/{id}/exclusive -> {"job"}                 go ahead and take the GPU (see exclusive.py)
     POST   /gpu/context         {in_voice, listeners, live, urgent: [job id]} who would notice her
                                 going quiet and which songs are needed now (Core, every poll; see gpu.py)
@@ -16,9 +16,19 @@
                                       video.mp4 (library: video.<ext>) when ``has_video``
     GET    /karaoke             -> {"karaoke": [...]}      karaoke songs (job.karaoke + created_at), newest first
     GET    /karaoke/{id}/files/{name}   karaoke.m4a · reference.json (karaoke.py, packages/contracts karaoke.ts)
+                                        · video.mp4 when the song has one (``video: true``; range requests)
                                         · karaoke.k±N.m4a once made by:
     POST   /karaoke/{id}/keys   {semitones: -6..6} -> {file, semitones, cached, method}   the backing in
                                 another key (Rubber Band), made once and kept with the song
+    POST   /karaoke/voice       body: one recording of a singer's microphone (audio/webm · ogg · mp4 · wav,
+                                <= 8 MiB, <= SING_MAX_SECONDS + 30 s) -> WorkersKaraokeVoicePitch {hz: 50,
+                                midi, seconds, level_db, floor_db, device, method}: RMVPE treated as the
+                                reference is (loudness gate, pitch.py cleaning, 50 Hz MIDI). Stored under
+                                <data dir>/_voice only until answered (leftovers: 10 minutes at most),
+                                never logged. On the card (stage ``reference`` of a job no list shows,
+                                share only) when no job is running and it is placed within
+                                SING_KARAOKE_VOICE_WAIT_S; a job that is about to start waits for it.
+                                While a job runs: on the CPU at once, the job is never paused.
     GET    /library             -> {"entries": [...]}      the owner's local song folder
     GET    /cache               -> {bytes, songs, sources, limits, last}   the song cache (cache.py)
     POST   /cache/prune         {dry_run?} -> what the cleanup removed (or would remove)
@@ -79,8 +89,15 @@ above (the same cached stems), then no conversion and no mix:
               hold; their notes are cut one per unit (lyricstage.py, lyricsync.py). Both run in the
               align environment as a subprocess, one model per step, placed on the GPU like any stage
               (alignenv.py; without that environment the lines stay unchecked, as in step 1)
+    video     (fetched from the download on, as a cover's: the same shared video.mp4 of the source;
+              with ``karaoke_video``, default true, and SING_VIDEO on) waited for up to SING_VIDEO_WAIT_S,
+              then the song's own video.mp4 (karaoke.make_video): no sound, H.264 yuv420p,
+              <= SING_KARAOKE_VIDEO_HEIGHT and SING_KARAOKE_VIDEO_KBPS, +faststart, cut to the
+              backing, on the backing's timeline (copied when it fits, else libx264). meta.json
+              ``video`` says what was done (method, size, kbps, offset_s); a video that is missing or
+              fails leaves the song ready without one (``video_error``). Songs made before have none.
 into SING_DATA_DIR/_karaoke/k-<source key>/ (karaoke.py), never one of her songs. The job ends
-``done`` with ``karaoke`` = {id, title, artist, duration_s, quality} also when the quality is not ok
+``done`` with ``karaoke`` = {id, title, artist, duration_s, quality, video} also when the quality is not ok
 (Core does not offer such a song); ``song_id`` stays null. A karaoke job is never urgent and never
 takes her voice offline: where a cover would, it waits for room (gpu.py ``share_only``; with hostd,
 ``mode: share``).
@@ -148,6 +165,9 @@ Environment
     SING_KARAOKE_MIN_VOICED   a karaoke song's lead is voiced in this share of it at least, or its
                            quality is not ok (default 0.15, melody.MIN_VOICED_RATIO)
     SING_KARAOKE_MIN_NOTES the same for its notes                 (default 30, melody.MIN_NOTES)
+    SING_KARAOKE_VIDEO_HEIGHT  tallest karaoke video              (default 720)
+    SING_KARAOKE_VIDEO_KBPS    most kbps of a karaoke video       (default 1500)
+    SING_KARAOKE_VOICE_WAIT_S  a singer's pitch not placed on the card this soon goes to the CPU (default 5)
     SING_KEEP_MODELS       1 = keep models in VRAM between jobs   (default 0)
     SING_VIDEO             0 = no videos                          (default 1)
     SING_VIDEO_MAX_HEIGHT  tallest video                          (default 1080)
@@ -231,7 +251,8 @@ from contracts import WorkersKaraokeKeyRequest as KaraokeKeyRequest  # noqa: E40
 from engine import Cancelled, ConvertWork, JobError, Suspended, allowed_url, env_float, env_int, is_oom  # noqa: E402
 from exclusive import Exclusive, http_post, parse_urls  # noqa: E402
 from gpu import CPU_FALLBACK, CPU_STAGES, Action, Audience, GpuJob, Limits, Machine, Profile  # noqa: E402
-from karaoke import KARAOKE_FILES, KaraokeStore, karaoke_id  # noqa: E402
+from karaoke import SERVED_FILES as KARAOKE_SERVED_FILES  # noqa: E402
+from karaoke import VOICE_DIR, KaraokeStore, karaoke_id  # noqa: E402
 from karaoke import summary as karaoke_summary  # noqa: E402
 from lease import HostdArbitration, arbiter_from_env, hostd_available  # noqa: E402
 from yielding import SpeechYield, http_get  # noqa: E402
@@ -265,7 +286,7 @@ WEIGHTS = {"resolve": 0.04, "download": 0.12, "exclusive": 0.0, "separate": 0.26
            "video": 0.0}
 # The same for a karaoke job (no conversion, no mix).
 KARAOKE_WEIGHTS = {"resolve": 0.05, "download": 0.16, "separate": 0.32, "lead": 0.11, "reference": 0.08, "encode": 0.05,
-                   "lyrics": 0.03, "lyrics_asr": 0.14, "lyrics_align": 0.06}
+                   "lyrics": 0.03, "lyrics_asr": 0.14, "lyrics_align": 0.06, "video": 0.0}
 # Sources whose link has a video to fetch (a library entry brings its own file).
 VIDEO_KINDS = ("youtube", "url", "mock")
 
@@ -320,6 +341,7 @@ class MockBackend:
         self.karaoke_parts: list[list[str]] = []  # what each karaoke backing was made of
         self.lyrics_steps: list[tuple[str, str]] = []  # (step, device) of each karaoke lyrics step
         self.karaoke_shifts: list[int] = []
+        self.karaoke_videos: list[str] = []  # the source video of each karaoke video made
 
     def _wait(self) -> None:
         if self.delay:
@@ -568,6 +590,25 @@ class MockBackend:
         shutil.copyfile(src, out)
         return "mock"
 
+    def karaoke_video(self, src: Path, out: Path, duration_s: float,
+                      cancelled: Callable[[], bool] | None = None) -> dict[str, Any]:
+        """A few bytes for the mock's own video (``fetch_video``), else the real conversion (which
+        fails on what ffmpeg cannot read). ``SING_MOCK_VIDEO_FAIL=1``: the conversion fails."""
+        import karaoke
+
+        self.karaoke_videos.append(src.name)
+        if os.environ.get("SING_MOCK_VIDEO_FAIL") == "1":
+            raise JobError("mock video conversion failed")
+        if b"mock video" in src.read_bytes()[:64]:
+            out.write_bytes(b"\x00\x00\x00\x18ftypisommock karaoke video")
+            return {"file": karaoke.VIDEO_FILE, "method": "mock", "width": 1280, "height": 720, "kbps": 1,
+                    "duration_s": round(duration_s, 2), "offset_s": 0.0, "start_s": 0.0,
+                    "bytes": out.stat().st_size, "source": {"codec": "mock"}}
+        return karaoke.make_video(src, out, duration_s,
+                                  max_height=env_int("SING_KARAOKE_VIDEO_HEIGHT", karaoke.VIDEO_MAX_HEIGHT),
+                                  max_kbps=env_int("SING_KARAOKE_VIDEO_KBPS", karaoke.VIDEO_MAX_KBPS),
+                                  cancelled=cancelled)
+
     def unload(self) -> None:
         return None
 
@@ -700,6 +741,15 @@ class _RealAdapter:
 
         return karaoke.shift_backing(src, out, semitones)
 
+    def karaoke_video(self, src: Path, out: Path, duration_s: float,
+                      cancelled: Callable[[], bool] | None = None) -> dict[str, Any]:
+        import karaoke
+
+        return karaoke.make_video(src, out, duration_s,
+                                  max_height=env_int("SING_KARAOKE_VIDEO_HEIGHT", karaoke.VIDEO_MAX_HEIGHT),
+                                  max_kbps=env_int("SING_KARAOKE_VIDEO_KBPS", karaoke.VIDEO_MAX_KBPS),
+                                  cancelled=cancelled)
+
 
 # ── jobs ─────────────────────────────────────────────────────────────────────
 
@@ -780,6 +830,9 @@ class State:
     cache: Cache
     janitor: Janitor | None = None
     arbitration: Any = None  # SelfArbitration or lease.HostdArbitration (SING_GPU_ARBITER)
+    # Held by the job loop around every job and by a singer's pitch on the card (POST /karaoke/voice).
+    voice_lock: threading.Lock = threading.Lock()
+    voice_dir: Path | None = None  # where a singer's recording waits for its pitch (karaoke.VOICE_DIR)
     offload_post = staticmethod(http_post)  # replaced in tests
     busy_get = staticmethod(http_get)  # replaced in tests
 
@@ -1994,6 +2047,46 @@ def _lyrics_runner(job: Job, vocal: Path, work: Path, duration: float) -> tuple[
     return run, None
 
 
+def _karaoke_video(job: Job, src: Source, sdir: Path, out: Path, duration: float,
+                   timings: dict[str, float]) -> dict[str, Any]:
+    """Stage ``video``: waits for the source's video as a cover does (SING_VIDEO_WAIT_S after the
+    audio at most), then makes the karaoke song's own video.mp4 from it (karaoke.make_video).
+    Returns meta.json's ``video`` (what was done) and ``video_error``; a video that is missing or
+    cannot be made leaves the song without one, never fails it."""
+    import karaoke as kara
+
+    vf = job.video
+    if vf is not None:
+        if vf.running():
+            _set(job, "video")
+            t0 = time.perf_counter()
+            vf.wait(env_float("SING_VIDEO_WAIT_S", 120.0), job.cancel)
+            timings["video_wait_s"] = round(time.perf_counter() - t0, 2)
+        if vf.seconds is not None:
+            timings["video_s"] = vf.seconds
+    v = find_video(sdir)
+    if v is None:
+        why = (vf.error if vf is not None else None) or (
+            "no video next to the library entry" if src.kind == "library" else "the source has no video")
+        log.info("karaoke %s has no video: %s", job.karaoke_id, why)
+        return {"video": None, "video_error": why}
+    _set(job, "video")
+    t0 = time.perf_counter()
+    target = out / kara.VIDEO_FILE
+    try:
+        info = state.backend.karaoke_video(v, target, duration, job.cancel.is_set)
+    except Cancelled:
+        target.unlink(missing_ok=True)
+        raise
+    except Exception as e:  # noqa: BLE001 - the song is ready without it
+        target.unlink(missing_ok=True)
+        log.info("karaoke %s: the video could not be made: %s", job.karaoke_id, e)
+        return {"video": None, "video_error": f"{type(e).__name__}: {e}"[:300] if not isinstance(e, JobError)
+                else str(e)[:300]}
+    timings["video_make_s"] = round(time.perf_counter() - t0, 2)
+    return {"video": info, "video_error": None}
+
+
 def _run_karaoke(job: Job) -> None:
     """A karaoke song: the front of a cover (resolve, download, separate, lead: the same cached stems),
     then the reference melody of the lead, the backing track, the lyrics checked and aligned; no
@@ -2012,19 +2105,27 @@ def _run_karaoke(job: Job) -> None:
     job.karaoke_id = kid
     state.cache.touch(karaoke=kid, source=src.key)
     cached = None if req.force else _karaoke_cached(kid)
-    if cached is not None:
-        job.cached, job.karaoke = True, kara.summary(cached)
+    if cached is not None:  # (one made before videos simply has none: it is not made again for that)
+        job.cached, job.karaoke = True, kara.summary(cached, state.karaoke.dir(kid))
         return
 
     _peak_vram_reset()
     sdir = store.source_dir(src.key)
     sdir.mkdir(parents=True, exist_ok=True)
     store.write_source_info(src)
+    want_video = bool(req.karaoke_video) and _video_on()
+    if want_video:
+        if req.force:
+            for old in list(sdir.glob("video.*")):
+                old.unlink(missing_ok=True)
+        # The cover's machinery and its shared video.mp4: fetched next to the audio stages.
+        _start_video(job, src, sdir)
     lead = _stems_and_lead(job, src, sdir, timed)
     vocal = sdir / ("lead.wav" if lead["used"] else "vocals.wav")
     out = state.karaoke.dir(kid)
     out.mkdir(parents=True, exist_ok=True)
     (out / kara.META_FILE).unlink(missing_ok=True)  # made again: not a finished song until it is written
+    (out / kara.VIDEO_FILE).unlink(missing_ok=True)
     for old in out.glob("karaoke.k*.m4a"):  # keys of the song made before
         old.unlink(missing_ok=True)
     parts = _karaoke_parts(sdir, lead["used"])
@@ -2063,6 +2164,11 @@ def _run_karaoke(job: Job) -> None:
     finally:
         _give_gpu_back(job)  # the last GPU stage of a karaoke job
         (out / "lead16k.npy").unlink(missing_ok=True)
+    if want_video:
+        video = _karaoke_video(job, src, sdir, out, duration, timings)
+    else:
+        why = "videos are off (SING_VIDEO=0)" if not _video_on() else "not asked for (karaoke_video: false)"
+        video = {"video": None, "video_error": why}
     notes = lyricstage.L.merge_notes(pitch_notes, lyr.notes, lyr.spans)
     notes_method = melody.NOTES_METHOD if not lyr.notes else f"{lyricstage.L.NOTES_METHOD}+{melody.NOTES_METHOD}"
     quality = _karaoke_quality(midi, len(notes), lead["used"])
@@ -2086,6 +2192,7 @@ def _run_karaoke(job: Job) -> None:
         "lyrics_input": _lyrics_hints_of(src),
         "lyrics_check": {**lyr.made, **lyr.info},
         "backing": {"parts": [p.name for p in parts], **encoded},
+        **video,
         "engine": {"backend": b.name, "model": b.model_name, "device": b.device,
                    "separator": _separator_of(b), "lead": _lead_tag_of(b) if lead["used"] else None},
         "timings": timings,
@@ -2095,7 +2202,7 @@ def _run_karaoke(job: Job) -> None:
     }
     state.karaoke.write_json(kid, kara.META_FILE, meta)  # last: the song is there from now on
     state.cache.touch(karaoke=kid, source=src.key)
-    job.karaoke = kara.summary(meta)
+    job.karaoke = kara.summary(meta, out)
     log.info("karaoke %s ready: %s, %d notes (%d from lyrics), lyrics %s, quality %s (%s)", kid, src.title,
              len(notes), len(lyr.notes), lyr.made.get("lyrics"), "ok" if quality["ok"] else quality["reason"], timings)
 
@@ -2127,32 +2234,44 @@ def worker_loop() -> None:
         job = state.jobs.get(job_id)
         if job is None:
             continue
-        with state.lock:  # prefetch_loop marks a queued job's prefetch under it
-            if job.state != "queued":
-                continue
-            job.state, job.started_at = "running", now_iso()
-            state.running = job.id
+        # A singer's pitch on the card (POST /karaoke/voice) is short: a job waits for the one that
+        # is running to end; while a job runs, the next singer's goes to the CPU instead.
+        with state.voice_lock:
+            ran = _run_one(job)
+        if ran is not None:
+            kept = ran
+
+
+def _run_one(job: Job) -> bool | None:
+    """Runs a queued job to its end (``None``: it was not queued any more); whether more are queued."""
+    with state.lock:  # prefetch_loop marks a queued job's prefetch under it
+        if job.state != "queued":
+            return None
+        job.state, job.started_at = "running", now_iso()
+        state.running = job.id
+    more = False
+    try:
+        run_job(job)
+        job.state, job.progress, job.stage = "done", 1.0, "done"
+    except Cancelled:
+        job.state, job.error = "cancelled", "cancelled"
+    except JobError as e:
+        job.state, job.error = "failed", str(e)
+        log.info("job %s failed: %s", job.id, e)
+    except Exception as e:  # noqa: BLE001
+        log.exception("job %s crashed", job.id)
+        job.state, job.error = "failed", f"{type(e).__name__}: {e}"[:500]
+    finally:
+        job.finished_at = now_iso()
+        state.running = None
+        more = _queued()
         try:
-            run_job(job)
-            job.state, job.progress, job.stage = "done", 1.0, "done"
-        except Cancelled:
-            job.state, job.error = "cancelled", "cancelled"
-        except JobError as e:
-            job.state, job.error = "failed", str(e)
-            log.info("job %s failed: %s", job.id, e)
-        except Exception as e:  # noqa: BLE001
-            log.exception("job %s crashed", job.id)
-            job.state, job.error = "failed", f"{type(e).__name__}: {e}"[:500]
-        finally:
-            job.finished_at = now_iso()
-            state.running = None
-            more = kept = _queued()
-            try:
-                state.backend.idle(more)  # here: a job that failed no longer holds the models through its traceback
-            except Exception:  # noqa: BLE001
-                log.exception("could not let go of the models")
-            if state.janitor is not None:
-                state.janitor.poke()
+            state.backend.idle(more)  # here: a job that failed no longer holds the models through its traceback
+        except Exception:  # noqa: BLE001
+            log.exception("could not let go of the models")
+        if state.janitor is not None:
+            state.janitor.poke()
+    return more
 
 
 def _protected() -> Protected:
@@ -2234,6 +2353,9 @@ async def lifespan(app: FastAPI):
     state.jobs, state.order = {}, []
     state.pending = queue.Queue()
     state.lock = threading.Lock()
+    state.voice_lock = threading.Lock()
+    state.voice_dir = root / VOICE_DIR
+    _sweep_voice()  # what a crash left behind
     state.stopping = threading.Event()
     t0 = time.perf_counter()
     state.backend = make_backend(state.store)
@@ -2297,7 +2419,7 @@ async def submit(req: JobRequest) -> JSONResponse:
             meta = _karaoke_cached(kid)
             if meta is not None:
                 job.state, job.stage, job.progress, job.cached = "done", "done", 1.0, True
-                job.karaoke_id, job.karaoke = kid, karaoke_summary(meta)
+                job.karaoke_id, job.karaoke = kid, karaoke_summary(meta, state.karaoke.dir(kid))
                 job.source, job.finished_at = state.store.source_info(key), now_iso()
     elif not req.force:
         key = None
@@ -2447,16 +2569,17 @@ async def list_karaoke() -> dict[str, Any]:
 async def get_karaoke_file(kid: str, name: str):
     import karaoke as kara
 
-    if name not in KARAOKE_FILES and not kara.is_key_file(name):
+    if name not in KARAOKE_SERVED_FILES and not kara.is_key_file(name):
         return _error(404, f"no file {name}")
     kid = safe_id(kid, 96)
     if state.karaoke.meta(kid) is None:  # unfinished, or being made again
         return _error(404, f"no karaoke song {kid}")
     p = state.karaoke.dir(kid) / name
     state.cache.touch(karaoke=kid)  # Core is about to hand it to a singer
-    if not p.exists():
+    if not p.exists():  # (video.mp4: a song without one, or made before videos)
         return _error(404, f"karaoke song {kid} has no {name}")
-    return FileResponse(p, media_type=KARAOKE_FILES.get(name, "audio/mp4"))
+    # FileResponse answers range requests: the browser streams the video and seeks in it.
+    return FileResponse(p, media_type=KARAOKE_SERVED_FILES.get(name, "audio/mp4"))
 
 
 _key_locks: dict[str, threading.Lock] = {}
@@ -2486,6 +2609,160 @@ def make_karaoke_key(kid: str, req: KaraokeKeyRequest):
             return _error(503, str(e))
         log.info("karaoke %s: backing moved by %+d semitones (%s)", kid, req.semitones, method)
         return {"file": name, "semitones": req.semitones, "cached": False, "method": method}
+
+
+# ── a singer's pitch (POST /karaoke/voice) ───────────────────────────────────
+
+
+def _sweep_voice() -> None:
+    """Recordings older than karaoke.VOICE_KEEP_S (a crash between storing and deleting one)."""
+    import karaoke as kara
+
+    if state.voice_dir is not None:
+        gone = kara.sweep_voice(state.voice_dir)
+        if gone:
+            log.info("deleted %d karaoke recording(s) left behind", gone)
+
+
+def _device_label(placed: str) -> str:
+    """``cuda`` or ``cpu``: where RMVPE ran when it was placed on ``placed`` (``gpu`` | ``cpu``)."""
+    if placed == "cpu":
+        return "cpu"
+    b = state.backend
+    try:
+        if b.uses_cuda():
+            return "cuda"
+    except Exception:  # noqa: BLE001
+        pass
+    return str(getattr(b, "device", "cpu"))
+
+
+def _voice_on_gpu(wav: Path, seconds: float) -> tuple[Any, str] | None:
+    """RMVPE on the recording as a GPU stage of a job of its own, which no list shows and the queue
+    never counts: placed by the arbitration (self or hostd) as a karaoke job's stage ``reference``
+    (RMVPE's VRAM profile; share only, never urgent, never her voice offline). Not placed within
+    SING_KARAOKE_VOICE_WAIT_S (no room, hostd not answering): ``None``, and it goes to the CPU."""
+    b, arb = state.backend, _arbitration()
+    pseudo = Job(id=f"voice-{secrets.token_hex(4)}", request=JobRequest(query="karaoke voice", purpose="karaoke"))
+    started = threading.Event()
+    placed: dict[str, str] = {}
+
+    def run(device: str) -> Any:
+        started.set()
+        placed["device"] = device
+        return b.karaoke_f0(wav, "cpu" if device == "cpu" else None)
+
+    def too_late() -> None:
+        if not started.is_set():
+            pseudo.cancel.set()  # the placement stops waiting (``_place``, lease.py ``place``)
+
+    timer = threading.Timer(env_float("SING_KARAOKE_VOICE_WAIT_S", 5.0), too_late)
+    timer.daemon = True
+    timer.start()
+    try:
+        f0 = _gpu_stage(pseudo, "reference", wav, seconds, run)
+    except Exception as e:
+        if started.is_set():
+            raise  # RMVPE itself failed
+        log.info("karaoke voice: not placed on the card in time (%s); on the CPU", type(e).__name__)
+        return None
+    finally:
+        timer.cancel()
+        if pseudo.gpu is not None:
+            try:
+                _give_gpu_back(pseudo)
+                arb.finish(pseudo)
+            except Exception:  # noqa: BLE001
+                log.exception("karaoke voice: giving the card back failed")
+    return f0, _device_label(placed.get("device", "gpu"))
+
+
+def _voice_f0(wav: Path, seconds: float) -> tuple[Any, str]:
+    """(RMVPE's F0 of the recording, where it ran). The card only when no job is running (the job
+    loop holds ``voice_lock`` around every job, and a job about to start waits for this one); while
+    one runs, the CPU at once, asking nobody: the job is never paused for a singer."""
+    if state.voice_lock.acquire(blocking=False):
+        try:
+            got = _voice_on_gpu(wav, seconds)
+        finally:
+            state.voice_lock.release()
+        if got is not None:
+            return got
+    return state.backend.karaoke_f0(wav, "cpu"), "cpu"
+
+
+def _voice_answer(raw: Path, wav: Path) -> JSONResponse:
+    """Decodes the stored recording, reads its pitch and answers WorkersKaraokeVoicePitch."""
+    import karaoke as kara
+    import melody
+    from contracts import WorkersKaraokeVoicePitch
+
+    max_s = env_float("SING_MAX_SECONDS", 480.0) + 30.0
+    try:
+        used = kara.decode_voice(raw, wav, max_s + 1)
+        seconds = _wav_seconds(used)
+        if not seconds:
+            return _error(400, "the recording is empty or cannot be decoded")
+        if seconds > max_s:
+            return _error(413, f"the recording is longer than {max_s:.0f} s")
+        mono, sr = kara.mono_of(used)
+    except JobError as e:
+        return _error(503, str(e))
+    except (ValueError, OSError, EOFError, wave.Error):
+        return _error(400, "the recording cannot be decoded")
+    t0 = time.perf_counter()
+    try:
+        f0, device = _voice_f0(used, seconds)
+    except Exception as e:  # noqa: BLE001
+        log.warning("karaoke voice: the pitch could not be read: %s", type(e).__name__)
+        return _error(503, "the pitch of the recording could not be read")
+    got = kara.voice_pitch(f0, mono, sr, seconds, clean=os.environ.get("SING_F0_CLEAN", "1") != "0")
+    answer = {"hz": melody.CURVE_HZ, "midi": got["midi"], "seconds": round(seconds, 3),
+              "level_db": got["level_db"], "floor_db": got["floor_db"], "device": device,
+              "method": kara.PITCH_METHOD}
+    WorkersKaraokeVoicePitch.model_validate(answer)  # the format (karaoke.ts) before Core reads it
+    # (Its length and where it ran: nothing of what was sung.)
+    log.info("karaoke voice: %.1f s on %s in %.2f s", seconds, device, time.perf_counter() - t0)
+    return JSONResponse(answer)
+
+
+@app.post("/karaoke/voice")
+async def karaoke_voice(request: Request) -> JSONResponse:
+    """The pitch of one recording of a singer's microphone (the body; WorkersKaraokeVoicePitch), for
+    the official score. Kept only until it is answered, under the data dir's ``_voice`` (never a
+    song, never in the cache), and never logged."""
+    import karaoke as kara
+    from starlette.concurrency import run_in_threadpool
+
+    ext = kara.voice_type(request.headers.get("content-type"))
+    if ext is None:
+        return _error(415, "the recording must be audio/webm, audio/ogg, audio/mp4 or audio/wav")
+    too_big = f"the recording is larger than {kara.VOICE_MAX_BYTES} bytes"
+    try:
+        declared = int(request.headers.get("content-length") or 0)
+    except ValueError:
+        return _error(400, "invalid content-length")
+    if declared > kara.VOICE_MAX_BYTES:
+        return _error(413, too_big)
+    _sweep_voice()
+    folder = state.voice_dir or (state.store.root / kara.VOICE_DIR)
+    folder.mkdir(parents=True, exist_ok=True)
+    token = secrets.token_hex(12)
+    raw, wav = folder / f"{token}{ext}", folder / f"{token}.16k.wav"
+    try:
+        size = 0
+        with raw.open("wb") as f:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > kara.VOICE_MAX_BYTES:
+                    return _error(413, too_big)
+                f.write(chunk)
+        if size == 0:
+            return _error(400, "the recording is empty")
+        return await run_in_threadpool(_voice_answer, raw, wav)
+    finally:
+        raw.unlink(missing_ok=True)
+        wav.unlink(missing_ok=True)
 
 
 @app.post("/gpu/context")

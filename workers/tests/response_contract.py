@@ -71,6 +71,7 @@ ROUTES: dict[str, dict[tuple[str, str], str | dict[str, str]]] = {
         ("GET", "/karaoke"): NOT_IN_CONTRACT,
         ("GET", "/karaoke/{kid}/files/{name}"): {"reference.json": "WorkersKaraokeReference", "*": NOT_JSON},
         ("POST", "/karaoke/{kid}/keys"): "WorkersKaraokeKeyReply",
+        ("POST", "/karaoke/voice"): "WorkersKaraokeVoicePitch",
         ("POST", "/gpu/context"): "WorkersSingOk",
         ("GET", "/cache"): NOT_IN_CONTRACT,
         ("POST", "/cache/prune"): NOT_IN_CONTRACT,

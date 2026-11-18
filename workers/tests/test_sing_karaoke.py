@@ -305,7 +305,9 @@ def test_a_karaoke_job_makes_a_backing_track_and_a_reference(worker):
     assert b.karaoke_f0_inputs[-1] == ("lead.wav", "cpu")
     assert b.karaoke_parts[-1] == ["rest.wav"]
     folder = root / "_karaoke" / k["id"]
-    assert sorted(p.name for p in folder.iterdir()) == ["karaoke.m4a", "meta.json", "reference.json"]
+    # The mock's source has a video: the song gets its own (stage ``video``).
+    assert sorted(p.name for p in folder.iterdir()) == ["karaoke.m4a", "meta.json", "reference.json", "video.mp4"]
+    assert k["video"] is True
 
     # reference.json, as served (tests/response_contract.py holds it to WorkersKaraokeReference too).
     r = client.get(f"/karaoke/{k['id']}/files/reference.json")
@@ -502,3 +504,174 @@ def test_the_key_names_are_karaoke_ts_ones():
     assert karaoke.is_key_file("karaoke.k+6.m4a") and karaoke.is_key_file("karaoke.k-1.m4a")
     assert not karaoke.is_key_file("karaoke.k+7.m4a") and not karaoke.is_key_file("karaoke.k+0.m4a")
     assert not karaoke.is_key_file("karaoke.m4a") and not karaoke.is_key_file("../karaoke.k+1.m4a")
+
+
+# ── the background video (step 3) ────────────────────────────────────────────
+
+
+def karaoke_meta(root: Path, kid: str) -> dict:
+    return json.loads((root / "_karaoke" / kid / "meta.json").read_text("utf-8"))
+
+
+def test_a_karaoke_song_gets_its_own_video_from_the_shared_download(worker):
+    client, server, root = worker
+    b = server.state.backend
+    done = karaoke_job(client, "karaoke video")
+    assert done["state"] == "done", done
+    k = done["karaoke"]
+    assert k["video"] is True
+    contracts.WorkersKaraokeSong.model_validate(k, strict=True)
+    # Fetched by the cover's machinery into the source's shared video.mp4, then made from it.
+    assert done["video"]["state"] == "done"
+    assert (root / "_sources" / done["source"]["key"] / "video.mp4").is_file()
+    assert b.karaoke_videos[-1] == "video.mp4"
+    meta = karaoke_meta(root, k["id"])
+    assert meta["video"]["method"] == "mock" and meta["video"]["file"] == "video.mp4" and meta["video_error"] is None
+    assert "video_make_s" in meta["timings"]
+    r = client.get(f"/karaoke/{k['id']}/files/video.mp4")
+    assert r.status_code == 200 and r.headers["content-type"] == "video/mp4" and r.content[4:8] == b"ftyp"
+    # The browser streams it: range requests.
+    part = client.get(f"/karaoke/{k['id']}/files/video.mp4", headers={"Range": "bytes=0-7"})
+    assert part.status_code == 206 and part.content == r.content[:8]
+    # The cached answer and the list say so too; a cover of the same song reuses the download.
+    again = client.post("/jobs", json={"query": "karaoke video", "purpose": "karaoke"}).json()["job"]
+    assert again["cached"] is True and again["karaoke"]["video"] is True
+    assert [s["video"] for s in client.get("/karaoke").json()["karaoke"] if s["id"] == k["id"]] == [True]
+
+
+def test_a_source_without_a_video_still_makes_the_song(worker):
+    client, _server, root = worker
+    done = karaoke_job(client, "karaoke novideo")
+    assert done["state"] == "done", done
+    k = done["karaoke"]
+    assert k["video"] is False and done["video"]["state"] == "failed"
+    meta = karaoke_meta(root, k["id"])
+    assert meta["video"] is None and "no video" in meta["video_error"]
+    assert not (root / "_karaoke" / k["id"] / "video.mp4").exists()
+    assert client.get(f"/karaoke/{k['id']}/files/video.mp4").status_code == 404
+
+
+def test_karaoke_video_false_fetches_none(worker):
+    client, server, root = worker
+    b = server.state.backend
+    made = len(b.karaoke_videos)
+    done = karaoke_job(client, "karaoke without picture", karaoke_video=False)
+    assert done["state"] == "done", done
+    assert done["video"] is None and done["karaoke"]["video"] is False and len(b.karaoke_videos) == made
+    assert not (root / "_sources" / done["source"]["key"] / "video.mp4").exists()
+    assert "karaoke_video" in karaoke_meta(root, done["karaoke"]["id"])["video_error"]
+
+
+def test_videos_off_on_the_worker_fetch_none(worker, monkeypatch):
+    client, _server, root = worker
+    monkeypatch.setenv("SING_VIDEO", "0")
+    done = karaoke_job(client, "karaoke videos off")
+    assert done["video"] is None and done["karaoke"]["video"] is False
+    assert "SING_VIDEO=0" in karaoke_meta(root, done["karaoke"]["id"])["video_error"]
+
+
+def test_a_video_that_cannot_be_made_leaves_the_song_ready_without_one(worker, monkeypatch):
+    client, _server, root = worker
+    monkeypatch.setenv("SING_MOCK_VIDEO_FAIL", "1")
+    done = karaoke_job(client, "karaoke broken video")
+    assert done["state"] == "done", done
+    k = done["karaoke"]
+    assert k["video"] is False and k["quality"] is not None
+    meta = karaoke_meta(root, k["id"])
+    assert meta["video"] is None and meta["video_error"] == "mock video conversion failed"
+    assert not (root / "_karaoke" / k["id"] / "video.mp4").exists()
+    assert client.get(f"/karaoke/{k['id']}/files/reference.json").status_code == 200
+
+
+def test_a_song_made_before_videos_is_not_made_again_for_one(worker):
+    client, server, root = worker
+    b = server.state.backend
+    k = karaoke_job(client, "karaoke old song")["karaoke"]
+    folder = root / "_karaoke" / k["id"]
+    (folder / "video.mp4").unlink()  # as a song from before step 3
+    meta = karaoke_meta(root, k["id"])
+    meta.pop("video"), meta.pop("video_error")
+    (folder / "meta.json").write_text(json.dumps(meta), "utf-8")
+    calls = len(b.karaoke_f0_inputs)
+    again = client.post("/jobs", json={"query": "karaoke old song", "purpose": "karaoke"}).json()["job"]
+    assert again["cached"] is True and again["karaoke"]["video"] is False
+    assert len(b.karaoke_f0_inputs) == calls
+    assert client.get(f"/karaoke/{k['id']}/files/video.mp4").status_code == 404
+
+
+def test_the_summary_says_video_only_when_the_file_is_there(tmp_path):
+    meta = {"id": "k-x", "title": "T", "artist": None, "duration_s": 3.0, "quality": None,
+            "video": {"file": "video.mp4"}}
+    assert karaoke.summary(meta)["video"] is False
+    assert karaoke.summary(meta, tmp_path)["video"] is False
+    (tmp_path / "video.mp4").write_bytes(b"x")
+    assert karaoke.summary(meta, tmp_path)["video"] is True
+    assert "video.mp4" in karaoke.SERVED_FILES and "video.mp4" not in karaoke.KARAOKE_FILES
+
+
+needs_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None,
+                                  reason="ffmpeg / ffprobe not installed")
+
+
+def synthetic_video(p: Path, size: str, seconds: float, *extra: str, audio: bool = False) -> Path:
+    """A test pattern made by ffmpeg itself (libx264, the CPU), no download."""
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i",
+           f"testsrc=size={size}:rate=30:duration={seconds}"]
+    if audio:
+        cmd += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}", "-c:a", "aac"]
+    cmd += ["-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", *extra, str(p)]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
+    return p
+
+
+def moov_first(p: Path) -> bool:
+    data = p.read_bytes()
+    return 0 <= data.find(b"moov") < data.find(b"mdat")
+
+
+@needs_ffmpeg
+def test_a_tall_video_is_scaled_and_capped_without_sound(tmp_path):
+    src = synthetic_video(tmp_path / "src.mp4", "1920x1080", 4.0, audio=True)
+    out = tmp_path / "video.mp4"
+    info = karaoke.make_video(src, out, 3.0, max_height=720, max_kbps=1500)
+    assert info["method"] == "x264" and (info["width"], info["height"]) == (1280, 720)
+    assert info["offset_s"] == 0.0 and info["duration_s"] == pytest.approx(3.0, abs=0.1)
+    got = karaoke.probe_video(out)
+    assert got["codec"] == "h264" and got["pix_fmt"] == "yuv420p" and got["audio"] is False
+    assert got["start_s"] == pytest.approx(0.0, abs=0.01) and got["kbps"] <= 1500 * 1.2
+    assert moov_first(out)
+    assert not (tmp_path / "video.part.mp4").exists()
+
+
+@needs_ffmpeg
+def test_a_video_that_fits_is_copied(tmp_path):
+    src = synthetic_video(tmp_path / "src.mp4", "320x240", 4.0)
+    info = karaoke.make_video(src, tmp_path / "video.mp4", 3.0)
+    assert info["method"] == "copy" and (info["width"], info["height"]) == (320, 240)
+    assert info["duration_s"] == pytest.approx(3.0, abs=0.15) and moov_first(tmp_path / "video.mp4")
+    # Too many kbps for the cap: re-encoded.
+    assert karaoke.make_video(src, tmp_path / "capped.mp4", 3.0, max_kbps=1)["method"] == "x264"
+
+
+@needs_ffmpeg
+def test_a_video_whose_first_frame_is_late_stays_on_the_backings_timeline(tmp_path):
+    src = synthetic_video(tmp_path / "late.mp4", "320x240", 4.0, "-output_ts_offset", "0.5")
+    assert karaoke.probe_video(src)["start_s"] == pytest.approx(0.5, abs=0.01)
+    out = tmp_path / "video.mp4"
+    info = karaoke.make_video(src, out, 3.0)
+    # Its first picture is held for the 0.5 s before it: the frame at t in the source file is at t.
+    assert info["method"] == "x264" and info["offset_s"] == pytest.approx(0.5) and info["start_s"] == pytest.approx(0.5)
+    got = karaoke.probe_video(out)
+    assert got["start_s"] == pytest.approx(0.0, abs=0.01) and got["duration_s"] == pytest.approx(3.0, abs=0.05)
+
+
+@needs_ffmpeg
+def test_what_ffmpeg_cannot_read_is_an_error(tmp_path):
+    from engine import JobError
+
+    bad = tmp_path / "video.mkv"
+    bad.write_bytes(b"video")
+    with pytest.raises(JobError):
+        karaoke.make_video(bad, tmp_path / "video.mp4", 3.0)
+    assert not (tmp_path / "video.mp4").exists()

@@ -4,6 +4,8 @@
     <root>/_karaoke/<karaoke id>/       one karaoke song, apart from her covers: ``GET /songs``
         karaoke.m4a                     never lists it (songs.Store skips ``_`` dirs)
         karaoke.k+3.m4a                 the backing in another key, made when a singer asks (``keys``)
+        video.mp4                       the source's picture on the backing's timeline, no sound
+                                        (``make_video``); only when the source has one
         reference.json                  WorkersKaraokeReference (version 2: WorkersKaraokeReferenceV2)
         meta.json                       what made it (source, lead split, lyrics, timings); written
                                         last, so a folder without it is a job that did not finish
@@ -24,7 +26,7 @@ import subprocess
 import wave
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from songs import safe_id
 
@@ -36,11 +38,14 @@ REFERENCE_VERSION = 2
 BACKING_FILE = "karaoke.m4a"
 REFERENCE_FILE = "reference.json"
 META_FILE = "meta.json"
-# Files a client may fetch from a karaoke song (karaoke.ts KARAOKE_FILES).
+# Files every finished karaoke song has, which a client may fetch (karaoke.ts KARAOKE_FILES).
 KARAOKE_FILES = {
     BACKING_FILE: "audio/mp4",
     REFERENCE_FILE: "application/json",
 }
+# The background video (karaoke.ts KARAOKE_VIDEO_FILE): fetched like them, but a song may have none.
+VIDEO_FILE = "video.mp4"
+SERVED_FILES = {**KARAOKE_FILES, VIDEO_FILE: "video/mp4"}
 # The backing track: AAC in MP4, stereo, 48 kHz (what the browser's AudioContext runs at).
 BACKING_RATE = 48_000
 BACKING_CHANNELS = 2
@@ -96,15 +101,17 @@ class KaraokeStore:
         for d in sorted(self.root.iterdir()) if self.root.is_dir() else []:
             meta = self.meta(d.name) if d.is_dir() else None
             if meta is not None:
-                out.append({**summary(meta), "created_at": meta.get("created_at")})
+                out.append({**summary(meta, d), "created_at": meta.get("created_at")})
         out.sort(key=lambda m: m.get("created_at") or "", reverse=True)
         return out
 
 
-def summary(meta: dict[str, Any]) -> dict[str, Any]:
-    """``job.karaoke`` (WorkersKaraokeSong) from a karaoke song's meta.json."""
+def summary(meta: dict[str, Any], folder: Path | None = None) -> dict[str, Any]:
+    """``job.karaoke`` (WorkersKaraokeSong) from a karaoke song's meta.json; ``video`` only when its
+    ``folder`` has the file."""
     return {"id": meta["id"], "title": meta.get("title") or "", "artist": meta.get("artist"),
-            "duration_s": meta.get("duration_s"), "quality": meta.get("quality")}
+            "duration_s": meta.get("duration_s"), "quality": meta.get("quality"),
+            "video": folder is not None and (folder / VIDEO_FILE).is_file()}
 
 
 # ── lyrics ───────────────────────────────────────────────────────────────────
@@ -281,6 +288,235 @@ def shift_backing(src: Path, out: Path, semitones: int) -> str:
     finally:
         part.unlink(missing_ok=True)
     return method
+
+
+# ── the background video (docs/design/karaoke.md 「做了什麼第三步」) ─────────────────
+
+# The tallest and the most kbps a karaoke song's video gets (SING_KARAOKE_VIDEO_HEIGHT / _KBPS):
+# a singer's browser streams it next to the backing, often over a home connection.
+VIDEO_MAX_HEIGHT = 720
+VIDEO_MAX_KBPS = 1500
+VIDEO_CRF = 23
+VIDEO_GOP = 60  # a key frame every 2 s at 30 fps: a seek in the browser lands close
+# A first frame this close to the file's zero is the encoder's delay (B-frames), not a picture that
+# starts late: the video is simply started at zero.
+VIDEO_START_TOLERANCE_S = 0.1
+VIDEO_TIMEOUT_S = 900.0
+
+
+def _number(v: Any) -> float | None:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if math.isfinite(f) else None
+
+
+def probe_video(p: Path) -> dict[str, Any]:
+    """ffprobe's view of ``p``'s first video stream: ``codec``, ``pix_fmt``, ``width``, ``height``,
+    ``start_s`` (where its first frame is on the file's timeline), ``duration_s``, ``kbps`` (the
+    stream's bit rate, else the file's size over its length), ``audio`` (whether it has sound)."""
+    from engine import JobError
+
+    cmd = ["ffprobe", "-v", "error", "-show_entries",
+           "stream=codec_type,codec_name,pix_fmt,width,height,start_time,duration,bit_rate"
+           ":format=start_time,duration,size", "-of", "json", str(p)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except subprocess.TimeoutExpired as e:
+        raise JobError("ffprobe took too long to read the video") from e
+    if r.returncode != 0:
+        raise JobError(f"ffprobe cannot read the video: {r.stderr.strip()[:300]}")
+    try:
+        data = json.loads(r.stdout or "{}")
+    except ValueError as e:
+        raise JobError("ffprobe's answer about the video is not JSON") from e
+    streams = data.get("streams") or []
+    video = next((s for s in streams if s.get("codec_type") == "video"), None)
+    if video is None:
+        raise JobError("the file has no video stream")
+    fmt = data.get("format") or {}
+    duration = _number(video.get("duration")) or _number(fmt.get("duration"))
+    kbps = _number(video.get("bit_rate"))
+    kbps = kbps / 1000 if kbps else None
+    size = _number(fmt.get("size"))
+    if kbps is None and size and duration:
+        kbps = size * 8 / duration / 1000
+    start = _number(video.get("start_time"))
+    if start is None:
+        start = _number(fmt.get("start_time")) or 0.0
+    return {"codec": video.get("codec_name"), "pix_fmt": video.get("pix_fmt"),
+            "width": int(video.get("width") or 0), "height": int(video.get("height") or 0),
+            "start_s": start, "duration_s": duration, "kbps": None if kbps is None else round(kbps),
+            "audio": any(s.get("codec_type") == "audio" for s in streams)}
+
+
+def _run_ffmpeg(cmd: list[str], cancelled: Callable[[], bool] | None, timeout_s: float) -> None:
+    """``cmd`` to its end; stopped when ``cancelled`` (raises ``Cancelled``) or after ``timeout_s``."""
+    import time
+
+    from engine import Cancelled, JobError
+
+    proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    deadline = time.monotonic() + timeout_s
+    try:
+        while True:
+            try:
+                _, err = proc.communicate(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if cancelled is not None and cancelled():
+                    raise Cancelled() from None
+                if time.monotonic() >= deadline:
+                    raise JobError(f"ffmpeg took longer than {timeout_s:.0f} s on the video") from None
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.communicate()
+    if proc.returncode != 0:
+        raise JobError(f"ffmpeg could not make the karaoke video: "
+                       f"{(err or b'').decode('utf-8', 'replace').strip()[:300]}")
+
+
+def make_video(src: Path, out: Path, duration_s: float, max_height: int = VIDEO_MAX_HEIGHT,
+               max_kbps: int = VIDEO_MAX_KBPS, cancelled: Callable[[], bool] | None = None) -> dict[str, Any]:
+    """The karaoke song's background video ``out`` from the source's video ``src`` (the source dir's
+    shared video.mp4 a cover uses too, or a library entry's): no sound, H.264 yuv420p, at most
+    ``max_height`` tall and ``max_kbps``, ``+faststart`` (the browser streams it with range
+    requests), cut to the backing's ``duration_s``. Copied as it is when it already fits, else
+    re-encoded with libx264.
+
+    The timeline: the backing and the reference start at the downloaded audio's first sample
+    (engine.ffmpeg_to_wav drops the audio stream's own start time; nothing after it trims the head),
+    and the shared video starts at its first frame the same way (engine.normalize_video). What is
+    left is the video file's own start: ffmpeg moves the first frame to zero, so a first frame later
+    than the file's zero by more than VIDEO_START_TOLERANCE_S gets that long of its first picture
+    in front of it (``tpad``), one before zero has that much cut (``trim``): frame time t of the
+    source file is backing time t. Returns what was done (meta.json ``video``)."""
+    from engine import JobError
+
+    if shutil.which("ffmpeg") is None or shutil.which("ffprobe") is None:
+        raise JobError("ffmpeg is not installed: the karaoke video cannot be made")
+    if not duration_s or duration_s <= 0:
+        raise JobError("the backing has no length to cut the video to")
+    info = probe_video(src)
+    start = float(info["start_s"] or 0.0)
+    offset = start if abs(start) > VIDEO_START_TOLERANCE_S else 0.0
+    fits = (info["codec"] == "h264" and info["pix_fmt"] == "yuv420p" and 0 < info["height"] <= max_height
+            and info["kbps"] is not None and info["kbps"] <= max_kbps and offset == 0.0)
+    part = out.with_name(out.stem + ".part" + out.suffix)
+    head = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
+            "-map", "0:v:0", "-an", "-sn", "-dn"]
+    # (No ``-avoid_negative_ts make_zero``: with B-frames it starts the picture a frame or two late,
+    # where the mp4 muxer's own edit list keeps the first frame at zero.)
+    tail = ["-t", f"{duration_s:.3f}", "-movflags", "+faststart", "-f", "mp4", str(part)]
+    if fits:
+        method, enc = "copy", ["-c:v", "copy"]
+    else:
+        method = "x264"
+        vf = []
+        if offset > 0:
+            vf.append(f"tpad=start_duration={offset:.3f}:start_mode=clone")
+        elif offset < 0:
+            vf.append(f"trim=start={-offset:.3f},setpts=PTS-STARTPTS")
+        if info["height"] > max_height:
+            vf.append(f"scale=-2:{int(max_height)}")
+        vf.append("format=yuv420p")
+        enc = ["-vf", ",".join(vf), "-c:v", "libx264", "-preset", "veryfast", "-crf", str(VIDEO_CRF),
+               "-maxrate", f"{int(max_kbps)}k", "-bufsize", f"{int(max_kbps) * 2}k", "-g", str(VIDEO_GOP),
+               "-threads", "4"]
+    try:
+        _run_ffmpeg(head + enc + tail, cancelled, VIDEO_TIMEOUT_S)
+        made = probe_video(part)
+        if made["audio"] or made["codec"] != "h264":
+            raise JobError("the karaoke video did not come out as H.264 without sound")
+        os.replace(part, out)
+    finally:
+        part.unlink(missing_ok=True)
+    return {"file": VIDEO_FILE, "method": method, "width": made["width"], "height": made["height"],
+            "kbps": made["kbps"], "duration_s": None if made["duration_s"] is None else round(made["duration_s"], 2),
+            "offset_s": round(offset, 3), "start_s": round(start, 3), "bytes": out.stat().st_size,
+            "source": {k: info[k] for k in ("codec", "width", "height", "kbps")}}
+
+
+# ── a singer's recording (POST /karaoke/voice) ───────────────────────────────
+
+VOICE_RATE = 16_000
+# karaoke.ts KARAOKE_VOICE_MAX_BYTES.
+VOICE_MAX_BYTES = 8 * 1024 * 1024
+# What a singer's browser sends (MediaRecorder), and WAV for tests; the extension the file is kept under.
+VOICE_TYPES = {"audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mp4": ".m4a", "audio/wav": ".wav",
+               "audio/x-wav": ".wav", "audio/wave": ".wav"}
+VOICE_DIR = "_voice"  # under the data dir: never a song, never counted by the cache (cache.py)
+VOICE_KEEP_S = 600.0  # a recording left behind (a crash) is deleted after this long at most
+
+
+def voice_type(content_type: str | None) -> str | None:
+    """The file extension for a request's ``content-type`` (parameters such as ``codecs`` aside),
+    ``None`` when it is not one the endpoint takes."""
+    base = (content_type or "").split(";", 1)[0].strip().lower()
+    return VOICE_TYPES.get(base)
+
+
+def sweep_voice(folder: Path, older_than_s: float = VOICE_KEEP_S, now: float | None = None) -> int:
+    """Deletes the recordings in ``folder`` older than ``older_than_s``; how many."""
+    import time
+
+    if not folder.is_dir():
+        return 0
+    now = time.time() if now is None else now
+    gone = 0
+    for p in folder.iterdir():
+        try:
+            if p.is_file() and now - p.stat().st_mtime > older_than_s:
+                p.unlink()
+                gone += 1
+        except OSError:
+            pass
+    return gone
+
+
+def decode_voice(src: Path, dst: Path, max_s: float) -> Path:
+    """``src`` as 16 kHz mono 16-bit WAV in ``dst`` (at most ``max_s`` of it), the file to read.
+    Without ffmpeg a WAV is read as it is; anything else cannot be."""
+    from engine import JobError
+
+    if shutil.which("ffmpeg") is None:
+        if src.suffix == ".wav":
+            return src
+        raise JobError("ffmpeg is not installed: the recording cannot be decoded")
+    cmd = ["ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(src),
+           "-t", f"{max_s:.0f}", "-vn", "-ac", "1", "-ar", str(VOICE_RATE), "-c:a", "pcm_s16le",
+           "-f", "wav", str(dst)]
+    try:
+        r = subprocess.run(cmd, capture_output=True, timeout=120)
+    except subprocess.TimeoutExpired as e:
+        raise ValueError("decoding the recording took too long") from e
+    if r.returncode != 0:
+        raise ValueError("the recording cannot be decoded")
+    return dst
+
+
+def voice_pitch(f0, mono, sr: int, seconds: float, clean: bool = True) -> dict[str, Any]:
+    """The answer's ``midi``, ``level_db`` and ``floor_db`` from RMVPE's F0 (10 ms, Hz) of the
+    recording and its samples: the reference's own treatment (melody.curve: gated by the voice's
+    loudness, cleaned, 50 Hz MIDI), ``seconds * 50`` frames from its first sample. ``level_db``: the
+    median dBFS of the 10 ms frames under a voiced curve frame (``None`` when nothing was sung);
+    ``floor_db``: the 10th percentile of all of them."""
+    import numpy as np
+
+    import melody
+
+    rms = melody.frame_rms(mono, sr)
+    frames = int(round(seconds * melody.CURVE_HZ))
+    midi = melody.curve(f0, rms, frames=frames, clean=clean)
+    db = 20.0 * np.log10(np.maximum(np.asarray(rms, dtype=np.float64), 1e-9))
+    voiced_curve = ~np.isnan(midi)
+    under = np.repeat(voiced_curve, melody.CURVE_STEP)[: db.size]
+    voiced_db = db[: under.size][under]
+    return {"midi": melody.curve_json(midi),
+            "level_db": round(float(np.median(voiced_db)), 1) if voiced_db.size else None,
+            "floor_db": round(float(np.percentile(db, 10)), 1) if db.size else None}
 
 
 # ── reference.json ───────────────────────────────────────────────────────────
