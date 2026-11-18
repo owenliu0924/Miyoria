@@ -1,7 +1,12 @@
 // The overlay feed: every message round-trips through JSON and the union tells them apart.
 
 import { describe, expect, it } from "vitest";
-import { type OverlayMessage, OverlayMessageSchema } from "../src/index.js";
+import {
+  type OverlayMessage,
+  OverlayMessageSchema,
+  type OverlayReply,
+  OverlayReplySchema,
+} from "../src/index.js";
 
 const messages: OverlayMessage[] = [
   { type: "subtitle", turn: "t1", text: "嗨", final: true },
@@ -27,6 +32,25 @@ const messages: OverlayMessage[] = [
   },
   { type: "gift", text: "Mia 送了 3 碗飯" },
   { type: "screen", name: "Mia", text: "hi" },
+  {
+    type: "danmaku",
+    id: "01J",
+    name: "Mia",
+    text: "好可愛",
+    max_on_screen: 12,
+    queue_max: 20,
+    max_wait_ms: 30_000,
+  },
+  {
+    type: "danmaku",
+    id: "01K",
+    name: null,
+    text: "晚安",
+    max_on_screen: 12,
+    queue_max: 20,
+    max_wait_ms: 30_000,
+  },
+  { type: "danmaku_clear" },
   { type: "touch", x: 0.25, y: 0.75, part: "face" },
   { type: "speaking", state: "stopped" },
   { type: "levels", rms: 0.3, bands: [0.1, 0.2] },
@@ -47,5 +71,26 @@ describe("OverlayMessage", () => {
   it("rejects a type it does not know, and `queue`, which nothing sends", () => {
     expect(OverlayMessageSchema.safeParse({ type: "queue", items: [] }).success).toBe(false);
     expect(OverlayMessageSchema.safeParse({ type: "dance" }).success).toBe(false);
+  });
+});
+
+describe("OverlayReply", () => {
+  const replies: OverlayReply[] = [
+    { type: "danmaku_ready" },
+    { type: "danmaku_shown", id: "01J" },
+    { type: "danmaku_dropped", id: "01K", reason: "queue_full" },
+    { type: "danmaku_dropped", id: "01L", reason: "too_late" },
+    { type: "danmaku_dropped", id: "01M", reason: "cleared" },
+  ];
+
+  it.each(replies.map((m, i) => [`${i} ${m.type}`, m] as const))("%s round-trips", (_name, m) => {
+    expect(OverlayReplySchema.parse(JSON.parse(JSON.stringify(m)))).toStrictEqual(m);
+  });
+
+  it("covers every type of the union, and refuses a reason it does not know", () => {
+    const tags = OverlayReplySchema.options.map((o) => o.shape.type.value).sort();
+    expect([...new Set(replies.map((m) => m.type))].sort()).toEqual(tags);
+    const bad = { type: "danmaku_dropped", id: "x", reason: "bored" };
+    expect(OverlayReplySchema.safeParse(bad).success).toBe(false);
   });
 });

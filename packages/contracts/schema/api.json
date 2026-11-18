@@ -2627,6 +2627,73 @@
         "month"
       ]
     },
+    "ApiDanmakuRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false
+    },
+    "ApiDanmakuView": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "live": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "price": {
+          "type": "number"
+        },
+        "max_chars": {
+          "type": "number"
+        },
+        "cooldown_s": {
+          "type": "number"
+        },
+        "per_day": {
+          "type": "number"
+        },
+        "sent_today": {
+          "type": "number"
+        },
+        "wait_s": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "open",
+        "live",
+        "currency",
+        "price",
+        "max_chars",
+        "cooldown_s",
+        "per_day",
+        "sent_today",
+        "wait_s",
+        "balance",
+        "why"
+      ]
+    },
     "ApiDataCategoryId": {
       "type": "string",
       "enum": [

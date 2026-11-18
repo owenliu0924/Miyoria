@@ -2,7 +2,8 @@
 // a blocked person) reads an empty wallet and gets 403 for every spend, in the same words.
 //
 // A spend takes an `Idempotency-Key` header: the same key answers what it answered first. `402` is
-// not enough coins, `409` a refusal in the words of the page, `429` a limit.
+// not enough coins, `409` a refusal in the words of the page, `429` a limit. A danmaku line is
+// charged when it is sent and given back by itself when the overlay could not show it.
 
 import { z } from "zod";
 import { IssuedFortuneSchema } from "./fortune.js";
@@ -129,6 +130,40 @@ export const SpendResultSchema = z
   .meta({ id: "ApiSpendResult" });
 export type SpendResult = z.output<typeof SpendResultSchema>;
 
+/**
+ * `GET /api/member/danmaku`: what sending a danmaku line (a short line that crosses her stream)
+ * costs this member now. `why` says, in the page's words, why they cannot send one right now
+ * (`null`: they can); the send answers the same refusals.
+ */
+export const DanmakuViewSchema = z
+  .object({
+    /** Danmaku are on (the owner's setting). */
+    open: z.boolean(),
+    /** She is live and the overlay can take a line. */
+    live: z.boolean(),
+    currency: z.string(),
+    price: z.number(),
+    /** Longest line, in characters. */
+    max_chars: z.number(),
+    /** Seconds between two lines of one person. */
+    cooldown_s: z.number(),
+    per_day: z.number(),
+    /** Lines of theirs today that were not given back. */
+    sent_today: z.number(),
+    /** Seconds until they may send the next one; `0` now. */
+    wait_s: z.number(),
+    balance: z.number(),
+    why: z.string().nullable(),
+  })
+  .meta({ id: "ApiDanmakuView" });
+export type DanmakuView = z.output<typeof DanmakuViewSchema>;
+
+/** Body of `POST /api/member/danmaku`: one line (`409` when she is not live). */
+export const DanmakuRequestSchema = z
+  .strictObject({ text: z.string().max(500) })
+  .meta({ id: "ApiDanmakuRequest" });
+export type DanmakuRequest = z.input<typeof DanmakuRequestSchema>;
+
 /** Body of `POST /api/member/transfer`. */
 export const TransferRequestSchema = z
   .strictObject({
@@ -198,6 +233,16 @@ export const wallet = {
     .output(CheckinResultSchema),
   feed: spend("/api/member/feed", FeedRequestSchema).output(FeedResultSchema),
   screen: spend("/api/member/screen", ScreenRequestSchema).output(SpendResultSchema),
+  /** What a danmaku line costs this member now, and why they cannot send one (if so). */
+  danmakuView: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "GET", path: "/api/member/danmaku" })
+    .output(DanmakuViewSchema),
+  /**
+   * A danmaku line on her stream (`409` when she is not live, `429` a limit): charged now, given
+   * back by itself when the overlay could not show it.
+   */
+  danmaku: spend("/api/member/danmaku", DanmakuRequestSchema).output(SpendResultSchema),
   /** Coins to another member (`403` in the same words for every reason they cannot take them). */
   transfer: spend("/api/member/transfer", TransferRequestSchema).output(TransferResultSchema),
   board: route

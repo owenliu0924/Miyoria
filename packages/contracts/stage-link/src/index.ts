@@ -48,6 +48,15 @@ export const GIFT_COUNT_MAX = 99;
 export const SCREEN_NAME_MAX = 32;
 export const SCREEN_TEXT_MAX = 200;
 
+/** Longest danmaku id / sender name / text (code units). */
+export const DANMAKU_ID_MAX = 64;
+export const DANMAKU_NAME_MAX = 32;
+export const DANMAKU_TEXT_MAX = 100;
+/** Most danmaku lines on the screen at once, waiting in the queue, and the longest wait (ms). */
+export const DANMAKU_ON_SCREEN_MAX = 50;
+export const DANMAKU_QUEUE_MAX = 200;
+export const DANMAKU_WAIT_MAX_MS = 600_000;
+
 /** Longest highlight reason (code units). */
 export const CLIP_REASON_MAX = 120;
 /** Longest file path a message carries (code units). */
@@ -115,6 +124,17 @@ export const StageLinkActivityKindSchema = z
   .meta({ id: "StageLinkActivityKind" });
 export type ActivityKind = z.output<typeof StageLinkActivityKindSchema>;
 
+/**
+ * How a danmaku line ended on the stage: `shown` (it entered the screen), `no_overlay` (no overlay
+ * page was open), `queue_full` (the overlay's queue was full), `too_late` (it waited longer than
+ * `max_wait_ms`), `cleared` (the layer was cleared before it showed), `lost` (the overlay went away,
+ * or never answered, before it showed). Every outcome but `shown` means it was not seen.
+ */
+export const StageLinkDanmakuOutcomeSchema = z
+  .enum(["shown", "no_overlay", "queue_full", "too_late", "cleared", "lost"])
+  .meta({ id: "StageLinkDanmakuOutcome" });
+export type DanmakuOutcome = z.output<typeof StageLinkDanmakuOutcomeSchema>;
+
 /** A request id: a message with one is answered with the same. */
 const requestId = z.number().int().nonnegative().max(0xffff_ffff).nullish();
 
@@ -173,6 +193,18 @@ export const StageLinkClipSavedMessageSchema = z
   })
   .meta({ id: "StageLinkClipSavedMessage" });
 
+/**
+ * How a danmaku line (`danmaku`, by its `id`) ended on the overlay; sent once per line. A node that
+ * cannot reach Core keeps these and sends them when it is connected again.
+ */
+export const StageLinkDanmakuDoneMessageSchema = z
+  .object({
+    type: z.literal("danmaku_done"),
+    id: z.string().min(1).max(DANMAKU_ID_MAX),
+    outcome: StageLinkDanmakuOutcomeSchema,
+  })
+  .meta({ id: "StageLinkDanmakuDoneMessage" });
+
 export const StageLinkPingMessageSchema = z
   .object({ type: z.literal("ping") })
   .meta({ id: "StageLinkPingMessage" });
@@ -188,6 +220,7 @@ export const StageLinkStageMessageSchema = z
     StageLinkStatusMessageSchema,
     StageLinkErrorMessageSchema,
     StageLinkClipSavedMessageSchema,
+    StageLinkDanmakuDoneMessageSchema,
     StageLinkPingMessageSchema,
     StageLinkPongMessageSchema,
   ])
@@ -292,6 +325,30 @@ export const StageLinkScreenMessageSchema = z
   .meta({ id: "StageLinkScreenMessage" });
 
 /**
+ * A paid danmaku line (`economy.danmaku`): it crosses the overlay from right to left in a lane.
+ * `name` is the sender's display name, `null` when names are hidden. The limits are the owner's
+ * settings, sent with every line: at most `max_on_screen` lines on the screen, `queue_max` waiting,
+ * and a line that waited `max_wait_ms` is dropped. The node answers each line once with
+ * `danmaku_done` (an older node ignores the message, and Core gives up on it).
+ */
+export const StageLinkDanmakuMessageSchema = z
+  .object({
+    type: z.literal("danmaku"),
+    id: z.string().min(1).max(DANMAKU_ID_MAX),
+    name: z.string().max(DANMAKU_NAME_MAX).nullable(),
+    text: z.string().min(1).max(DANMAKU_TEXT_MAX),
+    max_on_screen: z.number().int().min(1).max(DANMAKU_ON_SCREEN_MAX),
+    queue_max: z.number().int().min(0).max(DANMAKU_QUEUE_MAX),
+    max_wait_ms: z.number().int().min(0).max(DANMAKU_WAIT_MAX_MS),
+  })
+  .meta({ id: "StageLinkDanmakuMessage" });
+
+/** Takes every danmaku line off the overlay; the ones still waiting end as `cleared`. */
+export const StageLinkDanmakuClearMessageSchema = z
+  .object({ type: z.literal("danmaku_clear") })
+  .meta({ id: "StageLinkDanmakuClearMessage" });
+
+/**
  * A viewer touched the stream on the website (`live.touch`): `x`, `y` 0..1 on the picture
  * (origin top-left), `part` what it landed on. The overlay draws it; she reacts to head, face
  * and body.
@@ -393,6 +450,8 @@ export const StageLinkCoreMessageSchema = z
     StageLinkAvatarExpressionMessageSchema,
     StageLinkGiftMessageSchema,
     StageLinkScreenMessageSchema,
+    StageLinkDanmakuMessageSchema,
+    StageLinkDanmakuClearMessageSchema,
     StageLinkTouchMessageSchema,
     StageLinkSongVideoMessageSchema,
     StageLinkBeatMessageSchema,

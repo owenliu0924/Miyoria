@@ -4,6 +4,9 @@
 //
 // Not the stage link: `gift` here is the merged line (`{ text }`), `activity` and `status` are a
 // subset of what the link carries, and `levels` is what viewers hear, not what the voice node sent.
+//
+// The other way, the page sends `OverlayReply` frames on the same socket: what became of each
+// danmaku line (shown, or dropped and why), so a paid line that nobody saw is given back.
 
 import { z } from "zod";
 
@@ -60,6 +63,29 @@ export const OverlayScreenMessageSchema = z
   })
   .meta({ id: "OverlayScreenMessage" });
 
+/**
+ * A paid danmaku line: it enters from the right and crosses the screen in a lane. `name` is the
+ * sender's display name, `null` when names are hidden. The limits come with every line (the owner
+ * may change them): at most `max_on_screen` on the screen, `queue_max` waiting, and a line that
+ * waited `max_wait_ms` is dropped. The page answers each line once (`OverlayReply`).
+ */
+export const OverlayDanmakuMessageSchema = z
+  .object({
+    type: z.literal("danmaku"),
+    id: z.string(),
+    name: z.string().nullable(),
+    text: z.string(),
+    max_on_screen: z.number(),
+    queue_max: z.number(),
+    max_wait_ms: z.number(),
+  })
+  .meta({ id: "OverlayDanmakuMessage" });
+
+/** Takes every danmaku line off the screen; the waiting ones are dropped (`cleared`). */
+export const OverlayDanmakuClearMessageSchema = z
+  .object({ type: z.literal("danmaku_clear") })
+  .meta({ id: "OverlayDanmakuClearMessage" });
+
 export const OverlayTouchPartSchema = z
   .enum(["head", "face", "body", "screen"])
   .meta({ id: "OverlayTouchPart" });
@@ -115,6 +141,8 @@ export const OverlayMessageSchema = z
     OverlayActivityMessageSchema,
     OverlayGiftMessageSchema,
     OverlayScreenMessageSchema,
+    OverlayDanmakuMessageSchema,
+    OverlayDanmakuClearMessageSchema,
     OverlayTouchMessageSchema,
     OverlaySpeakingMessageSchema,
     OverlayLevelsMessageSchema,
@@ -122,3 +150,42 @@ export const OverlayMessageSchema = z
   ])
   .meta({ id: "OverlayMessage" });
 export type OverlayMessage = z.output<typeof OverlayMessageSchema>;
+
+// ---------------------------------------------------------------------------------------------
+// The page to the stage node
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * This page shows danmaku (its danmaku layer is on): sent once after it connects. The node waits
+ * for the answers of these pages only; with none open, a line is given back at once.
+ */
+export const OverlayDanmakuReadySchema = z
+  .object({ type: z.literal("danmaku_ready") })
+  .meta({ id: "OverlayDanmakuReady" });
+
+/** A danmaku line entered the screen (sent once, when it starts to cross). */
+export const OverlayDanmakuShownSchema = z
+  .object({ type: z.literal("danmaku_shown"), id: z.string() })
+  .meta({ id: "OverlayDanmakuShown" });
+
+/**
+ * A danmaku line will never show: the queue was full when it came (`queue_full`), it waited longer
+ * than `max_wait_ms` (`too_late`), or the layer was cleared while it waited (`cleared`).
+ */
+export const OverlayDanmakuDroppedSchema = z
+  .object({
+    type: z.literal("danmaku_dropped"),
+    id: z.string(),
+    reason: z.enum(["queue_full", "too_late", "cleared"]),
+  })
+  .meta({ id: "OverlayDanmakuDropped" });
+
+/** Every frame the page sends. The node ignores a `type` it does not know. */
+export const OverlayReplySchema = z
+  .discriminatedUnion("type", [
+    OverlayDanmakuReadySchema,
+    OverlayDanmakuShownSchema,
+    OverlayDanmakuDroppedSchema,
+  ])
+  .meta({ id: "OverlayReply" });
+export type OverlayReply = z.output<typeof OverlayReplySchema>;

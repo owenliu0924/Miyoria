@@ -1,6 +1,6 @@
 // The economy's bus topics (docs/design/v5-contracts.md §3, K12a): a commission someone paid for
 // and how it ended, a room item the community funded, a paid message for the
-// screen, and a gift. Each type is the bus topic it is published on, and its payload is that
+// screen, a gift, and a paid danmaku line (with the owner's "clear the layer"). Each type is the bus topic it is published on, and its payload is that
 // event's data. Written from what `packages/economy` publishes today; the economy's own new
 // topics (`economy.posted`) are defined in the file that comes with them.
 //
@@ -74,6 +74,29 @@ export const ScreenLineSchema = z
   .meta({ id: "EventsScreenLine" });
 export type ScreenLineData = z.output<typeof ScreenLineSchema>;
 
+/**
+ * A paid danmaku line for the overlay: `economy.danmaku`. `id` is the ledger row of its charge (the
+ * stage answers with it, `stage.danmaku`); `name` is `null` when names are hidden. The limits are
+ * the owner's settings, sent with every line.
+ */
+export const DanmakuLineSchema = z
+  .object({
+    id: z.string(),
+    /** Who paid (display name, untrusted), or `null`. */
+    name: z.string().nullable(),
+    /** The line; already screened and cleaned. */
+    text: z.string(),
+    max_on_screen: z.number(),
+    queue_max: z.number(),
+    max_wait_ms: z.number(),
+  })
+  .meta({ id: "EventsDanmakuLine" });
+export type DanmakuLineData = z.output<typeof DanmakuLineSchema>;
+
+/** Take every danmaku line off the overlay (an owner's action): `economy.danmaku.clear`. */
+export const DanmakuClearSchema = z.object({}).meta({ id: "EventsDanmakuClear" });
+export type DanmakuClearData = z.output<typeof DanmakuClearSchema>;
+
 /** What a gift is: a food item. */
 export const GiftItemSchema = z
   .enum(["rice", "big_bowl", "dessert"])
@@ -130,6 +153,22 @@ export const EconomyGift = defineEvent({
   tier: "keep",
 });
 
+export const EconomyDanmaku = defineEvent({
+  type: "economy.danmaku",
+  v: 1,
+  data: DanmakuLineSchema,
+  scope: "public",
+  tier: "short",
+});
+
+export const EconomyDanmakuClear = defineEvent({
+  type: "economy.danmaku.clear",
+  v: 1,
+  data: DanmakuClearSchema,
+  scope: "owner",
+  tier: "short",
+});
+
 /** Every economy type published today. */
 export const ECONOMY_BUS_EVENTS = [
   EconomyCommission,
@@ -137,4 +176,6 @@ export const ECONOMY_BUS_EVENTS = [
   EconomyRoomPlaced,
   EconomyScreen,
   EconomyGift,
+  EconomyDanmaku,
+  EconomyDanmakuClear,
 ] as const;

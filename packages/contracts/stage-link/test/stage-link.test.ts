@@ -27,6 +27,7 @@ const stageMessages: StageMessageIn[] = [
   },
   { type: "error", message: "no obs", id: 3 },
   { type: "clip_saved", reason: "laugh", path: "C:\\clips\\a.mkv" },
+  { type: "danmaku_done", id: "01J", outcome: "shown" },
   { type: "ping" },
   { type: "pong" },
 ];
@@ -43,6 +44,16 @@ const coreMessages: CoreMessageIn[] = [
   { type: "avatar_expression", expression: "heart", seconds: 5, id: 4 },
   { type: "gift", name: "Mia", item: "bowl", count: 3, label: "a bowl" },
   { type: "screen", name: "Mia", text: "hi" },
+  {
+    type: "danmaku",
+    id: "01J",
+    name: null,
+    text: "好可愛",
+    max_on_screen: 12,
+    queue_max: 20,
+    max_wait_ms: 30_000,
+  },
+  { type: "danmaku_clear" },
   { type: "touch", x: 0.25, y: 0.75, part: "head" },
   {
     type: "song_video",
@@ -178,6 +189,42 @@ describe("CoreMessage", () => {
     ["beat", { type: "beat", song: "S", bpm: 401, times_ms: [], offset_ms: 0 }],
     ["activity", { type: "activity", kind: "singing", progress: 2 }],
     ["notice", { type: "notice", text: "x".repeat(201) }],
+    [
+      "danmaku",
+      {
+        type: "danmaku",
+        id: "a",
+        name: null,
+        text: "x".repeat(101),
+        max_on_screen: 12,
+        queue_max: 20,
+        max_wait_ms: 1,
+      },
+    ],
+    [
+      "danmaku",
+      {
+        type: "danmaku",
+        id: "a",
+        name: null,
+        text: "",
+        max_on_screen: 12,
+        queue_max: 20,
+        max_wait_ms: 1,
+      },
+    ],
+    [
+      "danmaku",
+      {
+        type: "danmaku",
+        id: "a",
+        name: "n",
+        text: "t",
+        max_on_screen: 0,
+        queue_max: 20,
+        max_wait_ms: 1,
+      },
+    ],
   ])("rejects an out-of-bounds %s", (_type, message) => {
     expect(StageLinkCoreMessageSchema.safeParse(message).success).toBe(false);
   });
