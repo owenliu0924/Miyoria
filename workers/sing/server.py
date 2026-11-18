@@ -260,9 +260,13 @@ log = logging.getLogger("miyoria.sing")
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 MAX_JOBS_KEPT = 100
-# Share of the job's progress per stage.
-WEIGHTS = {"resolve": 0.04, "download": 0.12, "exclusive": 0.0, "separate": 0.26, "lead": 0.08, "convert": 0.40, "mix": 0.07, "lyrics": 0.03,
-           "video": 0.0}
+# Share of the job's progress per stage, in the order the stages run (a stage that does not run for a
+# job, such as ``convert_backing`` without the backing voices converted, is skipped: the bar goes on
+# from the next one). The shares add up to 1; the stages that wait or hand over (``queued``,
+# ``exclusive``, ``gpu_wait``) and the ones too short to count (``beats``) have none. ``_set`` never
+# lets the progress go back, so a stage that comes again (a separation after the lead split) waits.
+WEIGHTS = {"resolve": 0.04, "download": 0.10, "separate": 0.22, "lead": 0.07, "convert": 0.33, "convert_backing": 0.08,
+           "mix": 0.06, "beats": 0.02, "lyrics": 0.03, "video": 0.05}
 # The same for a karaoke job (no conversion, no mix).
 KARAOKE_WEIGHTS = {"resolve": 0.05, "download": 0.16, "separate": 0.32, "lead": 0.11, "reference": 0.08, "encode": 0.05,
                    "lyrics": 0.03, "lyrics_asr": 0.14, "lyrics_align": 0.06}
@@ -798,10 +802,11 @@ def _public(job: Job) -> dict[str, Any]:
 
 
 def _set(job: Job, stage: str, within: float = 0.0) -> None:
+    """The job is in ``stage``, ``within`` (0..1) of the way through it. The progress only moves forward."""
     before = 0.0
     for name, w in (KARAOKE_WEIGHTS if job.is_karaoke else WEIGHTS).items():
         if name == stage:
-            job.progress = min(0.999, before + w * max(0.0, min(1.0, within)))
+            job.progress = max(job.progress, min(0.999, before + w * max(0.0, min(1.0, within))))
             break
         before += w
     job.stage = stage
@@ -1050,10 +1055,14 @@ class VideoFetch:
     def _progressed(self, f: float) -> None:
         self.progress = max(0.0, min(1.0, f))
 
-    def wait(self, timeout_s: float, job_cancel: threading.Event) -> None:
-        """Until it ends, at most ``timeout_s`` (then it is stopped); raises Cancelled with the job."""
+    def wait(self, timeout_s: float, job_cancel: threading.Event,
+             tick: Callable[[float], None] | None = None) -> None:
+        """Until it ends, at most ``timeout_s`` (then it is stopped); raises Cancelled with the job.
+        ``tick`` hears the download's progress (0..1) while it waits."""
         deadline = time.monotonic() + max(0.0, timeout_s)
         while self._thread.is_alive():
+            if tick is not None:
+                tick(self.progress)
             if job_cancel.is_set():
                 self.stop()
                 raise Cancelled()
@@ -1149,7 +1158,7 @@ def _attach_video(job: Job, src: Source, sdir: Path, out: Path, timings: dict[st
         if vf.running():
             _set(job, "video")
             t0 = time.perf_counter()
-            vf.wait(env_float("SING_VIDEO_WAIT_S", 120.0), job.cancel)
+            vf.wait(env_float("SING_VIDEO_WAIT_S", 120.0), job.cancel, lambda f: _set(job, "video", f))
             timings["video_wait_s"] = round(time.perf_counter() - t0, 2)
         if vf.seconds is not None:
             timings["video_s"] = vf.seconds
@@ -1797,8 +1806,8 @@ def _cover(job: Job, src: Source, sdir: Path, lead: dict[str, Any], vocal: Path,
     work = ConvertWork()
     pitch: dict[str, Any] = {}
 
-    def converted_share(f: float) -> None:
-        _set(job, "convert", f)
+    def converted_share(f: float, stage: str = "convert") -> None:
+        _set(job, stage, f)
         if job.gpu is not None:
             job.gpu.converted = f
 
@@ -1850,7 +1859,8 @@ def _cover(job: Job, src: Source, sdir: Path, lead: dict[str, Any], vocal: Path,
         backing_work = ConvertWork()  # its own: a suspended pass goes on from its last chunk
 
         def convert_backing_on_gpu(_device: str) -> None:
-            b.convert(backing_wav, backing_conv, pitch["vocal_shift"], converted_share, check, backing_work)
+            b.convert(backing_wav, backing_conv, pitch["vocal_shift"],
+                      lambda f: converted_share(f, "convert_backing"), check, backing_work)
 
         passes.append(lambda: timed("convert_backing", lambda: _gpu_stage(
             job, "convert", backing_wav, src.duration_s, convert_backing_on_gpu, backing_work)))
