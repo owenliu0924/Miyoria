@@ -43,6 +43,8 @@ export const SPEND_REASON_LABEL: Record<string, string> = {
   auction_hold: "拍賣出價押住",
   auction_release: "拍賣押款還回",
   auction_won: "拍賣得標",
+  danmaku: "直播彈幕",
+  danmaku_refund: "彈幕沒顯示,退回",
 };
 
 /** A ledger reason in words; an unknown one stays as it is. */
@@ -50,7 +52,7 @@ export const reasonLabel = (reason: string): string => (EARN_REASON_LABEL as Rec
 
 /** What the health table counts as issued (nothing was spent for it) and as recovered. */
 export const ISSUED_REASONS = ["checkin", "talked", "voice", "song", "her_gift", "quest", "play", "achievement"] as const;
-export const RECOVERED_REASONS = ["feed", "screen_message", "dedication", "draw", "shop", "room", "commission", "transfer_fee", "card_daily"] as const;
+export const RECOVERED_REASONS = ["feed", "screen_message", "dedication", "draw", "shop", "room", "commission", "transfer_fee", "card_daily", "danmaku"] as const;
 
 export const PREDICTION_STATUS_LABEL = {
   open: "可以下注",
