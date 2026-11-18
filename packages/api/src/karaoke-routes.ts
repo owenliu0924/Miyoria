@@ -15,6 +15,11 @@
 //   the raw recording as the body (`audio/webm`, `audio/ogg`, `audio/mp4`), at most
 //   `KARAOKE_VOICE_MAX_BYTES`, read with that cap and kept only in memory; one per session, after
 //   its result. `202 {state}`: a song worker reads it and Core scores it in the background.
+// * The reference editor (step 6, a panel admin's session only, else `403`):
+//   `GET /api/member/karaoke/songs/{id}/edit`, `PUT` the same path (an edit, also needs
+//   `admin.panel.write`), `POST .../edit/restore`; and its backing track as a plain member route
+//   (`GET /api/member/karaoke/edit/:song/backing`, served like the session files, a 404 to anyone
+//   else). A session's signed `reference.json` of a song with an edit is the edit.
 // * Admin (`karaokeAdmin`): `GET /api/karaoke/results`, the latest results with their flags.
 // * Rooms (step 4, `karaokeRooms` over `KaraokeRoomsKey`): the table routes (open, join, ready,
 //   song, start, close, ...) and four plain member routes: the room's event stream (SSE, what each
@@ -99,6 +104,31 @@ export const karaokeRpc = {
   ),
   result: os.karaoke.result.handler(({ input, context: { state, c } }) =>
     refusals(() => service(state).result(accountOf(c), input.params.id)),
+  ),
+  editor: os.karaoke.editor.handler(({ input, context: { state, c } }) =>
+    refusals(() => service(state).editor(accountOf(c), input.params.id, adminOf(c))),
+  ),
+  saveEdit: os.karaoke.saveEdit.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      service(state).saveEdit(
+        accountOf(c),
+        memberOf(c).name,
+        input.params.id,
+        input.body,
+        adminOf(c),
+      ),
+    ),
+  ),
+  restoreEdit: os.karaoke.restoreEdit.handler(({ input, context: { state, c } }) =>
+    refusals(() =>
+      service(state).restoreEdit(
+        accountOf(c),
+        memberOf(c).name,
+        input.params.id,
+        input.body.revision,
+        adminOf(c),
+      ),
+    ),
   ),
 };
 
@@ -306,9 +336,43 @@ async function file(state: ApiState, c: ApiContext): Promise<Response> {
     c.req.query("sig"),
   );
   if (found === null) throw ApiError.notFound("no such file");
-  const size = (await stat(found.path)).size;
+  if ("data" in found) {
+    // An edited reference, from memory: small, whole, never in ranges.
+    return new Response(found.data, {
+      status: 200,
+      headers: {
+        "content-type": found.type,
+        "cross-origin-resource-policy": "same-origin",
+        "content-length": String(found.data.byteLength),
+      },
+    });
+  }
+  return sendFile(c, found.path, found.type);
+}
+
+/**
+ * `GET /api/member/karaoke/edit/:song/backing`: the backing track the reference editor plays, for
+ * a panel admin's session only. Anything else (a member, no such song, not ready, no file) is the
+ * same 404 as the session files.
+ */
+async function editBacking(state: ApiState, c: ApiContext): Promise<Response> {
+  if (!adminOf(c)) throw ApiError.notFound("no such file");
+  let path: string | null;
+  try {
+    path = await service(state).editBacking(accountOf(c), param(c, "song"), true);
+  } catch (error) {
+    if (!(error instanceof KaraokeError)) throw error;
+    path = null;
+  }
+  if (path === null) throw ApiError.notFound("no such file");
+  return sendFile(c, path, "audio/mp4");
+}
+
+/** A file on Core as the answer, one byte range (`Range: bytes=a-b`) as a 206. */
+async function sendFile(c: ApiContext, path: string, type: string): Promise<Response> {
+  const size = (await stat(path)).size;
   const headers: Record<string, string> = {
-    "content-type": found.type,
+    "content-type": type,
     "accept-ranges": "bytes",
     "cross-origin-resource-policy": "same-origin",
   };
@@ -321,9 +385,7 @@ async function file(state: ApiState, c: ApiContext): Promise<Response> {
   }
   const { start, end } = range ?? { start: 0, end: size - 1 };
   const body =
-    size === 0
-      ? null
-      : (Readable.toWeb(createReadStream(found.path, { start, end })) as ReadableStream);
+    size === 0 ? null : (Readable.toWeb(createReadStream(path, { start, end })) as ReadableStream);
   return new Response(body, {
     status: range === null ? 200 : 206,
     headers: {
@@ -420,6 +482,12 @@ export function karaokeRoutes(state: ApiState): Route[] {
       path: "/api/member/karaoke/files/:session/:name",
       member: true,
       handler: (c) => file(state, c),
+    },
+    {
+      method: "GET",
+      path: "/api/member/karaoke/edit/:song/backing",
+      member: true,
+      handler: (c) => editBacking(state, c),
     },
     {
       method: "POST",

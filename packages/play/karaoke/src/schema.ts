@@ -12,6 +12,8 @@
 // - `karaoke_results`: Core's score of a session, and her comment on it; since migration 3 which
 //   score it is (`source`: `estimate` from the browser's track, `voice` from the recording of the
 //   singer) and what became of the recording (`voice_state`).
+// - `karaoke_references`, `karaoke_reference_edits` (migration 5): a song's edited reference and
+//   the record of its saves and restores.
 //
 // No foreign key to `persons`: a person who asks to be forgotten loses their sessions, tracks and
 // results through the plugin's hook; a song stays (it is nobody's).
@@ -262,5 +264,57 @@ export const karaokeRoomPayouts = sqliteTable(
       "karaoke_room_payouts_state_check",
       sql`${t.state} IN ('due', 'paid', 'capped', 'refused')`,
     ),
+  ],
+);
+
+/**
+ * A song's edited reference (migration 5, docs/design/karaoke.md 「做了什麼第六步」): one row per
+ * song a panel admin corrected. The worker's `reference.json` on Core stays as the worker wrote it
+ * (and goes with the song's files a day after it was last sung); this row is what everyone sings
+ * against while it exists, and a restore deletes it.
+ *
+ * - `reference`: the composed reference (`WorkersKaraokeReferenceV2`, JSON): the worker's with the
+ *   edit's lyrics and notes and the curve moved by `pitch_shift`.
+ * - `revision`: 1, 2, ... one more on each save (counting on from the song's last save after a
+ *   restore), what a save names to replace.
+ * - `base_hash`: SHA-256 (hex) of the worker's `reference.json` the save was built on;
+ *   `worker_hash`: of the latest one Core has read. They differ once the worker's changed.
+ * - `saved_person` / `saved_name`: who saved it (the name then; untrusted), cleared when they ask
+ *   to be forgotten (the edit stays: the song is nobody's).
+ */
+export const karaokeReferences = sqliteTable("karaoke_references", {
+  song_id: text().primaryKey(),
+  reference: text().notNull(),
+  pitch_shift: integer().notNull().default(0),
+  revision: integer().notNull(),
+  base_hash: text().notNull(),
+  worker_hash: text(),
+  saved_person: text(),
+  saved_name: text().notNull(),
+  saved_at: micros().notNull(),
+});
+
+/**
+ * Every save and restore of a song's reference (migration 5): what was done, the revision it made
+ * (`0` for a restore), the edited lines and the notes in what was saved, and who (cleared like
+ * `karaoke_references.saved_person` when they ask to be forgotten).
+ */
+export const karaokeReferenceEdits = sqliteTable(
+  "karaoke_reference_edits",
+  {
+    id: text().primaryKey(),
+    song_id: text().notNull(),
+    action: text().notNull(),
+    revision: integer().notNull(),
+    lines: integer().notNull(),
+    notes: integer().notNull(),
+    pitch_shift: integer().notNull(),
+    person_id: text(),
+    name: text().notNull(),
+    at: micros().notNull(),
+  },
+  (t) => [
+    index("karaoke_reference_edits_song_idx").on(t.song_id, t.at),
+    check("karaoke_reference_edits_action_check", sql`${t.action} IN ('save', 'restore')`),
   ],
 );

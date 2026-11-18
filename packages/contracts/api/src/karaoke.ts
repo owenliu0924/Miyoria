@@ -7,6 +7,11 @@
 // a room (`karaoke-rooms.ts`).
 
 import { z } from "zod";
+import {
+  WorkersKaraokeLyricsV2Schema,
+  WorkersKaraokeNoteSchema,
+  WorkersKaraokeReferenceV2Schema,
+} from "../../workers/src/karaoke.js";
 import { route } from "./route.js";
 
 /** One prepared (or preparing) song as a member sees it. Title and artist are untrusted. */
@@ -308,6 +313,92 @@ export const KaraokeAdminResultsSchema = z
   .meta({ id: "ApiKaraokeAdminResults" });
 export type KaraokeAdminResults = z.output<typeof KaraokeAdminResultsSchema>;
 
+// ---- the reference editor (docs/design/karaoke.md 「做了什麼第六步」) --------------------------
+//
+// A panel admin (session tier `admin`) corrects a prepared song's reference on the member page: its
+// lyrics (text, line and character times, readings) and its guide notes, and may move the whole
+// pitch curve. Core keeps the worker's reference as it is and stores the edit as the song's
+// override, which everyone sings against from then on; restoring drops the override. A member never
+// gets these routes (403). Saving needs `admin.panel.write` as well.
+
+/** What an edit changes of a reference: the lyrics, the guide notes, the curve's shift. */
+export const KaraokeEditDocSchema = z
+  .object({
+    lyrics: WorkersKaraokeLyricsV2Schema.nullable(),
+    notes: z.array(WorkersKaraokeNoteSchema),
+    /** Semitones the whole pitch curve is moved by from the worker's (the notes moved with it). */
+    pitch_shift: z.number().int().min(-24).max(24),
+  })
+  .meta({ id: "ApiKaraokeEditDoc" });
+export type KaraokeEditDoc = z.output<typeof KaraokeEditDocSchema>;
+
+/**
+ * Body of `PUT /api/member/karaoke/songs/{id}/edit`. `revision`: the edit this one replaces (the
+ * view's `edit.revision`, `0` for the worker's own): a save over someone else's newer one is `409`.
+ */
+export const KaraokeEditSaveSchema = KaraokeEditDocSchema.extend({
+  revision: z.number().int().min(0),
+}).meta({ id: "ApiKaraokeEditSave" });
+export type KaraokeEditSave = z.input<typeof KaraokeEditSaveSchema>;
+
+/** Body of `POST /api/member/karaoke/songs/{id}/edit/restore`. */
+export const KaraokeEditRestoreSchema = z
+  .strictObject({ revision: z.number().int().min(0) })
+  .meta({ id: "ApiKaraokeEditRestore" });
+export type KaraokeEditRestore = z.input<typeof KaraokeEditRestoreSchema>;
+
+/** One save or restore of a song's reference (the audit row). */
+export const KaraokeEditEntrySchema = z
+  .object({
+    action: z.enum(["save", "restore"]),
+    /** Who did it (their name then; untrusted), `""` once they asked to be forgotten. */
+    name: z.string(),
+    at: z.string(),
+    /** The revision it made (`0` for a restore). */
+    revision: z.number().int(),
+    /** Lines marked edited, and notes, in what was saved. */
+    lines: z.number().int(),
+    notes: z.number().int(),
+    pitch_shift: z.number().int(),
+  })
+  .meta({ id: "ApiKaraokeEditEntry" });
+export type KaraokeEditEntry = z.output<typeof KaraokeEditEntrySchema>;
+
+/** `GET /api/member/karaoke/songs/{id}/edit`: the song's reference as sung now, and the worker's. */
+export const KaraokeEditViewSchema = z
+  .object({
+    song: z.object({
+      id: z.string(),
+      title: z.string(),
+      artist: z.string().nullable(),
+      duration_s: z.number(),
+    }),
+    /** What everyone sings against now: the edit when there is one, else the worker's. */
+    reference: WorkersKaraokeReferenceV2Schema,
+    /** The worker's own lyrics and notes, to compare with (and what restoring goes back to). */
+    original: KaraokeEditDocSchema,
+    edit: z.object({
+      /** `0`: no edit, the worker's own is sung. */
+      revision: z.number().int(),
+      pitch_shift: z.number().int(),
+      saved_by: z.string().nullable(),
+      saved_at: z.string().nullable(),
+      /**
+       * The worker's reference changed since the edit was saved (the song was prepared again): the
+       * edit is still what is sung; saving again builds on the worker's new one, restoring takes it.
+       */
+      worker_changed: z.boolean(),
+    }),
+    /** The latest saves and restores, newest first. */
+    history: z.array(KaraokeEditEntrySchema),
+    /** Scores already recorded on this song: they stay as they were scored (never recomputed). */
+    results: z.number().int(),
+    /** The backing track for the editor to play (the panel admin's session only). */
+    backing_url: z.string(),
+  })
+  .meta({ id: "ApiKaraokeEditView" });
+export type KaraokeEditView = z.output<typeof KaraokeEditViewSchema>;
+
 const member = () => route.meta({ audience: "member", permission: null, limited: true });
 const id = z.object({ id: z.string().min(1).max(64) });
 
@@ -340,6 +431,33 @@ export const karaoke = {
     .route({ method: "GET", path: "/api/member/karaoke/sessions/{id}" })
     .input(z.object({ params: id }))
     .output(KaraokeResultSchema),
+  /** The reference editor's view of a ready song (panel admins only, else `403`). */
+  editor: member()
+    .route({ method: "GET", path: "/api/member/karaoke/songs/{id}/edit" })
+    .input(z.object({ params: id }))
+    .output(KaraokeEditViewSchema),
+  /** Saves an edit as the song's reference (`400` with the problems, `409` over a newer one). */
+  saveEdit: route
+    .meta({
+      audience: "member",
+      permission: "admin.panel.write",
+      refusal: "這個帳號只能看,不能存",
+      limited: true,
+    })
+    .route({ method: "PUT", path: "/api/member/karaoke/songs/{id}/edit" })
+    .input(z.object({ params: id, body: KaraokeEditSaveSchema }))
+    .output(KaraokeEditViewSchema),
+  /** Drops the song's edit: the worker's reference is sung again. */
+  restoreEdit: route
+    .meta({
+      audience: "member",
+      permission: "admin.panel.write",
+      refusal: "這個帳號只能看,不能存",
+      limited: true,
+    })
+    .route({ method: "POST", path: "/api/member/karaoke/songs/{id}/edit/restore" })
+    .input(z.object({ params: id, body: KaraokeEditRestoreSchema }))
+    .output(KaraokeEditViewSchema),
 };
 
 /** The owner's side. */

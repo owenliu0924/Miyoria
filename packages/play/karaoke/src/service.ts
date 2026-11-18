@@ -6,13 +6,20 @@
 // module, stores the result and tells her once. Since step 3 (「做了什麼第三步」) the browser may
 // also send one recording of the song: a song worker reads its pitch, Core scores that with the
 // same module and it becomes the official result (`source: voice`); her note waits a bounded time
-// for it. The recording only passes through memory here and is never written or logged. Nothing
-// here calls a model; nothing here moves coins.
+// for it. The recording only passes through memory here and is never written or logged. Since step
+// 6 (「做了什麼第六步」) a panel admin may correct a song's reference (lyrics, guide notes, the whole
+// curve's key): the edit is kept in the store as the song's override, which everything sung from
+// then on is scored and shown against (`reference`); the worker's file on Core is never changed,
+// and a restore drops the override. Scores already recorded stay as they were. Nothing here calls
+// a model; nothing here moves coins.
 
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type {
   KaraokeAdminResults,
+  KaraokeEditSave,
+  KaraokeEditView,
   KaraokeOverview,
   KaraokeRequestResult,
   KaraokeResult,
@@ -48,6 +55,13 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { commentContext, type KaraokeConfig, lyricsOptions } from "./config.js";
+import {
+  composeReference,
+  EDIT_LIMITS,
+  type EditDoc,
+  editedLines,
+  validateEdit,
+} from "./edit/index.js";
 import { resultNote } from "./notes.js";
 import {
   alignSung,
@@ -63,7 +77,7 @@ import {
   voiceChecks,
 } from "./score/index.js";
 import { FileSigner, LINK_MS } from "./signing.js";
-import type { KaraokeStore, ResultRow, SessionRow, SongRow } from "./store.js";
+import type { KaraokeStore, ResultRow, SessionRow, SongRow, SongSung } from "./store.js";
 
 const DAY_MS = 86_400_000;
 /** How long a submitted track is kept (§13.2). */
@@ -86,6 +100,17 @@ export const VOICE_READ_MS = 150_000;
 const VOICE_SLACK_S = 30;
 /** How a recording may come. */
 export const VOICE_TYPES = ["audio/webm", "audio/ogg", "audio/mp4"] as const;
+/** The editor's own link to a song's backing track (the panel admin's session only). */
+export const EDIT_BACKING_ROUTE = "/api/member/karaoke/edit";
+/** Saves and restores the editor lists. */
+const EDIT_HISTORY = 20;
+/** Problems a refused save names (the rest are counted). */
+const EDIT_PROBLEMS_SHOWN = 3;
+
+/** What a signed link serves: a file on Core, or what is in memory (an edited reference). */
+export type KaraokeServed =
+  | { path: string; type: string }
+  | { data: Uint8Array<ArrayBuffer>; type: string };
 
 export const KARAOKE_FILES: readonly KaraokeFileName[] = ["reference.json", "karaoke.m4a"];
 
@@ -195,8 +220,13 @@ export class KaraokeService {
   readonly #d: KaraokeDeps;
   readonly #signer: FileSigner;
   readonly #live = new Map<string, Live>();
-  /** Parsed references (version 2's shape, whichever was written), the most recently used last. */
+  /**
+   * Parsed references as sung (the edit when there is one, else the worker's, in version 2's
+   * shape), the most recently used last.
+   */
   readonly #parsed = new Map<string, WorkersKaraokeReferenceV2>();
+  /** Per song, how often its reference changed (a save, a restore): a read begun before is not kept. */
+  readonly #changes = new Map<string, number>();
   /** Backings in another key being fetched, so two sessions do not fetch one twice. */
   readonly #keying = new Map<string, Promise<void>>();
   /** Songs whose files are being fetched, so two sessions do not fetch them twice. */
@@ -418,6 +448,12 @@ export class KaraokeService {
       this.#fail(song, tooLong(this.#d.config.max_song_secs), `${duration} s`);
       return;
     }
+    // Prepared again (after a failure): what Core kept of the song before is the worker's old
+    // version, so it is fetched anew (an edit of the song stays, in the store).
+    if (song.worker_song !== null) {
+      this.#parsed.delete(song.id);
+      await rm(this.#dir(song.id), { recursive: true, force: true }).catch(() => {});
+    }
     this.#d.store.patchSong(song.id, { worker_song: made.id });
     try {
       await this.#fetch({ ...song, worker_song: made.id }, signal);
@@ -483,6 +519,11 @@ export class KaraokeService {
       await mkdir(dir, { recursive: true });
       const made = song.worker_song;
       for (const name of missing) await worker.file(made, name, join(dir, name), signal);
+      // The worker's reference came again (the song prepared again, or its files cleared): a song
+      // with an edit keeps it, and the editor learns whether the worker's changed under it.
+      if (missing.includes("reference.json") && this.#d.store.override(song.id) !== null) {
+        this.#sawWorker(song.id, hashOf(await readFile(join(dir, "reference.json"))));
+      }
     })();
     this.#fetching.set(song.id, work);
     try {
@@ -518,7 +559,11 @@ export class KaraokeService {
     return work;
   }
 
-  /** The song's reference, parsed, in version 2's shape (kept for the next few). */
+  /**
+   * The song's reference as it is sung, parsed, in version 2's shape (kept for the next few): its
+   * edit when a panel admin saved one, else the worker's. Every score, session, room round and the
+   * stream's scene take it from here.
+   */
   async reference(song: string): Promise<WorkersKaraokeReferenceV2> {
     const kept = this.#parsed.get(song);
     if (kept !== undefined) {
@@ -528,15 +573,53 @@ export class KaraokeService {
     }
     const row = this.#d.store.song(song);
     if (row === null) throw new KaraokeError(404, "沒有這首歌");
+    const change = this.#changes.get(song) ?? 0;
+    // The files are on Core either way: the backing is sung with the edit too.
     await this.#fetch(row);
-    const raw = await readFile(join(this.#dir(song), "reference.json"), "utf8");
+    const override = this.#d.store.override(song);
+    const raw =
+      override?.reference ?? (await readFile(join(this.#dir(song), "reference.json"), "utf8"));
     const parsed = karaokeReferenceV2(WorkersKaraokeReferenceSchema.parse(JSON.parse(raw)));
+    // A save or a restore while this was read: what was read is not kept.
+    if ((this.#changes.get(song) ?? 0) !== change) return parsed;
     this.#parsed.set(song, parsed);
     while (this.#parsed.size > KEEP_PARSED) {
       const oldest = this.#parsed.keys().next().value as string;
       this.#parsed.delete(oldest);
     }
     return parsed;
+  }
+
+  /**
+   * The worker's own reference of a song as it is on Core (fetched again when it is not), parsed,
+   * and the SHA-256 of its bytes. With an edit, the hash is recorded as the latest worker's seen.
+   */
+  async workerReference(
+    song: string,
+  ): Promise<{ reference: WorkersKaraokeReferenceV2; hash: string }> {
+    const row = this.#d.store.song(song);
+    if (row === null) throw new KaraokeError(404, "沒有這首歌");
+    await this.#fetch(row);
+    const bytes = await readFile(join(this.#dir(song), "reference.json"));
+    const hash = hashOf(bytes);
+    if (this.#d.store.override(song) !== null) this.#sawWorker(song, hash);
+    const reference = karaokeReferenceV2(
+      WorkersKaraokeReferenceSchema.parse(JSON.parse(bytes.toString("utf8"))),
+    );
+    return { reference, hash };
+  }
+
+  /** The latest worker's reference of a song with an edit had this hash. */
+  #sawWorker(song: string, hash: string): void {
+    if (this.#d.store.override(song)?.worker_hash !== hash) {
+      this.#d.store.setWorkerHash(song, hash);
+    }
+  }
+
+  /** The song's reference changed (saved, restored): the parsed one is read again. */
+  #changed(song: string): void {
+    this.#changes.set(song, (this.#changes.get(song) ?? 0) + 1);
+    this.#parsed.delete(song);
   }
 
   // ---- singing --------------------------------------------------------------------------------
@@ -724,7 +807,8 @@ export class KaraokeService {
 
   /**
    * The file a signed link names, for `account`: its path and type, or `null` (the route answers
-   * 404 to anything wrong, the same for every reason).
+   * 404 to anything wrong, the same for every reason). The reference of a song with an edit is the
+   * edit, from memory.
    */
   async file(
     account: AccountRef,
@@ -732,7 +816,7 @@ export class KaraokeService {
     name: string,
     exp: string | undefined,
     sig: string | undefined,
-  ): Promise<{ path: string; type: string } | null> {
+  ): Promise<KaraokeServed | null> {
     if (!servable(name)) return null;
     // The video's link lasts its session (at most three times the longest song, and half an hour).
     const longest =
@@ -747,6 +831,12 @@ export class KaraokeService {
     // A backing in another key only for the session sung in it.
     if (name.startsWith("karaoke.k") && name !== karaokeBackingName(row.shift)) return null;
     if (name === KARAOKE_VIDEO_FILE && !this.#d.config.video) return null;
+    if (name === "reference.json") {
+      const override = this.#d.store.override(row.song_id);
+      if (override !== null) {
+        return { data: new TextEncoder().encode(override.reference), type: "application/json" };
+      }
+    }
     const path = join(this.#dir(row.song_id), name);
     if (!(await exists(path))) return null;
     const type = name.endsWith(".json")
@@ -1259,6 +1349,178 @@ export class KaraokeService {
     }
   }
 
+  // ---- the reference editor (step 6) ----------------------------------------------------------
+
+  /** A ready song a panel admin may edit: a refusal otherwise. */
+  #editable(account: AccountRef, songId: string, admin: boolean): SongRow {
+    if (!admin) throw new KaraokeError(403, "只有管理員能改歌詞和音符");
+    this.#person(account);
+    const song = this.#d.store.song(songId);
+    if (song === null) throw new KaraokeError(404, "沒有這首歌");
+    if (song.status !== "ready") throw new KaraokeError(409, "這首還沒準備好");
+    return song;
+  }
+
+  /** `workerReference`, its file missing a refusal for people. */
+  async #workerOf(song: SongRow): Promise<{ reference: WorkersKaraokeReferenceV2; hash: string }> {
+    try {
+      return await this.workerReference(song.id);
+    } catch (error) {
+      if (error instanceof KaraokeError) throw error;
+      this.#d.log.warn({ song: song.id, err: errorText(error) }, "karaoke: the files are gone");
+      throw new KaraokeError(503, "這首的檔案現在拿不到,等一下再試");
+    }
+  }
+
+  /** The editor's view of a song: as it is sung now, the worker's, the edit and its record. */
+  async #editView(song: SongRow): Promise<KaraokeEditView> {
+    const store = this.#d.store;
+    const worker = await this.#workerOf(song);
+    let reference: WorkersKaraokeReferenceV2;
+    try {
+      reference = await this.reference(song.id);
+    } catch (error) {
+      if (error instanceof KaraokeError) throw error;
+      throw new KaraokeError(503, "這首的檔案現在拿不到,等一下再試");
+    }
+    const edit = store.override(song.id);
+    return {
+      song: {
+        id: song.id,
+        title: song.title || song.source,
+        artist: song.artist,
+        duration_s: reference.duration_s,
+      },
+      reference,
+      original: { lyrics: worker.reference.lyrics, notes: worker.reference.notes, pitch_shift: 0 },
+      edit:
+        edit === null
+          ? { revision: 0, pitch_shift: 0, saved_by: null, saved_at: null, worker_changed: false }
+          : {
+              revision: edit.revision,
+              pitch_shift: edit.pitch_shift,
+              saved_by: edit.saved_name,
+              saved_at: edit.saved_at,
+              worker_changed: edit.worker_hash !== null && edit.worker_hash !== edit.base_hash,
+            },
+      history: store.edits(song.id, EDIT_HISTORY).map((e) => ({
+        action: e.action === "restore" ? ("restore" as const) : ("save" as const),
+        name: e.name,
+        at: e.at,
+        revision: e.revision,
+        lines: e.lines,
+        notes: e.notes,
+        pitch_shift: e.pitch_shift,
+      })),
+      results: store.resultsOn(song.id),
+      backing_url: `${EDIT_BACKING_ROUTE}/${encodeURIComponent(song.id)}/backing`,
+    };
+  }
+
+  /** The reference editor's view of a ready song (panel admins only). */
+  async editor(account: AccountRef, songId: string, admin: boolean): Promise<KaraokeEditView> {
+    return this.#editView(this.#editable(account, songId, admin));
+  }
+
+  /**
+   * A panel admin's edit saved as the song's reference, over the revision they edited (`0`: the
+   * worker's). Checked with the editor's own rules and refused with the problems (never mended);
+   * built on the worker's reference as it is now. Results already recorded stay as they were.
+   */
+  async saveEdit(
+    account: AccountRef,
+    name: string,
+    songId: string,
+    body: KaraokeEditSave,
+    admin: boolean,
+  ): Promise<KaraokeEditView> {
+    const song = this.#editable(account, songId, admin);
+    const { person } = this.#person(account);
+    const store = this.#d.store;
+    if ((store.override(song.id)?.revision ?? 0) !== body.revision) {
+      throw new KaraokeError(409, "有人在你之後存過了,重新載入再改");
+    }
+    const doc: EditDoc = { lyrics: body.lyrics, notes: body.notes, pitch_shift: body.pitch_shift };
+    if (JSON.stringify(doc).length > EDIT_LIMITS.bytes) {
+      throw new KaraokeError(400, "改的內容太大了");
+    }
+    const worker = await this.#workerOf(song);
+    const problems = validateEdit(
+      doc,
+      { duration_s: worker.reference.duration_s, curve: worker.reference.pitch.midi },
+      Number.POSITIVE_INFINITY,
+    );
+    if (problems.length > 0) {
+      const shown = problems.slice(0, EDIT_PROBLEMS_SHOWN).map((p) => p.message);
+      const more = problems.length - shown.length;
+      throw new KaraokeError(400, `${shown.join("；")}${more > 0 ? `(還有 ${more} 個問題)` : ""}`);
+    }
+    const composed = composeReference(worker.reference, doc);
+    const lines = editedLines(composed.lyrics?.lines ?? []);
+    const revision = store.saveOverride(
+      song.id,
+      body.revision,
+      {
+        reference: JSON.stringify(composed),
+        pitch_shift: doc.pitch_shift,
+        base_hash: worker.hash,
+        worker_hash: worker.hash,
+      },
+      { lines, notes: composed.notes.length },
+      sungOf(composed),
+      { person, name: safeName(name, 60), at: this.#d.now() },
+    );
+    this.#changed(song.id);
+    if (revision === null) throw new KaraokeError(409, "有人在你之後存過了,重新載入再改");
+    this.#d.log.info(
+      { song: song.id, revision, lines, notes: composed.notes.length, shift: doc.pitch_shift },
+      "karaoke: a reference edit saved",
+    );
+    return this.#editView(store.song(song.id) as SongRow);
+  }
+
+  /** The song's edit dropped: the worker's reference is sung again. */
+  async restoreEdit(
+    account: AccountRef,
+    name: string,
+    songId: string,
+    revision: number,
+    admin: boolean,
+  ): Promise<KaraokeEditView> {
+    const song = this.#editable(account, songId, admin);
+    const { person } = this.#person(account);
+    const store = this.#d.store;
+    const edit = store.override(song.id);
+    if (edit === null) throw new KaraokeError(409, "這首沒有改過");
+    if (edit.revision !== revision) {
+      throw new KaraokeError(409, "有人在你之後存過了,重新載入再改");
+    }
+    const worker = await this.#workerOf(song);
+    const done = store.dropOverride(song.id, revision, sungOf(worker.reference), {
+      person,
+      name: safeName(name, 60),
+      at: this.#d.now(),
+    });
+    this.#changed(song.id);
+    if (done === "none") throw new KaraokeError(409, "這首沒有改過");
+    if (done === "moved") throw new KaraokeError(409, "有人在你之後存過了,重新載入再改");
+    this.#d.log.info({ song: song.id, revision }, "karaoke: a reference edit restored");
+    return this.#editView(store.song(song.id) as SongRow);
+  }
+
+  /** The backing track the editor plays, as a path on Core (fetched when it is not), or `null`. */
+  async editBacking(account: AccountRef, songId: string, admin: boolean): Promise<string | null> {
+    const song = this.#editable(account, songId, admin);
+    try {
+      await this.#fetch(song);
+    } catch (error) {
+      this.#d.log.warn({ song: song.id, err: errorText(error) }, "karaoke: the files are gone");
+      return null;
+    }
+    const path = join(this.#dir(song.id), "karaoke.m4a");
+    return (await exists(path)) ? path : null;
+  }
+
   // ---- the owner's look -----------------------------------------------------------------------
 
   adminResults(limit = 50): KaraokeAdminResults {
@@ -1331,6 +1593,21 @@ export function failureText(error: string | null, maxSecs: number): string {
   }
   if (e === "cancelled") return "準備被取消了,可以再點一次";
   return "準備失敗了,可以再點一次";
+}
+
+/** SHA-256 of a file's bytes, hex. */
+function hashOf(bytes: Uint8Array): string {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+/** What the song row says of a reference that is sung: whether it has lyrics, whose, its notes. */
+function sungOf(ref: WorkersKaraokeReferenceV2): SongSung {
+  const lyrics = ref.lyrics !== null && ref.lyrics.lines.length > 0;
+  return {
+    lyrics,
+    lyrics_source: lyrics ? (ref.lyrics?.source ?? null) : null,
+    notes: ref.notes.length,
+  };
 }
 
 async function exists(path: string): Promise<boolean> {

@@ -84,6 +84,12 @@ export const KaraokeRoomAirSchema = z
     backing: z.boolean(),
     delay_ms: z.number().int(),
     lead: z.boolean(),
+    /**
+     * Singers Core counts for alone or not: the running round's singers during a countdown or a
+     * round, else the members who would sing. A round of one singer is alone even when more
+     * members chose to sing and were not ready.
+     */
+    singers: z.number().int(),
     relay: z.object({
       allowed: z.boolean(),
       reason: z.string().nullable(),

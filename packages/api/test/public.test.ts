@@ -724,12 +724,14 @@ describe("the route table", () => {
       "GET /api/member/export",
       "GET /api/member/fortune",
       "GET /api/member/karaoke",
+      "GET /api/member/karaoke/edit/:song/backing",
       "GET /api/member/karaoke/files/:session/:name",
       "GET /api/member/karaoke/rooms",
       "GET /api/member/karaoke/rooms/:code",
       "GET /api/member/karaoke/rooms/:code/events",
       "GET /api/member/karaoke/sessions/:id",
       "GET /api/member/karaoke/songs/:id",
+      "GET /api/member/karaoke/songs/:id/edit",
       "GET /api/member/market/auction",
       "GET /api/member/market/bids",
       "GET /api/member/market/lottery",
@@ -758,6 +760,7 @@ describe("the route table", () => {
       "POST /api/member/karaoke/sessions/:id/result",
       "POST /api/member/karaoke/sessions/:id/voice",
       "POST /api/member/karaoke/songs",
+      "POST /api/member/karaoke/songs/:id/edit/restore",
       "POST /api/member/karaoke/songs/:id/sessions",
       "POST /api/member/live/pat",
       "POST /api/member/market/bid",
@@ -768,6 +771,7 @@ describe("the route table", () => {
       "POST /api/member/transfer",
       "PUT /api/member/cards/titles/:series",
       "PUT /api/member/cards/wishlist",
+      "PUT /api/member/karaoke/songs/:id/edit",
     ]);
     expect(all.filter((r) => !r.public && !r.member).length).toBeGreaterThan(90);
     // No member route takes a parameter that could name a person: a card's serial names a card,
@@ -783,6 +787,7 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/(songs|sessions)\/:id/, "")
           .replace(/^\/api\/member\/karaoke\/rooms\/:code/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
+          .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
           .includes(":"),
     );
     expect(named).toEqual([]);

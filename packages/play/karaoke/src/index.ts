@@ -6,7 +6,8 @@
 // - `schema.ts`, `migrations.ts`, `store.ts`: the `karaoke` store plugin (songs, requests,
 //   sessions, tracks, results) and its event (`events.ts`).
 // - `service.ts`: `KaraokeService`: asking for a song, following its preparation, sessions and
-//   their signed links (`signing.ts`), scoring a submitted track, her comment.
+//   their signed links (`signing.ts`), scoring a submitted track, her comment, and the reference
+//   editor's saves (step 6, the rules in `edit/`, `@miyoria/play/karaoke/edit`).
 // - `notes.ts`: what she hears of a finished song, and of a room's rounds.
 // - `rooms.ts`: `RoomDesk`, the rooms of step 4 (「做了什麼第四步」): lobby, rounds on one clock,
 //   the singers' live voices relayed to a song worker and scored, the board and the trends, the
@@ -29,12 +30,14 @@ export { type NoteInput, resultNote, roomOpenedNote, roundResultNote } from "./n
 export { MAX_AUDIO_BYTES, type RoomDeps, RoomDesk } from "./rooms.js";
 export {
   COMMENT_WAIT_MS,
+  EDIT_BACKING_ROUTE,
   FILES_KEEP_MS,
   failureText,
   KARAOKE_FILES,
   type KaraokeDeps,
   KaraokeError,
   type KaraokeNote,
+  type KaraokeServed,
   KaraokeService,
   type KaraokeWho,
   type RoomLink,

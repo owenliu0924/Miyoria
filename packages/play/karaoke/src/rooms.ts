@@ -1077,6 +1077,7 @@ export class RoomDesk implements RoomLink {
       backing: c.stream_scene && c.stream_backing,
       delay_ms: c.stream_delay_ms,
       lead: room.lead,
+      singers,
       relay: { allowed: reason === null, reason, member, live },
     };
   }
