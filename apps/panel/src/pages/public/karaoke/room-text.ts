@@ -108,6 +108,56 @@ export function settlingView(s: NonNullable<Settling>): { title: string; detail:
   };
 }
 
+// ---- the queue (「第四步之後的修改:先開房再點歌」) ---------------------------------------------------
+
+type QueueRoom = Pick<KaraokeRoomView, "state" | "queue" | "next" | "queue_limits" | "rounds_left" | "members">;
+
+/** Entries waiting (a failed one is skipped and counts for nothing): all of them, and this person's. */
+export function queueCounts(room: Pick<KaraokeRoomView, "queue">): { waiting: number; mine: number } {
+  const live = room.queue.filter((e) => e.song.state !== "failed");
+  return { waiting: live.length, mine: live.filter((e) => e.mine).length };
+}
+
+/** Songs are queued in the lobby and after a round, while the room has rounds left. */
+export function canQueue(room: Pick<KaraokeRoomView, "state" | "rounds_left">): boolean {
+  return (room.state === "lobby" || room.state === "results") && room.rounds_left > 0;
+}
+
+/**
+ * Why this person cannot add a song now, in Core's own sentences (`null`: they can). Core checks
+ * the same and says the same; this only spares a refusal.
+ */
+export function queueBlocked(room: QueueRoom): string | null {
+  if (room.rounds_left <= 0) return "這間房的輪數用完了";
+  const { waiting, mine } = queueCounts(room);
+  const { per_person, max } = room.queue_limits;
+  if (mine >= per_person) return `你已經點了 ${per_person} 首在等,唱完再點`;
+  if (waiting >= max) return "點歌的清單滿了,等唱完幾首再點";
+  return null;
+}
+
+/** Why the opener cannot start the next round now (`null`: they can). */
+export function startBlocked(room: QueueRoom): string | null {
+  if (room.state !== "lobby" && room.state !== "results") return null;
+  if (room.rounds_left <= 0) return "這間房的輪數用完了";
+  if (room.next === null) {
+    return room.queue.some((e) => e.song.state === "preparing") ? "清單裡的歌還在準備" : "清單裡還沒有準備好的歌,先點一首";
+  }
+  if (!room.members.some((m) => m.role === "singer" && m.ready)) return "還沒有人準備好唱";
+  return null;
+}
+
+/** Where an entry's song is: `null` ready, else its preparation in words (failed ones are skipped). */
+export function entryState(
+  song: Pick<KaraokeRoomView["queue"][number]["song"], "state" | "stage" | "progress">,
+  stageWord: (stage: string | null) => string,
+): { word: string; failed: boolean; progress: number | null } | null {
+  if (song.state === "ready") return null;
+  if (song.state === "failed") return { word: "準備失敗,輪到時會跳過", failed: true, progress: null };
+  const p = Math.max(0, Math.min(1, song.progress));
+  return { word: `${stageWord(song.stage)} ${Math.round(p * 100)}%`, failed: false, progress: p };
+}
+
 // ---- colours -----------------------------------------------------------------------------------
 
 /**

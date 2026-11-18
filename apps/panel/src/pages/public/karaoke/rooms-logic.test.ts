@@ -1,7 +1,8 @@
 // Rooms (step 4) without a screen: the µ-law encoder and the downsampler the stream worklet runs,
 // the chunk scheduler (`at` / `song_ms`, the end, stopping on `estimate`), the pitch posts, the
 // clock offset, the trend plate's words, the singer's own number, 結算中, which stage a singer is
-// on, codes and addresses, the spectators' lines, and whether a recording is uploaded.
+// on, the song queue (counts, why adding or starting waits, an entry's preparation), codes and
+// addresses, the spectators' lines, and whether a recording is uploaded.
 
 import { describe, expect, it } from "vitest";
 import { decodeTrack, encodeTrack, fromBase64, toBase64 } from "@miyoria/play/karaoke/score";
@@ -29,13 +30,18 @@ import type { KaraokeRoomView, KaraokeSession } from "@miyoria/contracts/api";
 import {
   BoardLines,
   canPay,
+  canQueue,
+  entryState,
   foldOctave,
   type HeldStage,
   memberColor,
+  queueBlocked,
+  queueCounts,
   readRoomCode,
   settlingView,
   stageOf,
   stageScore,
+  startBlocked,
   trendView,
   wantsUpload,
 } from "./room-text";
@@ -404,6 +410,57 @@ describe("which stage a singer is on", () => {
   it("is no stage for someone who only watches", () => {
     const held: { current: HeldStage | null } = { current: null };
     expect(stageOf(view({ me: { id: "me", role: "spectator", opener: false, singing: false, session: session("W1") } }), held)).toBeNull();
+  });
+});
+
+describe("the room's song queue", () => {
+  type Q = Parameters<typeof startBlocked>[0];
+  const entry = (state: "ready" | "preparing" | "failed", mine = false) =>
+    ({ id: `${state}${mine ? "m" : ""}`, mine, shift: 0, by: { member: null, name: "x" }, song: { state } }) as unknown as KaraokeRoomView["queue"][number];
+  const q = (over: Partial<Q>): Q => ({
+    state: "lobby",
+    queue: [],
+    next: null,
+    queue_limits: { per_person: 2, max: 3 },
+    rounds_left: 4,
+    members: [{ role: "singer", ready: true }] as KaraokeRoomView["members"],
+    ...over,
+  });
+
+  it("counts what waits: failed entries count for nothing", () => {
+    expect(queueCounts(q({ queue: [entry("ready", true), entry("preparing"), entry("failed", true)] }))).toEqual({ waiting: 2, mine: 1 });
+  });
+
+  it("adds between rounds while rounds are left, within each person's share and the queue's size", () => {
+    expect(canQueue({ state: "lobby", rounds_left: 1 })).toBe(true);
+    expect(canQueue({ state: "results", rounds_left: 1 })).toBe(true);
+    expect(canQueue({ state: "singing", rounds_left: 1 })).toBe(false);
+    expect(canQueue({ state: "results", rounds_left: 0 })).toBe(false);
+    expect(queueBlocked(q({ queue: [entry("ready", true)] }))).toBeNull();
+    // A failed one of theirs frees its place.
+    expect(queueBlocked(q({ queue: [entry("ready", true), entry("failed", true)] }))).toBeNull();
+    expect(queueBlocked(q({ queue: [entry("ready", true), entry("preparing", true)] }))).toBe("你已經點了 2 首在等,唱完再點");
+    expect(queueBlocked(q({ queue: [entry("ready"), entry("ready"), entry("preparing")] }))).toBe("點歌的清單滿了,等唱完幾首再點");
+    expect(queueBlocked(q({ rounds_left: 0 }))).toBe("這間房的輪數用完了");
+  });
+
+  it("starts with a ready entry and someone ready, from the lobby or the results", () => {
+    expect(startBlocked(q({ queue: [entry("ready")], next: "ready" }))).toBeNull();
+    expect(startBlocked(q({ state: "results", queue: [entry("ready")], next: "ready" }))).toBeNull();
+    expect(startBlocked(q({}))).toBe("清單裡還沒有準備好的歌,先點一首");
+    expect(startBlocked(q({ queue: [entry("failed")] }))).toBe("清單裡還沒有準備好的歌,先點一首");
+    expect(startBlocked(q({ queue: [entry("preparing")] }))).toBe("清單裡的歌還在準備");
+    const nobody = [{ role: "singer", ready: false }, { role: "spectator", ready: true }] as KaraokeRoomView["members"];
+    expect(startBlocked(q({ queue: [entry("ready")], next: "ready", members: nobody }))).toBe("還沒有人準備好唱");
+    expect(startBlocked(q({ queue: [entry("ready")], next: "ready", rounds_left: 0 }))).toBe("這間房的輪數用完了");
+  });
+
+  it("says where an entry's song is", () => {
+    const word = (s: string | null) => (s === "lead" ? "分出主唱" : "準備中");
+    expect(entryState({ state: "ready", stage: null, progress: 1 }, word)).toBeNull();
+    expect(entryState({ state: "preparing", stage: "lead", progress: 0.374 }, word)).toEqual({ word: "分出主唱 37%", failed: false, progress: 0.374 });
+    expect(entryState({ state: "preparing", stage: null, progress: 2 }, word)?.progress).toBe(1);
+    expect(entryState({ state: "failed", stage: null, progress: 0 }, word)).toEqual({ word: "準備失敗,輪到時會跳過", failed: true, progress: null });
   });
 });
 

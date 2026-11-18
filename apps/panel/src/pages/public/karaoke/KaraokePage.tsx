@@ -311,7 +311,7 @@ function Karaoke({ overview }: { overview: KaraokeOverview }) {
           還沒開放,只有管理員能用
         </p>
       )}
-      <RoomsEntry overview={overview} onEnter={enterRoom} />
+      <RoomsEntry onEnter={enterRoom} />
       {(blocked ?? unsupported) && (
         <p role="alert" className="flex items-center gap-2 text-[13px]">
           <CircleAlert aria-hidden className="size-4 shrink-0 text-primary" />
