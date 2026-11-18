@@ -4,7 +4,7 @@
 // the round's video served from the one file Core named.
 
 import { rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
 import {
   type AnyEventDefinition,
@@ -33,6 +33,9 @@ import {
   serveOverlay,
 } from "../src/index.js";
 import { FakeObs, type Json, tempDir, waitUntil } from "./common.js";
+
+/** An absolute path on this platform (a Windows one is not absolute on Linux). */
+const abs = (...parts: string[]) => resolve("/", ...parts);
 
 const ev = <D extends AnyEventDefinition>(
   def: D,
@@ -98,8 +101,8 @@ function lyrics(extra: Partial<KaraokeStageLyrics> = {}): KaraokeStageLyrics {
     round: 2,
     song: "yt-abc",
     lyrics: null,
-    video: "C:\\karaoke\\yt-abc\\video.mp4",
-    backing: { path: "C:\\karaoke\\yt-abc\\play_karaoke.pcm", format: "pcm", rate: 48_000 },
+    video: abs("karaoke", "yt-abc", "video.mp4"),
+    backing: { path: abs("karaoke", "yt-abc", "play_karaoke.pcm"), format: "pcm", rate: 48_000 },
     ...extra,
   };
 }
@@ -217,22 +220,26 @@ describe("karaoke on the overlay hub", () => {
       video: "karaoke/video?r=K7PQ2M-2",
       backing: { path: "karaoke/backing?r=K7PQ2M-2", format: "pcm", rate: 48_000 },
     });
-    expect(hub.karaokeVideo("K7PQ2M-2")).toBe("C:\\karaoke\\yt-abc\\video.mp4");
+    expect(hub.karaokeVideo("K7PQ2M-2")).toBe(abs("karaoke", "yt-abc", "video.mp4"));
     expect(hub.karaokeVideo("K7PQ2M-1")).toBeNull();
     expect(hub.karaokeBacking("K7PQ2M-2")).toStrictEqual({
-      path: "C:\\karaoke\\yt-abc\\play_karaoke.pcm",
+      path: abs("karaoke", "yt-abc", "play_karaoke.pcm"),
       type: "application/octet-stream",
     });
     expect(hub.karaokeBacking("K7PQ2M-1")).toBeNull();
 
     // A backing whose file is not what it says, or relative, is never offered.
-    for (const path of ["C:\\karaoke\\x\\karaoke.m4a", "play_karaoke.pcm", "C:\\x\\notes.txt"]) {
+    for (const path of [
+      abs("karaoke", "x", "karaoke.m4a"),
+      "play_karaoke.pcm",
+      abs("x", "notes.txt"),
+    ]) {
       hub.karaokeLyrics(lyrics({ round: 5, backing: { path, format: "pcm", rate: 48_000 } }));
       expect(JSON.parse(sent.at(-1) as string).backing, path).toBeNull();
       expect(hub.karaokeBacking("K7PQ2M-5")).toBeNull();
     }
     hub.karaokeLyrics(
-      lyrics({ round: 5, backing: { path: "C:\\k\\karaoke.m4a", format: "m4a", rate: 44_100 } }),
+      lyrics({ round: 5, backing: { path: abs("k", "karaoke.m4a"), format: "m4a", rate: 44_100 } }),
     );
     expect(hub.karaokeBacking("K7PQ2M-5")?.type).toBe("audio/mp4");
     expect(hub.initial().map((t) => JSON.parse(t).type)).toStrictEqual([
@@ -244,7 +251,7 @@ describe("karaoke on the overlay hub", () => {
     hub.karaokeLyrics(lyrics({ round: 3, video: "video.mp4" }));
     expect(JSON.parse(sent.at(-1) as string).video).toBeNull();
     expect(hub.karaokeVideo("K7PQ2M-3")).toBeNull();
-    hub.karaokeLyrics(lyrics({ round: 3, video: "C:\\karaoke\\x\\reference.json" }));
+    hub.karaokeLyrics(lyrics({ round: 3, video: abs("karaoke", "x", "reference.json") }));
     expect(JSON.parse(sent.at(-1) as string).video).toBeNull();
 
     hub.karaokeLyrics(lyrics());
