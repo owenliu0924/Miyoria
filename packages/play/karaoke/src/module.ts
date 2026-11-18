@@ -186,6 +186,7 @@ export class KaraokeModule implements Module {
           registry,
           () => this.#rooms,
           () => config,
+          () => this.#running,
         ),
       unregisterCommands,
     );
