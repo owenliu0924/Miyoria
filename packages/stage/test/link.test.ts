@@ -278,6 +278,8 @@ describe("stage.link", () => {
       scenes: [],
       hotkeys: [],
       overlay_url: null,
+      obs_collection: null,
+      obs_warning: null,
     });
     expect(env.source).toBe("stage.link");
 
@@ -521,6 +523,19 @@ describe("stage.link", () => {
     expect(registry.get(["stream", "status"])?.ephemeral).toBe(false);
     expect(reply.text).toContain("直播中");
     expect(reply.text).toContain("Game");
+    expect(reply.text).not.toContain("場景集合");
+
+    // OBS on another scene collection: the card says so.
+    call = registry.dispatch(invocation("stream status"));
+    await answer(node, {
+      vts: false,
+      obs: true,
+      scene: "Game",
+      streaming: false,
+      obs_collection: "我的場景",
+      obs_warning: "OBS 不在「Miyoria」這份場景集合上(現在是「我的場景」)",
+    });
+    expect((await call).text).toContain("OBS 不在「Miyoria」這份場景集合上");
 
     const paths = registry.specs().map((s) => commandName(s));
     for (const p of STREAM_COMMAND_PATHS) expect(paths, `${p} registered`).toContain(p);

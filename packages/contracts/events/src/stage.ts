@@ -28,6 +28,10 @@ const StageStatusConnectedSchema = z.object({
   hotkeys: z.array(z.string()),
   /** URL of the node's overlay page (an OBS browser source), if it serves one. */
   overlay_url: z.string().nullable(),
+  /** OBS's current scene collection, as the node last read it. */
+  obs_collection: z.string().nullable(),
+  /** Something about OBS the owner should fix (OBS is not on Miyoria's scene collection). */
+  obs_warning: z.string().nullable(),
 });
 
 /** The Stage node connected or reported a change, or went away (`connected: false`): `stage.status`. */

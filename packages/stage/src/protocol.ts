@@ -116,6 +116,8 @@ export function defaultStageStatus(): StageStatus {
     scenes: [],
     hotkeys: [],
     overlay_url: null,
+    obs_collection: null,
+    obs_warning: null,
   };
 }
 
@@ -131,6 +133,8 @@ export function sameStatus(a: StageStatus | null, b: StageStatus | null): boolea
     a.scene === b.scene &&
     a.streaming === b.streaming &&
     a.overlay_url === b.overlay_url &&
+    a.obs_collection === b.obs_collection &&
+    a.obs_warning === b.obs_warning &&
     sameList(a.scenes, b.scenes) &&
     sameList(a.hotkeys, b.hotkeys)
   );
@@ -215,6 +219,8 @@ export function statusOf(msg: StageStatus): StageStatus {
     scenes: [...msg.scenes],
     hotkeys: [...msg.hotkeys],
     overlay_url: msg.overlay_url,
+    obs_collection: msg.obs_collection,
+    obs_warning: msg.obs_warning,
   };
 }
 

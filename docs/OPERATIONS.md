@@ -446,6 +446,17 @@ OBS 推的 RTMP 由 MediaMTX 中轉給 voice node 和 Core 的 LL-HLS(只有 Win
 
 Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,不放 Docker:由 hostd 啟動(`miyoria add stage`、`miyoria up stage`,她直播時不會被重啟,見 [§4](#受保護的服務)),或前景跑一個 `miyoria stage`。它讀 `miyoria.toml` 的 `[stage]`(`core_url`、`token` = `STAGE_LINK_TOKEN`、`[stage.vts]`、`[stage.obs]`)。**已經加入 Core 的電腦**上,Core 的 stage link 位址和 token 由 hostd 給(環境變數 `STAGE_LINK_URL`、`STAGE_LINK_TOKEN`,優先於 `[stage]` 的 `core_url` 和 `token`);沒有加入的電腦照舊用 `[stage]`,也可以自己設這兩個環境變數。協定見 [stage-link.md](protocols/stage-link.md);overlay 見 [apps/overlay/README.md](../apps/overlay/README.md)。
 
+**OBS 的場景和來源**由 `miyoria stage obs-setup` 建(在直播機上跑,先 `--dry-run` 看會做什麼),而且建在 Miyoria 自己的**場景集合**和**設定檔**裡(預設都叫 `Miyoria`),你原本的場景集合和設定檔不會被改、也不會被刪:
+
+- **第一次**:建立設定檔 `Miyoria` 並切過去,只設兩件事:畫布和輸出 1920x1080(FPS 沿用切換前 OBS 的),打開重播緩衝(`basic.ini` 的 `SimpleOutput` / `AdvOut` 的 `RecRB`,簡易和進階輸出模式都開;OBS 只在載入設定檔時建立重播緩衝,所以會先切回你原本的設定檔再切回來一次)。再建立場景集合 `Miyoria`、在裡面建好所有場景和來源,最後把聊天場景設成目前的場景。結束時印出要貼進 `[stage.obs]` 的 `collection = "Miyoria"`、`profile = "Miyoria"`(設定檔不會被自動改)。
+- **新的設定檔是空白的**:要從 OBS 推流的話,串流金鑰(設定 → 直播)和編碼器(設定 → 輸出)要在 `Miyoria` 設定檔裡重新設一次;它不會複製也不會碰你原本設定檔的串流金鑰、編碼器、錄影路徑。VTube Studio 的透明背景也還是要自己打開一次。
+- **之後再跑**:切到已經有的 `Miyoria` 設定檔和場景集合,只補上缺的東西;已經有的設定檔不會再被改(你在裡面調的 FPS、編碼器都留著)。要它重新設 1920x1080 和重播緩衝:`--profile-settings`。
+- **OBS 在推流、錄影、虛擬攝影機或重播緩衝開著時**,要切換場景集合或設定檔(或改設定檔)就拒絕並說要先停哪幾個:切換會打斷輸出。已經在 `Miyoria` 上、不用切換時照常補齊。
+- 選項:`--collection <名稱>` / `--profile <名稱>` 換名稱(預設取 `[stage.obs] collection` / `profile`,沒設是 `Miyoria`);`--here` 直接建在 OBS 目前的場景集合裡(以前的做法);`--no-profile` 不換設定檔;`--relayout` 把已經有的項目擺回預設位置。
+- OBS 換場景集合時會先送 `CurrentSceneCollectionChanging`,這段時間送別的請求會失敗,所以它等 `CurrentSceneCollectionChanged`(設定檔是 `CurrentProfileChanged`)才繼續,30 秒沒等到就停下來、不再送任何東西;等 OBS 換好(有對話框先關掉)再跑一次就好。
+
+**執行時**:`[stage.obs] collection` 有設、OBS 卻在別的場景集合上時(Stage 連上 OBS 時和開始直播時檢查),Stage 不在 OBS 建任何東西(包括自動建的字幕文字來源),也不幫你切換;log 記一次警告,狀態裡的 `obs_warning` 寫「OBS 不在「Miyoria」這份場景集合上(現在是「…」)」,面板「直播」和 `/stream status` 會顯示。`profile` 不一樣時只記一行 info(精華要的重播緩衝在設定檔裡)。
+
 餵食禮物的那一行(「Owen 餵了她一碗白飯」,60 秒內合併、約 8 秒後淡出)在預設的 overlay 頁(`http://127.0.0.1:7884/overlay/`)裡一起顯示;只要這一行時用 `…/overlay/?show=gifts`。
 
 管理面板是靜態檔,由 Core 提供(`[modules.api] panel_dir`,`MIYORIA_PANEL_DIR` 可覆寫):npm 套件與 Docker 映像檔都已內含;從原始碼跑時先 `pnpm --filter @miyoria/panel build`(或 `pnpm build:web`,輸出 `apps/panel/dist`,Core 預設就讀這裡)。開發時 `pnpm --filter @miyoria/panel dev`(Vite,`http://localhost:5178`,`/api` 轉給 `MIYORIA_CORE_URL`,預設 `http://127.0.0.1:7878`)。

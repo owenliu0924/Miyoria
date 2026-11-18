@@ -160,6 +160,13 @@ export const StageLinkStageStatusSchema = z
     hotkeys: z.array(z.string()).default([]),
     /** URL of the node's overlay page (an OBS browser source), if it serves one. */
     overlay_url: z.string().nullable().default(null),
+    /** OBS's current scene collection, as the node last read it. */
+    obs_collection: z.string().nullable().default(null),
+    /**
+     * Something about OBS the owner should fix, for the panel and `stream status` (OBS is not on
+     * the scene collection of `[stage.obs] collection`: the node creates nothing in it).
+     */
+    obs_warning: z.string().nullable().default(null),
   })
   .meta({ id: "StageLinkStageStatus" });
 export type StageStatus = z.output<typeof StageLinkStageStatusSchema>;

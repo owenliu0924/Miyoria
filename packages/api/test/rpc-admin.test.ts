@@ -518,7 +518,8 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const transport: Same<ContractMcpServerInfo["transport"], ServerStatus["transport"]> = true;
     const item: Same<ContractQueueItemInfo["state"], ItemState> = true;
     const scenes: Same<ContractSceneRolesState, SceneRolesView> = true;
-    const stage: Same<ContractStageState["overlay_url"], StageStatus["overlay_url"]> = true;
+    const stage: Same<ContractStageState["overlay_url"], StageStatus["overlay_url"]> &
+      Same<ContractStageState["obs_warning"], StageStatus["obs_warning"]> = true;
     const participant: Same<ContractVoiceSession["participants"][number], VoiceParticipant> = true;
     const context: Same<ContractVoiceSession["context"], ContextKey> = true;
     expect([extension, transport, item, scenes, stage, participant, context]).toEqual(

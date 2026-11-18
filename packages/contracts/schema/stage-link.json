@@ -915,6 +915,20 @@
             "string",
             "null"
           ]
+        },
+        "obs_collection": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "obs_warning": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -955,6 +969,20 @@
           }
         },
         "overlay_url": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "obs_collection": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "obs_warning": {
           "default": null,
           "type": [
             "string",

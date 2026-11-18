@@ -12,7 +12,13 @@ import { GestureConfigSchema } from "./gesture.js";
 import { Levels, LipSyncConfigSchema, serveLevels } from "./lipsync.js";
 import { GazeConfigSchema, MotionConfigSchema } from "./motion.js";
 import { type BoundAddress, formatAddress, parseBind } from "./net.js";
-import { ObsConfigSchema, type ObsConnector, ObsController, ObsWebSocketConnector } from "./obs.js";
+import {
+  collectionWarning,
+  ObsConfigSchema,
+  type ObsConnector,
+  ObsController,
+  ObsWebSocketConnector,
+} from "./obs.js";
 import { OverlayHub, serveOverlay } from "./overlay.js";
 import { EmotionConfigSchema } from "./pose.js";
 import {
@@ -338,6 +344,8 @@ class Stage {
       scenes: obs?.connected ? [...obs.scenes] : [],
       hotkeys: vts ? [...this.#hotkeys.get()] : [],
       overlay_url: this.#overlayUrl,
+      obs_collection: obs?.connected ? obs.collection : null,
+      obs_warning: obs ? collectionWarning(obs) : null,
     };
   }
 

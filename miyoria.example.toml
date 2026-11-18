@@ -1355,6 +1355,11 @@ enabled = false                # OBS:工具 → WebSocket 伺服器設定
 host = "127.0.0.1"
 port = 4455
 password = "${OBS_PASSWORD:-}"
+# `miyoria stage obs-setup` 把她的場景建在自己的場景集合和設定檔(預設都叫 Miyoria),不動你原本的。
+# 新的設定檔是空白的:從 OBS 推流的話,串流金鑰和編碼器要在 Miyoria 設定檔裡重新設;
+# VTube Studio 的透明背景也要自己打開一次。跑完它會印出下面這兩行,貼上就好:
+# collection = "Miyoria"   # OBS 不在這份場景集合時,Stage 不在 OBS 建任何東西,並在面板和 /stream status 提醒
+# profile = "Miyoria"      # OBS 不在這個設定檔時只記一行 log(精華要的重播緩衝在設定檔裡)
 # subtitle_source = "Miyoria 字幕"   # 她最新的一句話;OBS 沒有這個文字來源時自動建在目前場景下方
 # 唱歌時放原曲影片的媒體來源(要自己在「唱歌」場景建,見 docs/protocols/stage-link.md「唱歌時放影片」)
 # song_video_source = "Miyoria 歌曲影片"

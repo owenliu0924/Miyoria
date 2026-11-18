@@ -54,14 +54,15 @@ import { SchedulerModule } from "@miyoria/runtime/scheduler";
 import { SingModule } from "@miyoria/sing";
 import {
   AvatarProfile,
-  applyObsSetup,
+  MIYORIA,
+  type ObsPlaceStep,
+  type ObsSetupReport,
   type ObsSetupStep,
   ObsWebSocketAdmin,
   overlayUrl,
   parseStageConfig,
-  planObsSetup,
+  runObsSetup,
   runStage,
-  SOURCES,
   StageLinkModule,
 } from "@miyoria/stage";
 import { openStore as openStoreBackend, type Store } from "@miyoria/store";
@@ -280,9 +281,17 @@ export async function runStageNode(
 /** Default scene names when `[modules."stage.link".scenes] roles` names none. */
 const DEFAULT_SCENES = { sing: "唱歌", chat: "聊天" } as const;
 
+/** What `setupStageObs` did, and what `[stage.obs]` says now. */
+export interface StageObsSetupResult extends ObsSetupReport {
+  /** `[stage.obs] collection` / `profile` as the config has them. */
+  configured: { collection: string | null; profile: string | null };
+}
+
 /**
- * `miyoria stage obs-setup`: plans Miyoria's OBS layout against the OBS of `[stage.obs]` and,
- * unless `dryRun`, applies it. Returns the steps (each also goes to `onStep` as it runs).
+ * `miyoria stage obs-setup`: in the OBS of `[stage.obs]`, creates or switches to Miyoria's scene
+ * collection and profile (`collection` / `profile`: `undefined` = `[stage.obs]`'s, else
+ * `Miyoria`; `null` = keep the current one), then plans Miyoria's layout there and, unless
+ * `dryRun`, applies it. Each step also goes to `onStep` as it runs.
  */
 export async function setupStageObs(
   config: Config,
@@ -290,9 +299,12 @@ export async function setupStageObs(
     baseDir?: string;
     dryRun?: boolean;
     relayout?: boolean;
-    onStep?: (step: ObsSetupStep) => void;
+    collection?: string | null;
+    profile?: string | null;
+    profileSettings?: boolean;
+    onStep?: (step: ObsSetupStep | ObsPlaceStep) => void;
   } = {},
-): Promise<ObsSetupStep[]> {
+): Promise<StageObsSetupResult> {
   const baseDir = options.baseDir ?? process.cwd();
   const stage = parseStageConfig(config.section("stage") ?? {});
   const link = config.module("stage.link").config;
@@ -303,24 +315,37 @@ export async function setupStageObs(
   if (url === null) throw new Error(`[stage] overlay_bind 不是有效的位址:${stage.overlay_bind}`);
   const admin = await ObsWebSocketAdmin.connect(stage.obs);
   try {
-    const steps = planObsSetup(await admin.snapshot(SOURCES.frame), {
-      overlayUrl: url,
-      videoSource: stage.obs.song_video_source ?? "Miyoria 歌曲影片",
-      maskPath: resolve(baseDir, stage.data_dir, "mask-video-rounded.png"),
-      scenes: {
-        sing: role("sing") ?? DEFAULT_SCENES.sing,
-        chat: role("chat") ?? DEFAULT_SCENES.chat,
-        game: role("game"),
-        threads: role("threads"),
+    const report = await runObsSetup(
+      admin,
+      {
+        layout: {
+          overlayUrl: url,
+          videoSource: stage.obs.song_video_source ?? "Miyoria 歌曲影片",
+          maskPath: resolve(baseDir, stage.data_dir, "mask-video-rounded.png"),
+          scenes: {
+            sing: role("sing") ?? DEFAULT_SCENES.sing,
+            chat: role("chat") ?? DEFAULT_SCENES.chat,
+            game: role("game"),
+            threads: role("threads"),
+          },
+          relayout: options.relayout ?? false,
+        },
+        place: {
+          collection:
+            options.collection === undefined
+              ? (stage.obs.collection ?? MIYORIA)
+              : options.collection,
+          profile: options.profile === undefined ? (stage.obs.profile ?? MIYORIA) : options.profile,
+          profileSettings: options.profileSettings ?? false,
+        },
+        dryRun: options.dryRun ?? false,
       },
-      relayout: options.relayout ?? false,
-    });
-    if (options.dryRun) {
-      for (const step of steps) options.onStep?.(step);
-    } else {
-      await applyObsSetup(admin, steps, options.onStep);
-    }
-    return steps;
+      options.onStep ? { onStep: options.onStep } : {},
+    );
+    return {
+      ...report,
+      configured: { collection: stage.obs.collection, profile: stage.obs.profile },
+    };
   } finally {
     await admin.close().catch(() => {});
   }

@@ -188,6 +188,8 @@ describe("sending", () => {
         scenes: [],
         hotkeys: [],
         overlay_url: null,
+        obs_collection: null,
+        obs_warning: null,
       }),
     );
     stage.muted.add(walletOf(r.store, ALICE));

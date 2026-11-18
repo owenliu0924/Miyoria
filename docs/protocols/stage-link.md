@@ -85,7 +85,7 @@ Stage 節點(`miyoria stage`,跑在直播機)和 Core 的 `stage.link` 模組之
 
 | type | 欄位 | 說明 |
 |---|---|---|
-| `status` | `vts`(bool), `obs`(bool), `scene`(string / null), `streaming`(bool), `scenes`(string[]), `hotkeys`(string[]), `overlay_url`(string / null), `id?` | 目前狀態。`vts`:已連上並通過 VTS 認證;`obs`:已連上 obs-websocket;`scene`:OBS 目前的 program 場景;`scenes`:OBS 所有場景名稱(`GetSceneList`,順序跟 OBS 場景清單由上到下一樣,OBS 沒連上時是 `[]`);`hotkeys`:VTS 目前模型的 hotkey 名稱(VTS 連上 / 換連線、以及收到 `status_request` 時重新讀取,VTS 沒連上時是 `[]`);`overlay_url`:Stage 的 overlay 網頁(給 OBS browser source 用,綁 `0.0.0.0` / `::` 時寫成 `127.0.0.1`) |
+| `status` | `vts`(bool), `obs`(bool), `scene`(string / null), `streaming`(bool), `scenes`(string[]), `hotkeys`(string[]), `overlay_url`(string / null), `id?` | 目前狀態。`vts`:已連上並通過 VTS 認證;`obs`:已連上 obs-websocket;`scene`:OBS 目前的 program 場景;`scenes`:OBS 所有場景名稱(`GetSceneList`,順序跟 OBS 場景清單由上到下一樣,OBS 沒連上時是 `[]`);`hotkeys`:VTS 目前模型的 hotkey 名稱(VTS 連上 / 換連線、以及收到 `status_request` 時重新讀取,VTS 沒連上時是 `[]`);`overlay_url`:Stage 的 overlay 網頁(給 OBS browser source 用,綁 `0.0.0.0` / `::` 時寫成 `127.0.0.1`);`obs_collection`(string / null):OBS 目前的場景集合(連上 OBS 和開始直播時讀);`obs_warning`(string / null):要擁有者處理的 OBS 問題,現在只有「OBS 不在「Miyoria」這份場景集合上(現在是「…」)」(`[stage.obs] collection` 有設而 OBS 在別的集合上,見下面「OBS 的場景集合」) |
 | `error` | `message`, `id?` | 錯誤 |
 | `clip_saved` | `reason`, `path` | 精華存好了:`path` 是直播機上 OBS 寫的檔案。Core 發 `stage.clip` 事件 |
 | `danmaku_done` | `id`, `outcome` | 一則彈幕的結果,每一則一次:`shown`(開始飄了)、`no_overlay`(沒有開著彈幕層的 overlay 頁)、`queue_full`、`too_late`、`cleared`、`lost`(頁面斷線或沒回)。只有 `shown` 是被看到了;Core 發 `stage.danmaku`,經濟照它留下或退回那一則的錢。連不上 Core 時 Stage 先留著,連上後再送 |
@@ -97,7 +97,7 @@ Stage 節點(`miyoria stage`,跑在直播機)和 Core 的 `stage.link` 模組之
 {"type":"error","message":"OBS is not connected","id":13}
 ```
 
-`scenes`、`hotkeys`、`overlay_url` 是 v1 之後加的欄位:舊版 Stage 不送也沒關係,Core 會當成 `[]`、`[]`、`null`(協定版本仍是 1)。`scene` 的 `transition` / `transition_ms` 也是之後加的:舊版 Stage 會忽略它們(用 OBS 目前的轉場),協定版本不變。管理面板的 `GET /api/stage` 直接用它們:`scenes` → 場景選單,`hotkeys` → `expressions`(表情 / hotkey 選單),`overlay_url` → overlay 預覽。
+`scenes`、`hotkeys`、`overlay_url`、`obs_collection`、`obs_warning` 是 v1 之後加的欄位:舊版 Stage 不送也沒關係,Core 會當成 `[]`、`[]`、`null`、`null`、`null`(協定版本仍是 1)。`obs_warning` 在面板的 `GET /api/stage` 是同名欄位(OBS 沒連上時是 `null`),`/stream status` 也會寫出來。`scene` 的 `transition` / `transition_ms` 也是之後加的:舊版 Stage 會忽略它們(用 OBS 目前的轉場),協定版本不變。管理面板的 `GET /api/stage` 直接用它們:`scenes` → 場景選單,`hotkeys` → `expressions`(表情 / hotkey 選單),`overlay_url` → overlay 預覽。
 
 **請求與回覆**:`scene`、`stream`、`avatar_hotkey`、`status_request` 帶 `id` 時,Stage 一定要回一個帶同樣 `id` 的訊息:成功回 `status`(動作完成後的狀態),失敗回 `error`。`stream` 會等 OBS 真的進入(或離開)直播狀態才回,最多 `[stage.obs] stream_wait_ms`(預設 15 秒)。Core 端等 `request_timeout_ms`(預設 10 秒)沒回覆就當作失敗。沒有 `id` 的 `error` 只是通知(Core 會發佈成 `stage.error` 事件)。
 
@@ -120,7 +120,7 @@ golive_start_delay_ms = 3000   # 等 voice node 的 ffmpeg 綁好 RTMP listener 
 - 另外訂閱 `voice.golive`(`{guild, state, error?, reason?}`):`starting` 時在 `golive_start_delay_ms` 後叫 OBS 開始直播(最多重試 3 次),`stopped` / `failed` 時叫 OBS 停止。所以 Discord 的 `/golive start` 一個指令就能從推流到 OBS 全包;`golive_obs = false` 可以關掉,讓 OBS 自己控制。
 - 有 ActivityManager(module `activity`)時上面這段不跑:OBS 是開台(`ensure_live`)的第二個子步驟,`stage.stream` 過閘門、Go Live 真的 `live` 之後才按(`[modules.activity] obs`、`obs_start_delay_ms`、`obs_attempts`);直播機連著但 OBS 沒開就是「開台失敗:OBS 沒開」並把 Go Live 收回。Go Live 從別處開或自己斷掉時,它也會讓 OBS 跟著開 / 停。`[modules.activity] obs_hub = true`(OBS 推到 MediaMTX、voice node 用 `golive_listen = false` 去拉)時順序反過來:先開 OBS、串流起來後等 `obs_start_delay_ms` 再開 Go Live;關台、開台失敗收回、離開語音、Go Live 自己斷掉都不停 OBS(OBS 是網站的),只有 OBS 在播而沒有 Go Live 也不算她在直播。
 - 提供 `StageLink` 服務(`StageLinkKey`):`setScene`、`stream`、`hotkey`、`refreshStatus`、`gaze`、`status`、`subscribeStatus`。
-- 狀態變化發佈成 `custom` 事件(topic `stage.status`),payload `{connected, vts, obs, scene, streaming, scenes, hotkeys, overlay_url}`(斷線時只有 `{"connected": false}`)。
+- 狀態變化發佈成 `custom` 事件(topic `stage.status`),payload `{connected, vts, obs, scene, streaming, scenes, hotkeys, overlay_url, obs_collection, obs_warning}`(斷線時只有 `{"connected": false}`)。
 - 有 `CommandRegistry` 時註冊指令:`stream start`、`stream stop`、`stream scene <name>`、`stream status`(權限節點 `stream.start` / `stream.stop` / `stream.scene` / `stream.status`)。
 
 ### 場景用途與場景導演(`[modules."stage.link".scenes]`)
@@ -171,7 +171,7 @@ only_while_live = false         # true:只在直播中切
 - 收到 `stop`(或下一首的 `play`):晚 `latency_ms` 後 stop、把 `local_file` 清空。
 - OBS 沒連上、拒絕任何一個呼叫:記 log,歌照唱,不會讓 Stage 出錯。
 
-**OBS 要自己建的東西**(Miyoria 不會改你的 OBS 場景):
+**OBS 要自己建的東西**:`miyoria stage obs-setup` 會在 Miyoria 自己的場景集合裡把下面這些建好(見下一節和 [OPERATIONS.md](../OPERATIONS.md)「Stage 與管理面板」);Stage 執行時不會改你的 OBS 場景。要手動建的話:
 
 1. 新增場景,名稱例如 `唱歌`(或在 `[modules."stage.link".scenes] roles` 寫 `sing = "你的場景名稱"`;名稱裡有 sing / song / karaoke / MV / 唱歌 / 歌回 的會被自動分類成 `sing`)。
 2. 場景裡由下到上:
@@ -179,6 +179,18 @@ only_while_live = false         # true:只在直播中切
    2. 她的 **VTube Studio 視窗擷取**(或遊戲擷取 / Spout2,跟聊天場景一樣的來源可以直接「加入現有的」),放在影片上面,背景透明。
    3. 最上面 **`Miyoria Overlay` 瀏覽器來源**(`http://127.0.0.1:7884/overlay/`,一樣「加入現有的」),歌詞字幕會在這裡。
 3. 沒有 `唱歌` 場景也可以:把同一個媒體來源加進聊天場景(可以先隱藏),唱歌時 Stage 會在目前場景裡顯示它、唱完藏回去。
+
+### OBS 的場景集合與設定檔(`[stage.obs] collection` / `profile`,Stage 端)
+
+```toml
+[stage.obs]
+collection = "Miyoria"   # obs-setup 建的場景集合;沒設 = 不檢查
+profile = "Miyoria"      # obs-setup 建的設定檔;只記 log
+```
+
+- `miyoria stage obs-setup` 把場景和來源建在 OBS 的場景集合 `Miyoria` 裡,並用設定檔 `Miyoria`(都是沒有就建立、有就切過去;`--collection` / `--profile` 換名稱,`--here` / `--no-profile` 用目前的),跑完印出上面兩行讓你貼進 `miyoria.toml`。用到的 obs-websocket 請求:`GetSceneCollectionList`、`CreateSceneCollection`(建立並切過去)、`SetCurrentSceneCollection`、`GetProfileList`、`CreateProfile`(空白的設定檔,建立並切過去)、`SetCurrentProfile`,每次切換都等 `CurrentSceneCollectionChanged` / `CurrentProfileChanged`(30 秒);只在這次新建的設定檔(或加 `--profile-settings` 時的目標設定檔)裡送 `SetVideoSettings`(`baseWidth`/`baseHeight`/`outputWidth`/`outputHeight` 1920x1080,新建時 `fpsNumerator`/`fpsDenominator` 沿用切換前的)和 `SetProfileParameter`(`SimpleOutput` / `AdvOut` 的 `RecRB` = `true`)。切換前用 `GetStreamStatus`、`GetRecordStatus`、`GetVirtualCamStatus`、`GetReplayBufferStatus` 確認沒有輸出在跑,有就拒絕。
+- Stage 連上 OBS 時、以及 OBS 開始直播時,用 `GetSceneCollectionList` 讀目前的場景集合。和 `collection` 不一樣時:不建任何東西(字幕文字來源 `subtitle_source` 也不自動建立)、不切換場景集合,log 記一次警告,`status` 的 `obs_warning` 寫「OBS 不在「Miyoria」這份場景集合上(現在是「…」)」。讀不到時也不建東西,但不算警告。回到對的集合後(下一次連上或開始直播時)字幕來源才會檢查並建立。
+- `profile` 不一樣時只用 `GetProfileList` 讀出來記一行 info(連帶重播緩衝在不在);精華用的重播緩衝在設定檔裡,其他功能不受影響。
 
 ---
 
