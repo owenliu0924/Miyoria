@@ -211,9 +211,7 @@ export const KaraokeRoomViewSchema = z
      * result Core still waits for (maybe none: it is about to settle), and the latest moment it
      * waits until (ms since the epoch). `null` otherwise. Never a score or a rank.
      */
-    settling: z
-      .object({ waiting: z.array(z.string()), until_ms: z.number() })
-      .nullable(),
+    settling: z.object({ waiting: z.array(z.string()), until_ms: z.number() }).nullable(),
   })
   .meta({ id: "ApiKaraokeRoomView" });
 export type KaraokeRoomView = z.output<typeof KaraokeRoomViewSchema>;
