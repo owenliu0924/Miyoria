@@ -392,6 +392,20 @@ dirs = ["extensions"]
 # screen_message = 30         # 在直播 overlay 顯示一則短訊息(她可能念出來)
 # screen_messages_per_day = 10
 # screen_message_cooldown_s = 600   # 每個人多久能送一則
+# # ---- 直播彈幕(docs/design/v5-play.md §11.6):她開台時,會員花魚幣發一則從畫面右邊飄過的短句。
+# # 送出時扣款,overlay 沒顯示出來(直播機沒連上、還沒輪到就關台、排隊滿了或等太久)就自動退回。
+# # 她不會每一則都被問:每 danmaku_note_s 秒最多收到一則摘要,裡面有幾則彈幕。不念出來。
+# # 不讓某個人發:/admin person tag user:<他> tag:no_danmaku
+# danmaku_on = true
+# danmaku = 5                 # 一則多少魚幣(燒掉,算進回收)
+# danmaku_max_chars = 30      # 最多幾個字(1 到 100)
+# danmaku_cooldown_s = 20     # 每個人隔多久能再發
+# danmaku_per_day = 50        # 每個人一天最多幾則(退回的不算)
+# danmaku_max_on_screen = 12  # 畫面上最多幾則,其他的排隊
+# danmaku_show_names = true   # 彈幕前面用小字寫發的人
+# danmaku_note_s = 60         # 多久告訴她一次(沒有彈幕就不說)
+# danmaku_queue_max = 20      # overlay 上最多幾則在排隊,再多的直接退回
+# danmaku_max_wait_s = 30     # 排隊超過這麼久就不顯示、退回
 # fortune = 10                # 簽到時加買的籤詩,她幫你寫一張
 # fortunes_per_day = 1
 # # ---- 人和人之間(§13):transfer_max = 0 或任一個每日上限 = 0 就關閉轉帳

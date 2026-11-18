@@ -17,6 +17,8 @@
 | `{"type":"activity","kind","label","detail","progress","elapsed_ms","duration_ms"}` | 活動膠囊(見下面)。`kind`:`thinking`(思考中…)、`synthesizing`(產生語音…)、`song_prepare`(下載中 / 讓出顯示卡中 / 分離人聲 / 轉換歌聲 / 混音 / 找歌詞,`detail` 是歌名,`progress` 是 worker 的進度)、`singing`(正在唱,`elapsed_ms` + `duration_ms` 由 overlay 自己的時鐘推進度);`kind: null` 隱藏。不認得的 `kind` 當成沒有進度的狀態顯示。 |
 | `{"type":"gift","text"}` | 禮物那一行(上方中間的小膠囊,例如「Owen 餵了她一碗白飯」)。Stage 把 60 秒內同一種禮物合併成一行(「Owen 和另外 3 人餵了她 5 碗白飯」),送出最新的一行,`text: ""` 表示淡出(最後一份禮物後約 8 秒)。 |
 | `{"type":"touch","x","y","part"}` | 觀眾在網站上摸了直播畫面(Core 的 `live.touch`,Stage 每秒最多轉 8 個)。`x`、`y` 是 0..1(左上為原點),`part` 是 `head` / `face` / `body` / `screen`。overlay 在畫面的 (x·寬, y·高) 畫一圈小小的波紋和一顆往上飄的愛心,約 1.3 秒淡出,同時最多 12 個(超過時最舊的立刻拿掉);`prefers-reduced-motion` 時不動、只淡入淡出。範圍外或型別不對的整則略過。`?demo=1` 會隨機在她的頭、臉、身體和空白處摸。她本人的反應由 Stage 驅動(`[stage.touch]`),不在 overlay。 |
+| `{"type":"danmaku","id","name","text","max_on_screen","queue_max","max_wait_ms"}` | 彈幕:觀眾付幾枚硬幣送出的一行字,從右邊進來橫越畫面(見下面「彈幕」)。`name` 是 `null` 表示名字隱藏。三個上限是實況主的設定,每一行都附上,以最新收到的為準。overlay 要回覆每一行的下場。 |
+| `{"type":"danmaku_clear"}` | 彈幕一次全部拿掉:畫面上的淡出(已經算顯示過,不再回覆),還在排隊的回 `cleared`。 |
 | `{"type":"notice","text"}` | 舊版 Core 的一行狀態(「準備歌曲中…」,`""` 清掉)。沒有 `activity` 時顯示在活動膠囊裡(沒有進度)。 |
 | `{"type":"levels","rms","bands"?}` | 她的聲音音量(0..1,和嘴型同一份、同樣延遲),每個 avatar frame 一次(約 60/s),停下時送一次 `rms: 0`。畫成左側邊緣從上到下一整排固定不動的橫條(貼齊畫面左緣、前端圓角、半透明):每條只改長度和透明度,中間的跟低頻、上下兩端的跟高頻,顏色跟著情緒點;她開口時淡入、停下時淡出。唱歌時跟著她的人聲。 |
 
@@ -39,7 +41,8 @@ OBS:新增「瀏覽器」來源,網址 `http://127.0.0.1:7884/overlay/`,寬 1920
 | 參數 | 預設 | 說明 |
 |---|---|---|
 | `ws` | 跟頁面同一個主機的 `…/overlay/ws`(file:// 開啟時 `ws://127.0.0.1:7884/overlay/ws`) | 推送位址,只接受 `ws://` / `wss://`。 |
-| `show` | `subtitles,emotion,status,queue,wave,activity,gifts,screen,touches` | 要顯示哪些部分,逗號分隔。例如 `?show=subtitles,queue`。沒有任何有效名稱時視為預設。 |
+| `show` | `subtitles,emotion,status,queue,wave,activity,gifts,screen,touches,danmaku` | 要顯示哪些部分,逗號分隔。例如 `?show=subtitles,queue`。沒有任何有效名稱時視為預設。沒有 `danmaku` 的頁面不送 `danmaku_ready`、也不回覆任何彈幕(Stage 不等它)。 |
+| `danmaku_band` | 依版面 | 彈幕跑道的上下緣,畫面高度的比例,`上-下`,例如 `?danmaku_band=0.04-0.30`。畫面不一樣(例如她站的位置不同)時用;左右範圍照版面不變。格式不對、上緣不在下緣之上、或不到 2% 高時不採用。 |
 | `cps` | `14` | 打字機基本速度(每秒字數,2~200)。字幕來得比顯示快時會自動加速追上;`200` = 不做打字效果。 |
 | `scale` | `1` | 整體縮放(0.4~3)。1 是以 1080p 為準,版面隨畫面寬高等比,720p / 4K 看起來一樣。 |
 | `demo` | 關 | `?demo=1` 播一段內建的假資料,不用連 Stage,設計和預覽用。 |
@@ -67,6 +70,24 @@ OBS 場景由下到上:
 
 VTube Studio 要用透明背景(背景選純色、勾透明),OBS 用「遊戲擷取」並勾「允許透明」,模型周圍才會透出背景。VTube Studio 這一步沒辦法用程式設定,要自己按一次。
 
+## 彈幕
+
+觀眾付幾枚硬幣送一行短字(預設最多 30 字),Core 先扣款,Stage 轉給這一頁,這一頁顯示並**回報這一行的下場**,Core 才知道要留下這筆錢(顯示了)還是退回去(沒顯示)。回覆跟推送走同一條 WebSocket(契約是 `@miyoria/contracts/overlay` 的 `OverlayReply`):
+
+| 回覆 | 什麼時候 |
+|---|---|
+| `{"type":"danmaku_ready"}` | 每次連上(含重連)後送一次,而且只有彈幕層開著的頁面才送。Stage 只等送過這個的頁面回覆。 |
+| `{"type":"danmaku_shown","id"}` | 這一行真的放進畫面、開始橫越的那一刻,送一次。 |
+| `{"type":"danmaku_dropped","id","reason"}` | 不會顯示了:`queue_full`(來的時候已經有 `queue_max` 行在排隊;`queue_max` 是 0 時,不能馬上出發的一律丟掉)、`too_late`(排了 `max_wait_ms` 還沒有空的跑道)、`cleared`(排隊時被 `danmaku_clear` 清掉)。 |
+
+連線還在時,收到的每一行剛好回一次(`shown` 或 `dropped`);同一個 `id` 重複收到不會再回。斷線時還在排隊的直接忘掉、不回(Stage 會把沒回的當成遺失),正在橫越的照樣跑完;重連後不補送舊的回覆。`?demo=1` 沒有人可以回,回覆只寫到 `console.debug`。
+
+**跑道**(`src/danmaku.ts`,純函式,有測試):每一行都用同一個慢慢的速度往左走(`10rem/s`,1080p 是 160 px/s,長的不會比較快)。寬 w 的一行從跑道右緣 x = W 進來,x + w < 0 時結束、移出 DOM。同一條跑道上,前一行的尾巴離開右緣 `2.5rem` 之後才放下一行;速度一樣,所以同一條跑道的兩行永遠不會疊在一起。新的一行放在最上面那條空的跑道;畫面上最多 `max_on_screen` 行,其他的照順序排隊。每行到的時候先在畫面外量出真正的寬度,再決定跑道;移動用 rAF 時鐘算出的 `transform`,不用 CSS 動畫。
+
+**位置**:每條跑道 `2.75rem` 高,條數 = 範圍高度 ÷ 跑道高度(至少一條)。預設版面在畫面上方三分之一(上緣往下 `1.5rem` 起,到 33.333%,1080p 是 7 條);`layout=sing` 只在歌曲影片的範圍裡、影片上方三分之一(1080p 是 6 條),在影片左右兩邊被切掉,不會經過右下角的她。`danmaku_band` 可以改上下範圍。彈幕在所有底板(側邊面板、禮物那一行、付費留言)下面,經過時從底板後面穿過去,底板上的字一直看得清楚。
+
+**樣子**:一行不換行。送的人名字小一點、淡一點放在前面(名字隱藏時沒有);字是 `--ink`,外面一圈多層的深色陰影當描邊,底下一顆很淡的灰黑膠囊,疊在很亮的畫面上也讀得到。`danmaku_clear` 時畫面上的行原地淡出。
+
 ## 行為細節
 
 - **打字機**:整行文字從第一個 frame 就排好版(還沒打到的字是透明的),所以字不會在打的過程中跳行。以 code point 計算,不會把 emoji 拆開。字幕修正(同 turn 的文字前綴改變)時,只重打有變的部分。
@@ -82,11 +103,13 @@ src/feed.ts        訊息型別、parseMessage、reduce、shownActivity(純函�
 src/typewriter.ts  打字機步進、code point 工具、停留時間(純函式,有測試)
 src/config.ts      query string(有測試)
 src/emotion.ts     情緒名稱 → 顏色(同亮度同彩度,只轉色相)
-src/connection.ts  WebSocket 重連
+src/connection.ts  WebSocket 重連、送回覆(只在連線開著時)
 src/view.ts        DOM、rAF 迴圈、字幕計時、面板與佇列(FLIP)
+src/danmaku.ts     彈幕跑道、上限、排隊、每行的回覆(純函式,有測試)
+src/danmaku-view.ts 彈幕層的 DOM:量寬度、擺進跑道、移動、送回覆
 src/activity.ts    活動膠囊(文字、寬度、進度條)
 src/backdrop.ts    背景層(?layer=backdrop):背景圖、壓暗、唱歌版面的影片位置
 src/motion.ts      共用動態:is-out 進出、交叉淡化、讀 CSS 的時間
-src/demo.ts        ?demo=1 的假資料(說話、思考、做歌的每個階段、唱歌、佇列變動輪流來)
+src/demo.ts        ?demo=1 的假資料(說話、思考、做歌的每個階段、唱歌、佇列變動輪流來,彈幕偶爾一行、定時一大波超過跑道和排隊上限)
 src/style.css      版面與視覺
 ```

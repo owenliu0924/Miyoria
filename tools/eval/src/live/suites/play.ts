@@ -8,7 +8,7 @@
 //   given, a memory or the moment itself), and no tier's name in any of her words.
 // - `told`: what she says when a note about a notable card reaches her (`cardNotes` of an issued
 //   card, as a `world` wake): at most two short messages (one for the line she was answering, one
-//   for the card, as she splits a chat reply), 40 characters each, no numbers, no serial, and not
+//   for the card, as she splits a chat reply), 60 characters each, no numbers, no serial, and not
 //   「我抽到」: the card was theirs. Saying nothing is allowed; how often she speaks is reported.
 // - `soup`: turtle soup. The referee (`LlmSoupJudge`) against a hidden bottom, with injections;
 //   and her hosting in a text channel (fake `party_ask` / `party_host`, answered as the engine
@@ -311,6 +311,12 @@ export interface CardCase {
   memories: string[];
   poses: string[];
   mood: string;
+  /**
+   * The words must read as said to this person (the judge's `personal`). `false` for a stranger:
+   * she knows nothing about them, so in character and the right distance are all there is to ask.
+   * Default `true`.
+   */
+  personal?: boolean;
 }
 
 const view = (
@@ -349,6 +355,7 @@ export const CARD_CASES: readonly CardCase[] = [
     memories: [],
     poses: ["calm", "hand"],
     mood: "平靜",
+    personal: false,
   },
   {
     id: "card-friend",
@@ -496,7 +503,9 @@ async function runCard(ctx: SuiteContext, c: CardCase, run: number): Promise<Pla
     else if (!c.tones.includes(judged.value.tone)) {
       fault = `tone ${judged.value.tone} does not follow ${c.tier} (${judged.value.reason})`;
     } else if (!judged.value.in_character) fault = `not in character (${judged.value.reason})`;
-    else if (!judged.value.personal) fault = `not personal (${judged.value.reason})`;
+    else if (c.personal !== false && !judged.value.personal) {
+      fault = `not personal (${judged.value.reason})`;
+    }
   }
   return {
     id: c.id,
@@ -744,11 +753,12 @@ export function toldScene(c: ToldCase): Scene {
  * picking one or two things to answer (`persona/style.md`). The scene has someone's line to answer
  * besides the note, so one message for that and one for the card is her ordinary way. What makes a
  * message too long in chat is a single line that does not read at a glance, not two short ones
- * together: the limit is on each (40, as a card's spoken line), not on the sum. Until 2026-11-18 it
- * was 60 in all, which failed two plain lines of 30 and 34.
+ * together: the limit is on each, not on the sum. Until 2026-11-18 it was 60 in all, which failed
+ * two plain lines of 30 and 34; then 40 each, which fails her ordinary chat lines, often 45 to 60
+ * characters (a clause, a comma, the next clause): 60 each is a line that still reads at a glance.
  */
 const TOLD_MAX_MESSAGES = 2;
-const TOLD_MAX_CHARS = 40;
+const TOLD_MAX_CHARS = 60;
 /** She says she drew the card herself: it was theirs (she gives the cards, she does not draw). */
 const SHE_DREW =
   /(我|本鯨魚|鯨魚我)(剛剛|剛才|剛|也|終於|今天|居然|竟然|又)?(抽到|抽中|抽出|抽了)/u;

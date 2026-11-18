@@ -35,6 +35,13 @@ export {
   VOWEL_PARAMS,
 } from "./avatar-loop.js";
 export { type BlinkConfig, BlinkConfigSchema, BlinkScheduler } from "./blink.js";
+export {
+  ANSWER_GRACE_MS as DANMAKU_ANSWER_GRACE_MS,
+  type DanmakuDone,
+  DanmakuOutbox,
+  type DanmakuOutcome,
+  DanmakuRelay,
+} from "./danmaku.js";
 export { EmotionController, type VtsCommand } from "./emotion.js";
 export { type GestureConfig, GestureConfigSchema, GestureController } from "./gesture.js";
 export {
@@ -74,6 +81,9 @@ export {
   type SceneSwitcher,
 } from "./link/director.js";
 export {
+  DANMAKU_CLEAR_TOPIC,
+  DANMAKU_TOPIC,
+  danmakuMessage,
   EMOTION_TOPIC,
   Forwarder,
   type ForwarderOptions,
@@ -83,6 +93,7 @@ export {
 export { type GoLiveFollow, goliveFollow, VOICE_GOLIVE_TOPIC } from "./link/golive.js";
 export { Highlights, type HighlightsConfig, HighlightsConfigSchema } from "./link/highlights.js";
 export {
+  DANMAKU_CAPABILITY,
   DEFAULT_BIND,
   StageLink,
   type StageLinkConfig,

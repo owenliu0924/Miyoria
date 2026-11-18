@@ -8,6 +8,7 @@ import {
   CLIP_REASON_MAX,
   CLOSE,
   type CoreMessage,
+  type DanmakuOutcome,
   defaultStageStatus,
   type GazeTarget,
   type GiftExpression,
@@ -27,6 +28,8 @@ import { ScenesConfigSchema } from "./scenes.js";
 const log = getLogger("stage.link");
 
 export const DEFAULT_BIND = "127.0.0.1:7882";
+/** The capability a node announces when it answers danmaku lines (`danmaku_done`). */
+export const DANMAKU_CAPABILITY = "danmaku";
 
 /** `[modules."stage.link"]` config section. */
 export const StageLinkConfigSchema = z.object({
@@ -188,6 +191,22 @@ export class StageLink {
   /** @internal Queues a message for the node; false when none is connected or it is backed up. */
   send(msg: CoreMessage): boolean {
     return this.#conn?.trySendJson(msg) ?? false;
+  }
+
+  /**
+   * Sends a danmaku line to the node, which answers how it ended (`danmaku_done`). A line that
+   * cannot go out (no node, a node too old to answer, a full queue) is answered at once as
+   * `no_overlay`. Either way exactly one `stage.danmaku` follows.
+   */
+  sendDanmaku(id: string, msg: Extract<CoreMessage, { type: "danmaku" }> | null): void {
+    const answers = this.#conn?.capabilities.includes(DANMAKU_CAPABILITY) ?? false;
+    if (msg !== null && answers && this.send(msg)) return;
+    this.danmakuDone(id, "no_overlay");
+  }
+
+  /** @internal How a danmaku line ended: `stage.danmaku`. */
+  danmakuDone(id: string, outcome: DanmakuOutcome): void {
+    this.#bus.publish(this.#module, Events.StageDanmaku, { id, outcome });
   }
 
   #request(
@@ -367,6 +386,10 @@ export class StageLink {
       case "clip_saved":
         log.info({ reason: msg.reason, path: msg.path }, "highlight saved");
         this.#bus.publish(this.#module, Events.StageClip, { reason: msg.reason, path: msg.path });
+        return;
+      case "danmaku_done":
+        // The economy keeps the line's price (shown) or gives it back (anything else).
+        this.danmakuDone(msg.id, msg.outcome);
         return;
       case "error": {
         log.warn({ message: msg.message, id: msg.id ?? null }, "stage node error");

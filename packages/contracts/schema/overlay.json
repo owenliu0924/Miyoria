@@ -66,6 +66,110 @@
         "duration_ms"
       ]
     },
+    "OverlayDanmakuClearMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "danmaku_clear"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "OverlayDanmakuDropped": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "danmaku_dropped"
+        },
+        "id": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "enum": [
+            "queue_full",
+            "too_late",
+            "cleared"
+          ]
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "reason"
+      ]
+    },
+    "OverlayDanmakuMessage": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "danmaku"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "max_on_screen": {
+          "type": "number"
+        },
+        "queue_max": {
+          "type": "number"
+        },
+        "max_wait_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "name",
+        "text",
+        "max_on_screen",
+        "queue_max",
+        "max_wait_ms"
+      ]
+    },
+    "OverlayDanmakuReady": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "danmaku_ready"
+        }
+      },
+      "required": [
+        "type"
+      ]
+    },
+    "OverlayDanmakuShown": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "danmaku_shown"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id"
+      ]
+    },
     "OverlayEmotionMessage": {
       "type": "object",
       "properties": {
@@ -146,6 +250,12 @@
           "$ref": "#/$defs/OverlayScreenMessage"
         },
         {
+          "$ref": "#/$defs/OverlayDanmakuMessage"
+        },
+        {
+          "$ref": "#/$defs/OverlayDanmakuClearMessage"
+        },
+        {
           "$ref": "#/$defs/OverlayTouchMessage"
         },
         {
@@ -173,6 +283,19 @@
       "required": [
         "type",
         "text"
+      ]
+    },
+    "OverlayReply": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/OverlayDanmakuReady"
+        },
+        {
+          "$ref": "#/$defs/OverlayDanmakuShown"
+        },
+        {
+          "$ref": "#/$defs/OverlayDanmakuDropped"
+        }
       ]
     },
     "OverlayScreenMessage": {

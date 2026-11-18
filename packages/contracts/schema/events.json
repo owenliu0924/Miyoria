@@ -1742,6 +1742,44 @@
         "session_lines"
       ]
     },
+    "EventsDanmakuClear": {
+      "type": "object",
+      "properties": {}
+    },
+    "EventsDanmakuLine": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "max_on_screen": {
+          "type": "number"
+        },
+        "queue_max": {
+          "type": "number"
+        },
+        "max_wait_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "text",
+        "max_on_screen",
+        "queue_max",
+        "max_wait_ms"
+      ]
+    },
     "EventsDecisionTrace": {
       "type": "object",
       "properties": {
@@ -6597,6 +6635,29 @@
       "required": [
         "reason",
         "path"
+      ]
+    },
+    "EventsStageDanmaku": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string",
+          "enum": [
+            "shown",
+            "no_overlay",
+            "queue_full",
+            "too_late",
+            "cleared",
+            "lost"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "outcome"
       ]
     },
     "EventsStageError": {

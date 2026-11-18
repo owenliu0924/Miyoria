@@ -575,6 +575,15 @@ function mePages(policyUrl: string | null): PanelPage[] {
           },
         },
         {
+          id: "danmaku",
+          label: "發彈幕",
+          path: "me danmaku",
+          ask: {
+            title: "發一則彈幕（她直播時，從畫面右邊飄過）",
+            fields: [field("text", "彈幕（沒顯示出來的會自動退回）", { maxLength: 100 })],
+          },
+        },
+        {
           id: "give",
           label: "轉給別人",
           path: "me give",

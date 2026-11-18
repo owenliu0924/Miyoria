@@ -1,9 +1,21 @@
 // Overlay settings from the query string, e.g.
 //   /overlay/?show=subtitles,queue&cps=16&scale=1.1&ws=ws://192.168.1.20:7884/overlay/ws
 //   /overlay/?layer=backdrop&layout=sing   (the background under the scene's sources)
+//   /overlay/?danmaku_band=0.04-0.30       (where the danmaku lanes run, fractions of the frame height)
 import { DEFAULT_CPS } from "./typewriter.js";
 
-export const SECTIONS = ["subtitles", "emotion", "status", "queue", "wave", "activity", "gifts", "screen", "touches"] as const;
+export const SECTIONS = [
+  "subtitles",
+  "emotion",
+  "status",
+  "queue",
+  "wave",
+  "activity",
+  "gifts",
+  "screen",
+  "touches",
+  "danmaku",
+] as const;
 export type Section = (typeof SECTIONS)[number];
 
 /** Which layer of the scene this page is: the overlay on top, or the background under everything. */
@@ -27,6 +39,27 @@ export interface OverlayConfig {
   demo: boolean;
   layer: Layer;
   layout: Layout;
+  /**
+   * `danmaku_band=0.04-0.30`: the danmaku lanes' top and bottom as fractions of the frame height,
+   * for pictures where the layout's band does not suit; null = the layout's own band.
+   */
+  danmakuBand: DanmakuBand | null;
+}
+
+export interface DanmakuBand {
+  /** 0..1 of the frame height. */
+  top: number;
+  bottom: number;
+}
+
+/** `top-bottom` in fractions of the frame height, top above bottom; else null. */
+export function parseBand(raw: string | null): DanmakuBand | null {
+  const m = raw?.trim().match(/^(\d*\.?\d+)\s*-\s*(\d*\.?\d+)$/);
+  if (!m) return null;
+  const top = Number(m[1]);
+  const bottom = Number(m[2]);
+  // At least a few percent high, or no lane fits.
+  return top >= 0 && bottom <= 1 && bottom - top >= 0.02 ? { top, bottom } : null;
 }
 
 /** Same host that served the page, so the overlay works from another PC; falls back to the Stage default. */
@@ -75,5 +108,6 @@ export function parseConfig(search: string, loc?: Pick<Location, "protocol" | "h
     demo: flag(q.get("demo")),
     layer: pick(q.get("layer"), LAYERS),
     layout: pick(q.get("layout"), LAYOUTS),
+    danmakuBand: parseBand(q.get("danmaku_band")),
   };
 }

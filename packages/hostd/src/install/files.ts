@@ -5,10 +5,13 @@
 // (`doctor --deep`).
 
 import {
+  copyFileSync,
   existsSync,
+  linkSync,
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statfsSync,
   statSync,
   writeFileSync,
@@ -39,6 +42,11 @@ export interface FileStatus {
   optional: boolean;
   /** For `wrong`: what does not match. */
   detail?: string;
+  /**
+   * A file of the same checksum the machine already has where it used to keep it (`adopt_from`),
+   * absolute: it is linked in instead of downloaded. Only looked for when a check hashes.
+   */
+  adopt: string | null;
 }
 
 /**
@@ -154,6 +162,7 @@ function base(file: InstallFile, models: string): Omit<FileStatus, "state"> {
     url: sourceUrl(file),
     source: sourceLabel(file),
     optional: file.optional,
+    adopt: null,
   };
 }
 
@@ -198,12 +207,17 @@ export function checkFilesQuick(
   });
 }
 
-/** The files of a descriptor, hashed as `mode` says; new hashes are remembered. */
+/**
+ * The files of a descriptor, hashed as `mode` says; new hashes are remembered. With `workspace`,
+ * a file that is missing (or wrong) and has an `adopt_from` is looked for there too (`adopt`): that
+ * reads the old file once, so only `cached` and `deep` do it.
+ */
 export async function checkFiles(
   files: readonly InstallFile[],
   models: string,
   stateRoot: string,
   mode: CheckMode,
+  workspace?: string,
 ): Promise<FileStatus[]> {
   const cache = new VerifiedCache(verifiedCacheFile(stateRoot));
   const out: FileStatus[] = [];
@@ -211,19 +225,76 @@ export async function checkFiles(
     const status = base(file, models);
     const { hashable, ...quick } = quickState(file, status, cache);
     const hash = mode === "deep" ? hashable : mode === "cached" && quick.state === "present";
+    let checked: FileStatus;
     if (!hash) {
-      out.push({ ...status, ...quick });
-      continue;
+      checked = { ...status, ...quick };
+    } else {
+      const sha = await hashAndRemember(cache, file.path, status.dest);
+      checked =
+        sha === file.sha256
+          ? { ...status, state: "verified" }
+          : { ...status, state: "wrong", detail: shaDetail(sha, file.sha256) };
     }
-    const sha = await hashAndRemember(cache, file.path, status.dest);
-    out.push(
-      sha === file.sha256
-        ? { ...status, state: "verified" }
-        : { ...status, state: "wrong", detail: shaDetail(sha, file.sha256) },
-    );
+    if (
+      mode !== "quick" &&
+      workspace !== undefined &&
+      (checked.state === "missing" || checked.state === "wrong")
+    ) {
+      checked.adopt = await adoptable(file, workspace, cache);
+    }
+    out.push(checked);
   }
   cache.save();
   return out;
+}
+
+// ---- adopting what the machine already has -------------------------------------------------------
+
+/** `adopt_from` resolved inside the workspace, or `null` when there is none or it leaves it. */
+export function adoptSource(file: InstallFile, workspace: string): string | null {
+  if (file.adopt_from === undefined || relativePathProblem(file.adopt_from) !== null) return null;
+  const src = resolve(workspace, file.adopt_from);
+  const inside = relative(workspace, src);
+  return inside === "" || inside.startsWith("..") || isAbsolute(inside) ? null : src;
+}
+
+/** The old copy of a file when it is there with the right size and checksum, else `null`. */
+async function adoptable(
+  file: InstallFile,
+  workspace: string,
+  cache: VerifiedCache,
+): Promise<string | null> {
+  const src = adoptSource(file, workspace);
+  if (src === null) return null;
+  try {
+    const stat = statSync(src);
+    if (!stat.isFile() || stat.size !== file.size) return null;
+    const key = `adopt:${src}`;
+    const sha = cache.get(key, stat.size, stat.mtimeMs) ?? (await hashAndRemember(cache, key, src));
+    return sha === file.sha256 ? src : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Puts a verified old copy at `dest` without a download: a hard link (no extra disk space, the old
+ * file stays where it is), or a copy when the two are on different drives. The file appears under
+ * its name only whole.
+ */
+export function adoptFile(src: string, dest: string): "linked" | "copied" {
+  mkdirSync(dirname(dest), { recursive: true });
+  const tmp = `${dest}.adopt`;
+  rmSync(tmp, { force: true });
+  let how: "linked" | "copied" = "linked";
+  try {
+    linkSync(src, tmp);
+  } catch {
+    copyFileSync(src, tmp);
+    how = "copied";
+  }
+  renameSync(tmp, dest);
+  return how;
 }
 
 /**
@@ -271,9 +342,15 @@ export function freeBytes(dir: string): number | null {
   }
 }
 
-/** The bytes still to download for these files (what a `.part` already holds is not counted). */
+/**
+ * The bytes still to download for these files (what a `.part` already holds is not counted, nor
+ * what is adopted from where the machine already has it).
+ */
 export function bytesToFetch(files: readonly FileStatus[]): number {
-  return files.reduce((sum, f) => sum + Math.max(f.size - f.partBytes, 0), 0);
+  return files.reduce(
+    (sum, f) => sum + (f.adopt !== null ? 0 : Math.max(f.size - f.partBytes, 0)),
+    0,
+  );
 }
 
 /** Why there is not room for `need` bytes in `dir`, or `null` when there is (or nobody can tell). */

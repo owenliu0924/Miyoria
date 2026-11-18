@@ -48,6 +48,7 @@ export const PATHS = [
   "me give",
   "me board",
   "me screen",
+  "me danmaku",
   "me bounties",
 ] as const;
 
@@ -338,6 +339,21 @@ class Handler {
     });
   }
 
+  /**
+   * `/me danmaku`: one short line that crosses her stream (paid; given back by itself when the
+   * overlay did not show it). Every refusal is a plain line; nothing is charged for one.
+   */
+  danmaku(inv: Invocation): Promise<CommandReply> {
+    return this.#guard(async (economy) => {
+      const text = inv.str("text")?.trim() ?? "";
+      if (text === "") return notice("warn", "要寫什麼?");
+      const r = await economy.danmaku(inv.invoker, text, `discord:${newId()}`);
+      if (!r.accepted) return result(r.message);
+      const view = await economy.wallet(inv.invoker);
+      return result(`${r.message}。花了 ${r.charged} ${view.currency}，剩 ${r.balance}。`);
+    });
+  }
+
   /** `/me bounties`: what she has posted. */
   bounties(): Promise<CommandReply> {
     return this.#guard(async (economy) => {
@@ -451,6 +467,13 @@ function register(registry: CommandRegistry, handler: Handler): void {
       permission: WALLET_NODE,
     }),
     (inv) => handler.screen(inv),
+  );
+  registry.register(
+    commandSpec("me danmaku", "花魚幣在她直播的畫面上發一則彈幕（從右邊飄過的短句）", {
+      args: [argSpec("text", "彈幕", ArgKind.string)],
+      permission: WALLET_NODE,
+    }),
+    (inv) => handler.danmaku(inv),
   );
   registry.register(commandSpec("me bounties", "她貼著的懸賞", { permission: WALLET_NODE }), () =>
     handler.bounties(),

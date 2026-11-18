@@ -9,12 +9,14 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  bytesToFetch,
   checkPlan,
   checkServiceFiles,
   DownloadError,
@@ -333,6 +335,106 @@ describe("downloading install.files", () => {
     await expect(
       downloadFile("https://example.org/x", dest, { sha256: sha(DATA), fetchImpl: fixture.fetch }),
     ).rejects.toBeInstanceOf(DownloadError);
+    expect(fixture.hits).toHaveLength(0);
+  });
+});
+
+// ---- adopting what the machine already has -----------------------------------------------------
+
+describe("adopt_from: a file kept where it used to be", () => {
+  const OLD = "workers/models/old/model.onnx";
+
+  function setup(old: Buffer | null) {
+    const made = workspace(fileTable({ adopt_from: OLD }));
+    if (old !== null) write(OLD, old);
+    if (made.entry === undefined) throw new Error("no service f");
+    return {
+      ...made,
+      entry: made.entry,
+      dest: join(made.host.state.models, "smart", "model.onnx"),
+    };
+  }
+
+  it("reads adopt_from, and keeps it inside the workspace", () => {
+    const problems = (files: string) => {
+      write("workers/f/service.toml", service(files));
+      return loadCatalog(root)
+        .problems.map((p) => p.message)
+        .join("\n");
+    };
+    expect(problems(fileTable({ adopt_from: OLD }))).toBe("");
+    expect(loadCatalog(root).services.get("f")?.descriptor.install.files[0]?.adopt_from).toBe(OLD);
+    for (const adopt_from of ["../x.bin", "/abs/x.bin", "C:/x.bin", "a\\b"]) {
+      expect(problems(fileTable({ adopt_from }))).toMatch(/adopt_from/);
+    }
+  });
+
+  it("links the old file in when its checksum matches, and downloads nothing", async () => {
+    fixture.route(URL_, { body: DATA });
+    const { host, entry, dest } = setup(DATA);
+    const needs = await checkServiceFiles(entry, host, "cached");
+    expect(needs[0]).toMatchObject({ state: "missing", adopt: join(root, OLD) });
+
+    const lines: string[] = [];
+    const result = await installService(entry, host, deps(), { onLine: (l) => lines.push(l) });
+    expect(result.ok).toBe(true);
+    expect(result.files).toEqual([
+      { path: "smart/model.onnx", state: "present", detail: "沿用舊位置的檔案(硬連結)" },
+    ]);
+    expect(fixture.hits).toHaveLength(0);
+    expect(readFileSync(dest)).toEqual(DATA);
+    // A link: the same file, so the disk holds it once; the old one is where it was.
+    expect(statSync(dest).ino).toBe(statSync(join(root, OLD)).ino);
+    expect(readFileSync(join(root, OLD))).toEqual(DATA);
+    expect(existsSync(`${dest}.adopt`)).toBe(false);
+    expect(lines.some((l) => l.includes("沿用"))).toBe(true);
+
+    // The next check finds it in place and verified.
+    const again = await checkServiceFiles(entry, host, "cached");
+    expect(again[0]).toMatchObject({ state: "verified", adopt: null });
+  });
+
+  it("counts an adopted file as nothing to download", async () => {
+    const { host, entry } = setup(DATA);
+    const [status] = await checkServiceFiles(entry, host, "cached");
+    expect(status && bytesToFetch([status])).toBe(0);
+  });
+
+  it("downloads when the old file has other bytes or another size", async () => {
+    for (const old of [Buffer.alloc(DATA.length, 7), DATA.subarray(1)]) {
+      rmSync(root, { recursive: true, force: true });
+      mkdirSync(root, { recursive: true });
+      fixture.hits.length = 0;
+      fixture.route(URL_, { body: DATA });
+      const { host, entry, dest } = setup(old);
+      expect((await checkServiceFiles(entry, host, "cached"))[0]?.adopt).toBeNull();
+      const result = await installService(entry, host, deps());
+      expect(result.files[0]?.state).toBe("downloaded");
+      expect(fixture.hits).toHaveLength(1);
+      expect(readFileSync(dest)).toEqual(DATA);
+      // What was there is never touched.
+      expect(readFileSync(join(root, OLD))).toEqual(old);
+    }
+  });
+
+  it("downloads when there is no old file, and never adopts without being asked to download", async () => {
+    fixture.route(URL_, { body: DATA });
+    const none = setup(null);
+    expect((await checkServiceFiles(none.entry, none.host, "cached"))[0]?.adopt).toBeNull();
+
+    write(OLD, DATA);
+    const skipped = await installService(none.entry, none.host, deps(), { noFiles: true });
+    expect(skipped.files[0]?.state).toBe("missing");
+    expect(existsSync(none.dest)).toBe(false);
+  });
+
+  it("replaces a wrong file at the new place by the old one that is right", async () => {
+    const { host, entry, dest } = setup(DATA);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, DATA.subarray(1));
+    const result = await installService(entry, host, deps());
+    expect(result.files[0]?.state).toBe("present");
+    expect(readFileSync(dest)).toEqual(DATA);
     expect(fixture.hits).toHaveLength(0);
   });
 });

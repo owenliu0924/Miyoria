@@ -159,14 +159,16 @@ class Node {
     this.ws.send(JSON.stringify(value));
   }
 
-  hello(token: string): void {
-    this.sendJson({
-      type: "hello",
-      version: 1,
-      token,
-      node: "test-stage",
-      capabilities: ["vts", "obs"],
-    });
+  hello(token: string, capabilities: string[] = ["vts", "obs"]): void {
+    this.sendJson({ type: "hello", version: 1, token, node: "test-stage", capabilities });
+  }
+
+  /** The next message of `type` (others are skipped). */
+  async recvType(type: string): Promise<Json> {
+    for (;;) {
+      const msg = await this.recvJson();
+      if (msg.type === type) return msg;
+    }
   }
 
   async #wait<T>(take: () => T | undefined, what: string): Promise<T> {
@@ -702,5 +704,43 @@ describe("scene director on the link", () => {
     const stop = await answer(node, { ...SCENES, scene: "Bye", streaming: false });
     expect(stop).toMatchObject({ type: "stream", action: "stop" });
     expect((await call).text).toBe("已停止直播。");
+  });
+});
+
+describe("danmaku over the link", () => {
+  const LINE = {
+    id: "L1",
+    name: "Mia",
+    text: "好可愛",
+    max_on_screen: 12,
+    queue_max: 20,
+    max_wait_ms: 30_000,
+  };
+
+  it("sends a line to a node that answers danmaku, and publishes its answer", async () => {
+    const h = await Harness.start();
+    const answers = h.subscribe([Events.StageDanmaku.type]);
+    const node = await Node.connect(h.url());
+    node.hello(TOKEN, ["overlay", "danmaku"]);
+    expect((await node.recvJson()).type).toBe("welcome");
+    await waitUntil(() => h.link().isConnected());
+    h.publish(Events.EconomyDanmaku, LINE);
+    expect(await node.recvType("danmaku")).toEqual({ type: "danmaku", ...LINE });
+    node.sendJson({ type: "danmaku_done", id: "L1", outcome: "shown" });
+    expect((await nextEvent(answers)).data).toEqual({ id: "L1", outcome: "shown" });
+    h.publish(Events.EconomyDanmakuClear, {});
+    expect(await node.recvType("danmaku_clear")).toEqual({ type: "danmaku_clear" });
+  });
+
+  it("answers no_overlay at once without a node, to a node too old to answer, and for a bad line", async () => {
+    const h = await Harness.start();
+    const answers = h.subscribe([Events.StageDanmaku.type]);
+    h.publish(Events.EconomyDanmaku, LINE);
+    expect((await nextEvent(answers)).data).toEqual({ id: "L1", outcome: "no_overlay" });
+    await h.node(); // announces no `danmaku`
+    h.publish(Events.EconomyDanmaku, { ...LINE, id: "L2" });
+    expect((await nextEvent(answers)).data).toEqual({ id: "L2", outcome: "no_overlay" });
+    h.publish(Events.EconomyDanmaku, { ...LINE, id: "L3", text: " " });
+    expect((await nextEvent(answers)).data).toEqual({ id: "L3", outcome: "no_overlay" });
   });
 });

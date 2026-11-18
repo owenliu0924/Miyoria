@@ -720,6 +720,7 @@ describe("the route table", () => {
       "GET /api/member/cards/dex",
       "GET /api/member/cards/pity",
       "GET /api/member/cards/wishlist",
+      "GET /api/member/danmaku",
       "GET /api/member/export",
       "GET /api/member/fortune",
       "GET /api/member/karaoke",
@@ -736,6 +737,7 @@ describe("the route table", () => {
       "POST /api/member/board",
       "POST /api/member/card",
       "POST /api/member/checkin",
+      "POST /api/member/danmaku",
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
@@ -2785,6 +2787,7 @@ describe("the wallet", () => {
         ["/api/member/checkin", {}],
         ["/api/member/feed", { item: "rice" }],
         ["/api/member/screen", { text: "嗨" }],
+        ["/api/member/danmaku", { text: "嗨" }],
         ["/api/member/frame", { buy: "sakura" }],
       ] as const) {
         const res = await r.spend(path, cookie, json, "k");
@@ -2810,6 +2813,35 @@ describe("the wallet", () => {
     expect(
       (await r.spend("/api/member/screen", cookie, { text: "字".repeat(61) }, "s-3")).status,
     ).toBe(400);
+    expect(await r.balanceOf(ALICE)).toBe(100);
+  });
+
+  it("sends a danmaku only while she is live, says why first, and charges nothing for a refusal", async () => {
+    const r = await walletRig();
+    await r.fund(ALICE, 100);
+    const cookie = await r.login("alice");
+    const view = await r.get("/api/member/danmaku", cookie);
+    expect(view.status).toBe(200);
+    expect(view.body).toEqual({
+      open: true,
+      live: false,
+      currency: "魚幣",
+      price: 5,
+      max_chars: 30,
+      cooldown_s: 20,
+      per_day: 50,
+      sent_today: 0,
+      wait_s: 0,
+      balance: 100,
+      why: "她現在沒有開台,彈幕發不出去",
+    });
+    const down = await r.spend("/api/member/danmaku", cookie, { text: "加油" }, "d-1");
+    expect(down.status).toBe(409);
+    expect(down.body).toEqual({ error: "她現在沒有開台,彈幕發不出去" });
+    const long = await r.spend("/api/member/danmaku", cookie, { text: "字".repeat(31) }, "d-2");
+    expect(long.status).toBe(400);
+    const link = await r.spend("/api/member/danmaku", cookie, { text: "看 x.com" }, "d-3");
+    expect(link.body).toEqual({ error: "彈幕不能有連結或提及別人" });
     expect(await r.balanceOf(ALICE)).toBe(100);
   });
 

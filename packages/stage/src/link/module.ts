@@ -34,7 +34,15 @@ import { ActivityTracker } from "./activity.js";
 import { registerStreamCommands, unregisterStreamCommands } from "./commands.js";
 import { MAX_MESSAGE } from "./conn.js";
 import { type GoLiveState, SceneDirector } from "./director.js";
-import { EMOTION_TOPIC, Forwarder, GIFT_TOPIC, SCREEN_TOPIC } from "./forward.js";
+import {
+  DANMAKU_CLEAR_TOPIC,
+  DANMAKU_TOPIC,
+  danmakuMessage,
+  EMOTION_TOPIC,
+  Forwarder,
+  GIFT_TOPIC,
+  SCREEN_TOPIC,
+} from "./forward.js";
 import { goliveFollow, VOICE_GOLIVE_TOPIC } from "./golive.js";
 import { Highlights } from "./highlights.js";
 import {
@@ -116,7 +124,8 @@ interface Running {
 /**
  * Module `stage.link`: serves the Stage Link WebSocket endpoint (`ws://<bind>/stage-link`),
  * forwards `agent.emotion`, `agent.turn.completed` and `voice.playback` to the Stage node, tells
- * it what she is doing (`activity`, see activity.ts) and provides `StageLinkKey`. Registers the
+ * it what she is doing (`activity`, see activity.ts) and provides `StageLinkKey`. Danmaku lines
+ * (`economy.danmaku`) go to the node, and how each ended comes back as `stage.danmaku`. Registers the
  * capabilities `stage.scene`, `stage.stream` and `stage.expression` in the actuator registry, and the `stream`
  * commands (which go through it) when `CommandRegistryKey` is available.
  */
@@ -254,6 +263,8 @@ export class StageLinkModule implements Module {
       GIFT_TOPIC,
       TOUCH_TOPIC,
       SCREEN_TOPIC,
+      DANMAKU_TOPIC,
+      DANMAKU_CLEAR_TOPIC,
       Events.SingCue.type,
       Events.SpeechPause.type,
       Events.AgentTurnStarted.type,
@@ -349,6 +360,12 @@ export class StageLinkModule implements Module {
           if (env.type === Events.ActivityChanged.type) continue;
           if (env.type === VOICE_GOLIVE_TOPIC) {
             followGoLive(env.data as JsonValue);
+            continue;
+          }
+          if (env.type === DANMAKU_TOPIC) {
+            // Every line is answered once: by the node, or here when it cannot go out.
+            const line = danmakuMessage(env.data as JsonValue);
+            if (line !== null) link.sendDanmaku(line.id, line.msg);
             continue;
           }
           for (const msg of forwarder.onEvent(env)) {

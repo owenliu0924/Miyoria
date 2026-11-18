@@ -193,7 +193,9 @@ miyoria status                  # 看每個服務的狀態、健康、埠
 - 算過的 SHA-256 記在 `<狀態資料夾>/models.verified.json`(連同檔案的大小和修改時間),之後 `doctor` 只重算有變的檔案;`doctor --deep` 每個都重算。
 - `miyoria doctor --print-hashes <服務>` 印出這台電腦上那個服務的檔案(`[[install.files]]` 的,和 `[install.manual]` 資料夾裡的)的 SHA-256 和大小,照 `service.toml` 的寫法,方便把手動放的檔案改成自動下載。
 
-**目前還沒有任何服務自動下載**:turn 的兩個小模型、sing 的兩個分離模型都已經寫成 `[[install.files]]`,但 repository 裡沒有它們的 SHA-256 和 commit,所以先註解掉、照舊列成手動項目。在有這些檔案的電腦上執行 `miyoria doctor --print-hashes turn`(和 `sing`)填進去、取消註解後就會自動下載(見 `workers/turn/service.toml`、`workers/sing/service.toml` 的 `TODO(owner machine)`)。
+**現在自動下載的**:sing 的兩個分離模型(`vocal-split/MelBandRoformer.ckpt`、`lead-split/becruily-bs/bs_roformer_karaoke_frazer_becruily.ckpt` 和它的設定檔,2026-11-18 對過實際檔案和 repository 公布的 SHA-256 後填入 `workers/sing/service.toml`)。turn 的兩個小模型還沒有:repository 裡沒有它們的 SHA-256 和 commit,所以先註解掉、照舊列成手動項目;在有這些檔案的電腦上執行 `miyoria doctor --print-hashes turn` 填進去、取消註解後就會自動下載(見 `workers/turn/service.toml` 的 `TODO(owner machine)`)。
+
+**沿用舊位置的檔案(`adopt_from`)**:`[[install.files]]` 可以寫 `adopt_from`,值是工作區(`host.toml` 所在資料夾)底下的相對路徑,指這個檔案手動放的舊位置(例如 sing 的 `workers/models/vocal-split/MelBandRoformer.ckpt`)。`add` / `update` / `doctor --fix` 發現檔案在 `<狀態資料夾>/models/` 還沒有(或不對),而舊位置的檔案大小和 SHA-256 都符合,就改用**硬連結**把它接過來(同一個磁碟上不多佔空間;跨磁碟時才複製),不下載、不問(清單上寫「沿用 …」,不算進要下載的大小),舊檔案原封不動。大小或檢查碼不符的舊檔案會被忽略,照一般方式下載。sing 的 worker 自己也先找 `SING_MODELS_DIR`(hostd 給的 `<狀態資料夾>/models`),找不到就退回舊位置(`workers/sing/modelpaths.py`),所以 `update` 抓檔案之前什麼都不會壞;`SING_VOCAL_MODEL`、`SING_LEAD_MODEL` 指定的完整路徑永遠優先。人聲分離的 `MelBandRoformer.yaml` 沒有固定來源,仍然是手動的(放在 `workers/models/vocal-split/` 或 `<狀態資料夾>/models/vocal-split/` 都找得到)。
 
 Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務自己下載,或先 `miyoria models pull <服務>`(下載到 `<狀態資料夾>/models`)。要同步別的 extras(例如 ASR 的 `sensevoice`):`miyoria add asr --extra sensevoice`(只能用在一個服務,另外要在 `[services.asr]` 用 `env` 設 `ASR_BACKEND`,見 [workers/README.md](../workers/README.md))。`--no-install` 只寫 `host.toml`,不建環境。
 
@@ -205,7 +207,7 @@ Hugging Face 上的大模型(ASR、TTS)`add` 不下載:第一次啟動時服務�
 |---|---|---|
 | `tts` | `workers/voices/<聲音>/ref.wav` 和 `ref.txt` | 她的聲音參考音,不進 git;`<聲音>` 預設 `deepseek-chan`([workers/README.md](../workers/README.md) 第 4 節) |
 | `turn` | `<模型資料夾>/smart-turn/smart-turn-v3.2-cpu.onnx`、`<模型資料夾>/silero-vad/silero_vad.onnx` | 兩個公開的小模型,填好檢查碼後改成自動下載(見上面);沒有也能跑,Core 退回舊的判斷 |
-| `sing` | `workers/models/applio`、`models/lead-split`、`models/vocal-split`、`models/seed-vc` | 她的 RVC 歌聲模型(私人)、兩個分離模型(公開,填好檢查碼後改成自動下載)和 Seed-VC 原始碼(是程式碼,不自動下載);沒有的部分會退回或略過,見 [workers/README.md](../workers/README.md) 第 9 節 |
+| `sing` | `workers/models/applio`、`workers/models/vocal-split/MelBandRoformer.yaml`、`workers/models/seed-vc` | 她的 RVC 歌聲模型(私人)、人聲分離模型的設定檔(沒有固定來源)和 Seed-VC 原始碼(是程式碼,不自動下載)。兩個分離模型本身(`vocal-split`、`lead-split`)由 `update` 自動下載,舊位置 `workers/models/` 裡的沿用;沒有的部分會退回或略過,見 [workers/README.md](../workers/README.md) 第 9 節 |
 | `mediamtx` | `workers/mediamtx/mediamtx.exe` | 見下面 [MediaMTX](#mediamtx) |
 | `voice-node` | `apps/voice-node/.env` | `SELF_TOKEN`,見下面 [Voice node](#voice-node) |
 
@@ -475,6 +477,15 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 - **重啟**:所有狀態在資料庫(`market_lots`、`market_bids`、`market_lottery_weeks`、`market_lottery_tickets`),時間從存的時間算;每 30 秒看一次該開的、該結束的、該開獎的,停在一半的(押了錢沒記下的出價、扣了錢沒記下的彩券、還沒燒或還沒付的、她收下了但還沒套上的稱呼)下一輪補完;那一週已經開過才找到的彩券直接退回。點歌優先券的退款沒成功(經濟沒在跑)時,唱歌模組每 30 秒再試一次,日誌 `cannot refund a song priority ticket`。日誌:`market: a lot opened`、`market: a pass failed; the next one tries again`、`market: no Discord to post in`。
 - **拿掉功能**:先把 `auction`、`lottery` 設成 `false` 讓它退完;整個外掛要刪的時候,`packages/play/market/src/migrations.ts` 的 `retireMarketSql` 就是要加的那個 migration(押著的出價和還沒開獎那週的彩券退回,再刪表)。
 
+**直播彈幕**(`[modules.economy] danmaku_*`,設計見 [design/v5-play.md](design/v5-play.md) §11.6):她開台時,會員花魚幣發一則短句,從直播畫面右邊飄到左邊。預設開著,一則 5 魚幣、最多 30 字、每個人每 20 秒一則、一天最多 50 則,畫面上最多 12 則,其他的在 overlay 上排隊(最多 20 則、最多等 30 秒)。
+
+- **要什麼**:`economy` 和 `stage.link` 在跑、她在直播(ActivityManager 的 broadcast 是 `live`;沒有 ActivityManager 時看 OBS 有沒有在推流),直播機的 Stage 是這個版本(hello 帶 `danmaku`),OBS 裡的 overlay 頁開著而且沒有用 `?show=` 拿掉 `danmaku`。只要彈幕一層的頁:`…/overlay/?show=danmaku`。直播機舊、沒有 overlay 頁、或 Stage 沒連上時,送出的彈幕會馬上退回。
+- **在哪發**:`/me danmaku text:`、`/me i` 錢包頁的「發彈幕」(表單),會員頁「現場」的小表單(`GET`/`POST /api/member/danmaku`,帶 `Idempotency-Key`)。沒開台、在冷卻、到上限、魚幣不夠、有連結或提及、被審查擋下,一律不扣錢,原因寫在回覆或表單下面。
+- **錢怎麼走**:送出時扣(帳本原因 `danmaku`),overlay 回報「顯示了」就留著,其他(沒有 overlay 頁、排隊滿了、等太久、被清空、overlay 斷線或沒回)就退回一列 `danmaku_refund`。直播機在 Core 不在時把回報留著,連回來再送。Core 重啟時:扣了錢還沒送出的 1 分鐘後退回,送出了卻一直沒有回報的在等待時間加 90 秒後退回;同一則不會再送一次。健康表把彈幕算成回收、退回的減掉;錢包明細寫「直播彈幕」「彈幕沒顯示,退回」。不分給她的錢包,不上贊助榜,不碰羈絆。
+- **她那邊**:每一則都不會問她。每 `danmaku_note_s`(60)秒最多一則摘要(「直播畫面上這段時間飄過 7 則觀眾的彈幕,其中幾則:…」),隨機挑最多 3 則顯示過的,跟聊天室一樣是背景知道的事,她想回再回;不念出來。
+- **管理**:面板 `/system/economy` 的「直播彈幕」一組能改開關、價格、字數、冷卻、每天幾則、畫面上幾則、顯示名字、多久告訴她一次;經濟的卡片有「今天彈幕」(顯示過的則數和收的魚幣)和「清空彈幕」(畫面上的拿掉,排隊中的退回)。不讓某個人發:`/admin person tag user:<他> tag:no_danmaku`(拿掉標籤就恢復),他會看到「你現在不能發彈幕」。她關台時排隊中的會自動清掉並退回。
+- **日誌**:`danmaku: cannot settle a line`、`danmaku: a refund was not posted`(下一輪再試)、`danmaku: sweep failed`、`danmaku: cannot write her note`。
+
 **唱 K(第一步,一個人)**(`[modules.karaoke]`,`packages/play/karaoke`,設計見 [design/karaoke.md](design/karaoke.md) 的「做了什麼(第一步)」):會員在 `/karaoke` 貼連結或打歌名,唱歌 worker 做伴唱軌和參考旋律,會員在自己的瀏覽器唱,唱完 Core 重算分數,她在講評頻道講一句。沒有房間、沒有直播畫面、沒有魚幣。
 
 - **要什麼**:`sing` 模組在跑、至少一台唱歌 worker(和翻唱同一批,同一套 failover;worker 要是這個分支的,看得懂 `purpose: "karaoke"`);會員頁要開(`[modules.api.public] enabled`)。沒有 worker 時只能唱已經準備好的歌,會員頁會說。worker 不用新的模型,只用翻唱已經有的分離、主唱、RMVPE 和歌詞查詢。
@@ -502,7 +513,7 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 
 側欄底部的圓點是 Core 與事件串流的狀態(滑過看版本與位址)。唯讀帳號(沒有 `admin.panel.write`)看得到所有東西,但修改類的控制項會停用。
 
-**模組設定**(設計見 [design/v5-settings.md](design/v5-settings.md)):面板的 `/system/<id>` 能改一部分模組設定(目前是市集、卡片、經濟的三個價格、派對遊戲、唱歌、直播頁,見設計的「做了什麼」)。
+**模組設定**(設計見 [design/v5-settings.md](design/v5-settings.md)):面板的 `/system/<id>` 能改一部分模組設定(目前是市集、卡片、經濟的三個價格和直播彈幕、派對遊戲、唱歌、直播頁,見設計的「做了什麼」)。
 
 - **存在哪**:面板改的值存在資料庫的設定修訂(`config_revisions`,和模組開關同一份),**蓋在 `miyoria.toml` 上**,一個鍵一個鍵;檔案不會被改。每次儲存是新的一版,記誰(`panel:discord:<id>`、`panel:token`、`cli`)和何時,事件紀錄有 `config.revised`;頁面下方的變更紀錄能把某一次的變更復原。
 - **儲存就套用**:一個按鈕「儲存並重新啟動 X」:Core 檢查值(錯的值在欄位下面用中文說哪裡錯)、寫一版,再只重新啟動 X 和依賴它的模組,幾秒鐘。她在唱歌或直播時,重啟會打斷她的模組(sing、voice、voice.link、stage.link 和會連帶重啟它們的)先存起來,唱完 / 直播結束才重啟,卡片上寫「已存,她唱完後重新啟動套用」;按鈕會先問。

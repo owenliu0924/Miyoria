@@ -17,6 +17,9 @@
 //                                               a paid message; not merged, queued here
 //   {"type":"touch","x":0..1,"y":0..1,"part":"head"|"face"|"body"|"screen"}
 //                                               a viewer touched the stream; drawn at (x·W, y·H), not kept in state
+//   {"type":"danmaku","id":"…","name":"Owen"|null,"text":"…","max_on_screen":n,"queue_max":n,"max_wait_ms":n}
+//                                               a paid line that crosses the screen (src/danmaku.ts); the page answers it
+//   {"type":"danmaku_clear"}                    every danmaku line off the screen, the waiting ones dropped
 
 import type { OverlayMessage } from "@miyoria/contracts/overlay";
 import { parseTouch } from "./touch.js";
@@ -126,6 +129,10 @@ interface Parsed {
   screen: Wire<"screen">;
   /** A viewer's touch on the picture: drawn once by the view, never part of the reduced state. */
   touch: Wire<"touch">;
+  /** A paid line for the danmaku layer (src/danmaku.ts), never part of the reduced state. */
+  danmaku: Wire<"danmaku">;
+  /** Every danmaku line off the screen. */
+  danmaku_clear: Wire<"danmaku_clear">;
 }
 
 /**
@@ -150,6 +157,8 @@ export const MAX_QUEUE_ITEMS = 12;
 export const MAX_SCREEN_CARDS = 5;
 const MAX_NAME = 32;
 const MAX_SCREEN_TEXT = 200;
+const MAX_DANMAKU_ID = 64;
+const MAX_DANMAKU_TEXT = 100;
 const MAX_TEXT = 2000;
 const MAX_TITLE = 160;
 const MAX_LABEL = 40;
@@ -288,7 +297,33 @@ const PARSERS: { [K in OverlayMessage["type"]]: (raw: Raw) => Parsed[K] | null }
     const touch = parseTouch(raw);
     return touch === null ? null : { type: "touch", ...touch };
   },
+  danmaku: parseDanmaku,
+  danmaku_clear() {
+    return { type: "danmaku_clear" };
+  },
 };
+
+/**
+ * `danmaku` frame. A line without a usable id or text cannot be shown or answered: null. The
+ * limits are clamped to the contract's ranges (a number that is not one falls back to the usual
+ * setting), so a line with an odd limit is still shown and answered rather than lost.
+ */
+function parseDanmaku(raw: Raw): Parsed["danmaku"] | null {
+  const id = str(raw.id);
+  const text = nonEmpty(raw.text);
+  if (!id || id.length > MAX_DANMAKU_ID || !text) return null;
+  const limit = (v: unknown, fallback: number, min: number, max: number): number =>
+    typeof v === "number" && Number.isFinite(v) ? Math.min(Math.max(Math.floor(v), min), max) : fallback;
+  return {
+    type: "danmaku",
+    id,
+    name: nonEmpty(raw.name)?.slice(0, MAX_NAME) ?? null,
+    text: text.slice(0, MAX_DANMAKU_TEXT),
+    max_on_screen: limit(raw.max_on_screen, 12, 1, 50),
+    queue_max: limit(raw.queue_max, 20, 0, 200),
+    max_wait_ms: limit(raw.max_wait_ms, 30_000, 0, 600_000),
+  };
+}
 
 /** The demo's queue frame: loose on purpose ("items":[…]); see `DemoQueueMessage`. */
 function parseQueueMessage(raw: Raw): DemoQueueMessage | null {
@@ -394,6 +429,8 @@ export function reduce(state: OverlayState, action: Action): OverlayState {
       return reduceSubtitle(state, action);
     case "levels":
     case "touch":
+    case "danmaku":
+    case "danmaku_clear":
       return state;
   }
 }

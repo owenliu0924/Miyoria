@@ -203,6 +203,59 @@ describe("add", () => {
   });
 });
 
+describe("a file the machine already keeps in the old place (adopt_from)", () => {
+  const OLD = "workers/models/m/model.bin";
+  beforeEach(() => {
+    const path = join(dir, "workers/m/service.toml");
+    writeFileSync(
+      path,
+      readFileSync(path, "utf8").replace(
+        'what = "測試模型"',
+        `what = "測試模型"\nadopt_from = "${OLD}"`,
+      ),
+    );
+    write(OLD, BODY);
+  });
+
+  it("add links it in without asking and without downloading", async () => {
+    const net = memoryFetch();
+    const ask = asker(false);
+    await servicesCmd.add(
+      target(),
+      { services: ["m"] },
+      deps({ confirm: ask.confirm, interactive: true }, net.fetchImpl),
+    );
+    expect(ask.questions).toHaveLength(0);
+    expect(net.asked).toEqual([]);
+    expect(text()).toContain(`沿用 ${join(dir, OLD)}`);
+    expect(text()).toContain("不用下載");
+    expect(readFileSync(dest())).toEqual(BODY);
+    expect(readFileSync(join(dir, OLD))).toEqual(BODY);
+  });
+
+  it("update says it will be reused, and a dry run changes nothing", async () => {
+    const net = memoryFetch();
+    write("host.toml", 'name = "h"\n\n[services.m]\n');
+    out.length = 0;
+    await update.updateServices(
+      join(dir, "miyoria.toml"),
+      { dryRun: true },
+      {
+        run: async () => NONE,
+        confirm: async () => true,
+        env: { PATH: "" },
+        platform: process.platform,
+        now: () => new Date(2026, 10, 18, 12, 0, 0),
+        services: deps({}, net.fetchImpl),
+      },
+      null,
+    );
+    expect(text()).toContain("不用下載");
+    expect(existsSync(dest())).toBe(false);
+    expect(net.asked).toEqual([]);
+  });
+});
+
 describe("update", () => {
   const updateDeps = (services: servicesCmd.ServiceDeps): update.UpdateDeps => ({
     run: async () => NONE,

@@ -323,6 +323,88 @@ body {
   top: calc(var(--pad) + 1.25rem);
 }
 
+/* ── danmaku (paid lines crossing the top third) ──────────────────────── */
+
+/*
+ * The band the lines cross, clipped at its edges. Default: the frame's width, from just under the
+ * top edge to a third of the way down. danmaku-view.ts moves each line with a transform from the
+ * frame clock (one gentle speed) and sets `top` to its lane (--dm-lane high).
+ */
+.danmaku {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 1.5rem;
+  height: calc(100% / 3 - 1.5rem);
+  overflow: hidden;
+}
+
+/* Over the song video only, in its top third: the lines never cross her on the right. */
+[data-layout="sing"] .danmaku {
+  left: var(--pad);
+  right: auto;
+  width: var(--video-w);
+  top: calc(var(--pad) + 0.75rem);
+  height: calc(var(--video-h) / 3 - 0.75rem);
+}
+
+/*
+ * One line, never wrapped. No full plate (it would hide the picture as it crosses): the ink sits on
+ * a faint glass pill and carries a dark outline of layered shadows, so it reads over a white sky
+ * as well as over a night scene.
+ */
+.danmaku__line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  height: calc(var(--dm-lane) - 0.4rem);
+  margin-top: 0.2rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  background: rgb(18 18 22 / 0.38);
+  color: var(--ink);
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: calc(var(--dm-lane) - 0.4rem);
+  white-space: nowrap;
+  text-shadow:
+    0 0 0.08em rgb(0 0 0 / 0.95),
+    0.06em 0.06em 0 rgb(0 0 0 / 0.75),
+    -0.06em 0.06em 0 rgb(0 0 0 / 0.75),
+    0.06em -0.06em 0 rgb(0 0 0 / 0.75),
+    -0.06em -0.06em 0 rgb(0 0 0 / 0.75),
+    0 0.1em 0.35em rgb(0 0 0 / 0.6);
+  will-change: transform;
+  transition: opacity var(--t-exit) var(--ease-exit);
+}
+
+/* Laid out to be measured before it gets a lane, never seen. */
+.danmaku__line.is-measuring {
+  visibility: hidden;
+}
+
+/* Cleared: the lines fade where they are. */
+.danmaku__line.is-leaving {
+  opacity: 0;
+}
+
+/* Who sent it: small and dimmer, before the words. */
+.danmaku__name {
+  color: var(--ink-dim);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  /* A lighter outline: the full one muddies text this small. */
+  text-shadow:
+    0 0 0.12em rgb(0 0 0 / 0.95),
+    0 0 0.3em rgb(0 0 0 / 0.75);
+}
+
 /* ── voice waveform (left edge) ───────────────────────────────────────── */
 
 /* Strokes are drawn by wave.ts; the element only places the strip and fades it in and out. */

@@ -7,6 +7,7 @@ import { z } from "zod";
 import { AvatarProfile } from "./avatar.js";
 import { AvatarLoop } from "./avatar-loop.js";
 import { BlinkConfigSchema } from "./blink.js";
+import { DanmakuOutbox } from "./danmaku.js";
 import { GestureConfigSchema } from "./gesture.js";
 import { Levels, LipSyncConfigSchema, serveLevels } from "./lipsync.js";
 import { GazeConfigSchema, MotionConfigSchema } from "./motion.js";
@@ -265,8 +266,10 @@ class Stage {
   readonly status = new Watch<StageStatus>(defaultStageStatus(), sameStatus);
   /** Connected to Core. */
   readonly core = new Watch<boolean>(false);
-  /** Sends a reply to Core (set while a session is up). */
-  replies: ((msg: StageMessage) => void) | null = null;
+  /** Sends a reply to Core (set while a session is up); `false` when the socket is no longer open. */
+  replies: ((msg: StageMessage) => boolean) | null = null;
+  /** How danmaku lines ended, kept while Core is away (they settle what Core charged). */
+  readonly #danmakuDone = new DanmakuOutbox();
 
   constructor(
     vts: Watch<VtsClient | null>,
@@ -282,6 +285,26 @@ class Stage {
     this.#avatar = avatar;
     this.#overlayUrl = overlayUrl;
     this.#songVideo = songVideo;
+    overlay.onDanmakuDone = (done) => {
+      this.#danmakuDone.push(done);
+      this.flushDanmaku();
+    };
+  }
+
+  /**
+   * Sends Core how the danmaku lines ended (what was kept while it was away first). What cannot
+   * be sent (the socket is closing) is kept for the next session.
+   */
+  flushDanmaku(): void {
+    const send = this.replies;
+    if (send === null) return;
+    const all = this.#danmakuDone.take();
+    for (const [i, done] of all.entries()) {
+      if (!send({ type: "danmaku_done", ...done })) {
+        this.#danmakuDone.restore(all.slice(i));
+        return;
+      }
+    }
   }
 
   /** Re-reads the hotkey list of the current VTS model. */
@@ -408,6 +431,12 @@ class Stage {
       case "screen":
         this.#overlay.screen(msg);
         return;
+      case "danmaku":
+        this.#overlay.danmaku(msg);
+        return;
+      case "danmaku_clear":
+        this.#overlay.danmakuClear();
+        return;
       case "touch":
         this.#overlay.touch(msg);
         this.#avatar?.touch(msg.part);
@@ -445,8 +474,12 @@ class Stage {
       this.core.subscribe(update),
       this.#obs?.subscribe(update) ?? (() => {}),
     ];
-    // A client that closes by itself does not change the watch; poll for that.
-    const poll = setInterval(update, 1_000);
+    // A client that closes by itself does not change the watch; poll for that. Danmaku lines no
+    // page answered in time end here too.
+    const poll = setInterval(() => {
+      update();
+      this.#overlay.expireDanmaku();
+    }, 1_000);
     update();
     signal.addEventListener(
       "abort",
@@ -513,7 +546,8 @@ async function coreLink(config: StageConfig, stage: Stage, signal: AbortSignal):
 }
 
 function capabilities(config: StageConfig): string[] {
-  const caps = ["overlay"];
+  // `danmaku`: it answers each danmaku line (`danmaku_done`), so Core does not wait on an older node.
+  const caps = ["overlay", "danmaku"];
   if (config.vts.enabled) {
     caps.push("vts");
     if (config.avatar.lipsync === "inject") caps.push("lipsync");
@@ -555,14 +589,15 @@ function session(config: StageConfig, stage: Stage, signal: AbortSignal): Promis
       if (outcome instanceof SessionError) reject(outcome);
       else resolve(outcome);
     };
-    const send = (msg: StageMessage) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
+    const send = (msg: StageMessage): boolean => {
+      if (settled || ws.readyState !== WebSocket.OPEN) return false;
       ws.send(encodeMessage(msg), (error) => {
         if (error) {
           ws.terminate();
           finish("lost");
         }
       });
+      return true;
     };
     const onAbort = () => {
       if (ws.readyState === WebSocket.OPEN) ws.close(1000, "stage stopping");
@@ -643,6 +678,7 @@ function session(config: StageConfig, stage: Stage, signal: AbortSignal): Promis
         stage.replies = send;
         stage.core.set(true);
         send({ type: "status", ...stage.currentStatus() });
+        stage.flushDanmaku();
         unsubscribeStatus = stage.status.subscribe((status) => send({ type: "status", ...status }));
         resetPeerTimer();
         return;

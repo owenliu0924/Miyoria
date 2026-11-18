@@ -106,6 +106,18 @@ function fake(): Fake {
         return { accepted: false, charged: 0, balance: 120, message: "現在沒有開台" };
       return { accepted: true, charged: 30, balance: 90, message: "留言送上大螢幕了" };
     },
+    danmaku: async (_a: AccountRef, text: string, key: string) => {
+      calls.push(`danmaku:${text}:${key}`);
+      if (state.fail) throw state.fail;
+      if (!state.screenOk)
+        return { accepted: false, charged: 0, balance: 120, message: "這則彈幕沒辦法上螢幕" };
+      return {
+        accepted: true,
+        charged: 5,
+        balance: 115,
+        message: "彈幕送出了,沒顯示出來的會自動退回",
+      };
+    },
     bounties: async () => state.bounties,
     setOnBoard: async (_a: AccountRef, on: boolean) => {
       calls.push(`on_board:${on}`);
@@ -382,11 +394,14 @@ describe("wallet commands", () => {
       ["餵一碗", "me feed", { item: "rice" }],
       ["餵鋼盆", "me feed", { item: "big_bowl" }],
       ["留言上大螢幕", "me screen", undefined],
+      ["發彈幕", "me danmaku", undefined],
       ["轉給別人", "me give", undefined],
       ["排行榜", "me board", undefined],
     ]);
     const screen = page?.actions.find((a) => a.id === "screen");
     expect(screen?.ask?.fields.map((f) => f.arg)).toEqual(["text"]);
+    const danmaku = page?.actions.find((a) => a.id === "danmaku");
+    expect(danmaku?.ask?.fields.map((f) => f.arg)).toEqual(["text"]);
     expect(page?.actions.find((a) => a.id === "give")?.ask?.fields.map((f) => f.arg)).toEqual([
       "user",
       "amount",
@@ -416,6 +431,22 @@ describe("wallet commands", () => {
     state.fail = new EconomyError(429, "10 分鐘內只能留一則");
     expect((await run(registry, "me screen", { text: "嗨" })).tone).toBe("info");
     expect((await run(registry, "me screen", { text: "  " })).tone).toBe("warn");
+  });
+
+  it("danmaku_sends_one_line_and_every_refusal_is_plain_information", async () => {
+    const { registry, calls, state } = setup();
+    expect(registry.get(["me", "danmaku"])?.ephemeral).toBeFalsy();
+    const reply = await run(registry, "me danmaku", { text: " 好可愛 " });
+    expect(reply.text).toBe("彈幕送出了,沒顯示出來的會自動退回。花了 5 魚幣，剩 115。");
+    expect(reply.card?.accent).toBe("neutral");
+    expect(calls[0]).toMatch(/^danmaku:好可愛:discord:/);
+    state.screenOk = false;
+    expect((await run(registry, "me danmaku", { text: "嗨" })).text).toBe("這則彈幕沒辦法上螢幕");
+    state.fail = new EconomyError(409, "她現在沒有開台,彈幕發不出去");
+    const down = await run(registry, "me danmaku", { text: "嗨" });
+    expect(down.tone).toBe("info");
+    expect(down.text).toContain("她現在沒有開台");
+    expect((await run(registry, "me danmaku", { text: "  " })).tone).toBe("warn");
   });
 
   it("bounties_list_what_she_has_posted", async () => {
