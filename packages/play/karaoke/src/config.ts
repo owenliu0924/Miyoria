@@ -50,6 +50,22 @@ export const KaraokeConfigSchema = z
           group: "songs",
         }),
       ),
+    /**
+     * The member site's address (where `/karaoke` is), for the links of `/me play karaoke` and the
+     * room notices. Empty: they say the page is on the member site, without a link.
+     */
+    site_url: z
+      .string()
+      .regex(/^(https?:\/\/[^\s/?#]+(\/[^\s?#]*)?)?$/, "http(s)://<host>")
+      .default("")
+      .meta(
+        setting({
+          kind: "text",
+          label: "會員頁的網址",
+          help: "例如 https://miyoria.example.com;Discord 的連結和直播上的 QR 碼用它。沒填就只說在會員頁",
+          group: "songs",
+        }),
+      ),
     /** The longest song that may be sung, in seconds; a longer one fails its preparation. */
     max_song_secs: z
       .number()
@@ -417,6 +433,21 @@ export const KaraokeConfigSchema = z
         }),
       ),
     /**
+     * A room that opens is posted in the comment channel (a neutral notice with its code and a
+     * 「加入」 link, no ping), and the notice says 「已結束」 once the room closes.
+     */
+    room_announce: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "開房時在講評頻道貼通知",
+          help: "一則系統通知:房號和「加入」的連結,不標記任何人;房間關掉時改成已結束。要有講評頻道",
+          group: "rooms",
+        }),
+      ),
+    /**
      * Her stream shows the karaoke room (the overlay's karaoke scene, step 5): the lobby, then the
      * round's lyrics, background video and board, and the results. Off: the overlay is as before.
      */
@@ -568,3 +599,12 @@ export function lyricsOptions(cfg: KaraokeConfig): {
   };
 }
 export type KaraokeConfig = z.output<typeof KaraokeConfigSchema>;
+
+/**
+ * A page of the member site (`/karaoke`, `/karaoke/room/<code>`) as a full link, from `site_url`;
+ * `null` when it is not set.
+ */
+export function siteLink(cfg: Pick<KaraokeConfig, "site_url">, path: string): string | null {
+  const base = cfg.site_url.trim().replace(/\/+$/, "");
+  return base === "" ? null : `${base}${path}`;
+}

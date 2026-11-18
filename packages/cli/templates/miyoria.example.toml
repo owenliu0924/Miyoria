@@ -529,6 +529,7 @@ dirs = ["extensions"]
 # enabled = true
 # utc_offset_minutes = 480    # 「今天」從哪個時區算(每人每天的上限)
 # open = true                 # false = 會員不能點歌、唱、開房間;唱完的結果照常;面板管理員關著時也能用,可以先試
+# site_url = ""               # 會員頁的網址(例如 "https://miyoria.example.com");/me play karaoke 和開房通知的連結用它,沒填就只說在會員頁
 # max_song_secs = 480         # 一首最長幾秒,超過的準備失敗
 # daily_songs = 10            # 每人每天能準備幾首新歌;已經準備好的歌不算(0 = 只能唱準備好的)
 # tolerance_cents = 50        # 離原唱幾 cents 內算唱對,兩倍遠就不算
@@ -553,6 +554,7 @@ dirs = ["extensions"]
 # room_idle_mins = 10         # 房間閒置多久(沒有開始唱)就關掉
 # room_countdown_secs = 6     # 按開始後倒數幾秒,大家的伴奏同時開始
 # room_stream = true          # 唱的時候把麥克風即時送到唱歌 worker 算正式分數(不存);false = 唱的時候只有預估,唱完送錄音
+# room_announce = true        # 開房時在講評頻道貼一則系統通知(房號和「加入」的連結,不標記任何人),關房時改成已結束
 # 直播(第五步):她的直播(Go Live,OBS 的唱 K 場景)播伴奏和最多一個人的歌聲;她自己的語音頻道不播。
 # overlay 的瀏覽器來源要「讓 OBS 控制音訊」(stage obs-setup 會設好),聲音才進得了直播
 # stream_scene = true         # 直播畫面顯示唱 K 房間:等人時角落一塊,唱的時候歌詞、背景影片、即時排名、結果

@@ -181,6 +181,38 @@ export interface RoomDeps {
     lyrics(lyrics: KaraokeStageLyrics): void;
     voice(voice: KaraokeStageVoice): void;
   };
+  /**
+   * A room's notice in the comment channel (`room_announce`): `post` it when the room opens (its
+   * message id, `null` when it could not be posted), `edit` it when the room closes. Left out,
+   * nothing is posted.
+   */
+  announce?: {
+    post(channel: RoomChannel, notice: RoomNotice): Promise<string | null>;
+    edit(channel: RoomChannel, message: string, notice: RoomNotice): Promise<void>;
+  };
+}
+
+/** The comment channel a room's notice goes to. */
+export type RoomChannel = NonNullable<ReturnType<typeof commentContext>>;
+
+/** What a room's notice in the comment channel says (no names but the opener's, no pings). */
+export interface RoomNotice {
+  code: string;
+  opener: string;
+  state: "open" | "ended";
+  /** Why it closed, a sentence (`ended` only). */
+  reason: string | null;
+}
+
+/** One room open now, as `/me play karaoke` lists it. */
+export interface RoomBrief {
+  code: string;
+  state: "lobby" | "countdown" | "singing" | "results";
+  /** The song sung now, else the next one (`null`: none chosen yet). */
+  song: string | null;
+  singers: number;
+  max_singers: number;
+  members: number;
 }
 
 interface Member {
@@ -284,6 +316,8 @@ interface Room {
   relay: { busy: boolean; failures: number; off: boolean; at: number };
   /** The opener's 「播出第一名的歌聲」 (rounds of two or more singers). */
   lead: boolean;
+  /** Its notice in the comment channel: where, and the message once posted. */
+  notice: { channel: RoomChannel; message: Promise<string | null>; opener: string } | null;
 }
 
 /** What the score makes of a microphone chunk (the reply has the stream's part too). */
@@ -444,11 +478,59 @@ export class RoomDesk implements RoomLink {
       activity: now,
       relay: { busy: false, failures: 0, off: false, at: 0 },
       lead: this.#cfg.relay_lead,
+      notice: null,
     };
     this.#rooms.set(code, room);
     this.#d.log.info({ room: id, code, price }, "karaoke: a room opened");
     this.#note(`karaoke:room:${id}:open`, roomOpenedNote(name, code, song.title), true);
+    this.#announce(room, member.name);
     return this.#view(room, account);
+  }
+
+  /** The room's notice in the comment channel, when `room_announce` is on and one is set. */
+  #announce(room: Room, opener: string): void {
+    const announce = this.#d.announce;
+    const channel = commentContext(this.#cfg.comment_channel);
+    if (announce === undefined || channel === null || !this.#cfg.room_announce) return;
+    const message = announce
+      .post(channel, { code: room.code, opener, state: "open", reason: null })
+      .catch((error: unknown) => {
+        this.#d.log.warn({ room: room.id, err: String(error) }, "karaoke: no room notice");
+        return null;
+      });
+    room.notice = { channel, message, opener };
+    this.#track(message);
+  }
+
+  /** A room that closed: its notice says so. */
+  #unannounce(room: Room, reason: string): void {
+    const notice = room.notice;
+    const announce = this.#d.announce;
+    if (notice === null || announce === undefined) return;
+    room.notice = null;
+    const done = notice.message
+      .then((id) =>
+        id === null
+          ? undefined
+          : announce.edit(notice.channel, id, {
+              code: room.code,
+              opener: notice.opener,
+              state: "ended",
+              reason,
+            }),
+      )
+      .catch((error: unknown) => {
+        this.#d.log.warn({ room: room.id, err: String(error) }, "karaoke: room notice not ended");
+      });
+    this.#track(done);
+  }
+
+  /** Work in the background that `idle()` waits for. */
+  #track(work: Promise<unknown>): void {
+    const tracked: Promise<void> = work
+      .then(() => undefined)
+      .finally(() => this.#inflight.delete(tracked));
+    this.#inflight.add(tracked);
   }
 
   #code(): string {
@@ -775,6 +857,7 @@ export class RoomDesk implements RoomLink {
     for (const [session, at] of this.#sessions)
       if (at.room === room) this.#sessions.delete(session);
     this.#d.log.info({ room: room.id, reason }, "karaoke: a room closed");
+    this.#unannounce(room, reason);
     this.#stage();
     void this.settleMoney();
   }
@@ -1787,6 +1870,29 @@ export class RoomDesk implements RoomLink {
   /** Every room closes (the module stops, or rooms were switched off). */
   closeAll(reason: string = CLOSE.off): void {
     for (const room of [...this.#rooms.values()]) this.#close(room, reason);
+  }
+
+  /** The rooms open now (`/me play karaoke`), the most recently active first. */
+  briefs(): RoomBrief[] {
+    return [...this.#rooms.values()]
+      .filter((r) => r.state !== "closed")
+      .sort((a, b) => b.activity - a.activity)
+      .map((room) => {
+        const running = room.state === "countdown" || room.state === "singing";
+        const round = room.round;
+        const song = running && round !== null ? round.song : room.song;
+        return {
+          code: room.code,
+          state: room.state as RoomBrief["state"],
+          song: song === null ? null : song.title || null,
+          singers:
+            running && round !== null
+              ? round.singers.size
+              : [...room.members.values()].filter((m) => m.role === "singer").length,
+          max_singers: this.#cfg.room_singers,
+          members: room.members.size,
+        };
+      });
   }
 
   /** For the card: rooms open now and people in them. */

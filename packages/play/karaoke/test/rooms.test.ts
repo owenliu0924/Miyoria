@@ -3,158 +3,20 @@
 // singers' voices relayed and scored live, who is sent what during a song, the final ranking and
 // what it pays, and the money after a crash.
 
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { rm } from "node:fs/promises";
 import type { KaraokeRoomEvent, KaraokeRoomView } from "@miyoria/contracts/api";
-import type {
-  KaraokeStageLyrics,
-  KaraokeStageScene,
-  KaraokeStageVoice,
-} from "@miyoria/contracts/stage-link";
-import { openTestDb, type TestDb } from "@miyoria/store/testing";
-import type { AccountRef, PersonId } from "@miyoria/types";
+import type { KaraokeStageVoice } from "@miyoria/contracts/stage-link";
+import type { AccountRef } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type KaraokeConfig, KaraokeConfigSchema } from "../src/config.js";
-import { karaokeSchema } from "../src/migrations.js";
-import { END_GRACE_MS, RoomDesk, SETTLE_WAIT_MS } from "../src/rooms.js";
+import { END_GRACE_MS, SETTLE_WAIT_MS } from "../src/rooms.js";
 import { karaokeRooms } from "../src/schema.js";
 import { asSubmitted, encodeTrack, TRACK_HZ, toBase64 } from "../src/score/index.js";
-import { KaraokeError, type KaraokeNote, KaraokeService } from "../src/service.js";
-import { KaraokeStore } from "../src/store.js";
-import {
-  FakeKaraokeWallet,
-  FakeKaraokeWorker,
-  humanSinger,
-  noiseSinger,
-  referenceOf,
-  synthSong,
-} from "../src/testing.js";
+import { KaraokeError, type KaraokeService } from "../src/service.js";
+import { humanSinger, noiseSinger } from "../src/testing.js";
 import { TrendTracker } from "../src/trend.js";
-
-const acc = (id: string): AccountRef => ({ platform: "discord", id });
-const ALICE = acc("1");
-const BOB = acc("2");
-const CAROL = acc("3");
-const DAVE = acc("4");
-const STRANGER = acc("9");
-const PEOPLE: Record<string, string | null> = {
-  "1": "p-alice",
-  "2": "p-bob",
-  "3": "p-carol",
-  "4": "p-dave",
-};
-const CHANNEL = "discord:111111:222222";
-const T0 = Date.UTC(2026, 10, 18, 4, 0, 0);
-const song = synthSong(3, 4);
-const RATE = 16_000;
-
-interface Rig {
-  desk: RoomDesk;
-  service: KaraokeService;
-  worker: FakeKaraokeWorker;
-  wallet: FakeKaraokeWallet;
-  store: KaraokeStore;
-  notes: KaraokeNote[];
-  clock: { t: number };
-  voice: { on: boolean };
-  hasWallet: { on: boolean };
-  raw: TestDb;
-  dir: string;
-  config: KaraokeConfig;
-  songId: string;
-  /** What went to her stream's scene. */
-  staged: {
-    scenes: KaraokeStageScene[];
-    lyrics: KaraokeStageLyrics[];
-    voices: KaraokeStageVoice[];
-  };
-  /** Another desk on the same store and wallet: Core after a restart. */
-  restart(): RoomDesk;
-}
+import { ALICE, BOB, CAROL, DAVE, makeRig, RATE, type Rig, STRANGER, song } from "./room-rig.js";
 
 let rig: Rig;
-
-async function makeRig(overrides: Partial<KaraokeConfig> = {}): Promise<Rig> {
-  const raw = openTestDb({ plugins: [karaokeSchema] });
-  const store = new KaraokeStore(raw.db, raw.events);
-  const worker = new FakeKaraokeWorker();
-  const notes: KaraokeNote[] = [];
-  const clock = { t: T0 };
-  const voice = { on: true };
-  const hasWallet = { on: true };
-  const dir = await mkdtemp(join(tmpdir(), "karaoke-rooms-"));
-  const config = KaraokeConfigSchema.parse({ comment_channel: CHANNEL, ...overrides });
-  const wallet = new FakeKaraokeWallet(PEOPLE, () => clock.t);
-  for (const p of ["p-alice", "p-bob", "p-carol", "p-dave"]) wallet.balances.set(p, 100);
-  const who = (account: AccountRef) => ({
-    person: (PEOPLE[account.id] ?? null) as PersonId | null,
-    blocked: false,
-  });
-  const log = { info: () => {}, warn: () => {} };
-  const staged: Rig["staged"] = { scenes: [], lyrics: [], voices: [] };
-  const service = new KaraokeService({
-    config,
-    store,
-    worker: () => worker,
-    now: () => clock.t,
-    cacheDir: dir,
-    who,
-    tell: (note) => notes.push(note),
-    together: () => {},
-    log,
-  });
-  const desk = (): RoomDesk => {
-    const d = new RoomDesk({
-      config,
-      store,
-      service,
-      worker: () => worker,
-      wallet: () => (hasWallet.on ? wallet : null),
-      inVoice: () => voice.on,
-      who,
-      tell: (note) => notes.push(note),
-      together: () => {},
-      now: () => clock.t,
-      log,
-      stage: {
-        scene: (x) => staged.scenes.push(structuredClone(x)),
-        lyrics: (x) => staged.lyrics.push(structuredClone(x)),
-        voice: (x) => staged.voices.push(structuredClone(x)),
-      },
-      random: (() => {
-        let x = 0.1;
-        return () => {
-          x = (x * 9301 + 0.49297) % 1;
-          return x;
-        };
-      })(),
-    });
-    service.attachRooms(d);
-    return d;
-  };
-  const asked = await service.request(ALICE, "https://youtu.be/rooms", true);
-  const job = store.song(asked.song.id)?.job as string;
-  worker.finish(job, referenceOf(song, `k-${job}`));
-  await service.tick(new AbortController().signal);
-  return {
-    desk: desk(),
-    service,
-    worker,
-    wallet,
-    store,
-    notes,
-    clock,
-    voice,
-    hasWallet,
-    raw,
-    dir,
-    config,
-    songId: asked.song.id,
-    staged,
-    restart: desk,
-  };
-}
 
 beforeEach(async () => {
   rig = await makeRig();
@@ -349,6 +211,51 @@ describe("opening a room", () => {
       closed.raw.close();
       await rm(closed.dir, { recursive: true, force: true });
     }
+  });
+
+  it("posts a notice in the comment channel, and says it ended when the room closes", async () => {
+    const room = await rig.desk.open(ALICE, "Alice", rig.songId, 0);
+    await rig.desk.idle();
+    expect(rig.notices).toEqual([
+      {
+        id: "m1",
+        channel: "222222",
+        notice: { code: room.code, opener: "Alice", state: "open", reason: null },
+      },
+    ]);
+    rig.desk.close(room.code, ALICE);
+    await rig.desk.idle();
+    expect(rig.notices.at(-1)).toMatchObject({
+      id: "m1",
+      notice: { code: room.code, state: "ended", reason: "開房的人關了房間" },
+    });
+    // Off, or no comment channel: nothing is posted.
+    for (const overrides of [{ room_announce: false }, { comment_channel: "" }]) {
+      const quiet = await makeRig(overrides);
+      try {
+        const r = await quiet.desk.open(ALICE, "Alice", quiet.songId, 0);
+        quiet.desk.close(r.code, ALICE);
+        await quiet.desk.idle();
+        expect(quiet.notices).toEqual([]);
+      } finally {
+        quiet.raw.close();
+        await rm(quiet.dir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("lists the rooms open now for Discord, the most recently active first", async () => {
+    expect(rig.desk.briefs()).toEqual([]);
+    const a = await rig.desk.open(ALICE, "Alice", rig.songId, 0);
+    rig.clock.t += 1000;
+    const b = await rig.desk.open(BOB, "Bob", rig.songId, 0);
+    await rig.desk.join(b.code, CAROL, "Carol", "singer");
+    expect(rig.desk.briefs()).toMatchObject([
+      { code: b.code, state: "lobby", singers: 2, max_singers: 8, members: 2 },
+      { code: a.code, state: "lobby", singers: 1, members: 1 },
+    ]);
+    rig.desk.close(a.code, ALICE);
+    expect(rig.desk.briefs().map((r) => r.code)).toEqual([b.code]);
   });
 });
 
