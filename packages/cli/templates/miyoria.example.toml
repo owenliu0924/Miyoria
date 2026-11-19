@@ -358,6 +358,9 @@ dirs = ["extensions"]
 # vote_skip_min = 1          # 至少幾票;點歌的人自己投一票就跳過
 # video = true               # 唱的時候在直播畫面放原曲影片(靜音);Stage 用 [stage.obs] song_video_source 播
 # video_dir = "data/songs"   # worker 的 SING_DATA_DIR(直播機上的路徑),不在裡面的影片不會送
+# audio_dir = "data/song-audio"  # 做好的歌的音檔先傳到 Core 這裡,傳完才算準備好,唱的時候從這裡讀(worker 在這台時直接讀 video_dir,不另存)
+# audio_cache_mb = 2048      # audio_dir 最多佔多少 MB(一分鐘的歌約 6 MB,有嘴型用的人聲是 12 MB);超過就刪最久沒唱的,歌單上的不刪
+# fetch_stall_secs = 30      # 從 worker 拿檔案(音檔、影片、卡拉 OK 檔)時,這麼久一個位元組都沒來才放棄;慢但有在動就一直等
 # prepare_notice = true      # worker 做歌要整張顯示卡時(SING_OFFLOAD_URLS),她先說「我去準備一下歌喔」再讓它開始
 # prepare_notice_gap_secs = 180   # 連點好幾首時這段時間內不再說第二次
 

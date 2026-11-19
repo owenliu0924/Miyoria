@@ -371,6 +371,7 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
   const counters = { songs: 0, activity: 0 };
   s.provide("sing", SingerKey, {
     playing: () => songs.find((e) => e.state === "playing") ?? null,
+    singing: () => songs.find((e) => e.state === "playing") ?? null,
     list: {
       all: () => {
         counters.songs += 1;
@@ -950,11 +951,17 @@ describe("the public view", () => {
   });
 
   it("walks through what she may be doing", async () => {
-    const side = (over: Partial<ActivitySnapshot>, playing = false) => {
+    const side = (over: Partial<ActivitySnapshot>, playing = false, voiceOut = playing) => {
       const snapshot = { presence: { type: "none" }, broadcast: { type: "off" }, ...over };
       const services = new Map<unknown, unknown>([
         [ActivityManagerKey, { snapshot: () => ({ activity: { type: "idle" }, ...snapshot }) }],
-        [SingerKey, { playing: () => (playing ? song(1) : null) }],
+        [
+          SingerKey,
+          {
+            playing: () => (playing ? song(1) : null),
+            singing: () => (voiceOut ? song(1) : null),
+          },
+        ],
       ]);
       return services;
     };
@@ -987,6 +994,8 @@ describe("the public view", () => {
     } as const;
     expect(stateOf(side(game))).toBe("playing");
     expect(stateOf(side(game, true))).toBe("singing");
+    // A song started but her voice not out yet (her opening line): not singing.
+    expect(stateOf(side(game, true, false))).toBe("playing");
   });
 
   it("leaves out a title moderation does not pass, and a strange game id", async () => {
