@@ -1,0 +1,16 @@
+id = "test.fixture"
+version = "0.0.1"
+icon = "flask-conical"
+kind = ["tools", "commands", "events", "prompt"]
+runtime = "node"
+entry = "index.mjs"
+placement = "core"
+
+[permissions]
+events = ["custom.ok.*", "ext.other.*", "game.*"]
+tools = true
+commands = true
+
+# Host variables the fixture may read (env allowlist test).
+[env]
+pass = ["MIYORIA_TEST_PASS*"]

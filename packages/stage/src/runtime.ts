@@ -1,17 +1,24 @@
 // The Stage node: `miyoria stage` on the streaming PC.
 
-import { errorMessage, getLogger, sleep } from "@miyoria/kernel";
+import { errorMessage, getLogger, sleep } from "@miyoria/runtime/kernel";
 import { type Clock, systemClock } from "@miyoria/types";
 import WebSocket from "ws";
 import { z } from "zod";
 import { AvatarProfile } from "./avatar.js";
 import { AvatarLoop } from "./avatar-loop.js";
 import { BlinkConfigSchema } from "./blink.js";
+import { DanmakuOutbox } from "./danmaku.js";
 import { GestureConfigSchema } from "./gesture.js";
 import { Levels, LipSyncConfigSchema, serveLevels } from "./lipsync.js";
 import { GazeConfigSchema, MotionConfigSchema } from "./motion.js";
 import { type BoundAddress, formatAddress, parseBind } from "./net.js";
-import { ObsConfigSchema, type ObsConnector, ObsController, ObsWebSocketConnector } from "./obs.js";
+import {
+  collectionWarning,
+  ObsConfigSchema,
+  type ObsConnector,
+  ObsController,
+  ObsWebSocketConnector,
+} from "./obs.js";
 import { OverlayHub, serveOverlay } from "./overlay.js";
 import { EmotionConfigSchema } from "./pose.js";
 import {
@@ -76,6 +83,24 @@ export type StageConfigSection = z.output<typeof StageConfigSchema>;
 /** The Stage config plus the profile's `avatar.toml` (set by the caller). */
 export type StageConfig = StageConfigSection & { avatar: AvatarProfile };
 
+/**
+ * `config` with Core's link address and token from the environment when it sets them:
+ * `STAGE_LINK_URL` over `core_url`, `STAGE_LINK_TOKEN` over `token`. hostd sets both on a machine
+ * that joined the cluster (Core tells it where `stage.link` is); elsewhere the config's own stay.
+ */
+export function stageLinkFromEnv<T extends StageConfigSection>(
+  config: T,
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): T {
+  const url = env.STAGE_LINK_URL?.trim();
+  const token = env.STAGE_LINK_TOKEN?.trim();
+  return {
+    ...config,
+    ...(url ? { core_url: url } : {}),
+    ...(token ? { token } : {}),
+  };
+}
+
 /** Parses a `[stage]` section (missing = defaults) and attaches `avatar`. */
 export function parseStageConfig(section: unknown = {}, avatar = new AvatarProfile()): StageConfig {
   return { ...StageConfigSchema.parse(section ?? {}), avatar };
@@ -91,6 +116,8 @@ export interface RunStageOptions {
   /** Stops the Stage. Default: Ctrl-C (SIGINT). */
   signal?: AbortSignal;
   clock?: Clock;
+  /** Where `STAGE_LINK_URL` and `STAGE_LINK_TOKEN` are read (`stageLinkFromEnv`). Default `process.env`. */
+  env?: Readonly<Record<string, string | undefined>>;
 }
 
 /**
@@ -112,7 +139,7 @@ export async function runStage(config: StageConfig, options: RunStageOptions = {
   }
   try {
     const obs = options.obs ?? ObsWebSocketConnector.fromConfig(config.obs);
-    await runStageWith(config, obs, signal, options.clock);
+    await runStageWith(stageLinkFromEnv(config, options.env), obs, signal, options.clock);
   } finally {
     cleanup();
   }
@@ -245,8 +272,10 @@ class Stage {
   readonly status = new Watch<StageStatus>(defaultStageStatus(), sameStatus);
   /** Connected to Core. */
   readonly core = new Watch<boolean>(false);
-  /** Sends a reply to Core (set while a session is up). */
-  replies: ((msg: StageMessage) => void) | null = null;
+  /** Sends a reply to Core (set while a session is up); `false` when the socket is no longer open. */
+  replies: ((msg: StageMessage) => boolean) | null = null;
+  /** How danmaku lines ended, kept while Core is away (they settle what Core charged). */
+  readonly #danmakuDone = new DanmakuOutbox();
 
   constructor(
     vts: Watch<VtsClient | null>,
@@ -262,6 +291,26 @@ class Stage {
     this.#avatar = avatar;
     this.#overlayUrl = overlayUrl;
     this.#songVideo = songVideo;
+    overlay.onDanmakuDone = (done) => {
+      this.#danmakuDone.push(done);
+      this.flushDanmaku();
+    };
+  }
+
+  /**
+   * Sends Core how the danmaku lines ended (what was kept while it was away first). What cannot
+   * be sent (the socket is closing) is kept for the next session.
+   */
+  flushDanmaku(): void {
+    const send = this.replies;
+    if (send === null) return;
+    const all = this.#danmakuDone.take();
+    for (const [i, done] of all.entries()) {
+      if (!send({ type: "danmaku_done", ...done })) {
+        this.#danmakuDone.restore(all.slice(i));
+        return;
+      }
+    }
   }
 
   /** Re-reads the hotkey list of the current VTS model. */
@@ -295,6 +344,8 @@ class Stage {
       scenes: obs?.connected ? [...obs.scenes] : [],
       hotkeys: vts ? [...this.#hotkeys.get()] : [],
       overlay_url: this.#overlayUrl,
+      obs_collection: obs?.connected ? obs.collection : null,
+      obs_warning: obs ? collectionWarning(obs) : null,
     };
   }
 
@@ -350,6 +401,21 @@ class Stage {
       case "beat":
         this.#avatar?.beat(msg.times_ms, msg.offset_ms);
         return;
+      case "karaoke": {
+        const { type: _, ...scene } = msg;
+        this.#overlay.karaoke(scene);
+        return;
+      }
+      case "karaoke_lyrics": {
+        const { type: _, ...lyrics } = msg;
+        this.#overlay.karaokeLyrics(lyrics);
+        return;
+      }
+      case "karaoke_voice": {
+        const { type: _, ...voice } = msg;
+        this.#overlay.karaokeVoice(voice);
+        return;
+      }
       case "clip":
         this.#answer(msg.id, async () => {
           const path = await this.#obsOrThrow().clip(msg.reason);
@@ -388,6 +454,12 @@ class Stage {
       case "screen":
         this.#overlay.screen(msg);
         return;
+      case "danmaku":
+        this.#overlay.danmaku(msg);
+        return;
+      case "danmaku_clear":
+        this.#overlay.danmakuClear();
+        return;
       case "touch":
         this.#overlay.touch(msg);
         this.#avatar?.touch(msg.part);
@@ -409,8 +481,11 @@ class Stage {
       const status = this.currentStatus();
       const core = this.core.get();
       const changed = this.status.set(status);
-      // Nobody tells the overlay what she is doing without Core.
-      if (!core) this.#overlay.clearActivity();
+      // Nobody tells the overlay what she is doing without Core, nor what the karaoke room does.
+      if (!core) {
+        this.#overlay.clearActivity();
+        this.#overlay.clearKaraoke();
+      }
       if (changed || lastCore !== core) {
         this.#overlay.status(status, core);
         lastCore = core;
@@ -425,8 +500,12 @@ class Stage {
       this.core.subscribe(update),
       this.#obs?.subscribe(update) ?? (() => {}),
     ];
-    // A client that closes by itself does not change the watch; poll for that.
-    const poll = setInterval(update, 1_000);
+    // A client that closes by itself does not change the watch; poll for that. Danmaku lines no
+    // page answered in time end here too.
+    const poll = setInterval(() => {
+      update();
+      this.#overlay.expireDanmaku();
+    }, 1_000);
     update();
     signal.addEventListener(
       "abort",
@@ -493,7 +572,8 @@ async function coreLink(config: StageConfig, stage: Stage, signal: AbortSignal):
 }
 
 function capabilities(config: StageConfig): string[] {
-  const caps = ["overlay"];
+  // `danmaku`: it answers each danmaku line (`danmaku_done`), so Core does not wait on an older node.
+  const caps = ["overlay", "danmaku"];
   if (config.vts.enabled) {
     caps.push("vts");
     if (config.avatar.lipsync === "inject") caps.push("lipsync");
@@ -535,14 +615,15 @@ function session(config: StageConfig, stage: Stage, signal: AbortSignal): Promis
       if (outcome instanceof SessionError) reject(outcome);
       else resolve(outcome);
     };
-    const send = (msg: StageMessage) => {
-      if (ws.readyState !== WebSocket.OPEN) return;
+    const send = (msg: StageMessage): boolean => {
+      if (settled || ws.readyState !== WebSocket.OPEN) return false;
       ws.send(encodeMessage(msg), (error) => {
         if (error) {
           ws.terminate();
           finish("lost");
         }
       });
+      return true;
     };
     const onAbort = () => {
       if (ws.readyState === WebSocket.OPEN) ws.close(1000, "stage stopping");
@@ -623,6 +704,7 @@ function session(config: StageConfig, stage: Stage, signal: AbortSignal): Promis
         stage.replies = send;
         stage.core.set(true);
         send({ type: "status", ...stage.currentStatus() });
+        stage.flushDanmaku();
         unsubscribeStatus = stage.status.subscribe((status) => send({ type: "status", ...status }));
         resetPeerTimer();
         return;

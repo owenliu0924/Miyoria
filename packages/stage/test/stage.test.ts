@@ -4,8 +4,8 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { join } from "node:path";
-import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/kernel";
-import { type ContextKey, customEvent, newId, SONG_PREPARE_TOPIC } from "@miyoria/types";
+import { EventBus, ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
+import { type ContextKey, Events, newId } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import {
@@ -13,7 +13,6 @@ import {
   type BoundAddress,
   defaultLipSyncConfig,
   defaultStageStatus,
-  EMOTION_TOPIC,
   formatAddress,
   Levels,
   OverlayHub,
@@ -94,6 +93,13 @@ function expressionRequests(vts: FakeVts): [string, boolean][] {
     .map((r: Json) => [r.data.expressionFile, r.data.active]);
 }
 
+const textCtx = (): ContextKey => ({
+  platform: "discord",
+  scope: "g",
+  channel: "c",
+  kind: "channel",
+});
+
 const voiceCtx = (): ContextKey => ({
   platform: "discord",
   scope: "g",
@@ -164,7 +170,11 @@ describe("stage", () => {
     ).toBe(true);
     await expect(link.hotkey("Dance")).rejects.toThrow("Dance");
 
-    bus.publish("agent", customEvent(EMOTION_TOPIC, { emotion: "happy" }));
+    bus.publish("agent", Events.AgentEmotion, {
+      turn: newId(),
+      context: textCtx(),
+      emotion: "happy",
+    });
     const t0 = Date.now();
     await waitUntil(() => {
       const e = expressionRequests(vts);
@@ -204,11 +214,9 @@ describe("stage", () => {
     const turn = newId();
     bus.publish(
       "agent",
-      {
-        type: "voice_playback",
-        data: { context: voiceCtx(), turn, state: "started", text: "早安。" },
-      },
-      { correlation: turn },
+      Events.VoicePlaybackEvent,
+      { context: voiceCtx(), turn, state: "started", text: "早安。" },
+      { turn },
     );
     await waitUntil(() => obs.state.texts.some(([s, t]) => s === "Subtitle" && t === "早安。"));
 
@@ -219,16 +227,13 @@ describe("stage", () => {
     cleanup.push(() => early.terminate());
     early.on("message", (data) => seen.push(JSON.parse(data.toString())));
     await new Promise<void>((r, j) => early.once("open", () => r()).once("error", j));
-    bus.publish(
-      "sing",
-      customEvent(SONG_PREPARE_TOPIC, {
-        no: 1,
-        title: "夜に駆ける",
-        stage: "download",
-        progress: 0.25,
-        exclusive: null,
-      }),
-    );
+    bus.publish("sing", Events.SingPrepare, {
+      no: 1,
+      title: "夜に駆ける",
+      stage: "download",
+      progress: 0.25,
+      exclusive: null,
+    });
     const activity = {
       type: "activity",
       kind: "song_prepare",
@@ -302,6 +307,55 @@ describe("stage", () => {
       "second session",
     );
   }, 15_000);
+
+  it("danmaku_answers_reach_core_and_wait_for_it_while_it_restarts", async () => {
+    const { sup, bus, services, module } = await core();
+    const vts = await fakeVts();
+    const config = stageConfig(module, vts);
+    config.vts.enabled = false;
+    const controller = new AbortController();
+    const stage = runStage(config, { obs: new FakeObs("Talk"), signal: controller.signal });
+    cleanup.push(async () => {
+      controller.abort();
+      await stage.catch(() => undefined);
+    });
+    const link = services.require(StageLinkKey);
+    await waitUntil(() => link.status()?.overlay_url != null, "stage up");
+    expect(link.node()?.[1]).toContain("danmaku");
+    // The overlay page: its danmaku layer is on.
+    const page = new WebSocket(`${(link.status()?.overlay_url ?? "").replace(/^http/, "ws")}ws`);
+    const lines: Json[] = [];
+    page.on("message", (data) => {
+      const m = JSON.parse(data.toString());
+      if (m.type === "danmaku") lines.push(m);
+    });
+    await new Promise<void>((r, j) => page.once("open", () => r()).once("error", j));
+    cleanup.push(() => page.terminate());
+    page.send(JSON.stringify({ type: "danmaku_ready" }));
+    const answers = bus.subscribe([Events.StageDanmaku.type]);
+    const line = { name: "Mia", text: "好", max_on_screen: 12, queue_max: 20, max_wait_ms: 30_000 };
+    await delay(50);
+    bus.publish("test", Events.EconomyDanmaku, { id: "L1", ...line });
+    await waitUntil(() => lines.length === 1, "line on the page");
+    page.send(JSON.stringify({ type: "danmaku_shown", id: "L1" }));
+    expect((await answers.recv())?.data).toEqual({ id: "L1", outcome: "shown" });
+
+    // Core goes away while the page still shows a line: the node keeps the answer.
+    bus.publish("test", Events.EconomyDanmaku, { id: "L2", ...line });
+    await waitUntil(() => lines.length === 2, "second line on the page");
+    const addr = module.localAddr() as BoundAddress;
+    await sup.stopAll();
+    page.send(JSON.stringify({ type: "danmaku_dropped", id: "L2", reason: "too_late" }));
+    const bus2 = new EventBus();
+    const services2 = new ServiceRegistry();
+    const sup2 = new Supervisor({ bus: bus2, services: services2 });
+    const later = bus2.subscribe([Events.StageDanmaku.type]);
+    await sup2.register(new StageLinkModule(), { bind: formatAddress(addr), token: TOKEN }, true);
+    await sup2.startAll();
+    cleanup.push(() => sup2.stopAll());
+    const env = await Promise.race([later.recv(), delay(10_000).then(() => null)]);
+    expect(env?.data).toEqual({ id: "L2", outcome: "too_late" });
+  }, 20_000);
 
   it("levels_endpoint_feeds_lip_sync", async () => {
     const levels = new Levels(defaultLipSyncConfig());

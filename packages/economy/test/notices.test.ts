@@ -1,25 +1,32 @@
 // What people see when they earn something they did not ask for in that moment: an achievement on
-// the answer of the command that unlocked it, one card per song or game for everyone in it, a card
-// where a goal was met, and nothing at all when there is no place to say it.
+// the answer of the command that unlocked it, one card per song or game for everyone in it.
 
 import { CommandRegistry, type CommandReply, Permissions, ReplySinkKey } from "@miyoria/commands";
-import { getLogger } from "@miyoria/kernel";
+import { getLogger } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import { GoalStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
+  type AnyEventDefinition,
   type ContextKey,
-  customEvent,
-  type Event,
+  type EventPayload,
+  Events,
+  eventEnvelope,
   type JsonValue,
-  SONG_TOPIC,
-  toTimestamp,
+  type PublishMetaArgs,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";
 import { Earnings } from "../src/earn.js";
 import { v2Capabilities } from "../src/v2-tools.js";
-import { ALICE, BOB, DAY, ERIN, fund, type Rig, rig, say, T0, TEXT } from "./rig.js";
+import { ledgerOf, walletOf } from "./ledger.js";
+import { ALICE, BOB, DAY, ERIN, type Rig, rig, say, T0, TEXT } from "./rig.js";
+
+/** An event of `definition` as the bus delivers it. */
+const ev = <D extends AnyEventDefinition>(
+  definition: D,
+  data: EventPayload<D>,
+  ...meta: PublishMetaArgs<D>
+) => eventEnvelope("test", definition, data, ...meta);
 
 const VOICE: ContextKey = { platform: "discord", scope: "g", channel: "v", kind: "voice" };
 
@@ -53,10 +60,10 @@ const part = (account: AccountRef) => ({
   muted: false,
   deafened: false,
 });
-const joined = (...who: AccountRef[]): Event =>
-  ({ type: "voice_joined", data: { context: VOICE, participants: who.map(part) } }) as never;
-const cue = (state: string, extra: Record<string, JsonValue> = {}): Event =>
-  customEvent(SONG_TOPIC, { state, song: "s1", ...extra });
+const joined = (...who: AccountRef[]) =>
+  ev(Events.VoiceJoined, { context: VOICE, participants: who.map(part) } as never);
+const cue = (state: string, extra: Record<string, JsonValue> = {}) =>
+  ev(Events.SingCue, { state, song: "s1", ...extra } as never);
 
 /** A finished song `s1` Alice requested, in a rig whose singer lists it. */
 function singer(r: Rig, requester: AccountRef | null = ALICE): void {
@@ -191,7 +198,7 @@ describe("song notices", () => {
     await earnings.onEvent(cue("started", { title: "小星星" }), T0);
     await earnings.onEvent(cue("ended", { outcome: "finished" }), T0);
     // The requester is still paid; nobody is told where it would be a guess.
-    expect(await r.store.coins.balance("p", [ALICE])).toBeGreaterThan(0);
+    expect(await ledgerOf(r.store).balance("p", walletOf(r.store, ALICE))).toBeGreaterThan(0);
     expect(posted).toEqual([]);
   });
 });
@@ -215,52 +222,5 @@ describe("game notices", () => {
     expect(blocks(posted[0]?.reply as CommandReply)).toEqual([
       ["**🎮 玩完「問答」**", "這場拿到:<@1> +30 <@2> +20", "每日任務:<@1> <@2> 各 +10"].join("\n"),
     ]);
-  });
-});
-
-describe("goal notices", () => {
-  async function goal(r: Rig, target = 50): Promise<string> {
-    r.services.provide("test", GoalStoreKey, r.store.goals);
-    const id = `g${target}`;
-    await r.store.goals.create({
-      id,
-      profile: "p",
-      title: "新麥克風",
-      promise: "學三種貓叫",
-      target,
-      status: "open",
-      created_at: toTimestamp(T0),
-      deadline: toTimestamp(T0 + 3 * DAY),
-      closed_at: null,
-    });
-    return id;
-  }
-
-  it("posts a card where the pledge that met the target was made", async () => {
-    const r = await rig();
-    const posted = sink(r);
-    await fund(r, ALICE, 100);
-    await fund(r, BOB, 100);
-    const id = await goal(r);
-    await r.economy.pledge(ALICE, id, 30, "a1", TEXT);
-    expect(posted).toEqual([]);
-    await r.economy.pledge(BOB, id, 40, "b1", TEXT);
-    expect(posted).toHaveLength(1);
-    expect(posted[0]?.context).toEqual(TEXT);
-    expect(blocks(posted[0]?.reply as CommandReply)).toEqual([
-      "**🎯「新麥克風」湊滿了!**\n她答應的:學三種貓叫",
-      "大家湊了 50 魚幣",
-    ]);
-    // She is still told, silently.
-    expect(r.observed.some((o) => o.summary.includes("你答應過要:學三種貓叫"))).toBe(true);
-  });
-
-  it("posts nothing for a pledge made where there is no place to post", async () => {
-    const r = await rig();
-    const posted = sink(r);
-    await fund(r, ALICE, 100);
-    const id = await goal(r, 20);
-    expect(await r.economy.pledge(ALICE, id, 20, "a1")).toMatchObject({ reached: true });
-    expect(posted).toEqual([]);
   });
 });

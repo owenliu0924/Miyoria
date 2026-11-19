@@ -4,18 +4,9 @@ import { Logo } from "@/components/logo";
 import { Page } from "@/components/page";
 import { LiveStage } from "./LiveStage";
 import type { SourceFactory } from "./feed";
+import { LIVE_PAGE } from "./path";
 
-/**
- * The address of the live page: anyone may open it, logged in or not. Not `/live`: that is the
- * admin panel's 直播 page.
- */
-export const LIVE_PAGE = "/watch";
-
-/** Whether `path` (path and query) is the live page. */
-export function isLivePath(path: string): boolean {
-  const bare = path.split(/[?#]/)[0] ?? "";
-  return bare === LIVE_PAGE || bare === `${LIVE_PAGE}/`;
-}
+export { isLivePath, LIVE_PAGE } from "./path";
 
 /**
  * `/watch`: her, for anyone with the link. Watching needs nothing; patting needs a Discord login,
@@ -25,14 +16,10 @@ export function LivePage({ source }: { source?: SourceFactory | null }) {
   const api = useApi();
   const member = useQuery({
     queryKey: ["member", "session"],
-    queryFn: ({ signal }) => api.memberSession({ signal }),
+    queryFn: ({ signal }) => api.rpc.member.session(undefined, { signal }),
     retry: false,
   });
-  const methods = useQuery({
-    queryKey: ["auth", "methods"],
-    queryFn: ({ signal }) => api.authMethods({ signal }),
-    retry: false,
-  });
+  const methods = useQuery(api.q.auth.methods.queryOptions({ retry: false }));
   const who = member.data ?? null;
   const loginUrl = methods.data?.discord ? api.discordLoginUrl(LIVE_PAGE) : null;
   return (

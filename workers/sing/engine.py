@@ -1,4 +1,5 @@
-"""The real song pipeline: yt-dlp / library → Demucs → lead / backing split → Seed-VC (singing, F0) → mix.
+"""The real song pipeline: yt-dlp / library → Demucs → lead / backing split → Seed-VC (singing, F0) → mix;
+for karaoke, RMVPE on the lead (``karaoke_f0``) instead of the conversion.
 
 Everything heavy is imported lazily so the server (and its mock mode) starts without torch. Models
 are loaded per stage and freed right after (``SING_KEEP_MODELS=1`` keeps them): the GPU is shared
@@ -7,6 +8,7 @@ with TTS / ASR / OBS, so the worker only holds VRAM while a job runs.
 
 from __future__ import annotations
 
+import copy
 import gc
 import logging
 import math
@@ -15,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -22,6 +25,7 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlparse
 
+import modelpaths
 from songs import PLAY_RATE, Source, Store, safe_id, short_hash
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -40,7 +44,10 @@ MELBAND = "melband"
 
 def vocal_model_path(env: dict[str, str] | None = None) -> Path:
     e = env if env is not None else os.environ
-    return Path(e.get("SING_VOCAL_MODEL") or Path(__file__).resolve().parent.parent / "models" / "vocal-split" / VOCAL_CKPT)
+    if e.get("SING_VOCAL_MODEL"):
+        return Path(e["SING_VOCAL_MODEL"])
+    # The host's model folder (miyoria update), else workers/models, else where it belongs.
+    return modelpaths.locate(Path("vocal-split") / VOCAL_CKPT, e)
 
 
 VOICE_CHAINS = ("rvc", "ying+rvc", "ying", "seedvc+rvc", "seedvc")
@@ -92,7 +99,7 @@ def default_separator(env: dict[str, str] | None = None) -> str:
     if e.get("SING_SEPARATOR_MODEL"):
         return e["SING_SEPARATOR_MODEL"]
     ckpt = vocal_model_path(e)
-    return MELBAND if ckpt.is_file() and leadsplit.config_path(ckpt) is not None else "htdemucs"
+    return MELBAND if ckpt.is_file() and leadsplit.config_path(ckpt, e) is not None else "htdemucs"
 
 
 class JobError(Exception):
@@ -199,6 +206,19 @@ def ydl_options(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         "http_chunk_size": 10 * 1024 * 1024,
         **(extra or {}),
     }
+
+
+def fresh_info(src: Source) -> dict[str, Any] | None:
+    """A copy of the yt-dlp answer the lookup got, while its stream links still work (they last hours;
+    SING_INFO_REUSE_S, default 3600). Downloading from it skips yt-dlp's second reading of the page,
+    the player and its JS challenges: on 2026-11-13 that was 7.8 of the download's 8.0 s (the audio
+    itself, 2.7 MB, took 0.2 s), so more connections would not have helped."""
+    info = src.info
+    if not info or not info.get("formats") or src.info_at is None:
+        return None
+    if time.monotonic() - src.info_at > env_float("SING_INFO_REUSE_S", 3600.0):
+        return None
+    return copy.deepcopy(info)
 
 
 def ffmpeg_to_wav(src: Path, dst: Path, rate: int = SR, channels: int = 2, max_s: float | None = None) -> None:
@@ -381,9 +401,15 @@ class RealBackend:
         self._vc: Any = None
         self._demucs: Any = None  # the vocal separator, whichever it is
         self._lead: Any = None
+        self._pitch: Any = None  # RMVPE alone, for a karaoke reference (karaoke_f0)
+        # RMVPE for the live streams of karaoke rooms (karaoke_f0_audio): (device, extractor), kept
+        # while streams are open; its lock serialises the calls on it.
+        self._stream_pitch: tuple[str, Any] | None = None
+        self._stream_lock = threading.Lock()
         self.gate: Callable[[], None] | None = None  # sharing the GPU: runs before every step
         self._ref: Any = None
         self._ref_f0: float | None = None
+        self._preload: threading.Thread | None = None  # the lead model loading during a download
         self.transposer = "rubberband" if ffmpeg_has_filter("rubberband") else "librosa"
 
     # ── resolve / fetch ──────────────────────────────────────────────────
@@ -414,6 +440,8 @@ class RealBackend:
             url=info.get("webpage_url") or info.get("original_url"),
             uploader=info.get("uploader") or info.get("channel"),
             extra=lyrics_extra(info, raw_title),
+            info=info,
+            info_at=time.monotonic(),
         )
 
     def fetch_hints(self, url: str) -> dict[str, Any]:
@@ -451,18 +479,42 @@ class RealBackend:
         if src.duration_s and src.duration_s > self.max_s:
             raise JobError(f"the song is too long ({src.duration_s / 60:.1f} min > {self.max_s / 60:.0f} min)")
         with tempfile.TemporaryDirectory(prefix="sing-dl-") as tmp:
+            stopped: list[BaseException] = []  # ``progress`` raised (a cancel): no second try
 
             def hook(d: dict[str, Any]) -> None:
                 total = d.get("total_bytes") or d.get("total_bytes_estimate")
                 if d.get("status") == "downloading" and total:
-                    progress(min(0.99, float(d.get("downloaded_bytes", 0)) / float(total)))
+                    try:
+                        progress(min(0.99, float(d.get("downloaded_bytes", 0)) / float(total)))
+                    except BaseException as e:
+                        stopped.append(e)
+                        raise
 
             with self._ydl({
                 "outtmpl": str(Path(tmp) / "dl.%(ext)s"),
                 "progress_hooks": [hook],
                 "max_filesize": 200 * 1024 * 1024,
             }) as ydl:
-                ydl.download([src.url])
+                info = fresh_info(src)
+                if info is not None:
+                    try:
+                        ydl.process_ie_result(info, download=True)
+                    except Exception as e:  # noqa: BLE001 - a link that expired: read the page again
+                        if stopped:
+                            raise stopped[0] from None
+                        log.info("download from the lookup's answer failed (%s); reading the page again", e)
+                        info = None
+                        for p in Path(tmp).iterdir():
+                            p.unlink(missing_ok=True)
+                if info is None:
+                    try:
+                        ydl.download([src.url])
+                    except Exception:
+                        if stopped:
+                            raise stopped[0] from None
+                        raise
+            if stopped:
+                raise stopped[0]
             files = [p for p in Path(tmp).iterdir() if p.name.startswith("dl.") and not p.name.endswith(".part")]
             if not files:
                 raise JobError("download produced no audio file")
@@ -502,12 +554,24 @@ class RealBackend:
                 "max_filesize": mb * 1024 * 1024,
                 "postprocessors": [{"key": "FFmpegVideoRemuxer", "preferedformat": "mp4"}],
             }) as ydl:
-                try:
-                    info = ydl.extract_info(src.url, download=True) or {}
-                except Exception as e:
-                    if cancelled():
-                        raise Cancelled() from e
-                    raise JobError(f"no video: {str(e).strip()[:200]}") from e
+                info = None
+                known = fresh_info(src)  # this thread's own copy: the audio download reads it too
+                if known is not None:
+                    try:
+                        info = ydl.process_ie_result(known, download=True) or {}
+                    except Exception as e:  # noqa: BLE001
+                        if cancelled():
+                            raise Cancelled() from e
+                        log.info("video from the lookup's answer failed (%s); reading the page again", e)
+                        for p in Path(tmp).iterdir():
+                            p.unlink(missing_ok=True)
+                if info is None:
+                    try:
+                        info = ydl.extract_info(src.url, download=True) or {}
+                    except Exception as e:
+                        if cancelled():
+                            raise Cancelled() from e
+                        raise JobError(f"no video: {str(e).strip()[:200]}") from e
             out = Path(tmp) / "video.mp4"
             if not out.is_file():
                 raise JobError("the video download produced no mp4 (over SING_VIDEO_MAX_MB?)")
@@ -798,6 +862,62 @@ class RealBackend:
 
         return f0_stats(self._load_vc().f0(mono, sr, clean=self.f0_clean))
 
+    def karaoke_f0(self, wav: Path, device: str | None = None):
+        """RMVPE's F0 of ``wav`` (its channels averaged): Hz per 10 ms frame, 0 unvoiced, not cleaned
+        (melody.py gates and cleans it). Only the pitch tracker is loaded for it, on ``device`` (where
+        gpu.py placed the stage; ``cpu`` or the worker's device), unless the converter that has one
+        is already loaded there."""
+        dev = "cpu" if device == "cpu" else self.device
+        x, sr = read_audio(wav)
+        vc = getattr(self, "_vc", None)
+        try:
+            if vc is not None and str(getattr(vc, "device", "")) == str(dev):
+                return vc.f0(x.mean(axis=1), sr, clean=False)
+            code = self.ying_dir if self.voice.startswith("ying") else self.seedvc_dir
+            if str(code) not in sys.path:
+                sys.path.insert(0, str(code))  # its ``modules`` package has RMVPE (see ``_load_vc``)
+            from seedvc_runtime import PitchExtractor
+
+            self._pitch = PitchExtractor(self.seedvc_dir, dev)
+            return self._pitch.f0(x.mean(axis=1), sr, clean=False)
+        finally:
+            vc = None
+            if not self.keep:
+                self._pitch = None
+                free_cuda()
+
+    def karaoke_f0_audio(self, x, sr: int, device: str | None = None):
+        """RMVPE's F0 of the mono samples ``x`` (a window of a karaoke room's live stream): Hz per
+        10 ms frame, 0 unvoiced, not cleaned, as ``karaoke_f0``. Its own pitch tracker stays loaded
+        between calls (one every half second while a room sings) until ``karaoke_stream_release``;
+        one device at a time: asked for another (a job started, so the CPU), the old one goes."""
+        import numpy as np
+
+        dev = "cpu" if device == "cpu" else self.device
+        with self._stream_lock:
+            held = self._stream_pitch
+            if held is None or held[0] != str(dev):
+                self._stream_pitch = None
+                if held is not None:
+                    held = None
+                    free_cuda()
+                code = self.ying_dir if self.voice.startswith("ying") else self.seedvc_dir
+                if str(code) not in sys.path:
+                    sys.path.insert(0, str(code))  # its ``modules`` package has RMVPE (see ``_load_vc``)
+                from seedvc_runtime import PitchExtractor
+
+                held = (str(dev), PitchExtractor(self.seedvc_dir, dev))
+                self._stream_pitch = held
+            return held[1].f0(np.asarray(x, dtype=np.float32).reshape(-1), sr, clean=False)
+
+    def karaoke_stream_release(self) -> None:
+        """The last live stream is gone: its pitch tracker too."""
+        with self._stream_lock:
+            held, self._stream_pitch = self._stream_pitch, None
+        if held is not None:
+            held = None
+            free_cuda()
+
     def reference(self):
         """Her reference voice, mono: one file, or several clips joined with short pauses (a
         longer reference gives the model more of her), at most REF_MAX_S."""
@@ -831,7 +951,7 @@ class RealBackend:
             # 1.9 GB this way, because an idle process never runs the collector again.
             vc = None
             if not self.keep:
-                self.unload()
+                self._unload_models()  # (not the RVC process: the RVC pass is next)
         if getattr(self, "rvc", False):
             if cancelled():
                 raise Cancelled()
@@ -840,6 +960,69 @@ class RealBackend:
             except Exception as e:  # the converted vocal stands on its own
                 self.rvc_error = str(e)
                 log.warning("RVC pass failed, keeping the converted vocal: %s", e)
+        write_wav(out_wav, y, SR)
+
+    def convert_auto(self, vocals_wav: Path, out_wav: Path,
+                     choose: Callable[[tuple[float, float] | None, float | None], int], progress: Progress,
+                     cancelled: Callable[[], bool]) -> None:
+        """SING_VOICE=rvc with the automatic key: the shift is picked from the pitch Applio tracks for
+        the conversion anyway (rvcpass.run_choosing; ``choose(stats, ref_hz)`` gets the vocal's
+        (median, top) and her reference's median, and returns the shift), so the pitch is read once
+        and RMVPE is not loaded in this process at all: about 2 s a song. Her reference's median is
+        read the same way, once. When the RVC process cannot be asked, it is read here as before."""
+        import librosa
+        import numpy as np
+        import rvcpass
+
+        if cancelled():
+            raise Cancelled()
+        self.rvc_error = None
+        x, sr = read_audio(vocals_wav)
+        src = x.mean(axis=1)
+        if sr != SR:
+            src = librosa.resample(src, orig_sr=sr, target_sr=SR)
+        work = out_wav.parent
+        tmp_in, tmp_out, ref_wav = work / "rvc_in.wav", work / "rvc_out.wav", work / "rvc_ref.wav"
+        picked: dict[str, int] = {}
+
+        def answer(q: dict[str, Any]) -> int:
+            if self._ref_f0 is None and q.get("ref_hz"):
+                self._ref_f0 = float(q["ref_hz"])
+            stats = (float(q["median"]), float(q["top"])) if q.get("median") else None
+            picked["shift"] = int(choose(stats, self._ref_f0))
+            return picked["shift"]
+
+        try:
+            write_wav(tmp_in, src, SR)
+            ref = None
+            if self._ref_f0 is None:
+                mono, rsr = self.reference()
+                write_wav(ref_wav, mono, rsr)
+                ref = ref_wav
+            try:
+                rvcpass.run_choosing(tmp_in, tmp_out, answer, ref)
+            except Exception as e:  # noqa: BLE001
+                if "shift" not in picked:
+                    log.info("the RVC process could not read the pitch (%s); reading it here", e)
+                    picked["shift"] = int(choose(self.f0_stats(src, SR), self.ref_f0()))
+                else:
+                    log.info("RVC failed after picking the shift (%s); converting again", e)
+                rvcpass.run(tmp_in, tmp_out, pitch=picked["shift"])
+            y, rsr = read_audio(tmp_out)
+            y = y.mean(axis=1)
+            if rsr != SR:
+                y = librosa.resample(y, orig_sr=rsr, target_sr=SR)
+            y = np.pad(y, (0, max(0, len(src) - len(y))))[:len(src)].astype(np.float32)
+            y = vocal_gate(src, y)
+        except (Cancelled, JobError):
+            raise
+        except Exception as e:
+            self.rvc_error = str(e)
+            raise JobError(f"RVC conversion failed: {e}") from e
+        finally:
+            for f in (tmp_in, tmp_out, ref_wav):
+                f.unlink(missing_ok=True)
+        progress(1.0)
         write_wav(out_wav, y, SR)
 
     def _convert_rvc(self, vocals_wav: Path, out_wav: Path, shift: int, progress: Progress,
@@ -884,16 +1067,97 @@ class RealBackend:
             tmp_in.unlink(missing_ok=True)
             tmp_out.unlink(missing_ok=True)
 
-    def unload(self) -> None:
+    def prewarm(self, lead: bool = False) -> None:
+        """A job is about to download its song (about 6 s, most of it a wait YouTube asks for): her RVC
+        model starts loading in its own process now (rvcpass.warm), and with ``lead`` (the lead split is
+        the job's next GPU stage) the split's model loads onto the card (about 1.2 s, with CUDA's own
+        start), instead of when they are needed."""
+        if getattr(self, "rvc", False):
+            import rvcpass
+
+            rvcpass.warm()
+        if lead and self._cuda and str(self.lead_device) != "cpu" and self._lead is None and getattr(self, "_preload", None) is None:
+            self._preload = threading.Thread(target=self._preload_lead, name="sing-preload", daemon=True)
+            self._preload.start()
+
+    def _preload_lead(self) -> None:
+        t0 = time.perf_counter()
+        try:
+            import leadsplit
+
+            if leadsplit.available():
+                self._lead = leadsplit.LeadSplitter(leadsplit.model_path(), self.lead_device)
+                log.info("lead model loaded during the download in %.1f s", time.perf_counter() - t0)
+        except Exception as e:  # noqa: BLE001 - the stage loads it itself
+            log.info("could not load the lead model ahead: %s", e)
+
+    def _join_preload(self) -> None:
+        t, self._preload = getattr(self, "_preload", None), None  # (tests build the backend without __init__)
+        if t is not None:
+            t.join()
+
+    def preimport(self) -> None:
+        """At start, on a thread of its own: the libraries a job reaches for after its GPU stages
+        (librosa's resampler and beat tracker with their numba code, scipy, pyloudnorm, soundfile)
+        load and compile now instead of in the first song (beats took 1.3 s there, 0.2 s after)."""
+        t0 = time.perf_counter()
+        try:
+            import numpy as np
+            import pyloudnorm  # noqa: F401
+            import scipy.ndimage  # noqa: F401
+            import scipy.signal  # noqa: F401
+            import soundfile  # noqa: F401
+
+            import lyrics  # noqa: F401
+            import lyrics_align  # noqa: F401
+            from beats import beat_grid
+
+            noise = (np.random.default_rng(0).standard_normal(PLAY_RATE * 4) * 0.1).astype(np.float32)
+            beat_grid(noise, PLAY_RATE)  # librosa: resample, onset strength, beat tracking (numba)
+            loudness(np.stack([noise, noise], axis=1), SR)
+        except Exception as e:  # noqa: BLE001 - only a head start
+            log.info("preimport stopped: %s", e)
+        log.info("libraries loaded in %.1f s", time.perf_counter() - t0)
+
+    def wait_warm(self, timeout: float = 30.0) -> None:
+        """Before a GPU stage: what loads ahead (the lead model, the RVC warm-up) is done first."""
+        self._join_preload()
+        if getattr(self, "rvc", False):
+            import rvcpass
+
+            rvcpass.wait_warm(timeout)
+
+    def _unload_models(self) -> None:
+        self._join_preload()
         self._vc = None
         self._demucs = None
         self._lead = None
+        self._pitch = None  # karaoke_f0's pitch tracker
+        # A live stream's, when it is on the card (on the CPU it stays). Not under its lock: a job
+        # never waits for a stream's window to end.
+        held = getattr(self, "_stream_pitch", None)
+        if held is not None and held[0] != "cpu":
+            self._stream_pitch = None
+        held = None
         free_cuda()
 
-    def idle(self) -> None:
-        """Between jobs: after a failure the traceback kept the models alive through ``unload``."""
-        if not self.keep:
-            self.unload()
+    def unload(self) -> None:
+        """Everything this worker holds on the card, the RVC process included."""
+        self._unload_models()
+        import rvcpass
+
+        rvcpass.stop()
+
+    def idle(self, more: bool = False) -> None:
+        """Between jobs: after a failure the traceback kept the models alive through ``unload``.
+        ``more``: another job is queued, and the RVC process stays up for it."""
+        if self.keep:
+            return
+        self._unload_models()
+        if not more:
+            import rvcpass
+
+            rvcpass.stop()
 
     # ── key change of the instrumental ───────────────────────────────────
 
@@ -984,25 +1248,14 @@ def rubberband_shift(x, sr: int, semitones: int):
     return y[:frames].copy()
 
 
-def mix_song(vocals_src: Path, vocals_conv: Path, inst_wav: Path, key: int, out_dir: Path, backend: RealBackend,
-             target_lufs: float, backing_wav: Path | None = None, backing_conv: Path | None = None,
-             backing_src: Path | None = None, instrumental: bool = True) -> dict[str, Any]:
-    """Writes mix.wav / vocals.wav / instrumental.wav / play_*.pcm; returns loudness info.
-
-    The converted vocal gets the separated vocal's loudness back (the converters' output level
-    varies), the sum is normalised to ``target_lufs`` and kept under -1 dBFS peak. After a lead /
-    backing split ``vocals_src`` is the lead, and the backing voices are either
-    ``backing_wav`` as recorded: they join the instrumental (at their own level, moved by the key
-    with it), which is then what instrumental.wav holds; or ``backing_conv``, converted like the
-    lead: it joins her vocal at ``backing_src``'s level. ``instrumental`` False: her voice alone.
-    """
+def instrumental_for_mix(inst_wav: Path, key: int, backend: Any, backing_wav: Path | None = None,
+                         instrumental: bool = True):
+    """(frames, channels) float32 and its rate: what ``mix_song`` puts under her voice, the kept backing
+    voices in it, moved by ``key``. Needs nothing of the conversion, so the worker starts it (the slow
+    part is Rubber Band's key change) while the lead is converted."""
     import numpy as np
 
-    v_src, sr = read_audio(vocals_src)
-    v, _ = read_audio(vocals_conv)
-    inst, isr = read_audio(inst_wav)
-    if isr != sr:
-        raise JobError("stems have different sample rates")
+    inst, sr = read_audio(inst_wav)
     if not instrumental:
         inst = np.zeros_like(inst)
     if backing_wav is not None:
@@ -1011,7 +1264,31 @@ def mix_song(vocals_src: Path, vocals_conv: Path, inst_wav: Path, key: int, out_
             raise JobError("stems have different sample rates")
         k = min(len(inst), len(b))
         inst = inst[:k] + b[:k]
-    inst = backend.transpose(inst, sr, key)
+    return backend.transpose(inst, sr, key), sr
+
+
+def mix_song(vocals_src: Path, vocals_conv: Path, inst_wav: Path, key: int, out_dir: Path, backend: RealBackend,
+             target_lufs: float, backing_wav: Path | None = None, backing_conv: Path | None = None,
+             backing_src: Path | None = None, instrumental: bool = True,
+             prepared: tuple[Any, int] | None = None) -> dict[str, Any]:
+    """Writes mix.wav / vocals.wav / instrumental.wav / play_*.pcm; returns loudness info.
+
+    The converted vocal gets the separated vocal's loudness back (the converters' output level
+    varies), the sum is normalised to ``target_lufs`` and kept under -1 dBFS peak. After a lead /
+    backing split ``vocals_src`` is the lead, and the backing voices are either
+    ``backing_wav`` as recorded: they join the instrumental (at their own level, moved by the key
+    with it), which is then what instrumental.wav holds; or ``backing_conv``, converted like the
+    lead: it joins her vocal at ``backing_src``'s level. ``instrumental`` False: her voice alone.
+    ``prepared``: ``instrumental_for_mix`` of the same arguments, already done.
+    """
+    import numpy as np
+
+    v_src, sr = read_audio(vocals_src)
+    v, _ = read_audio(vocals_conv)
+    inst, isr = prepared if prepared is not None else instrumental_for_mix(inst_wav, key, backend, backing_wav,
+                                                                           instrumental)
+    if isr != sr:
+        raise JobError("stems have different sample rates")
     v = v.mean(axis=1)
     n = min(len(v), len(inst))
     v, inst, v_src = v[:n], inst[:n], v_src[:n].mean(axis=1)

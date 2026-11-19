@@ -1,6 +1,7 @@
 import { Check, ChevronsUpDown, Hash } from "lucide-react";
 import { useDeferredValue, useId, useState } from "react";
-import type { AccountRef, AuthScope } from "@/api/types";
+import type { AuthScope } from "@miyoria/contracts/api";
+import type { AccountRef } from "@miyoria/contracts/wire";
 import { useAccessMutations, usePeople } from "@/app/queries";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -193,6 +194,9 @@ export function AssignDialog({ roles, onClose }: { roles: string[]; onClose: () 
               onChange={(e) => setGuild(e.target.value)}
             />
           </Field>
+          <p className="text-[13px] text-muted-foreground">
+            能不能進面板因此改變時,這個人已登入的面板會要他重新登入。
+          </p>
           <DialogFooter>
             <Button variant="outline" onClick={onClose} disabled={assign.isPending}>
               取消

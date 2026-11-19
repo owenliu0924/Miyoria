@@ -1,26 +1,25 @@
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
-import { RouterProvider } from "@tanstack/react-router";
+import { createBrowserHistory, type RouterHistory } from "@tanstack/react-router";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { describeError, isApiError } from "@/api/http";
-import type { Api } from "@/api/endpoints";
-import type { AuthMethods, MemberSession, SessionInfo } from "@/api/types";
+import type { AuthMethods } from "@miyoria/contracts/api";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TokenGate } from "@/pages/login/TokenGate";
 import { CardVerify, cardSerialIn } from "@/pages/public/CardVerify";
 import { PublicSite } from "@/pages/public/PublicSite";
+import { isKaraokePath } from "@/pages/public/karaoke/path";
 import { isLivePath, LivePage } from "@/pages/public/live/LivePage";
 import { Backdrop } from "./Backdrop";
 import { ConnectionProvider, useConnection } from "./connection";
-import { EventStreamProvider } from "./events-store";
-import { createQueryClient } from "./queries";
-import { type AppRouter, createAppRouter } from "./router";
+import { createQueryClient } from "./query-client";
+import type { AppRouter } from "./router";
+import { type AuthState, checkVisitor, rememberVisitor, type Visitor } from "./visitor";
 import {
   loginErrorMessage,
   SessionProvider,
   type SessionValue,
-  TOKEN_SESSION,
   loginErrorIn,
   isSameOrigin,
   wantsTokenLogin,
@@ -29,40 +28,24 @@ import {
 /** Her tank: the landing for someone not logged in. Split out with its fonts and water. */
 const Landing = lazy(() => import("@/pages/public/landing/Landing"));
 
-type AuthState =
-  | { status: "checking" }
-  /** `rejected`: the saved token stopped working; `expired`: the Discord session ended. */
-  | { status: "signed_out"; reason?: "rejected" | "expired" }
-  | { status: "signed_in"; session: SessionInfo }
-  /**
-   * Not an admin. Someone logged in (`member`) sees their page; anyone else, the login screen.
-   */
-  | { status: "public"; member: MemberSession | null };
+/** Singing on the member's own (`/karaoke`): its screens and its audio, loaded when opened. */
+const KaraokePage = lazy(() => import("@/pages/public/karaoke/KaraokePage"));
 
-/**
- * Who sees the public site, or `null` when this Core has none (older, or switched off): then the
- * login screen is all there is. Being unable to reach it says nothing about it, so that is `null`
- * too, and the login screen shows what is wrong.
- */
-async function publicVisitor(api: Api, signal: AbortSignal): Promise<{ member: MemberSession | null } | null> {
-  const [site, member] = await Promise.allSettled([api.publicStatus({ signal }), api.memberSession({ signal })]);
-  const open = site.status === "fulfilled" || (isApiError(site.reason) && site.reason.status === 429);
-  if (!open) return null;
-  return { member: member.status === "fulfilled" ? member.value : null };
-}
+/** The admin panel (shell, router, pages, event stream): only an admin downloads it. */
+const AdminApp = lazy(() => import("./AdminApp"));
 
 /** Where an admin signed in with Discord finds their own member page. */
 export const OWN_PAGE = "/me";
 
-/** The page's path and query from the router's history (`/card/MYR-…`, `/me`, `/login?error=…`). */
-function pathOf(router: AppRouter): string {
-  const { pathname, search } = router.history.location;
+/** The page's path and query from the history (`/card/MYR-…`, `/me`, `/login?error=…`). */
+function pathOf(history: RouterHistory): string {
+  const { pathname, search } = history.location;
   return `${pathname || "/"}${search}`;
 }
 
 function OwnPage({ onLogout, onBack }: { onLogout: () => void; onBack: () => void }) {
   const { api } = useConnection();
-  const member = useQuery({ queryKey: ["member", "session"], queryFn: ({ signal }) => api.memberSession({ signal }) });
+  const member = useQuery({ queryKey: ["member", "session"], queryFn: ({ signal }) => api.rpc.member.session(undefined, { signal }) });
   if (member.data) return <PublicSite member={member.data} onLogout={onLogout} onBack={onBack} />;
   return (
     <div className="flex min-h-svh items-center justify-center px-4">
@@ -80,13 +63,15 @@ function OwnPage({ onLogout, onBack }: { onLogout: () => void; onBack: () => voi
   );
 }
 
-function Authenticated({ router }: { router: AppRouter }) {
+function Authenticated({ router, history, initial }: { router?: AppRouter; history: RouterHistory; initial?: Visitor }) {
   const { config, api, signOut } = useConnection();
-  const [auth, setAuth] = useState<AuthState>({ status: "checking" });
-  const [methods, setMethods] = useState<AuthMethods | null>(null);
-  const path = useSyncExternalStore(router.history.subscribe, () => pathOf(router));
-  const [tokenLogin, setTokenLogin] = useState(() => wantsTokenLogin(pathOf(router)));
-  const [loginError, setLoginError] = useState<string | null>(() => loginErrorIn(pathOf(router)));
+  const [auth, setAuth] = useState<AuthState>(() => initial?.auth ?? { status: "checking" });
+  const [methods, setMethods] = useState<AuthMethods | null>(() => initial?.methods ?? null);
+  // Already asked (by the landing page that handed over): the first check is not needed.
+  const asked = useRef(initial !== undefined);
+  const path = useSyncExternalStore(history.subscribe, () => pathOf(history));
+  const [tokenLogin, setTokenLogin] = useState(() => wantsTokenLogin(pathOf(history)));
+  const [loginError, setLoginError] = useState<string | null>(() => loginErrorIn(pathOf(history)));
   const [recheck, setRecheck] = useState(0);
   const authRef = useRef(auth);
   authRef.current = auth;
@@ -107,35 +92,22 @@ function Authenticated({ router }: { router: AppRouter }) {
 
   // Who are we? Asked on load and whenever the URL or token changes.
   useEffect(() => {
+    if (asked.current) {
+      asked.current = false;
+      return;
+    }
     const ctl = new AbortController();
-    const { signal } = ctl;
     setAuth({ status: "checking" });
-    void (async () => {
-      const [m, s] = await Promise.allSettled([api.authMethods({ signal }), api.session({ signal })]);
-      if (signal.aborted) return;
-      setMethods(m.status === "fulfilled" ? m.value : null);
-      if (s.status === "fulfilled") {
-        setAuth({ status: "signed_in", session: s.value });
-        return;
-      }
-      const e: unknown = s.reason;
-      const unauthorized = isApiError(e) && e.kind === "unauthorized";
-      // A saved token on an older or unreachable Core: carry on as before
-      // (the shell shows the Core as unreachable).
-      if (config.token && !unauthorized) {
-        setAuth({ status: "signed_in", session: TOKEN_SESSION });
-        return;
-      }
-      if (config.token) {
-        setAuth({ status: "signed_out", reason: "rejected" });
-        return;
-      }
-      const visitor = await publicVisitor(api, signal);
-      if (signal.aborted) return;
-      setAuth(visitor ? { status: "public", member: visitor.member } : { status: "signed_out" });
-    })();
+    void checkVisitor(api, config.token, ctl.signal).then((visitor) => {
+      if (visitor === null) return;
+      setMethods(visitor.methods);
+      setAuth(visitor.auth);
+    });
     return () => ctl.abort();
   }, [api, config.token, recheck]);
+
+  // The next load shows the landing first only to someone not logged in.
+  useEffect(() => rememberVisitor(auth), [auth]);
 
   // A new URL or token invalidates everything cached for the old one.
   const first = useRef(true);
@@ -150,8 +122,8 @@ function Authenticated({ router }: { router: AppRouter }) {
   // A failed Discord login's `/login?error=…` is read once, then the address goes back to `/`, so
   // the router never sees the login path and a reload does not show the error again.
   useEffect(() => {
-    if (loginErrorIn(path) !== null) router.history.replace("/");
-  }, [path, router]);
+    if (loginErrorIn(path) !== null) history.replace("/");
+  }, [path, history]);
 
   // `/login` is how the owner reaches the token form from a member's page.
   useEffect(() => {
@@ -200,13 +172,27 @@ function Authenticated({ router }: { router: AppRouter }) {
     return <div className="min-h-svh" aria-busy="true" aria-label="確認登入狀態中" />;
   }
 
+  // Singing, for someone logged in with Discord: a member, or an admin as a member. Anyone else
+  // gets what `/` would show.
+  const discordAdmin = auth.status === "signed_in" && auth.session.method === "discord";
+  const member = auth.status === "public" ? auth.member : null;
+  if (isKaraokePath(path) && (member !== null || discordAdmin)) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
+          <KaraokePage member={member ?? undefined} home={discordAdmin ? OWN_PAGE : "/"} />
+        </Suspense>
+      </QueryClientProvider>
+    );
+  }
+
   // An admin who logged in with Discord is a member too, with a page of their own.
   if (auth.status === "signed_in" && auth.session.method === "discord" && (path === OWN_PAGE || path.startsWith(`${OWN_PAGE}?`))) {
     return (
       <QueryClientProvider client={queryClient}>
         <OwnPage
           onLogout={logout}
-          onBack={() => router.history.push("/")}
+          onBack={() => history.push("/")}
         />
       </QueryClientProvider>
     );
@@ -259,21 +245,22 @@ function Authenticated({ router }: { router: AppRouter }) {
   return (
     <SessionProvider value={sessionValue}>
       <QueryClientProvider client={queryClient}>
-        <EventStreamProvider>
-          <RouterProvider router={router} />
-        </EventStreamProvider>
+        <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
+          <AdminApp router={router} history={history} />
+        </Suspense>
       </QueryClientProvider>
     </SessionProvider>
   );
 }
 
-export function App({ router }: { router?: AppRouter }) {
-  const [r] = useState(() => router ?? createAppRouter());
+/** `initial`: who the landing page found at the door before handing over. */
+export function App({ router, initial }: { router?: AppRouter; initial?: Visitor }) {
+  const [history] = useState(() => router?.history ?? createBrowserHistory());
   return (
     <ConnectionProvider>
       <TooltipProvider>
         <Backdrop />
-        <Authenticated router={r} />
+        <Authenticated router={router} history={history} initial={initial} />
         <Toaster />
       </TooltipProvider>
     </ConnectionProvider>

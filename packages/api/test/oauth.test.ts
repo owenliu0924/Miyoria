@@ -1,13 +1,14 @@
 // Discord OAuth login for the panel against a fake Discord: the full login → callback → cookie →
 // session flow, PKCE, state handling, open redirects, CSRF, write permission, logout, expiry,
-// revocation and session persistence (`tests/oauth.rs`).
+// revocation and session persistence.
 
 import { createHash } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import type { AuthMethods, SessionInfo } from "@miyoria/contracts/api";
 import { EconomyError, EconomyKey } from "@miyoria/economy";
-import { Supervisor, SupervisorKey } from "@miyoria/kernel";
-import { RequestQueue, RequestQueueKey } from "@miyoria/queue";
+import { RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
+import { Supervisor, SupervisorKey } from "@miyoria/runtime/kernel";
 import {
   type AuditEntry,
   AuditLogKey,
@@ -19,8 +20,9 @@ import {
 } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, type JsonValue } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { ActiveProfileKey, ApiClient, ApiModule } from "../src/index.js";
-import { listenFetchable, raw } from "./support/http.js";
+import { ActiveProfileKey, ApiModule } from "../src/index.js";
+import { adminCalls } from "./support/admin.js";
+import { call, listenFetchable, raw } from "./support/http.js";
 import { TestStore } from "./support/stores.js";
 
 const TOKEN = "test-token";
@@ -262,8 +264,7 @@ async function harnessWith(
 describe("oauth", () => {
   it("full_login_flow_with_pkce", async () => {
     const h = await harnessWith(true);
-    const client = new ApiClient(h.base(), TOKEN);
-    const methods = await client.authMethods();
+    const methods = await call<AuthMethods>(h.base(), TOKEN, "GET", "/api/auth/methods");
     expect(methods.token && methods.discord).toBe(true);
 
     const authorize = await h.startLogin("/people");
@@ -320,10 +321,10 @@ describe("oauth", () => {
     expect(audit.some((e) => e.action === "panel.login" && e.ok)).toBe(true);
 
     // The bearer token keeps working, as `"api"`.
-    const me = await client.session();
+    const me = await call<SessionInfo>(h.base(), TOKEN, "GET", "/api/auth/session");
     expect(me.method).toBe("token");
     expect(me.user === null && me.permissions.write).toBe(true);
-    await client.queuePause(false);
+    await adminCalls(h.base(), TOKEN).queuePause(false);
     expect((await h.auditBy("api")).some((e) => e.action === "queue.resume")).toBe(true);
     // A wrong bearer token is not rescued by a valid cookie.
     const response = await fetch(`${h.base()}/api/queue`, {
@@ -416,6 +417,32 @@ describe("oauth", () => {
     const r = await h.withCookie("POST", "/api/queue/pause", cookie, true);
     expect(r.status).toBe(403);
     expect(r.body.error).toContain("admin.panel.write");
+  });
+
+  it("a_change_on_the_route_table_is_guarded_like_any_other", async () => {
+    const h = await harnessWith(true);
+    const owner = await h.loginCookie("owner-code");
+    const path = "/api/persona/style";
+    const json = { body: "x" };
+    const bare = await h.withCookie("PUT", path, owner, false, json);
+    expect(bare.status).toBe(403);
+    expect(bare.body.error).toContain("x-miyoria-request");
+    // Past the guard, the route runs: no persona here, so 503.
+    expect((await h.withCookie("PUT", path, owner, true, json)).status).toBe(503);
+
+    await h.auth.upsertRole("test", {
+      name: "viewer",
+      rank: 50,
+      grants: ["admin.panel.access"],
+      denies: [],
+      builtin: false,
+    });
+    await h.auth.assign("test", discord(VIEWER), "viewer", { type: "global" });
+    const viewer = await h.loginCookie("viewer-code");
+    expect((await h.withCookie("GET", "/api/auth/session", viewer, false)).status).toBe(200);
+    const looking = await h.withCookie("PUT", path, viewer, true, json);
+    expect(looking.status).toBe(403);
+    expect(looking.body.error).toContain("admin.panel.write");
   });
 
   it("data_management_needs_owner_data_manage", async () => {
@@ -554,7 +581,8 @@ describe("oauth", () => {
     expect(revoked.status, JSON.stringify(revoked.body)).toBe(401);
 
     cookie = await h.loginCookie("owner-code");
-    expect(await h.persisted()).toHaveLength(2);
+    // The revoked admin's session ended at its first request after the revoke.
+    expect(await h.persisted()).toHaveLength(1);
     let response = await fetch(`${h.base()}/api/auth/logout`, {
       method: "POST",
       headers: { cookie: `miyoria_session=${cookie}` },
@@ -571,7 +599,54 @@ describe("oauth", () => {
     expect(cleared.startsWith("miyoria_session=;")).toBe(true);
     expect(cleared).toContain("Max-Age=0");
     expect((await h.withCookie("GET", "/api/auth/session", cookie, false)).status).toBe(401);
-    expect(await h.persisted(), "only the revoked admin's left").toHaveLength(1);
+    expect(await h.persisted()).toHaveLength(0);
+  });
+
+  it("a_session_whose_tier_no_longer_fits_ends_and_the_next_login_gets_the_right_one", async () => {
+    const h = await harnessWith(true);
+    // Someone without panel access gets a member session (the public side is on).
+    const member = await h.loginCookie("stranger-code");
+    expect((await h.withCookie("GET", "/api/member/session", member, false)).status).toBe(200);
+    expect((await h.withCookie("GET", "/api/queue", member, false)).status).toBe(401);
+
+    // Made an admin through the API: the member session ends at its next request.
+    const assigned = await raw(h.base(), "POST", "/api/auth/assignments", {
+      token: TOKEN,
+      json: { account: discord(STRANGER), role: "admin", scope: { type: "global" } },
+    });
+    expect(assigned.status, JSON.stringify(assigned.body)).toBe(200);
+    expect((await h.withCookie("GET", "/api/member/session", member, false)).status).toBe(401);
+    expect(await h.persisted()).toHaveLength(0);
+
+    // A new login is an admin session; losing the role ends that one too.
+    const admin = await h.loginCookie("stranger-code");
+    expect((await h.withCookie("GET", "/api/queue", admin, false)).status).toBe(200);
+    await h.auth.revoke("test", discord(STRANGER), "admin", { type: "global" });
+    expect((await h.withCookie("GET", "/api/queue", admin, false)).status).toBe(401);
+    expect((await h.withCookie("GET", "/api/member/session", admin, false)).status).toBe(401);
+  });
+
+  it("module_settings_need_admin_settings_of_that_module", async () => {
+    const h = await harnessWith(true);
+    await h.auth.upsertRole("test", {
+      name: "helper",
+      rank: 60,
+      grants: ["admin.panel.access", "admin.panel.write", "admin.settings.party"],
+      denies: [],
+      builtin: false,
+    });
+    await h.auth.assign("test", discord(VIEWER), "helper", { type: "global" });
+    const helper = await h.loginCookie("viewer-code");
+    const body = { expected: 0, set: {}, reset: [] };
+    const refused = await h.withCookie("PUT", "/api/modules/api/settings", helper, true, body);
+    expect(refused.status).toBe(403);
+    expect(refused.body.error).toContain("admin.settings.api");
+    // Past the permission (no settings service in this harness): 503, not 403.
+    await h.auth.assign("test", discord(ADMIN), "admin", { type: "global" });
+    const admin = await h.loginCookie("admin-code");
+    expect((await h.withCookie("PUT", "/api/modules/api/settings", admin, true, body)).status).toBe(
+      503,
+    );
   });
 
   it("sessions_persist_hashed_and_expire", async () => {
@@ -607,13 +682,14 @@ describe("oauth", () => {
 
   it("without_oauth_config_only_the_token_works", async () => {
     const h = await harnessWith(false);
-    const client = new ApiClient(h.base(), TOKEN);
-    const methods = await client.authMethods();
+    const methods = await call<AuthMethods>(h.base(), TOKEN, "GET", "/api/auth/methods");
     expect(methods.token && !methods.discord).toBe(true);
     const response = await fetch(`${h.base()}/api/auth/oauth/login`, { redirect: "manual" });
     await response.arrayBuffer();
     expect(response.headers.get("location")).toBe("/login?error=disabled");
     expect((await h.withCookie("GET", "/api/queue", "A".repeat(43), false)).status).toBe(401);
-    expect((await client.session()).method).toBe("token");
+    expect((await call<SessionInfo>(h.base(), TOKEN, "GET", "/api/auth/session")).method).toBe(
+      "token",
+    );
   });
 });

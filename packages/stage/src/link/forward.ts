@@ -1,41 +1,44 @@
 // Turns bus events into Core → Stage messages.
 
 import {
-  AFFECT_CHANGED_TOPIC,
-  type Event,
+  type BusEvent,
+  Events,
+  is,
   isJsonObject,
   type JsonValue,
   type PlaybackState,
   parseSongCue,
-  SONG_TOPIC,
-  SPEECH_PAUSE_TOPIC,
   type TurnId,
-  VOICE_UPCOMING_TOPIC,
 } from "@miyoria/types";
 import {
   type CoreMessage,
+  DANMAKU_ID_MAX,
+  DANMAKU_NAME_MAX,
+  DANMAKU_ON_SCREEN_MAX,
+  DANMAKU_QUEUE_MAX,
+  DANMAKU_TEXT_MAX,
+  DANMAKU_WAIT_MAX_MS,
   GIFT_LABEL_MAX,
   GIFT_NAME_MAX,
   SCREEN_NAME_MAX,
-  SCREEN_SONG_MAX,
   SCREEN_TEXT_MAX,
 } from "../protocol.js";
 import { parseTouch, TOUCH_TOPIC } from "../touch.js";
 
 /** Topic of the agent's emotion markers. */
-export const EMOTION_TOPIC = "agent.emotion";
+export const EMOTION_TOPIC = Events.AgentEmotion.type;
 /** Topic of a gift to her (`{name, item, count, label}`), shown on the overlay. */
-export const GIFT_TOPIC = "economy.gift";
-/** Topic of a paid screen message or dedication (`{kind, name, text, song}`). */
-export const SCREEN_TOPIC = "economy.screen";
+export const GIFT_TOPIC = Events.EconomyGift.type;
+/** Topic of a paid screen message (`{name, text}`). */
+export const SCREEN_TOPIC = Events.EconomyScreen.type;
+/**
+ * Topics of a paid danmaku line and of taking them all off the overlay. A line is sent by the
+ * module (it must answer one that cannot go out, `danmakuMessage`); the clear goes through here.
+ */
+export const DANMAKU_TOPIC = Events.EconomyDanmaku.type;
+export const DANMAKU_CLEAR_TOPIC = Events.EconomyDanmakuClear.type;
 /** How much a feeling must change before her resting face follows it. */
 const RESTING_STEP = 0.1;
-/**
- * Topic of the written sentence of a line she spoke first (`voice_first`, e.g. the Japanese
- * voice line and its Chinese subtitle): `{turn, context, spoken, text}`.
- */
-export const SUBTITLE_TOPIC = "agent.subtitle";
-
 /** Turns whose subtitles are tracked at once. */
 const MAX_TURNS = 16;
 
@@ -43,10 +46,8 @@ interface TurnSubtitle {
   turn: TurnId;
   /** Text of the playbacks started so far (the segments joined). */
   spoken: string;
-  /** One entry per started playback: its text, or its written sentence once known. */
+  /** One entry per started playback: its text. */
   segments: string[];
-  /** Written sentences that arrived before their line played: spoken line → subtitle. */
-  written: Map<string, string>;
   /** Playbacks started and not yet ended. */
   active: number;
   /** Lines shown before they started (`voice.upcoming`): their text and segment. */
@@ -86,6 +87,12 @@ interface SongBeat {
   sentAt: number;
 }
 
+/** The karaoke room on the stream: its latest `karaoke` message, and when that was sent. */
+interface KaraokeScene {
+  msg: Extract<CoreMessage, { type: "karaoke" }>;
+  sentAt: number;
+}
+
 const clampIntensity = (i: unknown): number =>
   typeof i === "number" && Number.isFinite(i) ? Math.min(Math.max(i, 0), 1) : 1;
 
@@ -94,7 +101,7 @@ const clampIntensity = (i: unknown): number =>
  *
  * Subtitles follow her speech: every started playback appends its text and sends a non-final
  * `subtitle`; once the turn completed and no playback of it is running, the text is sent again
- * with `final: true`. A line announced as upcoming (`VOICE_UPCOMING_TOPIC`, a little before it
+ * with `final: true`. A line announced as upcoming (`Events.VoiceUpcoming`, a little before it
  * plays, so the subtitle lands with her voice where the picture runs late) is appended then, and
  * its start appends nothing; one that never starts is taken out again when the turn's subtitle
  * is final. Turns outside voice contexts produce one final subtitle when `textTurns` is set.
@@ -109,9 +116,15 @@ const clampIntensity = (i: unknown): number =>
  * it changes, also while she says nothing: what she feels reaches her face without a tag. A line
  * spoken in it without a marker of its own shows it as strongly as she feels it.
  *
- * Songs (`SONG_TOPIC`) with a video also send `song_video` `play` when they start and `stop`
+ * Songs (`Events.SingCue`) with a video also send `song_video` `play` when they start and `stop`
  * when they end; a node that connects mid-song gets the `play` again (`resumeSongVideo`). Songs
  * with a known beat send `beat` the same way (empty `times_ms` at the end; `resumeBeat`).
+ *
+ * The karaoke room on the stream (`Events.KaraokeStage`, `Events.KaraokeStageLyrics`) goes out as
+ * `karaoke` and `karaoke_lyrics`; the latest of each is kept, so a node that connects mid-round
+ * gets both again (`resumeKaraoke`) with the song moved on to that moment. A scene with
+ * `room: null` ends it and forgets both. The relayed singer's voice (`Events.KaraokeStageVoice`)
+ * goes out as `karaoke_voice` as it comes and is never kept.
  */
 export class Forwarder {
   readonly #textTurns: boolean;
@@ -121,6 +134,8 @@ export class Forwarder {
   readonly #now: () => number;
   #video: SongVideo | null = null;
   #beat: SongBeat | null = null;
+  #karaoke: KaraokeScene | null = null;
+  #karaokeLyrics: Extract<CoreMessage, { type: "karaoke_lyrics" }> | null = null;
   #resting: PendingEmotion | null = null;
 
   constructor(textTurns: boolean, options: ForwarderOptions = {}) {
@@ -145,6 +160,46 @@ export class Forwarder {
       ...b.msg,
       offset_ms: Math.round(b.msg.offset_ms + Math.max(this.#now() - b.sentAt, 0)),
     };
+  }
+
+  /**
+   * The karaoke room on the stream, for a node that just connected: the scene with its song moved
+   * on by the time since it was sent, then the words of its round (when they are that room's).
+   * Empty without a room.
+   */
+  resumeKaraoke(): CoreMessage[] {
+    const k = this.#karaoke;
+    if (k === null) return [];
+    const position = k.msg.position_ms;
+    const out: CoreMessage[] = [
+      {
+        ...k.msg,
+        position_ms:
+          position === null ? null : Math.round(position + Math.max(this.#now() - k.sentAt, 0)),
+      },
+    ];
+    const lyrics = this.#karaokeLyrics;
+    if (lyrics !== null && lyrics.room === k.msg.room) out.push(lyrics);
+    return out;
+  }
+
+  #onKaraoke(msg: Extract<CoreMessage, { type: "karaoke" }>): CoreMessage[] {
+    if (msg.room === null) {
+      this.#karaoke = null;
+      this.#karaokeLyrics = null;
+    } else {
+      this.#karaoke = { msg, sentAt: this.#now() };
+      // Another room's words are not this one's.
+      if (this.#karaokeLyrics !== null && this.#karaokeLyrics.room !== msg.room) {
+        this.#karaokeLyrics = null;
+      }
+    }
+    return [msg];
+  }
+
+  #onKaraokeLyrics(msg: Extract<CoreMessage, { type: "karaoke_lyrics" }>): CoreMessage[] {
+    this.#karaokeLyrics = msg;
+    return [msg];
   }
 
   /** Her resting face, for a node that just connected. */
@@ -179,7 +234,6 @@ export class Forwarder {
       turn,
       spoken: "",
       segments: [],
-      written: new Map(),
       active: 0,
       early: [],
       completed: false,
@@ -228,43 +282,46 @@ export class Forwarder {
     return [{ type: "emotion", name, intensity: pending?.byName.get(name) ?? resting }];
   }
 
-  onEvent(event: Event): CoreMessage[] {
-    switch (event.type) {
-      case "custom":
-        if (event.data.topic === SONG_TOPIC) return this.#onSong(event.data.payload);
-        if (event.data.topic === SPEECH_PAUSE_TOPIC) return pauseNotice(event.data.payload);
-        if (event.data.topic === SUBTITLE_TOPIC) return this.#onWritten(event.data.payload);
-        if (event.data.topic === VOICE_UPCOMING_TOPIC) return this.#onUpcoming(event.data.payload);
-        if (event.data.topic === GIFT_TOPIC) return giftMessage(event.data.payload);
-        if (event.data.topic === TOUCH_TOPIC) return touchMessage(event.data.payload);
-        if (event.data.topic === SCREEN_TOPIC) return screenMessage(event.data.payload);
-        if (event.data.topic === AFFECT_CHANGED_TOPIC) return this.#onAffect(event.data.payload);
-        return event.data.topic === EMOTION_TOPIC ? this.#onEmotion(event.data.payload) : [];
-      case "voice_playback": {
-        const { turn, state, text, emotion } = event.data;
-        const out = this.#onPlayback(turn, state, text);
-        if (state === "started") out.push(...this.#playbackEmotion(turn, emotion));
-        return out;
-      }
-      case "agent_turn_completed": {
-        const { turn, context, text } = event.data;
-        const voice = context.kind === "voice";
-        const e = this.#entry(turn);
-        e.completed = true;
-        if (voice || e.spoken !== "") {
-          // A line shown early is about to play: the subtitle is final after it.
-          if (e.active === 0 && e.early.length === 0 && e.spoken !== "" && !e.finalized) {
-            e.finalized = true;
-            return [subtitle(turn, e.spoken, true)];
-          }
-        } else if (this.#textTurns && text.trim() !== "" && !e.finalized) {
+  onEvent(event: BusEvent): CoreMessage[] {
+    if (is(Events.VoicePlaybackEvent, event)) {
+      const { turn, state, text, emotion } = event.data;
+      const out = this.#onPlayback(turn, state, text);
+      if (state === "started") out.push(...this.#playbackEmotion(turn, emotion));
+      return out;
+    } else if (is(Events.KaraokeStage, event)) {
+      return this.#onKaraoke({ type: "karaoke", ...event.data });
+    } else if (is(Events.KaraokeStageLyrics, event)) {
+      return this.#onKaraokeLyrics({ type: "karaoke_lyrics", ...event.data });
+    } else if (is(Events.KaraokeStageVoice, event)) {
+      // Passed straight on: a voice is never kept, so a node that connects later gets none of it.
+      return [{ type: "karaoke_voice", ...event.data }];
+    } else if (is(Events.AgentTurnCompleted, event)) {
+      const { turn, context, text } = event.data;
+      const voice = context.kind === "voice";
+      const e = this.#entry(turn);
+      e.completed = true;
+      if (voice || e.spoken !== "") {
+        // A line shown early is about to play: the subtitle is final after it.
+        if (e.active === 0 && e.early.length === 0 && e.spoken !== "" && !e.finalized) {
           e.finalized = true;
-          return [subtitle(turn, text.trim(), true)];
+          return [subtitle(turn, e.spoken, true)];
         }
-        return [];
+      } else if (this.#textTurns && text.trim() !== "" && !e.finalized) {
+        e.finalized = true;
+        return [subtitle(turn, text.trim(), true)];
       }
-      default:
-        return [];
+      return [];
+    } else {
+      if (event.type === Events.SingCue.type) return this.#onSong(event.data as JsonValue);
+      if (event.type === Events.SpeechPause.type) return pauseNotice(event.data as JsonValue);
+      if (event.type === Events.VoiceUpcoming.type)
+        return this.#onUpcoming(event.data as JsonValue);
+      if (event.type === GIFT_TOPIC) return giftMessage(event.data as JsonValue);
+      if (event.type === TOUCH_TOPIC) return touchMessage(event.data as JsonValue);
+      if (event.type === SCREEN_TOPIC) return screenMessage(event.data as JsonValue);
+      if (event.type === DANMAKU_CLEAR_TOPIC) return [{ type: "danmaku_clear" }];
+      if (event.type === Events.AffectChanged.type) return this.#onAffect(event.data as JsonValue);
+      return event.type === EMOTION_TOPIC ? this.#onEmotion(event.data as JsonValue) : [];
     }
   }
 
@@ -279,11 +336,8 @@ export class Forwarder {
         const early = e.early.findIndex((x) => x.text === text);
         if (early >= 0) {
           e.early.splice(early, 1); // shown already
-        } else {
-          // A line whose written sentence is known already shows that instead.
-          const shown = e.written.get(text) ?? text;
-          e.written.delete(text);
-          if (shown !== "") e.segments.push(shown);
+        } else if (text !== "") {
+          e.segments.push(text);
         }
         e.spoken = joined(e.segments);
         if (e.spoken !== "") out.push(subtitle(turn, e.spoken, false));
@@ -321,7 +375,7 @@ export class Forwarder {
   }
 
   /**
-   * A line about to play (`VOICE_UPCOMING_TOPIC`): its subtitle goes up now. Its `started`
+   * A line about to play (`Events.VoiceUpcoming`): its subtitle goes up now. Its `started`
    * then appends nothing.
    */
   #onUpcoming(payload: JsonValue): CoreMessage[] {
@@ -331,36 +385,11 @@ export class Forwarder {
     if (turn === null || text === "") return [];
     const e = this.#entry(turn);
     if (e.early.some((x) => x.text === text)) return [];
-    const shown = e.written.get(text) ?? text;
-    e.written.delete(text);
     e.early.push({ text, index: e.segments.length });
-    e.segments.push(shown);
+    e.segments.push(text);
     e.finalized = false;
     e.spoken = joined(e.segments);
     return [subtitle(turn, e.spoken, false)];
-  }
-
-  /**
-   * A line she spoke before writing it got its written sentence (`agent.subtitle`): the voice
-   * line (e.g. Japanese) in the subtitle is swapped for it (e.g. Chinese) and the subtitle is
-   * sent again (final when the turn's subtitle was final already). One that arrives before the
-   * line played is kept for that playback.
-   */
-  #onWritten(payload: JsonValue): CoreMessage[] {
-    const p = isJsonObject(payload) ? payload : {};
-    const turn = typeof p.turn === "string" && p.turn !== "" ? p.turn : null;
-    const spoken = typeof p.spoken === "string" ? p.spoken.trim() : "";
-    const written = typeof p.text === "string" ? p.text.trim() : "";
-    if (turn === null || spoken === "" || written === "" || spoken === written) return [];
-    const e = this.#entry(turn);
-    const i = e.segments.indexOf(spoken);
-    if (i < 0) {
-      e.written.set(spoken, written);
-      return [];
-    }
-    e.segments[i] = written;
-    e.spoken = joined(e.segments);
-    return [subtitle(turn, e.spoken, e.finalized)];
   }
 
   /**
@@ -458,19 +487,48 @@ function screenMessage(payload: JsonValue): CoreMessage[] {
   const p = isJsonObject(payload) ? payload : {};
   const name = typeof p.name === "string" ? p.name.trim() : "";
   const text = typeof p.text === "string" ? p.text.trim() : "";
-  const song = typeof p.song === "string" ? p.song.trim() : "";
-  const kind = p.kind === "dedication" ? "dedication" : p.kind === "message" ? "message" : null;
-  if (kind === null || name === "" || text === "") return [];
-  if (kind === "dedication" && song === "") return [];
+  if (name === "" || text === "") return [];
   return [
     {
       type: "screen",
-      kind,
       name: name.slice(0, SCREEN_NAME_MAX),
       text: text.slice(0, SCREEN_TEXT_MAX),
-      song: kind === "dedication" ? song.slice(0, SCREEN_SONG_MAX) : null,
     },
   ];
+}
+
+/** A whole number in `[min, max]`; `fallback` when it is not a number. */
+function bounded(v: unknown, min: number, max: number, fallback: number): number {
+  if (typeof v !== "number" || !Number.isFinite(v)) return fallback;
+  return Math.min(Math.max(Math.round(v), min), max);
+}
+
+/**
+ * The `danmaku` message of an `economy.danmaku` payload: `null` without a usable id (nothing can
+ * be answered then), `msg: null` when the line itself is unusable (it is answered as not shown).
+ * Names are cut to the overlay's length; a blank one is no name.
+ */
+export function danmakuMessage(
+  payload: JsonValue,
+): { id: string; msg: Extract<CoreMessage, { type: "danmaku" }> | null } | null {
+  const p = isJsonObject(payload) ? payload : {};
+  const id = typeof p.id === "string" ? p.id.trim() : "";
+  if (id === "" || id.length > DANMAKU_ID_MAX) return null;
+  const text = typeof p.text === "string" ? p.text.trim() : "";
+  if (text === "" || text.length > DANMAKU_TEXT_MAX) return { id, msg: null };
+  const name = typeof p.name === "string" ? p.name.trim().slice(0, DANMAKU_NAME_MAX) : "";
+  return {
+    id,
+    msg: {
+      type: "danmaku",
+      id,
+      name: name === "" ? null : name,
+      text,
+      max_on_screen: bounded(p.max_on_screen, 1, DANMAKU_ON_SCREEN_MAX, 12),
+      queue_max: bounded(p.queue_max, 0, DANMAKU_QUEUE_MAX, 20),
+      max_wait_ms: bounded(p.max_wait_ms, 0, DANMAKU_WAIT_MAX_MS, 30_000),
+    },
+  };
 }
 
 /** Takes lines shown early that will not play out of `e`'s subtitle. */

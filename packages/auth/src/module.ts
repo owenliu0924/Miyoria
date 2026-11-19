@@ -14,9 +14,9 @@ import {
   type ModuleContext,
   type ModuleManifest,
   withTimeout,
-} from "@miyoria/kernel";
+} from "@miyoria/runtime/kernel";
 import { AuditLogKey, AuthStoreKey } from "@miyoria/store";
-import { type AccountRef, AuthorizerKey, serviceKey } from "@miyoria/types";
+import { type AccountRef, AuthorizerKey, Events, is, serviceKey } from "@miyoria/types";
 import { z } from "zod";
 import { USER } from "./builtin.js";
 import { AuthCommands } from "./commands.js";
@@ -48,8 +48,6 @@ export const AuthConfigSchema = z.object({
   refresh_secs: z.number().int().nonnegative().default(300),
 });
 
-export type AuthConfig = z.output<typeof AuthConfigSchema>;
-
 /** The `AuthService` (cached roles, assignments, overrides and management API). */
 export const AuthServiceKey = serviceKey<AuthService>("AuthService");
 
@@ -73,6 +71,8 @@ export class AuthModule implements Module {
   static readonly ID = "auth";
 
   readonly manifest: ModuleManifest = defineManifest(AuthModule.ID, "Permissions", {
+    icon: "key-round",
+    category: "system",
     description: "Roles, permission nodes and platform role mappings",
     // Started after `commands` so its authorizer replaces the fallback.
     optional: [CommandsModule.ID],
@@ -102,14 +102,13 @@ export class AuthModule implements Module {
     ctx.provide(AuthorizerPreloadKey, service);
     this.#commands.install(ctx.services, service);
 
-    const events = ctx.subscribe("system.module.state");
+    const events = ctx.subscribe(Events.SystemModuleState.type);
     ctx.spawn("events", async () => {
       for await (const env of events) {
-        const event = env.event;
         if (
-          event.type === "module_state_changed" &&
-          event.data.module === CommandsModule.ID &&
-          event.data.state === "running"
+          is(Events.SystemModuleState, env) &&
+          env.data.module === CommandsModule.ID &&
+          env.data.state === "running"
         ) {
           service.setOwners(allOwners(ctx, configOwners));
           this.#commands.install(ctx.services, service);

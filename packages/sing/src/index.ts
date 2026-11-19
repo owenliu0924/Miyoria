@@ -5,9 +5,7 @@
 export { singCapabilities } from "./actions.js";
 export {
   type GpuContext,
-  type GpuStatus,
   HttpSingWorker,
-  type LyricLine,
   type SingWorker,
   SingWorkerError,
   type SongMeta,
@@ -20,28 +18,27 @@ export {
 export { type ClipDeps, clipStartOf, SingClips, sliceClip } from "./clips.js";
 export { backingOf, listCard, registerCommands } from "./commands.js";
 export {
-  defaultSingConfig,
   type SingConfig,
   SingConfigSchema,
   type SingPermissions,
   SingPermissionsSchema,
 } from "./config.js";
-export { SingerKey, SingModule } from "./module.js";
+export type { Endpoint, EndpointQuery, EndpointSource, EndpointsOption } from "./endpoints.js";
+export { type FailoverEntry, type FailoverOptions, FailoverSingWorker } from "./failover.js";
 export {
-  dedicationProblem,
-  MAX_DEDICATION_CHARS,
-  type SongCharge,
-  type SongPaidItem,
-  type SongPayments,
-  SongPaymentsKey,
-} from "./payments.js";
+  type GpuContextSink,
+  karaokeWorker,
+  SingerKey,
+  SingModule,
+  type SingWorkerFactory,
+  workerUrls,
+} from "./module.js";
 export { paced, singSong, sleep, songBeats, songVideoPath } from "./player.js";
 export { PROMPT_KEY, SingPrompt } from "./prompt.js";
 export {
   BACKING_LABELS,
   BACKING_MODES,
   type BackingMode,
-  dedicationNote,
   type NewSong,
   SetList,
   SetListError,
@@ -52,12 +49,14 @@ export {
 } from "./setlist.js";
 export {
   REASONS,
+  REFUND_RETRY_MS,
   SETLIST_KEY,
   SingError,
   Singer,
   type SkipVote,
+  SongPriorityError,
   type SongRequest,
   skipVotesNeeded,
   workerQuery,
 } from "./singer.js";
-export { KEY_RANGE, parseSongPatch, type SongPatch, songNo, songTask } from "./steer.js";
+export { KEY_RANGE, parseSongPatch, type SongPatch, songNo } from "./steer.js";

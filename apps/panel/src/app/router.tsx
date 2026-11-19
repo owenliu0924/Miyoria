@@ -7,6 +7,7 @@ import {
   redirect,
   type RouterHistory,
 } from "@tanstack/react-router";
+import type { LlmCallKind } from "@miyoria/contracts/api";
 import { NotFoundPage } from "@/pages/NotFound";
 import {
   ACTIVITY_TABS,
@@ -40,6 +41,8 @@ const LifePage = lazyRouteComponent(() => import("@/pages/life/LifePage"), "Life
 const EconomyPage = lazyRouteComponent(() => import("@/pages/economy/EconomyPage"), "EconomyPage");
 const LlmPage = lazyRouteComponent(() => import("@/pages/llm/LlmPage"), "LlmPage");
 const SystemPage = lazyRouteComponent(() => import("@/pages/system/SystemPage"), "SystemPage");
+const ModulePage = lazyRouteComponent(() => import("@/pages/system/ModulePage"), "ModulePage");
+const MachinesPage = lazyRouteComponent(() => import("@/pages/machines/MachinesPage"), "MachinesPage");
 const RulesPage = lazyRouteComponent(() => import("@/pages/rules/RulesPage"), "RulesPage");
 const EvalPage = lazyRouteComponent(() => import("@/pages/eval/EvalPage"), "EvalPage");
 const AccessPage = lazyRouteComponent(() => import("@/pages/access/AccessPage"), "AccessPage");
@@ -71,10 +74,15 @@ export const characterRoute = createRoute({
 export const innerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/inner",
-  validateSearch: (s: Record<string, unknown>): { tab?: InnerTab; thought?: string } => ({
+  validateSearch: (s: Record<string, unknown>): { tab?: InnerTab; thought?: string; feelings?: true } => ({
     tab: oneOf(INNER_TABS, s.tab),
     thought: str(s.thought),
+    // 感情 was a second list of people: an old link to it goes to 角色 / 人.
+    ...(s.tab === "feelings" ? { feelings: true as const } : {}),
   }),
+  beforeLoad: ({ search }) => {
+    if (search.feelings) throw redirect({ to: "/character", search: { tab: "people" } });
+  },
   component: InnerPage,
 });
 
@@ -104,9 +112,12 @@ export interface LlmSearch {
   status?: "ok" | "error" | "aborted" | "streaming";
   trouble?: boolean;
   q?: string;
+  /** The kind of call the chain-of-thought tab shows. */
+  kind?: LlmCallKind;
 }
 
 const STATUSES = ["ok", "error", "aborted", "streaming"] as const;
+const LLM_KINDS: readonly LlmCallKind[] = ["mind", "chat", "voice", "attention", "memory", "learning", "social", "other"];
 
 export const llmRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -122,6 +133,7 @@ export const llmRoute = createRoute({
     status: STATUSES.find((x) => x === s.status),
     trouble: s.trouble === true || s.trouble === "true" ? true : undefined,
     q: str(s.q),
+    kind: LLM_KINDS.find((x) => x === s.kind),
   }),
   component: LlmPage,
 });
@@ -134,6 +146,13 @@ export const systemRoute = createRoute({
     q: str(s.q),
   }),
   component: SystemPage,
+});
+
+/** One subsystem: its card, its settings and their change log (`/system/market`). */
+export const systemModuleRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/system/$id",
+  component: ModulePage,
 });
 
 /** Old bookmarks (one page per feature) land on the merged pages. */
@@ -156,6 +175,8 @@ const routeTree = rootRoute.addChildren([
   economyRoute,
   llmRoute,
   systemRoute,
+  systemModuleRoute,
+  createRoute({ getParentRoute: () => rootRoute, path: "/machines", component: MachinesPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/rules", component: RulesPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/eval", component: EvalPage }),
   createRoute({ getParentRoute: () => rootRoute, path: "/access", component: AccessPage }),

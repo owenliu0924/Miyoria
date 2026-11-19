@@ -8,6 +8,7 @@ import {
   Gauge,
   HeartPulse,
   type LucideIcon,
+  Monitor,
   Server,
   Settings,
   Shield,
@@ -28,6 +29,7 @@ export type NavPath =
   | "/llm"
   | "/eval"
   | "/system"
+  | "/machines"
   | "/access"
   | "/data"
   | "/settings";
@@ -68,16 +70,14 @@ export const LIFE_TABS = [
 
 export const ECONOMY_TABS = [
   { tab: "health", label: "健康度" },
-  { tab: "commissions", label: "委託" },
   { tab: "predictions", label: "預測" },
   { tab: "room", label: "房間" },
-  { tab: "goals", label: "目標" },
+  { tab: "market", label: "市集" },
 ] as const;
 
 export const INNER_TABS = [
   { tab: "state", label: "狀態" },
   { tab: "affect", label: "情緒" },
-  { tab: "feelings", label: "感情" },
   { tab: "goals", label: "目標" },
   { tab: "world", label: "世界" },
   { tab: "thoughts", label: "想法" },
@@ -88,6 +88,7 @@ export const INNER_TABS = [
 export const LLM_TABS = [
   { tab: "overview", label: "概況" },
   { tab: "calls", label: "呼叫" },
+  { tab: "thinking", label: "思路" },
   { tab: "prices", label: "價格與用量" },
 ] as const;
 
@@ -129,6 +130,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     items: [
       { to: "/llm", label: "LLM", icon: Cpu, tabs: [...LLM_TABS] },
       { to: "/system", label: "系統", icon: Server, tabs: [...SYSTEM_TABS] },
+      { to: "/machines", label: "電腦", icon: Monitor },
       { to: "/economy", label: "經濟", icon: Coins, tabs: [...ECONOMY_TABS] },
       { to: "/eval", label: "評測", icon: Target },
     ],

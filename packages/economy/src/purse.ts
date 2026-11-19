@@ -1,26 +1,20 @@
-// Her purse (docs/design/economy.md §13): coins that are hers. Rows of the same ledger on a
-// synthetic account, `{ platform: "self", id: <profile> }`, which no platform adapter produces, so
-// it cannot be a person's wallet. Money gets in by her share of paid gifts and by goals that are
+// Her purse (docs/design/economy.md §13): coins that are hers. Rows of the same ledger in a
+// wallet of its own, `PURSE`, which is no person's. Where she acts as someone (a screened text,
+// the audit trail) she is the synthetic account `{ platform: "self", id: <profile> }`, which no
+// platform adapter produces. Money gets in by her share of paid gifts and by goals that are
 // reached; it leaves as treats, expressions she buys herself, and bounties.
 //
 // * A share (`her_share`, floored) of what someone pays to feed her, write her, send an expression
-//   or put a message or a dedication on screen goes in the purse, keyed on the source row, so it
+//   or put a message on screen goes in the purse, keyed on the source row, so it
 //   is paid once and taken back once if that charge is refunded.
 // * She sees what she has and what she is saving for in her working context: the `purse` bucket
 //   (one entry, replaced when it changes) and `purse_news` (what just happened).
 // * Money in her purse is hers to spend: it counts toward none of the caps on `give_coins`.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
-import { errorMessage } from "@miyoria/kernel";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
-import {
-  AuditLogKey,
-  BountyStoreKey,
-  type CoinEntry,
-  type CoinPost,
-  DealStoreKey,
-  GoalStoreKey,
-} from "@miyoria/store";
+import { AuditLogKey } from "@miyoria/store";
 import {
   type AccountRef,
   accountRefString,
@@ -32,19 +26,13 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyService, Member } from "./economy.js";
+import { BountyStoreKey, type CoinEntry, type CoinPost, PURSE } from "./records.js";
 import { EconomyError, GIFT_EXPRESSIONS, type GiftExpression } from "./types.js";
 
 /** The platform of the purse's account. */
 export const PURSE_PLATFORM = "self";
 /** Ledger reasons whose price she gets a share of. */
-export const SHARED_REASONS: readonly string[] = [
-  "feed",
-  "letter",
-  "expression",
-  "screen_message",
-  "dedication",
-];
-const DAY_MS = 86_400_000;
+export const SHARED_REASONS: readonly string[] = ["feed", "screen_message"];
 const MAX_ROWS = 2_000;
 const MAX_NEWS = 6;
 const NOT_ENOUGH = "你的錢包不夠";
@@ -74,7 +62,7 @@ export class Purse {
 
   constructor(private readonly e: EconomyService) {}
 
-  /** The account her coins are rows of. */
+  /** The account she acts as for her purse (screening, audit); her coins are `PURSE`'s. */
   get account(): AccountRef {
     return { platform: PURSE_PLATFORM, id: this.e.profile };
   }
@@ -82,8 +70,7 @@ export class Purse {
   #entry(delta: number, reason: string, ref: string | null, key: string | null): CoinEntry {
     return {
       id: newId(),
-      profile: this.e.profile,
-      account: this.account,
+      person: PURSE,
       delta,
       reason,
       ref,
@@ -93,24 +80,22 @@ export class Purse {
   }
 
   async balance(): Promise<number> {
-    return this.e.ledger().balance(this.e.profile, [this.account]);
+    return this.e.ledger().balance(this.e.profile, PURSE);
   }
 
   /** Puts `amount` in (once per `key`). */
   credit(amount: number, reason: string, ref: string | null, key: string): Promise<CoinPost> {
-    return this.e.ledger().post(this.#entry(amount, reason, ref, key), { wallet: [this.account] });
+    return this.e.ledger().post(this.#entry(amount, reason, ref, key));
   }
 
   /** Takes `amount` out (once per `key`); `short` when she has less. */
   debit(amount: number, reason: string, ref: string | null, key: string): Promise<CoinPost> {
-    return this.e
-      .ledger()
-      .post(this.#entry(-amount, reason, ref, key), { wallet: [this.account], covered: true });
+    return this.e.ledger().post(this.#entry(-amount, reason, ref, key), { covered: true });
   }
 
   /** What left the purse under `reasons` since the day began. */
   async spentToday(reasons: readonly string[]): Promise<number> {
-    const rows = await this.e.ledger().entries(this.e.profile, [this.account], {
+    const rows = await this.e.ledger().entries(this.e.profile, PURSE, {
       reasons,
       since: this.e.todayStart(),
       limit: MAX_ROWS,
@@ -121,12 +106,12 @@ export class Purse {
   // ---- her share ------------------------------------------------------------------------
 
   /**
-   * Her share of what `entry` charged, once. Only the paid gifts have one, unless `force` (a
-   * deal's escrow is hers when she is given it). Never throws: a gift is not undone by this.
+   * Her share of what `entry` charged, once. Only the paid gifts have one. Never throws: a gift is
+   * not undone by this.
    */
-  async share(entry: CoinEntry, force = false): Promise<number> {
+  async share(entry: CoinEntry): Promise<number> {
     try {
-      if (entry.delta >= 0 || (!force && !SHARED_REASONS.includes(entry.reason))) return 0;
+      if (entry.delta >= 0 || !SHARED_REASONS.includes(entry.reason)) return 0;
       const amount = Math.floor(-entry.delta * this.e.config.her_share);
       if (amount < 1) return 0;
       const post = await this.credit(amount, "her_share", entry.id, `share:${entry.id}`);
@@ -142,16 +127,14 @@ export class Purse {
   /** A charge was refunded: her share of it goes back (as much as she still has of it). */
   async claw(entry: CoinEntry): Promise<void> {
     try {
-      if (!SHARED_REASONS.includes(entry.reason) && entry.reason !== "deal_escrow") return;
+      if (!SHARED_REASONS.includes(entry.reason)) return;
       const ledger = this.e.ledger();
-      const wallet = [this.account];
-      const shared = await ledger.byKey(this.e.profile, wallet, `share:${entry.id}`);
+      const shared = await ledger.byKey(this.e.profile, PURSE, `share:${entry.id}`);
       if (!shared) return;
       const amount = Math.min(shared.delta, Math.max(await this.balance(), 0));
       if (amount < 1) return;
       const post = await ledger.post(
         this.#entry(-amount, "her_share_back", entry.id, `shareback:${entry.id}`),
-        { wallet },
       );
       if (post.status === "posted") this.#later();
     } catch (error) {
@@ -160,27 +143,24 @@ export class Purse {
   }
 
   /**
-   * Returns a held charge to the account that paid it, once (the same key `Economy.refund` uses, so
-   * the two cannot both pay). Works for someone she no longer lets in.
+   * Returns a held charge to the wallet of the account that paid it, once (the same key
+   * `Economy.refund` uses, so the two cannot both pay). Works for someone she no longer lets in;
+   * the account's person is found through identity (a stranger has none: 403).
    */
   async giveBack(held: { id: string; account: AccountRef; amount: number }): Promise<boolean> {
     const ledger = this.e.ledger();
-    const wallet = [held.account];
+    const who = await this.e.holder(held.account);
     const key = `refund:${held.id}`;
-    if ((await ledger.byKey(this.e.profile, wallet, key)) !== null) return false;
-    const post = await ledger.post(
-      {
-        id: newId(),
-        profile: this.e.profile,
-        account: held.account,
-        delta: held.amount,
-        reason: "refund",
-        ref: held.id,
-        idem_key: key,
-        ts: toTimestamp(this.e.now()),
-      },
-      { wallet },
-    );
+    if ((await ledger.byKey(this.e.profile, who.wallet, key)) !== null) return false;
+    const post = await ledger.post({
+      id: newId(),
+      person: who.wallet,
+      delta: held.amount,
+      reason: "refund",
+      ref: held.id,
+      idem_key: key,
+      ts: toTimestamp(this.e.now()),
+    });
     return post.status === "posted";
   }
 
@@ -213,19 +193,15 @@ export class Purse {
       const out = await this.debit(given, "purse_treat", id, `treat:${id}`);
       if (out.status !== "posted") return { given: 0, left: out.balance };
       try {
-        await this.e.ledger().post(
-          {
-            id: newId(),
-            profile: this.e.profile,
-            account: who.account,
-            delta: given,
-            reason: "purse_gift",
-            ref: text,
-            idem_key: `treat:${id}`,
-            ts: toTimestamp(this.e.now()),
-          },
-          { wallet: who.wallet },
-        );
+        await this.e.ledger().post({
+          id: newId(),
+          person: who.wallet,
+          delta: given,
+          reason: "purse_gift",
+          ref: text,
+          idem_key: `treat:${id}`,
+          ts: toTimestamp(this.e.now()),
+        });
       } catch (error) {
         await this.credit(given, "purse_return", id, `treat-back:${id}`);
         throw error;
@@ -250,7 +226,7 @@ export class Purse {
     if (this.#singing()) throw new EconomyError(409, "你正在唱歌");
     const id = newId();
     const paid = await this.e.serial(async () => {
-      const rows = await this.e.ledger().entries(this.e.profile, [this.account], {
+      const rows = await this.e.ledger().entries(this.e.profile, PURSE, {
         reasons: ["purse_expression", "purse_return"],
         since: this.e.todayStart(),
         limit: MAX_ROWS,
@@ -307,31 +283,7 @@ export class Purse {
   async describe(): Promise<string> {
     const s = this.e.services;
     const c = this.e.config;
-    const now = this.e.now();
     const parts = [`你的小錢包有 ${await this.balance()} ${c.currency}(別人送你的禮物分你一份)`];
-    const days = (iso: string) => Math.max(Math.ceil((Date.parse(iso) - now) / DAY_MS), 0);
-    const goals = await s.get(GoalStoreKey)?.list(this.e.profile, { limit: 10 });
-    for (const g of goals ?? []) {
-      if (g.status === "open") {
-        const raised = (await s.get(GoalStoreKey)?.pledges(g.id))?.reduce(
-          (n, p) => n + p.amount,
-          0,
-        );
-        parts.push(
-          `你在存的目標「${g.title}」:${raised ?? 0}/${g.target},還有 ${days(g.deadline)} 天,` +
-            `湊到了你要:${g.promise}`,
-        );
-      } else if (
-        g.status === "reached" &&
-        g.fulfilled_at === undefined &&
-        g.closed_at !== null &&
-        now - Date.parse(g.closed_at) < c.goal_keep_days * DAY_MS
-      ) {
-        parts.push(
-          `你答應過大家、還沒做到的(目標「${g.title}」湊到了):${g.promise}(做到了用 goal_done 記下來)`,
-        );
-      }
-    }
     const bounties = await s.get(BountyStoreKey)?.list(this.e.profile, {
       statuses: ["open"],
       limit: 10,
@@ -339,40 +291,7 @@ export class Purse {
     for (const b of bounties ?? []) {
       parts.push(`你貼的懸賞[${shortId(b.id)}]「${b.task}」${b.reward} ${c.currency}`);
     }
-    for (const line of await this.owedMeals()) parts.push(line);
     return `${parts.join("。")}。`;
-  }
-
-  /**
-   * Who still owes her a meal: they promised a reward for something she did, did not pay in time
-   * (the deal is `broken`) and have not fed her since, for `owe_days` after it broke. She remembers
-   * it as a fact, not a grudge: it changes nothing about how she treats anyone (the deal's own
-   * trust and affinity cost was paid when it broke).
-   */
-  async owedMeals(): Promise<string[]> {
-    const deals = this.e.services.get(DealStoreKey);
-    if (!deals) return [];
-    const c = this.e.config;
-    const now = this.e.now();
-    const since = toTimestamp(now - c.owe_days * DAY_MS);
-    const out: string[] = [];
-    const seen = new Set<string>();
-    for (const deal of await deals.byStatus(this.e.profile, ["broken"], { since, limit: 50 })) {
-      if (deal.closed_at === null || now - Date.parse(deal.closed_at) > c.owe_days * DAY_MS)
-        continue;
-      const who = await this.e.member(deal.account);
-      if (!who || seen.has(who.person.id)) continue;
-      const fed = await this.e.ledger().entries(this.e.profile, who.wallet, {
-        reasons: ["feed"],
-        limit: 20,
-      });
-      if (fed.some((r) => r.ts > (deal.closed_at as string))) continue;
-      seen.add(who.person.id);
-      out.push(
-        `${safeName(who.name)}欠你一頓飯(他答應「${safeName(deal.task, 40)}」的獎勵沒有付,還沒補)`,
-      );
-    }
-    return out;
   }
 
   /** Writes the purse into her working context when it changed. */

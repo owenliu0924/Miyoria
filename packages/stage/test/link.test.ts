@@ -1,6 +1,5 @@
 // Stage Link protocol tests: `stage.link` on a real socket and a scripted Stage node.
 
-import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/actions";
 import {
   CommandRegistry,
   CommandRegistryKey,
@@ -8,32 +7,39 @@ import {
   Invocation,
   Permissions,
 } from "@miyoria/commands";
-import { EventBus, ServiceRegistry, type Subscription, Supervisor } from "@miyoria/kernel";
+import { ActuatorRegistry, ActuatorRegistryKey, defineCapability } from "@miyoria/gate/actions";
 import {
+  EventBus,
+  exemptFromBusCheck,
+  ServiceRegistry,
+  type Subscription,
+  Supervisor,
+} from "@miyoria/runtime/kernel";
+import {
+  type AnyEventDefinition,
   type ContextKey,
-  customEvent,
   type Envelope,
-  type Event,
+  type EventPayload,
+  Events,
   type JsonObject,
   newId,
   Principals,
-  SONG_PREPARE_TOPIC,
-  SONG_TOPIC,
+  type PublishMetaArgs,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { z } from "zod";
 import {
-  EMOTION_TOPIC,
   formatAddress,
-  STATUS_TOPIC,
   STREAM_COMMAND_PATHS,
   type StageLink,
   StageLinkKey,
   StageLinkModule,
-  VOICE_GOLIVE_TOPIC,
 } from "../src/index.js";
 import { delay, type Json, WAIT_MS, waitUntil } from "./common.js";
+
+// A touch that carries a name is dropped on purpose: the stage forwards only x, y and part.
+exemptFromBusCheck(["live.touch"]);
 
 const TOKEN = "stage-secret";
 
@@ -80,8 +86,12 @@ class Harness {
     return this.bus.subscribe(topics);
   }
 
-  publish(event: Event): void {
-    this.bus.publish("test", event);
+  publish<D extends AnyEventDefinition>(
+    def: D,
+    data: EventPayload<D>,
+    ...meta: PublishMetaArgs<D>
+  ): void {
+    this.bus.publish("test", def, data, ...meta);
   }
 
   async node(): Promise<Node> {
@@ -149,14 +159,16 @@ class Node {
     this.ws.send(JSON.stringify(value));
   }
 
-  hello(token: string): void {
-    this.sendJson({
-      type: "hello",
-      version: 1,
-      token,
-      node: "test-stage",
-      capabilities: ["vts", "obs"],
-    });
+  hello(token: string, capabilities: string[] = ["vts", "obs"]): void {
+    this.sendJson({ type: "hello", version: 1, token, node: "test-stage", capabilities });
+  }
+
+  /** The next message of `type` (others are skipped). */
+  async recvType(type: string): Promise<Json> {
+    for (;;) {
+      const msg = await this.recvJson();
+      if (msg.type === type) return msg;
+    }
   }
 
   async #wait<T>(take: () => T | undefined, what: string): Promise<T> {
@@ -191,6 +203,13 @@ class Node {
     return this.#wait(() => this.#close ?? undefined, "close");
   }
 }
+
+const textCtx = (): ContextKey => ({
+  platform: "discord",
+  scope: "g1",
+  channel: "c1",
+  kind: "channel",
+});
 
 const voiceCtx = (): ContextKey => ({
   platform: "discord",
@@ -244,23 +263,24 @@ describe("stage.link", () => {
     expect(await silent.expectClose()).toBe(4400);
     expect(h.link().isConnected()).toBe(false);
 
-    const status = h.subscribe([STATUS_TOPIC]);
+    const status = h.subscribe([Events.StageStatus.type]);
     const first = await h.node();
     const link = h.link();
     expect(link.node()).toStrictEqual(["test-stage", ["vts", "obs"]]);
     const env = await nextEvent(status);
-    expect(env.event).toStrictEqual(
-      customEvent(STATUS_TOPIC, {
-        connected: true,
-        vts: false,
-        obs: false,
-        scene: null,
-        streaming: false,
-        scenes: [],
-        hotkeys: [],
-        overlay_url: null,
-      }),
-    );
+    expect(env.type).toBe(Events.StageStatus.type);
+    expect(env.data).toStrictEqual({
+      connected: true,
+      vts: false,
+      obs: false,
+      scene: null,
+      streaming: false,
+      scenes: [],
+      hotkeys: [],
+      overlay_url: null,
+      obs_collection: null,
+      obs_warning: null,
+    });
     expect(env.source).toBe("stage.link");
 
     first.sendJson({ type: "status", vts: true, obs: true, scene: "Talk", streaming: false });
@@ -278,20 +298,21 @@ describe("stage.link", () => {
     const turn = newId();
 
     // A text turn's emotion goes out at once.
-    h.publish(customEvent(EMOTION_TOPIC, { emotion: "smug" }));
+    h.publish(Events.AgentEmotion, { turn: newId(), context: textCtx(), emotion: "smug" });
     expect(await node.recvJson()).toStrictEqual({ type: "emotion", name: "smug", intensity: 1 });
     // A voice turn's emotion waits for the sentence spoken with it.
-    h.publish(
-      customEvent(EMOTION_TOPIC, {
-        turn,
-        context: { ...voiceCtx() },
-        emotion: "annoyed",
-        intensity: 0.6,
-      }),
-    );
-    h.publish({
-      type: "voice_playback",
-      data: { context: voiceCtx(), turn, state: "started", text: "哼,", emotion: "annoyed" },
+    h.publish(Events.AgentEmotion, {
+      turn,
+      context: { ...voiceCtx() },
+      emotion: "annoyed",
+      intensity: 0.6,
+    });
+    h.publish(Events.VoicePlaybackEvent, {
+      context: voiceCtx(),
+      turn,
+      state: "started",
+      text: "哼,",
+      emotion: "annoyed",
     });
     expect(await node.recvJson()).toStrictEqual({ type: "speaking", state: "started" });
     expect(await node.recvJson()).toStrictEqual({
@@ -305,10 +326,12 @@ describe("stage.link", () => {
       name: "annoyed",
       intensity: 0.6,
     });
-    h.publish({ type: "agent_turn_completed", data: { turn, context: voiceCtx(), text: "哼," } });
-    h.publish({
-      type: "voice_playback",
-      data: { context: voiceCtx(), turn, state: "finished", text: "哼," },
+    h.publish(Events.AgentTurnCompleted, { turn, context: voiceCtx(), text: "哼," });
+    h.publish(Events.VoicePlaybackEvent, {
+      context: voiceCtx(),
+      turn,
+      state: "finished",
+      text: "哼,",
     });
     expect(await node.recvJson()).toStrictEqual({ type: "speaking", state: "stopped" });
     expect(await node.recvJson()).toStrictEqual({
@@ -325,15 +348,13 @@ describe("stage.link", () => {
   it("tells_the_node_what_she_is_doing", async () => {
     const h = await Harness.start();
     // Known before the node connects: it is told once it reports its status.
-    h.publish(
-      customEvent(SONG_PREPARE_TOPIC, {
-        no: 1,
-        title: "夜に駆ける",
-        stage: "convert",
-        progress: 0.5,
-        exclusive: "active",
-      }),
-    );
+    h.publish(Events.SingPrepare, {
+      no: 1,
+      title: "夜に駆ける",
+      stage: "convert",
+      progress: 0.5,
+      exclusive: "active",
+    });
     const node = await h.node();
     node.sendJson({ type: "status", vts: false, obs: false, scene: null, streaming: false });
     expect(await node.recvJson()).toStrictEqual({
@@ -345,27 +366,67 @@ describe("stage.link", () => {
       elapsed_ms: null,
       duration_ms: null,
     });
-    h.publish(customEvent(SONG_PREPARE_TOPIC, { no: null }));
+    h.publish(Events.SingPrepare, {
+      no: null,
+      title: "",
+      stage: "",
+      progress: 0,
+      exclusive: null,
+    });
     expect(await node.recvJson()).toMatchObject({ type: "activity", kind: null });
 
     // A voice turn that has not spoken yet: thinking, after the show delay (on the timer).
     const turn = newId();
-    h.publish({ type: "agent_turn_started", data: { turn, context: voiceCtx() } });
+    h.publish(Events.AgentTurnStarted, { turn, context: voiceCtx() });
     expect(await node.recvJson()).toMatchObject({ type: "activity", kind: "thinking" });
-    h.publish(
-      customEvent(SONG_TOPIC, {
-        state: "started",
-        song: "s1",
-        title: "アイドル",
-        duration_ms: 200_000,
-      }),
-    );
+    h.publish(Events.SingCue, {
+      state: "started",
+      song: "s1",
+      title: "アイドル",
+      duration_ms: 200_000,
+    });
     expect(await node.recvJson()).toStrictEqual({ type: "speaking", state: "started" });
     expect(await node.recvJson()).toMatchObject({
       type: "activity",
       kind: "singing",
       detail: "アイドル",
       duration_ms: 200_000,
+    });
+  });
+
+  it("tells_the_node_she_uses_a_tool_and_plays_a_game", async () => {
+    const h = await Harness.start();
+    const node = await h.node();
+    node.sendJson({ type: "status", vts: false, obs: false, scene: null, streaming: false });
+    const turn = newId();
+    h.publish(Events.AgentToolRunning, {
+      turn,
+      context: voiceCtx(),
+      tool: "web_search",
+      state: "started",
+    });
+    expect(await node.recvJson()).toMatchObject({
+      type: "activity",
+      kind: "tool",
+      label: "查資料中",
+    });
+    h.publish(Events.AgentToolRunning, {
+      turn,
+      context: voiceCtx(),
+      tool: "web_search",
+      state: "ended",
+    });
+    expect(await node.recvJson()).toMatchObject({ type: "activity", kind: null });
+    h.publish(Events.GameDirectorSession, {
+      state: "started",
+      game: "minecraft",
+      game_name: "Minecraft",
+      context: voiceCtx(),
+    });
+    expect(await node.recvJson()).toMatchObject({
+      type: "activity",
+      kind: "game",
+      detail: "Minecraft",
     });
   });
 
@@ -376,7 +437,13 @@ describe("stage.link", () => {
     await waitUntil(() => h.link().status()?.obs === true);
 
     // The voice node started Go Live: Stage presses OBS "Start Streaming".
-    h.publish(customEvent(VOICE_GOLIVE_TOPIC, { guild: "g1", state: "starting" }));
+    h.publish(Events.VoiceGoLive, {
+      platform: "discord",
+      guild: "g1",
+      state: "starting",
+      error: null,
+      reason: null,
+    });
     const start = await node.recvJson();
     expect(start.type).toBe("stream");
     expect(start.action).toBe("start");
@@ -391,9 +458,21 @@ describe("stage.link", () => {
     await waitUntil(() => h.link().status()?.streaming === true);
 
     // "live" does not touch OBS again.
-    h.publish(customEvent(VOICE_GOLIVE_TOPIC, { guild: "g1", state: "live" }));
+    h.publish(Events.VoiceGoLive, {
+      platform: "discord",
+      guild: "g1",
+      state: "live",
+      error: null,
+      reason: null,
+    });
     // Go Live ended: Stage presses OBS "Stop Streaming".
-    h.publish(customEvent(VOICE_GOLIVE_TOPIC, { guild: "g1", state: "stopped" }));
+    h.publish(Events.VoiceGoLive, {
+      platform: "discord",
+      guild: "g1",
+      state: "stopped",
+      error: null,
+      reason: null,
+    });
     const stop = await node.recvJson();
     expect(stop.type).toBe("stream");
     expect(stop.action).toBe("stop");
@@ -436,9 +515,9 @@ describe("stage.link", () => {
     const errors = h.subscribe(["stage.error"]);
     node.sendJson({ type: "error", message: "OBS is not connected", id: req.id });
     await expect(pending).rejects.toThrow("OBS is not connected");
-    expect((await nextEvent(errors)).event).toStrictEqual(
-      customEvent("stage.error", { message: "OBS is not connected" }),
-    );
+    const failure = await nextEvent(errors);
+    expect(failure.type).toBe(Events.StageError.type);
+    expect(failure.data).toStrictEqual({ message: "OBS is not connected" });
 
     // Unanswered requests time out.
     await expect(link.hotkey("Wave")).rejects.toThrow("in time");
@@ -480,6 +559,19 @@ describe("stage.link", () => {
     expect(registry.get(["stream", "status"])?.ephemeral).toBe(false);
     expect(reply.text).toContain("直播中");
     expect(reply.text).toContain("Game");
+    expect(reply.text).not.toContain("場景集合");
+
+    // OBS on another scene collection: the card says so.
+    call = registry.dispatch(invocation("stream status"));
+    await answer(node, {
+      vts: false,
+      obs: true,
+      scene: "Game",
+      streaming: false,
+      obs_collection: "我的場景",
+      obs_warning: "OBS 不在「Miyoria」這份場景集合上(現在是「我的場景」)",
+    });
+    expect((await call).text).toContain("OBS 不在「Miyoria」這份場景集合上");
 
     const paths = registry.specs().map((s) => commandName(s));
     for (const p of STREAM_COMMAND_PATHS) expect(paths, `${p} registered`).toContain(p);
@@ -565,9 +657,7 @@ describe("stage.link", () => {
     expect((await ask({ expression: "heart", seconds: 99 })).status).toBe("denied");
 
     // `economy.gift` goes to the node as `gift`; junk is dropped.
-    h.publish(
-      customEvent("economy.gift", { name: "Owen", item: "rice", count: 1, label: "一碗白飯" }),
-    );
+    h.publish(Events.EconomyGift, { name: "Owen", item: "rice", count: 1, label: "一碗白飯" });
     expect(await node.recvJson()).toStrictEqual({
       type: "gift",
       name: "Owen",
@@ -575,11 +665,11 @@ describe("stage.link", () => {
       count: 1,
       label: "一碗白飯",
     });
-    h.publish(customEvent("economy.gift", { name: "", item: "rice", count: 1, label: "x" }));
+    h.publish(Events.EconomyGift, { name: "", item: "rice", count: 1, label: "x" });
     // A viewer's touch on the live page (`live.touch`) goes on as `touch`, without anything extra.
-    h.publish(customEvent("live.touch", { x: 0.7, y: 0.2, part: "head", name: "Owen" }));
+    h.publish(Events.LiveTouch, { x: 0.7, y: 0.2, part: "head", name: "Owen" } as never);
     expect(await node.recvJson()).toStrictEqual({ type: "touch", x: 0.7, y: 0.2, part: "head" });
-    h.publish(customEvent("live.touch", { x: 2, y: 0.2, part: "head" }));
+    h.publish(Events.LiveTouch, { x: 2, y: 0.2, part: "head" });
     h.link().gaze("chat");
     expect(await node.recvJson()).toStrictEqual({ type: "gaze", target: "chat" });
   });
@@ -628,12 +718,22 @@ describe("scene director on the link", () => {
     node.sendJson({ type: "status", ...SCENES, scene: "Talk", streaming: false });
     await waitUntil(() => h.link().status()?.scene === "Talk");
 
-    h.publish(customEvent("game.director.session", { state: "started", game: "minecraft" }));
+    h.publish(Events.GameDirectorSession, {
+      state: "started",
+      game: "minecraft",
+      game_name: "Minecraft",
+      context: textCtx(),
+    });
     let req = await answer(node, { ...SCENES, scene: "Game", streaming: false });
     expect(req).toMatchObject({ type: "scene", name: "Game", transition: "Stinger" });
     expect(req.transition_ms).toBeUndefined();
 
-    h.publish(customEvent("game.director.session", { state: "stopped", game: "minecraft" }));
+    h.publish(Events.GameDirectorSession, {
+      state: "stopped",
+      game: "minecraft",
+      game_name: "Minecraft",
+      context: textCtx(),
+    });
     req = await answer(node, { ...SCENES, scene: "Talk", streaming: false });
     expect(req).toMatchObject({
       type: "scene",
@@ -655,5 +755,43 @@ describe("scene director on the link", () => {
     const stop = await answer(node, { ...SCENES, scene: "Bye", streaming: false });
     expect(stop).toMatchObject({ type: "stream", action: "stop" });
     expect((await call).text).toBe("已停止直播。");
+  });
+});
+
+describe("danmaku over the link", () => {
+  const LINE = {
+    id: "L1",
+    name: "Mia",
+    text: "好可愛",
+    max_on_screen: 12,
+    queue_max: 20,
+    max_wait_ms: 30_000,
+  };
+
+  it("sends a line to a node that answers danmaku, and publishes its answer", async () => {
+    const h = await Harness.start();
+    const answers = h.subscribe([Events.StageDanmaku.type]);
+    const node = await Node.connect(h.url());
+    node.hello(TOKEN, ["overlay", "danmaku"]);
+    expect((await node.recvJson()).type).toBe("welcome");
+    await waitUntil(() => h.link().isConnected());
+    h.publish(Events.EconomyDanmaku, LINE);
+    expect(await node.recvType("danmaku")).toEqual({ type: "danmaku", ...LINE });
+    node.sendJson({ type: "danmaku_done", id: "L1", outcome: "shown" });
+    expect((await nextEvent(answers)).data).toEqual({ id: "L1", outcome: "shown" });
+    h.publish(Events.EconomyDanmakuClear, {});
+    expect(await node.recvType("danmaku_clear")).toEqual({ type: "danmaku_clear" });
+  });
+
+  it("answers no_overlay at once without a node, to a node too old to answer, and for a bad line", async () => {
+    const h = await Harness.start();
+    const answers = h.subscribe([Events.StageDanmaku.type]);
+    h.publish(Events.EconomyDanmaku, LINE);
+    expect((await nextEvent(answers)).data).toEqual({ id: "L1", outcome: "no_overlay" });
+    await h.node(); // announces no `danmaku`
+    h.publish(Events.EconomyDanmaku, { ...LINE, id: "L2" });
+    expect((await nextEvent(answers)).data).toEqual({ id: "L2", outcome: "no_overlay" });
+    h.publish(Events.EconomyDanmaku, { ...LINE, id: "L3", text: " " });
+    expect((await nextEvent(answers)).data).toEqual({ id: "L3", outcome: "no_overlay" });
   });
 });

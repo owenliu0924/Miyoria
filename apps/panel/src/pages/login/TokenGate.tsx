@@ -1,5 +1,5 @@
 import { ChevronDown, CircleAlert, Eye, EyeOff, LogIn } from "lucide-react";
-import { type FormEvent, useId, useState } from "react";
+import { type CSSProperties, type FormEvent, useId, useState } from "react";
 import { createApi } from "@/api/endpoints";
 import { ApiClient, type ApiConfig, describeError, isApiError } from "@/api/http";
 import { useConnection } from "@/app/connection";
@@ -17,17 +17,22 @@ export async function verifyConnection(
   const api = createApi(new ApiClient(config));
   let version: string;
   try {
-    version = (await api.health()).version;
+    version = (await api.rpc.health()).version;
   } catch (e) {
     return { ok: false, field: "url", message: describeError(e) };
   }
   try {
-    await api.modules();
+    await api.rpc.modules.list();
   } catch (e) {
     if (isApiError(e) && e.kind === "unauthorized") return { ok: false, field: "token", message: "Core 拒絕了這個 token。" };
     return { ok: false, field: "url", message: describeError(e) };
   }
   return { ok: true, version };
+}
+
+/** The owner's login picture behind the window, when it was there at build time (`--login-art`). */
+export function loginArt(hasPicture: boolean): CSSProperties | undefined {
+  return hasPicture ? ({ "--login-art": 'url("/login.local.jpg")' } as CSSProperties) : undefined;
 }
 
 export function TokenForm({
@@ -205,7 +210,7 @@ export function TokenGate({
             )}
           </div>
         </div>
-        <div aria-hidden className="login-window hidden md:block" />
+        <div aria-hidden className="login-window hidden md:block" style={loginArt(__PANEL_ART__.login)} />
       </div>
     </div>
   );

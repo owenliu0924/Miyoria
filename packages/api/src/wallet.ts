@@ -2,10 +2,14 @@
 // session's person, and nobody else's.
 //
 // * `GET /api/member/wallet`: balance, what they can still earn today, the shop, their frames.
-// * `POST /api/member/checkin` `{}`: once a local day (Discord's `/me` counts too); 409 after.
-// * `POST /api/member/feed` `{ item, count? }`, `POST /api/member/letter` `{ text }`,
-//   `POST /api/member/expression` `{ expression }`,
+// * `POST /api/member/checkin` `{ fortune? }`: once a local day (Discord's `/me` counts too); 409
+//   after. `fortune: true` adds today's fortune slip, paid (the check-in stands if the slip fails);
+//   on a day already checked in it buys the slip alone (`gained` 0, no second reward).
+// * `POST /api/member/feed` `{ item, count? }`,
 //   `POST /api/member/screen` `{ text }` (a message on the stream: 409 when she is not live), `POST /api/member/frame` `{ buy?, select? }`.
+// * `GET /api/member/danmaku` (what a danmaku line costs them now, and why they cannot send one),
+//   `POST /api/member/danmaku` `{ text }` (one line across her stream: 409 when she is not live;
+//   given back by itself when the overlay did not show it).
 // * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
 //   same words for every reason they cannot take them); `POST /api/member/board` `{ on }`: join or
 //   leave the sponsor board (`GET /api/public/board` is in `board.ts`).
@@ -16,17 +20,14 @@
 
 import {
   type CheckinResult,
-  type DealView,
+  type DanmakuView,
   type EarnLine,
   type Economy,
   EconomyError,
   EconomyKey,
-  FEED_ITEMS,
   type FeedResult,
   type FramesResult,
-  GIFT_EXPRESSIONS,
   type LedgerLine,
-  MAX_FEED_COUNT,
   type ShopItem,
   type SpendResult,
   STRANGER,
@@ -34,13 +35,11 @@ import {
   type WalletExport,
   type WalletView,
 } from "@miyoria/economy";
-import { errorMessage, getLogger } from "@miyoria/kernel";
-import { type AccountRef, accountRefString, newId } from "@miyoria/types";
-import { z } from "zod";
+import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
+import { type AccountRef, newId } from "@miyoria/types";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { readJson } from "./extract.js";
-import { tooMany } from "./public.js";
-import { json, type Route } from "./route.js";
+import { checkinFortune } from "./fortune-routes.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -49,34 +48,13 @@ const log = getLogger("api.wallet");
 const NO_WALLET = "錢包現在打不開";
 const MAX_KEY_CHARS = 128;
 
-const CheckinSchema = z.strictObject({});
-const FeedSchema = z.strictObject({
-  item: z.enum(FEED_ITEMS as [string, ...string[]]),
-  count: z.number().int().min(1).max(MAX_FEED_COUNT).optional(),
-});
-const LetterSchema = z.strictObject({ text: z.string().max(2_000) });
-const ScreenSchema = z.strictObject({ text: z.string().max(500) });
-const ExpressionSchema = z.strictObject({
-  expression: z.enum(GIFT_EXPRESSIONS as [string, ...string[]]),
-});
-const TransferSchema = z.strictObject({
-  /** The receiver is named by their Discord user id, in the body only. */
-  to_discord_id: z.string().regex(/^[0-9]{1,25}$/),
-  amount: z.number().int().min(1).max(1_000_000),
-});
-const BoardSchema = z.strictObject({ on: z.boolean() });
-const FrameSchema = z.strictObject({
-  buy: z.string().max(64).optional(),
-  select: z.string().max(64).nullable().optional(),
-});
-
 function accountOf(c: ApiContext): AccountRef {
   return (c.get("member") as SessionRecord).account;
 }
 
-/** The request's `Idempotency-Key`; a fresh one when there is none (no retry protection). */
-export function keyOf(c: ApiContext): string {
-  const key = c.req.header("idempotency-key")?.trim();
+/** The `Idempotency-Key` a request sent; a fresh one when there is none (no retry protection). */
+export function keyOf(header: string | undefined): string {
+  const key = header?.trim();
   if (key === undefined || key === "") return newId();
   if (key.length > MAX_KEY_CHARS || !/^[\x21-\x7e]+$/.test(key)) {
     throw ApiError.badRequest("invalid Idempotency-Key");
@@ -122,13 +100,6 @@ const shopItem = (s: ShopItem): ShopItem => ({
 
 const ledgerLine = (l: LedgerLine): LedgerLine => ({ ts: l.ts, delta: l.delta, label: l.label });
 
-const dealView = (d: DealView): DealView => ({
-  task: d.task,
-  reward_label: d.reward_label,
-  status: d.status,
-  due_at: d.due_at,
-});
-
 function walletView(v: WalletView): WalletView {
   return {
     currency: v.currency,
@@ -142,8 +113,8 @@ function walletView(v: WalletView): WalletView {
     frames: { owned: [...v.frames.owned], selected: v.frames.selected },
     hungry: v.hungry,
     recent: v.recent.map(ledgerLine),
-    deals: v.deals.map(dealView),
     on_board: v.on_board,
+    transfer_fee: v.transfer_fee,
   };
 }
 
@@ -152,6 +123,20 @@ const spendResult = (r: SpendResult): SpendResult => ({
   charged: r.charged,
   balance: r.balance,
   message: r.message,
+});
+
+const danmakuView = (v: DanmakuView): DanmakuView => ({
+  open: v.open,
+  live: v.live,
+  currency: v.currency,
+  price: v.price,
+  max_chars: v.max_chars,
+  cooldown_s: v.cooldown_s,
+  per_day: v.per_day,
+  sent_today: v.sent_today,
+  wait_s: v.wait_s,
+  balance: v.balance,
+  why: v.why,
 });
 
 const feedResult = (r: FeedResult): FeedResult => ({
@@ -164,6 +149,7 @@ const feedResult = (r: FeedResult): FeedResult => ({
 
 const transferResult = (r: TransferResult): TransferResult => ({
   sent: r.sent,
+  fee: r.fee,
   balance: r.balance,
   to: r.to,
 });
@@ -195,107 +181,65 @@ export async function walletExport(state: ApiState, account: AccountRef): Promis
 
 // ---- routes -------------------------------------------------------------------------------
 
-/** Runs `handler` unless this account has been asking too much. */
-function limited(state: ApiState, handler: (c: ApiContext) => Promise<Response>) {
-  return async (c: ApiContext): Promise<Response> => {
-    const wait = state.publicSide.admitMember(accountRefString(accountOf(c)));
-    return wait !== null ? tooMany(wait) : handler(c);
-  };
-}
-
-/** The wallet routes; none when `[modules.api.public] enabled` is off. */
-export function walletRoutes(state: ApiState): Route[] {
-  if (!state.publicSide.config.enabled) return [];
-  const routes: Route[] = [
-    {
-      method: "GET",
-      path: "/api/member/wallet",
-      handler: limited(state, async (c) =>
-        json(walletView(await withWallet(state, (e) => e.wallet(accountOf(c))))),
-      ),
-    },
-    {
-      method: "POST",
-      path: "/api/member/checkin",
-      handler: limited(state, async (c) => {
-        await readJson(c, CheckinSchema);
-        return json(checkinResult(await withWallet(state, (e) => e.checkin(accountOf(c)))));
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/feed",
-      handler: limited(state, async (c) => {
-        const body = await readJson(c, FeedSchema);
-        const key = keyOf(c);
-        const item = body.item as (typeof FEED_ITEMS)[number];
-        const r = await withWallet(state, (e) => e.feed(accountOf(c), item, body.count ?? 1, key));
-        return json(feedResult(r));
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/letter",
-      handler: limited(state, async (c) => {
-        const { text } = await readJson(c, LetterSchema);
-        const key = keyOf(c);
-        return json(spendResult(await withWallet(state, (e) => e.letter(accountOf(c), text, key))));
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/screen",
-      handler: limited(state, async (c) => {
-        const { text } = await readJson(c, ScreenSchema);
-        const key = keyOf(c);
-        const r = await withWallet(state, (e) => e.screenMessage(accountOf(c), text, key));
-        return json(spendResult(r));
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/expression",
-      handler: limited(state, async (c) => {
-        const body = await readJson(c, ExpressionSchema);
-        const key = keyOf(c);
-        const expression = body.expression as (typeof GIFT_EXPRESSIONS)[number];
-        const r = await withWallet(state, (e) => e.expression(accountOf(c), expression, key));
-        return json(spendResult(r));
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/transfer",
-      handler: limited(state, async (c) => {
-        const body = await readJson(c, TransferSchema);
-        const key = keyOf(c);
-        const to: AccountRef = { platform: "discord", id: body.to_discord_id };
-        const r = await withWallet(state, (e) => e.transfer(accountOf(c), to, body.amount, key));
-        return json(transferResult(r));
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/board",
-      handler: limited(state, async (c) => {
-        const { on } = await readJson(c, BoardSchema);
-        const done = await withWallet(state, (e) => e.setOnBoard(accountOf(c), on));
-        if (!done) throw new ApiError(403, STRANGER);
-        return json({ on_board: on });
-      }),
-    },
-    {
-      method: "POST",
-      path: "/api/member/frame",
-      handler: limited(state, async (c) => {
-        const body = await readJson(c, FrameSchema);
-        const key = keyOf(c);
-        const req: { buy?: string; select?: string | null } = {};
-        if (body.buy !== undefined) req.buy = body.buy;
-        if (body.select !== undefined) req.select = body.select;
-        return json(framesResult(await withWallet(state, (e) => e.frame(accountOf(c), req, key))));
-      }),
-    },
-  ];
-  return routes.map((r) => ({ ...r, member: true }));
-}
+/** The wallet routes; served only while the public side is on (see `rpc.ts`). */
+export const walletRpc = {
+  view: os.wallet.view.handler(async ({ context: { state, c } }) => {
+    return walletView(await withWallet(state, (e) => e.wallet(accountOf(c))));
+  }),
+  checkin: os.wallet.checkin.handler(async ({ input, context: { state, c } }) => {
+    const account = accountOf(c);
+    const asked = input.body.fortune === true;
+    // A day already checked in still buys the slip alone: no second check-in, nothing earned.
+    const today = asked ? await withWallet(state, (e) => e.wallet(account)) : null;
+    const done =
+      today?.checked_in_today === true
+        ? { gained: 0, streak: today.streak, balance: today.balance }
+        : checkinResult(await withWallet(state, (e) => e.checkin(account)));
+    if (!asked) return done;
+    // The paid add-on: the check-in stands whatever happens to the slip.
+    const { name } = c.get("member") as SessionRecord;
+    const { balance, ...slip } = await checkinFortune(state, { account, name });
+    return { ...done, ...slip, balance: balance ?? done.balance };
+  }),
+  feed: os.wallet.feed.handler(async ({ input, context: { state, c } }) => {
+    const key = keyOf(input.headers["idempotency-key"]);
+    const { item, count } = input.body;
+    const r = await withWallet(state, (e) => e.feed(accountOf(c), item, count ?? 1, key));
+    return feedResult(r);
+  }),
+  screen: os.wallet.screen.handler(async ({ input, context: { state, c } }) => {
+    const key = keyOf(input.headers["idempotency-key"]);
+    const { text } = input.body;
+    return spendResult(await withWallet(state, (e) => e.screenMessage(accountOf(c), text, key)));
+  }),
+  danmakuView: os.wallet.danmakuView.handler(async ({ context: { state, c } }) => {
+    return danmakuView(await withWallet(state, (e) => e.danmakuView(accountOf(c))));
+  }),
+  danmaku: os.wallet.danmaku.handler(async ({ input, context: { state, c } }) => {
+    const key = keyOf(input.headers["idempotency-key"]);
+    const { text } = input.body;
+    return spendResult(await withWallet(state, (e) => e.danmaku(accountOf(c), text, key)));
+  }),
+  transfer: os.wallet.transfer.handler(async ({ input, context: { state, c } }) => {
+    const key = keyOf(input.headers["idempotency-key"]);
+    const { to_discord_id, amount } = input.body;
+    const to: AccountRef = { platform: "discord", id: to_discord_id };
+    return transferResult(
+      await withWallet(state, (e) => e.transfer(accountOf(c), to, amount, key)),
+    );
+  }),
+  board: os.wallet.board.handler(async ({ input, context: { state, c } }) => {
+    const { on } = input.body;
+    const done = await withWallet(state, (e) => e.setOnBoard(accountOf(c), on));
+    if (!done) throw new ApiError(403, STRANGER);
+    return { on_board: on };
+  }),
+  frame: os.wallet.frame.handler(async ({ input, context: { state, c } }) => {
+    const key = keyOf(input.headers["idempotency-key"]);
+    const { buy, select } = input.body;
+    const req: { buy?: string; select?: string | null } = {};
+    if (buy !== undefined) req.buy = buy;
+    if (select !== undefined) req.select = select;
+    return framesResult(await withWallet(state, (e) => e.frame(accountOf(c), req, key)));
+  }),
+};

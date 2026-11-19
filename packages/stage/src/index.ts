@@ -35,6 +35,13 @@ export {
   VOWEL_PARAMS,
 } from "./avatar-loop.js";
 export { type BlinkConfig, BlinkConfigSchema, BlinkScheduler } from "./blink.js";
+export {
+  ANSWER_GRACE_MS as DANMAKU_ANSWER_GRACE_MS,
+  type DanmakuDone,
+  DanmakuOutbox,
+  type DanmakuOutcome,
+  DanmakuRelay,
+} from "./danmaku.js";
 export { EmotionController, type VtsCommand } from "./emotion.js";
 export { type GestureConfig, GestureConfigSchema, GestureController } from "./gesture.js";
 export {
@@ -55,8 +62,10 @@ export {
   ActivityTracker,
   prepareLabel,
   SINGING_LABEL,
+  STAGE_LABELS,
   SYNTH_LABEL,
   THINKING_LABEL,
+  toolLabel,
 } from "./link/activity.js";
 export {
   describeStatus,
@@ -74,27 +83,27 @@ export {
   type SceneSwitcher,
 } from "./link/director.js";
 export {
+  DANMAKU_CLEAR_TOPIC,
+  DANMAKU_TOPIC,
+  danmakuMessage,
   EMOTION_TOPIC,
   Forwarder,
   type ForwarderOptions,
   GIFT_TOPIC,
   SCREEN_TOPIC,
-  SUBTITLE_TOPIC,
 } from "./link/forward.js";
 export { type GoLiveFollow, goliveFollow, VOICE_GOLIVE_TOPIC } from "./link/golive.js";
 export { Highlights, type HighlightsConfig, HighlightsConfigSchema } from "./link/highlights.js";
 export {
-  CLIP_TOPIC,
+  DANMAKU_CAPABILITY,
   DEFAULT_BIND,
-  ERROR_TOPIC,
-  STATUS_TOPIC,
   StageLink,
   type StageLinkConfig,
   StageLinkConfigSchema,
   StageLinkError,
   StageLinkKey,
 } from "./link/link.js";
-export { GAME_SESSION_TOPIC, StageLinkModule } from "./link/module.js";
+export { GAME_SESSION_TOPIC, STAGE_LINK_PATH, StageLinkModule } from "./link/module.js";
 export {
   away,
   factsOf,
@@ -173,23 +182,39 @@ export {
   type SceneItem,
 } from "./obs.js";
 export {
+  applyObsPlace,
   applyObsSetup,
+  awaitChange,
   describeStep,
   GAME_MODEL,
-  MASK_FILE,
   MASK_FILTER,
+  MIYORIA,
   type ObsAdmin,
+  type ObsPlace,
   type ObsSetupOptions,
+  type ObsSetupReport,
   type ObsSnapshot,
   ObsWebSocketAdmin,
+  type ObsWhere,
+  type PlaceStep as ObsPlaceStep,
+  planObsPlace,
   planObsSetup,
   roundedMaskPng,
+  runObsSetup,
   SING,
   SOURCES,
   type Step as ObsSetupStep,
   VTS_WINDOW,
 } from "./obs-setup.js";
-export { OverlayHub, serveOverlay } from "./overlay.js";
+export {
+  byteRange,
+  KARAOKE_BACKING_PATH,
+  KARAOKE_VIDEO_PATH,
+  karaokeBackingPath,
+  karaokeVideoPath,
+  OverlayHub,
+  serveOverlay,
+} from "./overlay.js";
 export {
   BODY_PARAMS,
   clampParam,
@@ -214,6 +239,9 @@ export {
   GIFT_EXPRESSION_MAX_S,
   GIFT_EXPRESSIONS,
   type GiftExpression,
+  type KaraokeStageLyrics,
+  type KaraokeStageScene,
+  type KaraokeStageVoice,
   type LevelFrame,
   parseCoreMessage,
   parseGazeTarget,
@@ -242,6 +270,7 @@ export {
   StageConfigSchema,
   type StageConfigSection,
   StageError,
+  stageLinkFromEnv,
 } from "./runtime.js";
 export { SongVideo, type SongVideoDeps, type SongVideoPlay, songVideoFile } from "./song-video.js";
 export {

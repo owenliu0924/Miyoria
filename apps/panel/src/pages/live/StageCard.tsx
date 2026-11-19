@@ -1,6 +1,6 @@
 import { Check, Copy, Radio, Square } from "lucide-react";
 import { useState } from "react";
-import type { StageLink, StageState } from "@/api/types";
+import type { StageLinkState, StageState } from "@miyoria/contracts/api";
 import { useStage, useStageMutations } from "@/app/queries";
 import { READ_ONLY_HINT, useCanWrite } from "@/app/session";
 import { ConfirmDialog } from "@/components/confirm";
@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 
-function LinkBadge({ name, link }: { name: string; link: StageLink }) {
+function LinkBadge({ name, link }: { name: string; link: StageLinkState }) {
   const badge = <StatusBadge tone={link.connected ? "success" : "neutral"}>{name}</StatusBadge>;
   if (link.connected || !link.error) return badge;
   return (
@@ -79,6 +79,15 @@ function StageBody({ s }: { s: StageState }) {
 
   return (
     <CardContent className="grid gap-5">
+      {s.obs_warning && (
+        <p role="status" className="flex items-start gap-2.5 text-sm">
+          <Dot tone="warning" className="mt-1.5" />
+          <span>
+            {s.obs_warning}。Stage 不會在這份集合裡建任何東西:在 OBS 的「場景集合」選單切回去,或執行{" "}
+            <code className="text-[13px]">miyoria stage obs-setup</code>。
+          </span>
+        </p>
+      )}
       <Part label="OBS 推流" id="stage-stream">
         <div className="flex flex-wrap items-center gap-3">
           <span className={cn("flex items-center gap-2 text-sm font-medium", !s.streaming && "text-muted-foreground")}>

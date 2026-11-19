@@ -40,13 +40,16 @@ export class ApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly status: number;
   readonly path: string;
+  /** The error body's JSON, when it was JSON (a refused settings save carries `problems`). */
+  readonly body: unknown;
 
-  constructor(kind: ApiErrorKind, status: number, path: string, message: string) {
+  constructor(kind: ApiErrorKind, status: number, path: string, message: string, body: unknown = null) {
     super(message);
     this.name = "ApiError";
     this.kind = kind;
     this.status = status;
     this.path = path;
+    this.body = body;
   }
 
   get notProvided(): boolean {
@@ -105,11 +108,11 @@ export function buildQuery(query: Query | undefined): string {
 /** Encodes one path segment (module ids contain dots, persona keys dashes). */
 export const seg = (value: string): string => encodeURIComponent(value);
 
-async function readError(res: Response): Promise<{ message: string; json: boolean }> {
+async function readError(res: Response): Promise<{ message: string; json: boolean; body?: unknown }> {
   const text = await res.text().catch(() => "");
   try {
     const body = JSON.parse(text) as Partial<ErrorBody>;
-    if (typeof body.error === "string") return { message: body.error, json: true };
+    if (typeof body.error === "string") return { message: body.error, json: true, body };
   } catch {
     // Not JSON: a proxy, a static file server or an old Core.
   }
@@ -149,11 +152,37 @@ export class ApiClient {
   }
 
   async request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-    const hasBody = opts.body !== undefined;
+    const json = opts.body === undefined ? undefined : JSON.stringify(opts.body);
+    const { value } = await this.exchange(method, path, opts, json);
+    return value as T;
+  }
+
+  /**
+   * A request whose body is already JSON text, answered with a response whose body is JSON (or
+   * empty), or an event stream, passed on as it arrives: the route table's client (`orpc.ts`)
+   * sends through this, so its calls carry the same headers and fail with the same `ApiError` as
+   * `request`.
+   */
+  async send(method: string, path: string, opts: Omit<RequestOptions, "body" | "query"> = {}, json?: string): Promise<Response> {
+    const res = await this.respond(method, path, opts, json);
+    if (res.headers.get("content-type")?.startsWith("text/event-stream")) {
+      return new Response(res.body, { status: res.status, headers: { "content-type": "text/event-stream" } });
+    }
+    const { status, value } = await this.decode(res, path);
+    const body = value === undefined ? null : JSON.stringify(value);
+    return new Response(status === 204 ? null : body, { status, headers: { "content-type": "application/json" } });
+  }
+
+  private async exchange(method: string, path: string, opts: RequestOptions, json: string | undefined): Promise<{ status: number; value: unknown }> {
+    return this.decode(await this.respond(method, path, opts, json), path);
+  }
+
+  /** The response to one request, once it is known to be a success. */
+  private async respond(method: string, path: string, opts: RequestOptions, json: string | undefined): Promise<Response> {
     const init: RequestInit = {
       method,
-      headers: this.headers({ ...(hasBody ? { "Content-Type": "application/json" } : {}), ...opts.headers }, opts.public),
-      body: hasBody ? JSON.stringify(opts.body) : undefined,
+      headers: this.headers({ ...(json !== undefined ? { "Content-Type": "application/json" } : {}), ...opts.headers }, opts.public),
+      body: json,
       signal: opts.signal,
       credentials: "same-origin",
     };
@@ -166,14 +195,19 @@ export class ApiClient {
       throw new ApiError("network", 0, path, `無法連線到 Core(${reason})`);
     }
     if (!res.ok) {
-      const { message, json } = await readError(res);
-      throw new ApiError(classify(res.status, message, json), res.status, path, message);
+      const { message, json, body } = await readError(res);
+      throw new ApiError(classify(res.status, message, json), res.status, path, message, body);
     }
-    if (res.status === 204) return undefined as T;
+    return res;
+  }
+
+  /** A successful response's JSON body. */
+  private async decode(res: Response, path: string): Promise<{ status: number; value: unknown }> {
+    if (res.status === 204) return { status: 204, value: undefined };
     const text = await res.text();
-    if (!text) return undefined as T;
+    if (!text) return { status: res.status, value: undefined };
     try {
-      return JSON.parse(text) as T;
+      return { status: res.status, value: JSON.parse(text) };
     } catch {
       throw new ApiError("bad_response", res.status, path, "回應不是 JSON:API 位址可能指向了別的服務");
     }

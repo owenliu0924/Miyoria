@@ -1,8 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, CircleAlert, LogOut } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import type { MemberSession, PublicDay, PublicSong, PublicState, PublicStatus } from "@/api/types";
-import { useApi } from "@/app/connection";
+import type { MemberSession, PublicDay, PublicSong } from "@miyoria/contracts/api";
 import { ChartBlock, ChartEmpty, ColumnChart } from "@/components/charts/charts";
 import { Logo } from "@/components/logo";
 import { Page } from "@/components/page";
@@ -12,51 +10,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { fmtInt } from "@/lib/format";
+import { CardsArea } from "./cards/CardsArea";
+import { KaraokeLink } from "./karaoke/link";
 import { LiveStage } from "./live/LiveStage";
+import { Market } from "./Market";
 import { DAY_MS, localMidnight, MemberActions, MemberActivity, MemberLists, MemberProfile } from "./Member";
+import { STATE, stateLabel, usePublicSongs, usePublicStatus } from "./status";
 import { WalletMain } from "./Wallet";
 
-/** The Core rebuilds these every few seconds at most, so polling faster buys nothing. */
-const POLL_MS = 15_000;
-
-export const STATE: Record<PublicState, { label: string; tone: Tone; pulse?: boolean }> = {
-  singing: { label: "她在唱歌", tone: "brand", pulse: true },
-  playing: { label: "她在玩遊戲", tone: "success" },
-  live: { label: "她在直播", tone: "brand", pulse: true },
-  in_voice: { label: "她在語音頻道", tone: "success" },
-  idle: { label: "她現在閒著", tone: "neutral" },
-  offline: { label: "她現在不在", tone: "neutral" },
-};
-
-const GAMES: Record<string, string> = { minecraft: "Minecraft" };
-
-export function stateLabel(status: PublicStatus): string {
-  if (status.state === "playing" && status.game) {
-    return `她在玩 ${GAMES[status.game] ?? status.game}`;
-  }
-  return STATE[status.state].label;
-}
+export { STATE, stateLabel, usePublicSongs, usePublicStatus };
 
 const duration = (s: number | null) =>
   s === null ? null : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
-
-export function usePublicStatus() {
-  const api = useApi();
-  return useQuery({
-    queryKey: ["public", "status"],
-    queryFn: ({ signal }) => api.publicStatus({ signal }),
-    refetchInterval: POLL_MS,
-  });
-}
-
-export function usePublicSongs() {
-  const api = useApi();
-  return useQuery({
-    queryKey: ["public", "songs"],
-    queryFn: ({ signal }) => api.publicSongs({ signal }),
-    refetchInterval: POLL_MS,
-  });
-}
 
 /** Label over value, spaced, no cell walls: the panel's strip of facts. */
 function Fact({ label, children }: { label: string; children: ReactNode }) {
@@ -226,6 +191,7 @@ function Header({ member, onLogout, onBack }: { member: MemberSession; onLogout:
         </p>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        <KaraokeLink />
         {onBack && (
           <Button variant="outline" size="sm" onClick={onBack}>
             <ArrowLeft aria-hidden />
@@ -279,6 +245,8 @@ export function PublicSite({
           </div>
           <Now />
           <MemberLists />
+          <CardsArea />
+          <Market />
           <WalletMain />
           <Songs />
         </Page>

@@ -1,56 +1,72 @@
-// Wires config, store, profile and modules into a running core node (legacy `boot.rs`).
+// Wires config, store, profile and modules into a running core node.
 //
 // The module packages are reached only through a `ModuleCatalog` (see `modules.ts`), so this
 // file stays testable with fake modules and an in-memory store.
 
-import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
-import { DirectiveModule, DirectiveService } from "@miyoria/directive";
+import { authTables } from "@miyoria/auth";
+import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
+import { initiativeTables } from "@miyoria/brain/selfhost";
+import { clusterTables } from "@miyoria/cluster";
+import {
+  BountyStoreKey,
+  CoinLedgerStoreKey,
+  EconomyDocsKey,
+  economyTables,
+  FortuneStoreKey,
+  LedgerStatsKey,
+} from "@miyoria/economy";
+import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { heartTables } from "@miyoria/heart/person";
+import { ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
+import { memoryTables } from "@miyoria/memory/memory";
+import { notesTables } from "@miyoria/memory/notes";
+import { transcriptTables } from "@miyoria/memory/transcript";
+import { cardsTables } from "@miyoria/play/cards";
+import { karaokeTables } from "@miyoria/play/karaoke";
+import { marketTables } from "@miyoria/play/market";
 import {
   type Config,
+  ConfigError,
   EventBus,
   errorMessage,
   getLogger,
   type Module,
+  ModuleSettingsKey,
   ServiceRegistry,
   Supervisor,
   SupervisorKey,
-} from "@miyoria/kernel";
-import type { Profile } from "@miyoria/profile";
-import { ReplayRecorderModule } from "@miyoria/replay";
+} from "@miyoria/runtime/kernel";
+import type { Profile } from "@miyoria/runtime/profile";
+import { ReplayRecorderModule } from "@miyoria/runtime/replay-log";
 import {
+  ArtifactAttachments,
+  ArtifactStoreKey,
   AuditLogKey,
   AuthStoreKey,
-  BountyStoreKey,
-  CoinLedgerStoreKey,
-  DealStoreKey,
   DecisionLogKey,
-  EconomyDocsKey,
-  FortuneStoreKey,
-  GoalStoreKey,
   IdentityStoreKey,
-  LedgerStatsKey,
   MemberCardStoreKey,
   MemoryRecordStoreKey,
   MessageLogKey,
-  ModuleStateStoreKey,
   PeopleStoreKey,
   PersonaOverrideStoreKey,
+  type PersonHandleDirectory,
   ProfileDataStoreKey,
-  RelationshipStoreKey,
   SettingsStoreKey,
   type Store,
   StoredHandleDirectory,
   StoreKey,
+  type StorePlugin,
 } from "@miyoria/store";
-import { ToolRegistry, ToolRegistryKey } from "@miyoria/tools";
 import {
   ActuatorExecutorKey,
-  customEvent,
+  AttachmentSourceKey,
   DirectivesKey,
+  Events,
   HandleDirectoryKey,
+  is,
   type JsonValue,
   KERNEL_MODULE,
-  PipelineKey,
   PlatformHistories,
   PlatformHistoriesKey,
   PlatformSinks,
@@ -59,18 +75,42 @@ import {
   ProfileIdKey,
   PromptContributors,
   PromptContributorsKey,
-  SYSTEM_SHUTDOWN_TOPIC,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
-import { moduleEnabled, NEEDS_TOKEN } from "./module-ids.js";
-import { RecorderModule } from "./recorder.js";
-import { databaseUrl, loadProfile, pipeline, resolveDatabaseUrl } from "./settings.js";
+import { CLUSTER_GUARDS } from "./cluster-guards.js";
+import {
+  moduleEnabled,
+  NEEDS_TOKEN,
+  REQUIRED_MODULE_REASONS,
+  REQUIRED_MODULES,
+} from "./module-ids.js";
+import { ModuleSettings } from "./module-settings.js";
+import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
 
 /** Source of the gate's `gate.decision` events. */
 const ACTIONS_MODULE = ActionsModule.ID;
 const DIRECTIVE_MODULE = DirectiveModule.ID;
+
+/**
+ * The plugins whose tables live in the store (docs/design/v5-data.md §3): the catalog opens the
+ * store with them, so their migrations run at start whether the module is on or off.
+ */
+export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
+  authTables,
+  cardsTables,
+  clusterTables,
+  directiveTables,
+  economyTables,
+  heartTables,
+  initiativeTables,
+  karaokeTables,
+  marketTables,
+  memoryTables,
+  notesTables,
+  transcriptTables,
+];
 
 /** What the module factories get. */
 export interface ModuleDeps {
@@ -97,7 +137,7 @@ export interface ExtensionDiscovery {
 /** How the core reaches the module packages. `modules.ts` has the real one. */
 export interface ModuleCatalog {
   openStore(url: string): Promise<Store>;
-  /** `llm` ... `stage.link` in legacy boot order (without `recorder`, Discord, API). */
+  /** `llm` ... `stage.link` in legacy boot order (without Discord, API). */
   coreModules(deps: ModuleDeps): Promise<Module[]>;
   discord(deps: ModuleDeps): Module;
   api(deps: ModuleDeps): Module;
@@ -107,15 +147,6 @@ export interface ModuleCatalog {
    * `ActiveProfileKey`), provided right before the modules are built.
    */
   provideServices?(services: ServiceRegistry, deps: ModuleDeps): void;
-  /**
-   * One-time repairs of stored data that belong to module packages (idempotent), run after the
-   * store is open and before any module starts.
-   */
-  migrateStoredData?(
-    store: Store,
-    profile: ProfileId,
-    handles: StoredHandleDirectory | null,
-  ): Promise<void>;
 }
 
 export interface CoreOptions {
@@ -143,6 +174,8 @@ export class Core {
     readonly store: Store,
     readonly profileDisplayName: string,
     readonly profileId: ProfileId,
+    /** The panel's settings layer; `null` in a core built without one. */
+    readonly settings: ModuleSettings | null = null,
   ) {}
 
   get bus(): EventBus {
@@ -177,7 +210,8 @@ export class Core {
   /** Stops every module and closes the store. */
   async stop(): Promise<void> {
     // What modules say from here on is the core going down, not something that happened.
-    this.bus.publish(KERNEL_MODULE, customEvent(SYSTEM_SHUTDOWN_TOPIC, {}));
+    this.bus.publish(KERNEL_MODULE, Events.SystemShutdown, {});
+    this.settings?.close();
     await this.supervisor.stopAll();
     this.#persist.abort();
     await this.#persistTask;
@@ -194,6 +228,14 @@ export async function buildCoreWith(
   options: CoreOptions = {},
 ): Promise<Core> {
   const baseDir = options.baseDir ?? process.cwd();
+  for (const id of REQUIRED_MODULES) {
+    if (moduleEnabled(config, id)) continue;
+    throw new ConfigError(
+      "invalid",
+      `invalid config at \`modules.${id}.enabled\`: the \`${id}\` module cannot be disabled; ${REQUIRED_MODULE_REASONS[id]}`,
+      `modules.${id}.enabled`,
+    );
+  }
   const bus = new EventBus();
   const services = new ServiceRegistry();
   const supervisor = new Supervisor({ bus, services });
@@ -209,35 +251,51 @@ export async function buildCoreWith(
   }
 
   const k = KERNEL_MODULE;
-  services.provide(k, PipelineKey, { pipeline: pipeline(config) });
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);
+  // What the panel changes of a module's config, laid over the file (docs/design/v5-settings.md).
+  const settings = new ModuleSettings({
+    config,
+    revisions: store.moduleState.revisions,
+    supervisor,
+    guard: () => {
+      for (const guard of CLUSTER_GUARDS) {
+        const state = guard(services);
+        if (typeof state === "string") return state;
+      }
+      return null;
+    },
+  });
+  services.provide(k, ModuleSettingsKey, settings);
   services.provide(k, StoreKey, store);
   services.provide(k, SettingsStoreKey, store.settings);
   services.provide(k, DecisionLogKey, store.decisions);
   services.provide(k, PersonaOverrideStoreKey, store.personaOverrides);
   services.provide(k, MessageLogKey, store.messages);
   services.provide(k, MemberCardStoreKey, store.cards);
-  services.provide(k, CoinLedgerStoreKey, store.coins);
-  services.provide(k, LedgerStatsKey, store.coins);
-  services.provide(k, EconomyDocsKey, store.economyDocs);
-  services.provide(k, DealStoreKey, store.deals);
-  services.provide(k, FortuneStoreKey, store.fortunes);
-  services.provide(k, GoalStoreKey, store.goals);
-  services.provide(k, BountyStoreKey, store.bounties);
+  // The economy plugin's tables (`@miyoria/economy` `tables.ts`).
+  const economy = store.plugin(economyTables);
+  services.provide(k, CoinLedgerStoreKey, economy.ledger);
+  services.provide(k, LedgerStatsKey, economy.ledger);
+  services.provide(k, EconomyDocsKey, economy.docs);
+  services.provide(k, FortuneStoreKey, economy.fortunes);
+  services.provide(k, BountyStoreKey, economy.bounties);
   services.provide(k, PeopleStoreKey, store.people);
-  services.provide(k, MemoryRecordStoreKey, store.memories);
-  services.provide(k, RelationshipStoreKey, store.relationships);
+  // The memory plugin's tables (`@miyoria/memory/memory` `tables.ts`).
+  services.provide(k, MemoryRecordStoreKey, store.plugin(memoryTables));
   services.provide(k, IdentityStoreKey, store.identity);
-  services.provide(k, AuthStoreKey, store.auth);
+  services.provide(k, AuthStoreKey, store.plugin(authTables).store);
   services.provide(k, AuditLogKey, store.audit);
-  services.provide(k, ModuleStateStoreKey, store.moduleState);
+  if (store.artifacts) {
+    services.provide(k, ArtifactStoreKey, store.artifacts);
+    services.provide(k, AttachmentSourceKey, new ArtifactAttachments(store.artifacts));
+  }
   services.provide(k, ProfileDataStoreKey, store.profileData);
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
-  let handles: StoredHandleDirectory | null = null;
+  let handles: PersonHandleDirectory | null = null;
   try {
-    handles = await StoredHandleDirectory.open(store.settings);
+    handles = store.handles ?? (await StoredHandleDirectory.open(store.settings));
     handles.syncPeople(await store.people.all());
     services.provide(k, HandleDirectoryKey, handles);
   } catch (error) {
@@ -251,7 +309,7 @@ export async function buildCoreWith(
   const actuators = new ActuatorRegistry({
     services,
     tools,
-    publish: (event) => bus.publish(ACTIONS_MODULE, event),
+    publish: bus.publisher(ACTIONS_MODULE),
   });
   services.provide(k, ActuatorRegistryKey, actuators);
   services.provide(k, ActuatorExecutorKey, actuators);
@@ -263,21 +321,15 @@ export async function buildCoreWith(
   const profileDisplayName = profile.displayName;
   const profileId = profile.id;
   services.provide(k, ProfileIdKey, profileId);
-  // Lessons, recaps and agenda text written with per-call codes before handles were stable are
-  // repaired before any module caches them (idempotent; resolves what the record itself says,
-  // drops the rest).
-  try {
-    await catalog.migrateStoredData?.(store, profileId, handles);
-  } catch (error) {
-    log.warn({ err: errorMessage(error) }, "cannot repair per-call codes in stored text");
-  }
+  // One database belongs to one character: a memory looked up by id reports this profile.
+  store.plugin(memoryTables).forProfile(profileId);
 
   // The rules hold from before the first module starts, and with the `directive` module off.
   const directives = new DirectiveService({
     services,
-    store: store.directives,
+    store: store.plugin(directiveTables),
     profile: profileId,
-    publish: (event) => bus.publish(DIRECTIVE_MODULE, event),
+    publish: bus.publisher(DIRECTIVE_MODULE),
   });
   await directives.refresh();
   services.provide(k, DirectivesKey, directives);
@@ -287,7 +339,6 @@ export async function buildCoreWith(
 
   const modules: Module[] = [
     ...(await catalog.coreModules(deps)),
-    new RecorderModule(store, profileId),
     // Opt-in (`[modules.replay] record = true`): what she perceives, for `pnpm replay`.
     new ReplayRecorderModule({ baseDir }),
   ];
@@ -301,14 +352,17 @@ export async function buildCoreWith(
     const id = module.manifest.id;
     const section = config.module(id);
     let enabled = moduleEnabled(config, id);
-    // A module disabled at runtime (command / panel) stays disabled.
-    const saved = await store.moduleState.get(id);
+    const required = REQUIRED_MODULES.includes(id);
+    // A module disabled at runtime (command / panel) stays disabled. A required one cannot be
+    // disabled, so whatever an older build remembered about it is not followed.
+    const saved = required ? null : await store.moduleState.get(id);
     if (saved !== null) enabled = enabled && saved;
     if (NEEDS_TOKEN.includes(id) && tokenMissing(section.config)) {
       log.warn({ module: id }, "token is empty; module disabled");
       enabled = false;
     }
-    await supervisor.register(module, section.config, enabled);
+    const effective = settings.boot(id, section.config, module.manifest.configSchema);
+    await supervisor.register(module, effective, enabled, { required });
   }
 
   // Each extension is a module of its own (`ext.<id>`), after the host.
@@ -327,7 +381,7 @@ export async function buildCoreWith(
     log.warn({ err: errorMessage(error) }, "extension discovery failed");
   }
 
-  const core = new Core(supervisor, store, profileDisplayName, profileId);
+  const core = new Core(supervisor, store, profileDisplayName, profileId, settings);
   core.persistModuleState((id) => moduleEnabled(config, id));
   return core;
 }
@@ -348,10 +402,10 @@ async function persistModuleState(
   wanted: (module: string) => boolean,
   signal: AbortSignal,
 ): Promise<void> {
-  const sub = bus.subscribe("system.module.state", { signal });
+  const sub = bus.subscribe(Events.SystemModuleState.type, { signal });
   for await (const env of sub) {
-    if (env.event.type !== "module_state_changed") continue;
-    const { module, state } = env.event.data;
+    if (!is(Events.SystemModuleState, env)) continue;
+    const { module, state } = env.data;
     let enabled: boolean;
     if (state === "disabled") {
       if (!wanted(module)) continue;
@@ -359,6 +413,10 @@ async function persistModuleState(
     } else if (state === "running") enabled = true;
     else continue;
     try {
+      // A module that runs with nothing remembered about it follows the config file already:
+      // there is nothing to record, and recording it would write one config revision per module
+      // at every first start.
+      if (enabled && (await store.moduleState.get(module)) !== false) continue;
       await store.moduleState.set(module, enabled);
     } catch (error) {
       log.warn({ module, err: errorMessage(error) }, "failed to persist module state");

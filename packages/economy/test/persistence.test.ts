@@ -1,15 +1,9 @@
 // What economy 2.0 keeps must survive a restart (documents in the store, not in memory), the party
 // games' coins are paid once per game, and the health table reads the real ledger.
 
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/actions";
-import { Supervisor } from "@miyoria/kernel";
-import {
-  CoinLedgerStoreKey,
-  EconomyDocsKey,
-  LedgerStatsKey,
-  PeopleStoreKey,
-  SqliteStore,
-} from "@miyoria/store";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { Supervisor } from "@miyoria/runtime/kernel";
+import { PeopleStoreKey, SqliteStore } from "@miyoria/store";
 import {
   AuthorizerKey,
   type JsonValue,
@@ -19,7 +13,9 @@ import {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyModule } from "../src/module.js";
+import { CoinLedgerStoreKey, EconomyDocsKey, LedgerStatsKey } from "../src/records.js";
 import { EconomyKey } from "../src/types.js";
+import { economyOf, ledgerOf, walletOf } from "./ledger.js";
 import { ALICE, BOB, balance, rig as baseRig, CAROL, DAVE, DAY, fund, TEXT } from "./rig.js";
 
 /** Quests, achievements and plain play rewards are not what these sums are about. */
@@ -56,21 +52,29 @@ describe("a restart", () => {
     expect(await balance(second, ALICE)).toBe(70);
   });
 
-  it("keeps the collection: what was drawn is still owned", async () => {
-    const series = [
-      { id: "a", label: "甲", title: "甲家", items: [{ id: "a_n", label: "甲N", rarity: "N" }] },
-    ];
-    const first = await rig({ collection_series: series }, { durable: true });
-    await fund(first, ALICE, 500);
-    await first.economy.v2.draw(ALICE, "d1");
-    const owned = (await first.economy.v2.album(ALICE)).series[0]?.owned_distinct;
-    expect(owned).toBe(1);
+  it("keeps documents: a collectible drawn before the draw was removed is still there", async () => {
+    const first = await rig({}, { durable: true });
+    const at = new Date().toISOString();
+    expect(
+      await first.economy.docs().create({
+        id: "item:old",
+        kind: "item",
+        owner: ALICE,
+        status: "held",
+        version: 1,
+        data: { item: "glasses_black", rarity: "N", source: "draw" },
+        created_at: at,
+        updated_at: at,
+      }),
+    ).toBe(true);
+    const held = (r: Awaited<ReturnType<typeof rig>>) =>
+      r.economy.docs().list("p", "item", { owners: [ALICE], limit: 10 });
 
-    const second = await rig({ collection_series: series }, { durable: true, store: first.store });
-    expect((await second.economy.v2.album(ALICE)).series[0]?.owned_distinct).toBe(1);
+    const second = await rig({}, { durable: true, store: first.store });
+    expect((await held(second)).map((d) => d.id)).toEqual(["item:old"]);
     // Without the store's documents (the in-memory fallback) a restart would forget it.
-    const amnesia = await rig({ collection_series: series }, { store: first.store });
-    expect((await amnesia.economy.v2.album(ALICE)).series[0]?.owned_distinct).toBe(0);
+    const amnesia = await rig({}, { store: first.store });
+    expect(await held(amnesia)).toEqual([]);
   });
 
   it("starts the module with the store's documents and provides what others call", async () => {
@@ -78,12 +82,12 @@ describe("a restart", () => {
     try {
       const sup = new Supervisor();
       const s = sup.services;
-      s.provide("kernel", CoinLedgerStoreKey, store.coins);
+      s.provide("kernel", CoinLedgerStoreKey, ledgerOf(store));
       s.provide("kernel", PeopleStoreKey, store.people);
       s.provide("kernel", SocialSignalsKey, { attitude: () => ({ blocked: false }) as never });
       s.provide("kernel", AuthorizerKey, { allows: () => true } as never);
-      s.provide("kernel", EconomyDocsKey, store.economyDocs);
-      s.provide("kernel", LedgerStatsKey, store.coins);
+      s.provide("kernel", EconomyDocsKey, economyOf(store).docs);
+      s.provide("kernel", LedgerStatsKey, ledgerOf(store));
       s.provide("app", ActuatorRegistryKey, new ActuatorRegistry({ services: s, builtins: false }));
       await sup.register(new EconomyModule("p"), {}, true);
       await sup.startAll();
@@ -121,7 +125,7 @@ describe("party rewards", () => {
     );
     expect(await balance(r, ALICE)).toBe(12);
     expect(await balance(r, BOB)).toBe(8);
-    const rows = await r.store.coins.entries("p", [ALICE], { limit: 9 });
+    const rows = await ledgerOf(r.store).entries("p", walletOf(r.store, ALICE), { limit: 9 });
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ reason: "play", delta: 12, idem_key: "play:party:party:1" });
 

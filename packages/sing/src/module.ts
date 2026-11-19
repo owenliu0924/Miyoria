@@ -1,28 +1,38 @@
 import { resolve } from "node:path";
-import { actuatorsFor } from "@miyoria/actions";
 import { CommandMount } from "@miyoria/commands";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import {
   defineManifest,
   HEALTHY,
   type Health,
   type Module,
+  type ModuleCard,
+  type ModuleCardFact,
   type ModuleContext,
-} from "@miyoria/kernel";
+  type ServiceLookup,
+} from "@miyoria/runtime/kernel";
 import {
+  Events,
+  type KaraokeWorker,
+  KaraokeWorkerKey,
   type PromptContributors,
   PromptContributorsKey,
   SongClipsKey,
+  SongTicketsKey,
   SpeechPauseKey,
+  safeName,
   serviceKey,
   TaskSteerKey,
   VoiceFloorKey,
   VoicePlayerKey,
 } from "@miyoria/types";
 import { singCapabilities } from "./actions.js";
-import { HttpSingWorker, type SingWorker } from "./client.js";
+import { type GpuContext, HttpSingWorker, type SingWorker } from "./client.js";
 import { SingClips } from "./clips.js";
 import { registerCommands } from "./commands.js";
 import { SingConfigSchema } from "./config.js";
+import type { Endpoint, EndpointSource, EndpointsOption } from "./endpoints.js";
+import { type FailoverEntry, FailoverSingWorker } from "./failover.js";
 import { PROMPT_KEY, SingPrompt } from "./prompt.js";
 import { ROOM_PROMPT_KEY, VoiceRoom, VoiceRoomPrompt } from "./room.js";
 import { Singer } from "./singer.js";
@@ -33,20 +43,41 @@ export const SingerKey = serviceKey<Singer>("Singer");
 interface Running {
   singer: Singer;
   clips: SingClips | null;
-  worker: SingWorker;
+  worker: FailoverSingWorker;
   commands: CommandMount;
   prompts: PromptContributors | null;
   capabilities: (() => void)[];
   /** Removes the steer route again. */
   unroute: (() => void) | null;
+  /** Stops following the registry's `sing` endpoints. */
+  unwatch: (() => void) | null;
+}
+
+/** Makes the client of one song worker (tests replace the HTTP client). */
+export type SingWorkerFactory = (
+  endpoint: Endpoint,
+  timeoutMs: number,
+  source: EndpointSource,
+) => SingWorker;
+
+/**
+ * Where else who listens and which songs are needed now go, each time the song worker is told
+ * (every poll while a song is prepared): Core's wiring sends them to the hosts' GPU arbiters
+ * (`cluster.context`), so this package needs no cluster package.
+ */
+export type GpuContextSink = (services: ServiceLookup, context: GpuContext) => void;
+
+/** What stays the same when a worker restarts elsewhere: its host and service. */
+function endpointId(endpoint: Endpoint): string {
+  return `${endpoint.host}/${endpoint.service}`;
 }
 
 /**
- * Module `sing`: song requests sung in her voice. The song worker (`workers/sing`, default
- * `http://127.0.0.1:8005`) prepares covers; this module keeps the set list, offers ready songs
- * to her mind, plays them through the voice node (`VoicePlayerKey`) with lyrics cues and the
- * vocal stem as the lip-sync track, and holds the voice channel while a song plays
- * (`VoiceFloorKey`).
+ * Module `sing`: song requests sung in her voice. The song workers (`workers/sing`, the `sing`
+ * endpoints of Core's registry, in its order) prepare covers; this module keeps the set list,
+ * offers ready songs to her mind, plays them through the voice node (`VoicePlayerKey`) with
+ * lyrics cues and the vocal stem as the lip-sync track, and holds the voice channel while a song
+ * plays (`VoiceFloorKey`).
  *
  * Also provides `SongClips` (`clips.ts`): short pieces of the songs she covered, played in voice
  * for the party game that guesses songs without being her singing.
@@ -60,32 +91,94 @@ interface Running {
 export class SingModule implements Module {
   static readonly ID = "sing";
   readonly manifest = defineManifest(SingModule.ID, "Singing", {
+    icon: "music",
+    category: "play",
     description: "Song requests: AI covers in her voice, sung in voice with lyrics",
-    optional: ["voice.link", "mind", "queue", "commands", "actions", "agent", "activity"],
+    // `cluster`: its registry is where the song workers of other machines are listed, so it
+    // starts first (the list is asked again before every use as well, see `refresh` below).
+    optional: [
+      "cluster",
+      "voice.link",
+      "arbiter",
+      "queue",
+      "commands",
+      "actions",
+      "agent",
+      "activity",
+    ],
     configSchema: SingConfigSchema,
   });
-  readonly #worker: ((url: string, timeoutMs: number) => SingWorker) | null;
+  readonly #worker: SingWorkerFactory | null;
   readonly #baseDir: string;
+  readonly #endpoints: EndpointsOption | null;
+  readonly #context: GpuContextSink | null;
   #running: Running | null = null;
 
   /**
    * `worker`: replaces the HTTP client (tests). `baseDir`: what a relative `video_dir` is
-   * relative to (the directory of `miyoria.toml`; default the working directory).
+   * relative to (the directory of `miyoria.toml`; default the working directory). `endpoints`:
+   * Core's endpoint registry, where the song workers are. `context`: where else the audience
+   * context goes (`GpuContextSink`).
    */
   constructor(
-    worker: ((url: string, timeoutMs: number) => SingWorker) | null = null,
-    options: { baseDir?: string } = {},
+    worker: SingWorkerFactory | null = null,
+    options: { baseDir?: string; endpoints?: EndpointsOption; context?: GpuContextSink } = {},
   ) {
     this.#worker = worker;
     this.#baseDir = options.baseDir ?? process.cwd();
+    this.#endpoints = options.endpoints ?? null;
+    this.#context = options.context ?? null;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
     const cfg = ctx.config(SingConfigSchema);
     const timeoutMs = cfg.timeout_secs * 1000;
-    const worker = this.#worker?.(cfg.url, timeoutMs) ?? new HttpSingWorker(cfg.url, timeoutMs);
+    const source = this.#endpoints?.(ctx.services) ?? null;
+    // The workers are the registry's `sing` endpoints, followed as they come and go. A client is
+    // made again only when its endpoint changed (another address, another token).
+    const clients = new Map<string, { key: string; endpoint: Endpoint; worker: SingWorker }>();
+    const worker = new FailoverSingWorker([], {
+      retryMs: cfg.fallback_retry_secs * 1000,
+      now: () => ctx.clock.now(),
+      failed: (id, error) => {
+        const client = clients.get(id);
+        if (client !== undefined) source?.failed(client.endpoint, error);
+      },
+      // The registry is looked up again at every use: one that was not there when this module
+      // started (the `cluster` module restarted, or started later) is found then.
+      refresh: () => follow(),
+    });
+    const follow = () => {
+      if (source === null) return;
+      const entries: FailoverEntry[] = source
+        .candidates("sing", { ignoreResting: true })
+        .map((endpoint) => {
+          const id = endpointId(endpoint);
+          const key = JSON.stringify([endpoint.via, endpoint.url, endpoint.headers]);
+          let client = clients.get(id);
+          if (client === undefined || client.key !== key) {
+            const made =
+              this.#worker?.(endpoint, timeoutMs, source) ??
+              new HttpSingWorker(endpoint, timeoutMs, source);
+            client = { key, endpoint, worker: made };
+            clients.set(id, client);
+          } else client.endpoint = endpoint;
+          return { id, name: endpoint.url, url: endpoint.url, worker: client.worker };
+        });
+      worker.update(entries);
+    };
+    follow();
+    const unwatch = source?.watch("sing", follow) ?? null;
+    if (source === null) ctx.log.warn("no endpoint registry: there is no song worker");
     const videoDir = cfg.video ? resolve(this.#baseDir, cfg.video_dir) : null;
-    const singer = new Singer(cfg, ctx, worker, videoDir);
+    const sink = this.#context;
+    const singer = new Singer(
+      cfg,
+      ctx,
+      worker,
+      videoDir,
+      sink === null ? null : (context) => sink(ctx.services, context),
+    );
     const actuators = actuatorsFor(ctx);
     const capabilities = singCapabilities(singer, cfg.permissions).map((c) =>
       actuators.register(c),
@@ -110,6 +203,10 @@ export class SingModule implements Module {
     ctx.provide(SingerKey, singer);
     ctx.provide(VoiceFloorKey, singer);
     ctx.provide(SpeechPauseKey, singer);
+    // The market's pass asks whether a charged ticket's song is still in the set list.
+    ctx.provide(SongTicketsKey, { holds: (key) => singer.holdsTicket(key) });
+    // Karaoke prepares its songs on the same workers, through the same failover.
+    ctx.provide(KaraokeWorkerKey, karaokeWorker(worker));
     let clips: SingClips | null = null;
     if (cfg.clips) {
       clips = new SingClips({
@@ -127,17 +224,18 @@ export class SingModule implements Module {
     }
 
     const events = ctx.subscribe([
-      "voice.joined",
-      "voice.left",
-      "voice.participants",
-      "voice.playback",
-      "agent.turn.completed",
-      "queue.item_activated",
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
+      Events.VoicePlaybackEvent.type,
+      Events.AgentTurnCompleted.type,
+      Events.ArbiterDecided.type,
+      Events.QueueItemActivated.type,
     ]);
     ctx.spawn("events", async () => {
       for await (const env of events) {
-        room.onEvent(env.event);
-        singer.onEvent(env.event);
+        room.onEvent(env);
+        singer.onEvent(env);
       }
     });
     await singer.restore();
@@ -157,7 +255,7 @@ export class SingModule implements Module {
           },
         }),
       }) ?? null;
-    this.#running = { singer, clips, worker, commands, prompts, capabilities, unroute };
+    this.#running = { singer, clips, worker, commands, prompts, capabilities, unroute, unwatch };
   }
 
   async health(): Promise<Health> {
@@ -167,10 +265,50 @@ export class SingModule implements Module {
     return why === null ? HEALTHY : { status: "degraded", reason: why };
   }
 
+  /**
+   * The set list (songs still open, the ones being prepared), what she is singing now, and whether
+   * a song worker takes work (the failover's last word on each, never a request from here). While
+   * a song plays, an action stops it (`sing.stop`, through the gate).
+   */
+  async card(): Promise<ModuleCard> {
+    const running = this.#running;
+    if (!running) return { facts: [] };
+    const { singer, worker } = running;
+    const playing = singer.playing();
+    const facts: ModuleCardFact[] = [
+      { label: "歌單", value: singer.list.open().length, unit: "首" },
+      { label: "準備中", value: singer.list.preparing().length, unit: "首" },
+    ];
+    if (playing !== null) {
+      facts.push({
+        label: "正在唱",
+        value: safeName(playing.song?.title?.trim() || playing.query, 40),
+      });
+    }
+    facts.push({ label: "worker", value: worker.current() === null ? "連不上" : "連得上" });
+    return {
+      facts,
+      ...(playing === null
+        ? {}
+        : {
+            actions: [
+              {
+                id: "stop",
+                label: "停下這首",
+                confirm: "停下她正在唱的歌?",
+                capability: "sing.stop",
+                args: {},
+              },
+            ],
+          }),
+    };
+  }
+
   async stop(): Promise<void> {
     const running = this.#running;
     this.#running = null;
     if (!running) return;
+    running.unwatch?.();
     await running.singer.save();
     running.singer.close();
     running.commands.detach();
@@ -179,4 +317,50 @@ export class SingModule implements Module {
     running.unroute?.();
     for (const unregister of running.capabilities) unregister();
   }
+}
+
+/**
+ * The karaoke port over the song workers (docs/design/karaoke.md §3): a job with
+ * `purpose: "karaoke"`, its state, and its files from the worker that made it; the pitch of a
+ * singer's recording from any worker that answers.
+ */
+export function karaokeWorker(worker: SingWorker): KaraokeWorker {
+  return {
+    prepare: (query, signal) =>
+      worker.submit(
+        {
+          ...(query.url === undefined ? {} : { url: query.url }),
+          ...(query.query === undefined ? {} : { query: query.query }),
+          ...(query.title === undefined ? {} : { title: query.title }),
+          ...(query.artist === undefined ? {} : { artist: query.artist }),
+          force: query.force ?? false,
+          purpose: "karaoke",
+          ...(query.lyrics === undefined ? {} : { karaoke_lyrics: query.lyrics }),
+          ...(query.video === undefined ? {} : { karaoke_video: query.video }),
+        },
+        signal,
+      ),
+    job: (id, signal) => worker.job(id, signal),
+    cancel: (id) => worker.cancel(id),
+    file: (song, name, dest, signal) => worker.karaokeFile(song, name, dest, signal),
+    key: (song, semitones, signal) => worker.karaokeKey(song, semitones, signal),
+    voice: (voice, signal) => worker.karaokeVoice(voice.bytes, voice.type, signal),
+    stream: (request, signal) => worker.karaokeStream(request, signal),
+  };
+}
+
+/**
+ * `url`, then `fallback_urls`, each address once (a trailing slash does not make it another): the
+ * static registry entries Core's wiring makes of them, in this order.
+ */
+export function workerUrls(url: string | undefined, fallbacks: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const u of url === undefined ? fallbacks : [url, ...fallbacks]) {
+    const key = u.replace(/\/+$/, "").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(u);
+  }
+  return out;
 }

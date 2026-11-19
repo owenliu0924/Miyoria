@@ -1,16 +1,21 @@
 // The member view (docs/design/v3-architecture.md §17.1): 她眼中的你. A person logged in with
 // Discord sees what she has of them, and nothing of anyone else.
 //
+// The routes but the export are on the route table (`memberRpc`); `GET /api/member/export` is a file
+// and stays a plain route.
+//
 // * `GET /api/member/session`: who is logged in, as far as they need to see it.
 // * `GET /api/member/me`: how she calls them, the relationship in words, shared memories, their
 //   own song requests.
 // * `GET /api/member/export`: the same as a file, with what `/me memory export` would give, minus
 //   what belongs to others.
 // * `POST /api/member/forget` `{ confirm: true }`: `/me memory forget all`.
-// * `POST /api/member/songs` `{ query }`: a song request, as if said in chat.
-// * `GET /api/member/card`, `POST /api/member/card` `{}`: the card she gives them, the card view
-//   below frozen with a serial (`card.ts`).
-// * `/api/member/wallet`, `checkin`, `feed`, `letter`, `expression`, `frame`: their coins
+// * `POST /api/member/songs` `{ query, priority? }`: a song request, as if said in chat; with
+//   `priority`, paid with a song priority ticket (`409` with the reason when it cannot be).
+// * `GET /api/member/card`, `POST /api/member/card` `{ foil? }`: the daily card she gives them,
+//   the card view below frozen with a serial and the parts drawn onto it (`card.ts`); the rest of
+//   their cards (the dex, the pity, the wishlist) is `cards-routes.ts`.
+// * `/api/member/wallet`, `checkin`, `feed`, `frame`: their coins
 //   (`wallet.ts`). Forgetting keeps the wallet: coins are not her memory of them.
 //
 // The person comes from the session and from nowhere else: no route takes an id, a query parameter
@@ -20,63 +25,81 @@
 // A blocked person gets the answers of a stranger she has never met, from every route, so nothing
 // on the page says they are blocked: an empty view, a forget that finds nothing, a refused song.
 
-import { ActuatorRegistryKey } from "@miyoria/actions";
+import type {
+  IssueCardRequest,
+  IssuedCard,
+  IssuedFortune,
+  MemberBond,
+  MemberCard,
+  MemberCards,
+  MemberDay,
+  MemberForgetResult,
+  MemberMemory,
+  MemberSession,
+  MemberSong,
+  MemberView,
+  SongAccepted,
+} from "@miyoria/contracts/api";
+import type { WalletExport } from "@miyoria/economy";
+import { ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { BLOCKED_TAG, type HeartPerson, hasTag, publicBond } from "@miyoria/heart/person";
 import {
   FORGET_KEEPS,
   FORGET_REMOVES,
   MemoryEngineKey,
   ownMemories,
   visibleToSelf,
-} from "@miyoria/memory";
-import { SingerKey, type SongEntry } from "@miyoria/sing";
+} from "@miyoria/memory/memory";
+import { SingerKey, type SongEntry, SongPriorityError } from "@miyoria/sing";
 import { type MemoryRecord, MessageLogKey, PeopleStoreKey, type Person } from "@miyoria/store";
 import {
   type AccountRef,
-  AffectStateKey,
   AuthorizerKey,
   accountRefString,
+  bondBand,
   ephemeralHandlesIn,
+  familiarityBand,
+  HandleDirectoryKey,
   holdsBack,
   inspectInput,
   mentionsAnother,
   type NameSplit,
-  type PersonCard,
   Principals,
   SocialSignalsKey,
   sameAccount,
   splitNames,
+  tierStanding,
   toTimestamp,
+  trustBand,
 } from "@miyoria/types";
-import { z } from "zod";
-import {
-  type CardHolder,
-  canIssue,
-  cardsOf,
-  deleteCards,
-  issueCard,
-  memberCards,
-  posesFor,
-  rerollCard,
-} from "./card.js";
+import { type CardHolder, cardsOf, deleteCards, issueCard, memberCards } from "./card.js";
+import { keepsakeFor } from "./card-faces.js";
 import { type CardWords, writeCard } from "./card-words.js";
+import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { readJson } from "./extract.js";
 import { deleteFortunes, fortunesOf } from "./fortune.js";
+import { heartRows } from "./heart-rows.js";
 import { dateOf, localDay, tooMany } from "./public.js";
-import { json, type Route } from "./route.js";
+import type { Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
-import type {
-  MemberCard,
-  MemberDay,
-  MemberExport,
-  MemberForgetResult,
-  MemberMemory,
-  MemberSession,
-  MemberSong,
-  MemberView,
-} from "./types.js";
 import { keyOf, walletExport } from "./wallet.js";
+
+/** `GET /api/member/export` (a file, so not on the route table). */
+export interface MemberExport {
+  exported_at: string;
+  card: MemberCard;
+  memories: (MemberMemory & { derived_from_you: boolean })[];
+  /** Memories left out because they hold someone else's name or words, or her own notes. */
+  withheld: number;
+  songs: MemberSong[];
+  /** The cards she gave them, newest first. */
+  cards: IssuedCard[];
+  /** Their coins: the balance and every line of the ledger, newest first. */
+  wallet: WalletExport;
+  /** The fortune slips she wrote for them, newest first. */
+  fortunes: IssuedFortune[];
+}
 
 /** Nodes of `/me memory`: a role that may not use those may not use these. */
 const NODE_SHOW = "memory.self.show";
@@ -90,48 +113,18 @@ const MAX_ACTIVITY_LINES = 50_000;
 
 /** How many memories the page shows, newest first. */
 const MAX_SHOWN_MEMORIES = 30;
-const MAX_QUERY_CHARS = 120;
 const MAX_NAME_CHARS = 64;
 
 /** The one answer to a song the page will not pass on, whatever the reason. */
 const SONG_REFUSED = "目前沒辦法點這首歌";
 
-const SongRequestSchema = z.strictObject({
-  query: z.string().trim().min(1).max(MAX_QUERY_CHARS),
-});
-const ForgetSchema = z.strictObject({ confirm: z.literal(true) });
-const CardSchema = z.strictObject({
-  pose: z.string().max(16).optional(),
-  foil: z.boolean().optional(),
-});
-const RerollSchema = z.strictObject({});
-
 // ---- bands ----------------------------------------------------------------------------------
 
-/** Words, never numbers: a number on a page is something to farm (§17.1). */
-export function affinityBand(value: number): string {
-  if (value <= -50) return "很差";
-  if (value <= -15) return "不太好";
-  if (value < 15) return "普通";
-  if (value < 45) return "不錯";
-  if (value < 75) return "很好";
-  return "非常好";
-}
-
-export function trustBand(value: number): string {
-  if (value < 15) return "還不信任";
-  if (value < 40) return "有點信任";
-  if (value < 70) return "信任";
-  return "很信任";
-}
-
-export function familiarityBand(value: number): string {
-  if (value < 3) return "陌生";
-  if (value < 10) return "見過幾次";
-  if (value < 30) return "有點熟";
-  if (value < 60) return "熟";
-  return "很熟";
-}
+/**
+ * Words, never numbers: a number on a page is something to farm (§17.1). The bond's words cover
+ * the whole scale up to 1000, and live with trust's and familiarity's in `@miyoria/types`.
+ */
+export { bondBand, familiarityBand, trustBand };
 
 // ---- who is asking --------------------------------------------------------------------------
 
@@ -139,7 +132,8 @@ export function familiarityBand(value: number): string {
 interface Member {
   account: AccountRef;
   person: Person | null;
-  card: PersonCard | null;
+  /** Their heart row (`heart_person`); `null` before she has one for them. */
+  row: HeartPerson | null;
   /** Answers exactly like someone she has never met. */
   hidden: boolean;
 }
@@ -149,16 +143,15 @@ function record(c: ApiContext): SessionRecord {
 }
 
 /**
- * Whether `account` is blocked, in any of the ways there are: the social tag, the card, or a role
- * that took `/me memory` away. When none of that can be read, the answer is yes: a page must not
- * open up because a module is down.
+ * Whether `account` is blocked, in any of the ways there are: the `blocked` tag on their heart
+ * row (by account or by person), or a role that took `/me memory` away. When none of that can be
+ * read, the answer is yes: a page must not open up because a module is down.
  */
-function isBlocked(state: ApiState, account: AccountRef, card: PersonCard | null): boolean {
+function isBlocked(state: ApiState, account: AccountRef, row: HeartPerson | null): boolean {
   const social = state.optional(SocialSignalsKey);
-  const affect = state.optional(AffectStateKey);
   const authorizer = state.optional(AuthorizerKey);
-  if ((!social && !affect) || !authorizer) return true;
-  if (social?.attitude(account)?.blocked || card?.blocked) return true;
+  if (!social || !authorizer) return true;
+  if (social.attitude(account)?.blocked || (row !== null && hasTag(row, BLOCKED_TAG))) return true;
   return !authorizer.allows(account, NODE_SHOW);
 }
 
@@ -170,8 +163,8 @@ async function member(state: ApiState, c: ApiContext): Promise<Member> {
 async function memberOf(state: ApiState, account: AccountRef): Promise<Member> {
   const people = state.optional(PeopleStoreKey);
   const person = (await people?.personByAccount(account)) ?? null;
-  const card = person ? (state.optional(AffectStateKey)?.card(person.id) ?? null) : null;
-  return { account, person, card, hidden: isBlocked(state, account, card) };
+  const row = person ? (heartRows(state)?.get(person.id) ?? null) : null;
+  return { account, person, row, hidden: isBlocked(state, account, row) };
 }
 
 /** The session account and every account of the person she knows them as. */
@@ -187,10 +180,14 @@ async function namesFor(state: ApiState, who: Member): Promise<NameSplit | null>
   if (known === null) return null;
   const accounts = who.person?.accounts.map((a) => a.account) ?? [];
   const split = splitNames(known, who.person?.id ?? null, [who.account, ...accounts]);
-  const card = who.card;
+  const handle = who.person ? state.optional(HandleDirectoryKey)?.ofPerson(who.person.id) : null;
   return {
     others: split.others,
-    own: [...split.own, ...(card ? [card.handle, card.call_name ?? ""] : [])],
+    own: [
+      ...split.own,
+      ...(handle ? [handle] : []),
+      ...(who.row?.call_name ? [who.row.call_name] : []),
+    ],
   };
 }
 
@@ -205,8 +202,8 @@ function shown(state: ApiState, text: string, names: NameSplit | null): string |
 // ---- views ----------------------------------------------------------------------------------
 
 function cardView(state: ApiState, who: Member, names: NameSplit | null): MemberCard {
-  const card = who.hidden ? null : who.card;
-  if (!card) {
+  const row = who.hidden ? null : who.row;
+  if (!row) {
     return {
       call_name: null,
       relationship: null,
@@ -216,15 +213,40 @@ function cardView(state: ApiState, who: Member, names: NameSplit | null): Member
       public_feeling: null,
     };
   }
-  const call = (card.call_name ?? card.handle).trim();
+  const handle = state.optional(HandleDirectoryKey)?.ofPerson(row.person_id) ?? "";
+  const call = (row.call_name ?? handle).trim();
   return {
     call_name: call !== "" && state.publicSide.passes(state, call) ? call : null,
-    relationship: card.label,
-    affinity: affinityBand(card.affinity),
-    trust: trustBand(card.trust),
-    familiarity: familiarityBand(card.familiarity),
-    // Only the line written for them: her private `feeling` names other people.
-    public_feeling: shown(state, card.public_feeling ?? "", names),
+    // What a person reads (the card's title, its words): the tier with its stage (H10).
+    relationship: tierStanding({
+      affinity: row.bond,
+      met: row.interactions > 0 || row.bond !== 0,
+    }).label,
+    affinity: bondBand(row.bond),
+    trust: trustBand(row.trust),
+    familiarity: familiarityBand(row.familiarity),
+    // Only the line written for them: her private impression names other people.
+    public_feeling: shown(state, row.public_feeling ?? "", names),
+  };
+}
+
+/**
+ * Where they are with her: the tier, how far to the next and the ring, from `publicBond`, which
+ * only gives the ring's lap and fill and the progress in steps of a twentieth. `null` for someone
+ * she does not know (or will not say).
+ */
+function bondView(who: Member): MemberBond | null {
+  const row = who.hidden ? null : who.row;
+  if (row === null) return null;
+  const { tier, stage, tier_label, next_tier, next_label, tier_progress, ring } = publicBond(row);
+  return {
+    tier,
+    stage,
+    tier_label,
+    next_tier,
+    next_label,
+    tier_progress,
+    ring: { lap: ring.lap, fraction: ring.fraction, full: ring.full },
   };
 }
 
@@ -336,6 +358,7 @@ async function memberView(state: ApiState, c: ApiContext): Promise<MemberView> {
   const memories = await shownMemories(state, who, names);
   return {
     card: cardView(state, who, names),
+    bond: bondView(who),
     memories,
     songs: ownSongs(state, who),
     activity: await activity(state, who),
@@ -375,7 +398,7 @@ async function exportMine(state: ApiState, c: ApiContext): Promise<Response> {
     withheld,
     songs: allowed ? ownSongs(state, who) : [],
     // Their cards are theirs whatever she thinks of them now: each holds what it held then.
-    cards: await cardsOf(state, accountsOf(who)),
+    cards: await cardsOf(state, accountsOf(who), who.person?.id ?? null),
     // A blocked person's wallet is a stranger's, like everywhere else.
     wallet: await walletExport(state, account),
     // Their fortune slips, like their cards.
@@ -390,37 +413,31 @@ async function exportMine(state: ApiState, c: ApiContext): Promise<Response> {
   });
 }
 
-async function forgetMine(state: ApiState, c: ApiContext): Promise<Response> {
-  await readJson(c, ForgetSchema);
+async function forgetMine(state: ApiState, c: ApiContext): Promise<MemberForgetResult> {
   const { account } = record(c);
   const actor = accountRefString(account);
   const wait = state.publicSide.admitHeavy(actor);
-  if (wait !== null) return tooMany(wait);
+  if (wait !== null) throw ApiError.tooMany(wait);
   const who = await member(state, c);
   // Cards go for everyone, so a forget that finds nothing still leaves no card that checks out.
-  await deleteCards(state, accountsOf(who));
+  await deleteCards(state, accountsOf(who), who.person?.id ?? null);
   await deleteFortunes(state, accountsOf(who));
   const nothing: MemberForgetResult = { deleted: 0, about: 0, derived: 0, unverified: 0 };
   const allowed = !who.hidden && state.optional(AuthorizerKey)?.allows(account, NODE_FORGET);
-  if (!allowed) return json(nothing);
+  if (!allowed) return nothing;
   const engine = state.optional(MemoryEngineKey);
   if (!engine) throw ApiError.unavailable("not available right now");
   const person = who.person?.id ?? null;
+  // Everything of theirs goes in one transaction, the heart's words and the member page's line
+  // with it (the heart plugin's "forget me" hook); her numbers for them stay.
   const report = await engine.forget(person, account, null);
-  // The line was written from those memories; it goes with them.
-  if (person !== null) {
-    await state
-      .optional(AffectStateKey)
-      ?.adjustBond(person, { public_feeling: null, why: "本人要求忘記" }, "panel");
-  }
   await state.auditAs(actor, "member.forget", actor, { deleted: report.deleted }, true);
-  const body: MemberForgetResult = {
+  return {
     deleted: report.deleted,
     about: report.about,
     derived: report.derived,
     unverified: report.unverified,
   };
-  return json(body);
 }
 
 const SONG_HOSTS = new Set([
@@ -456,12 +473,16 @@ export function acceptableQuery(query: string): boolean {
  * the gate runs it for a `user`, which means the rules, the permission and the rate limits apply,
  * and she may turn it down. `actAs` (the panel) would skip those, and force the song.
  */
-async function requestSong(state: ApiState, c: ApiContext): Promise<Response> {
+async function requestSong(
+  state: ApiState,
+  c: ApiContext,
+  query: string,
+  priority = false,
+): Promise<SongAccepted> {
   const session = record(c);
   const { account } = session;
   const wait = state.publicSide.admitMember(`song:${accountRefString(account)}`);
-  if (wait !== null) return tooMany(wait);
-  const { query } = await readJson(c, SongRequestSchema);
+  if (wait !== null) throw ApiError.tooMany(wait);
   const who = await member(state, c);
   const refused = () => new ApiError(403, SONG_REFUSED);
   if (!canRequest(state, who) || !acceptableQuery(query)) throw refused();
@@ -474,7 +495,8 @@ async function requestSong(state: ApiState, c: ApiContext): Promise<Response> {
   const outcome = await actuators.invoke({
     principal: Principals.user(account, state.monitor.voiceContext()),
     capability: "sing.request",
-    args: by === "" ? { query } : { query, by },
+    // A song priority ticket is theirs to use here: their own request, with no turn of hers.
+    args: { query, ...(by === "" ? {} : { by }), ...(priority ? { priority: true } : {}) },
     why: "公開頁點歌",
     turn: null,
   });
@@ -483,8 +505,12 @@ async function requestSong(state: ApiState, c: ApiContext): Promise<Response> {
     if (outcome.decision.stage === "rate") throw new ApiError(429, "今天點歌的次數到上限了");
     throw refused();
   }
-  if (outcome.status === "failed") throw new ApiError(502, "歌曲服務暫時無法使用");
-  return json({ accepted: true });
+  if (outcome.status === "failed") {
+    // A ticket that could not be taken says why (their coins, the day's limit); nothing was charged.
+    if (outcome.cause instanceof SongPriorityError) throw new ApiError(409, outcome.error);
+    throw new ApiError(502, "歌曲服務暫時無法使用");
+  }
+  return { accepted: true };
 }
 
 function holderOf(c: ApiContext, who: Member): CardHolder {
@@ -496,10 +522,11 @@ export function cardHolder(session: CardHolder["session"], who: Member): CardHol
   return { session, accounts: accountsOf(who), person: who.person?.id ?? null };
 }
 
-async function cardsMine(state: ApiState, c: ApiContext): Promise<Response> {
+async function cardsMine(state: ApiState, c: ApiContext): Promise<MemberCards> {
   const who = await member(state, c);
-  const view = cardView(state, who, null);
-  return json(await memberCards(state, holderOf(c, who), view));
+  // Someone from before the cards finds their keepsake the first time they look.
+  await keepsakeFor(state, who, record(c).name, record(c).avatar_url);
+  return memberCards(state, holderOf(c, who));
 }
 
 /**
@@ -511,7 +538,6 @@ export async function cardWords(
   name: string,
   who: Member,
   view: MemberCard,
-  poses: readonly string[],
 ): Promise<CardWords | null> {
   if (who.hidden || view.relationship === null) return null;
   const names = await namesFor(state, who);
@@ -521,61 +547,39 @@ export async function cardWords(
       name,
       view,
       memories: (await shownMemories(state, who, names)).slice(0, 5).map((m) => m.text),
-      poses,
+      poses: [],
+      names,
     },
     (text) => shown(state, text, names),
   );
 }
 
 /**
- * A card of what the page shows them now, with a picture of their choosing (`card_pose`) and a
- * foil finish (`card_foil`) if they pay for them. A hidden person gets a stranger's card, stored
- * and counted like anyone's, so neither the card nor the limit says anything.
+ * A daily card of what the page shows them now, with a foil finish if they pay for it. A hidden
+ * person gets a stranger's card with no words, and pays and counts like anyone, so neither the card
+ * nor the limit says anything. She writes only once the day and the coins allow the card.
  */
-async function issueMine(state: ApiState, c: ApiContext): Promise<Response> {
-  const { pose = null, foil = false } = await readJson(c, CardSchema);
+async function issueMine(
+  state: ApiState,
+  c: ApiContext,
+  request: IssueCardRequest,
+  idempotencyKey: string | undefined,
+): Promise<IssuedCard> {
+  const { foil = false } = request;
   const who = await member(state, c);
   const names = who.hidden ? null : await namesFor(state, who);
-  const holder = holderOf(c, who);
   const view = cardView(state, who, names);
-  // She writes only on a card that will be issued, and knows the picture when it was chosen.
   const card = await issueCard(
-    state,
-    holder,
-    view,
-    async () =>
-      (await canIssue(state, holder))
-        ? cardWords(
-            state,
-            record(c).name,
-            who,
-            view,
-            pose !== null ? [pose] : posesFor(view.affinity),
-          )
-        : null,
-    { pose, foil, key: keyOf(c) },
-  );
-  const actor = accountRefString(record(c).account);
-  await state.auditAs(actor, "member.card", actor, { serial: card.serial }, true);
-  return json(card);
-}
-
-/** Today's newest card is voided and she writes a new one (`card_reroll`). */
-async function rerollMine(state: ApiState, c: ApiContext): Promise<Response> {
-  await readJson(c, RerollSchema);
-  const who = await member(state, c);
-  const names = who.hidden ? null : await namesFor(state, who);
-  const view = cardView(state, who, names);
-  const card = await rerollCard(
     state,
     holderOf(c, who),
     view,
-    () => cardWords(state, record(c).name, who, view, posesFor(view.affinity)),
-    keyOf(c),
+    () => cardWords(state, record(c).name, who, view),
+    { foil, key: keyOf(idempotencyKey) },
+    who.hidden,
   );
   const actor = accountRefString(record(c).account);
-  await state.auditAs(actor, "member.card.reroll", actor, { serial: card.serial }, true);
-  return json(card);
+  await state.auditAs(actor, "member.card", actor, { serial: card.serial }, true);
+  return card;
 }
 
 function session(c: ApiContext): MemberSession {
@@ -583,58 +587,41 @@ function session(c: ApiContext): MemberSession {
   return { name, avatar_url };
 }
 
-/** Runs `handler` unless this account has been asking too much. */
-function limited(state: ApiState, handler: (c: ApiContext) => Promise<Response>) {
-  return async (c: ApiContext): Promise<Response> => {
-    const wait = state.publicSide.admitMember(accountRefString(record(c).account));
-    return wait !== null ? tooMany(wait) : handler(c);
-  };
-}
-
-/** The member routes; none when `[modules.api.public] enabled` is off. */
+/** The member route that is not on the route table: a file. None when the public side is off. */
 export function memberRoutes(state: ApiState): Route[] {
   if (!state.publicSide.config.enabled) return [];
   const routes: Route[] = [
-    {
-      method: "GET",
-      path: "/api/member/session",
-      handler: limited(state, async (c) => json(session(c))),
-    },
-    {
-      method: "GET",
-      path: "/api/member/me",
-      handler: limited(state, async (c) => json(await memberView(state, c))),
-    },
     { method: "GET", path: "/api/member/export", handler: (c) => exportMine(state, c) },
-    { method: "POST", path: "/api/member/forget", handler: (c) => forgetMine(state, c) },
-    { method: "POST", path: "/api/member/songs", handler: (c) => requestSong(state, c) },
-    {
-      method: "GET",
-      path: "/api/member/card",
-      handler: limited(state, (c) => cardsMine(state, c)),
-    },
-    {
-      method: "POST",
-      path: "/api/member/card",
-      handler: limited(state, (c) => issueMine(state, c)),
-    },
-    {
-      method: "POST",
-      path: "/api/member/card/reroll",
-      handler: limited(state, (c) => rerollMine(state, c)),
-    },
   ];
   return routes.map((r) => ({ ...r, member: true }));
 }
 
-// What `fortune-routes.ts` builds a slip from: the same views the page and the cards use.
+/** The member routes on the route table; served only while the public side is on (see `rpc.ts`). */
+export const memberRpc = {
+  session: os.member.session.handler(({ context }) => session(context.c)),
+  me: os.member.me.handler(({ context }) => memberView(context.state, context.c)),
+  forget: os.member.forget.handler(({ context }) => forgetMine(context.state, context.c)),
+  requestSong: os.member.requestSong.handler(({ input, context }) =>
+    requestSong(context.state, context.c, input.body.query, input.body.priority === true),
+  ),
+  cards: os.member.cards.handler(({ context }) => cardsMine(context.state, context.c)),
+  issueCard: os.member.issueCard.handler(({ input, context }) => {
+    return issueMine(context.state, context.c, input.body, input.headers?.["idempotency-key"]);
+  }),
+};
+
+// What `fortune-routes.ts` builds a slip from and `pictures.ts` draws someone's own pictures from:
+// the same views the page and the cards use.
 export type { Member as MemberContext };
 export {
   accountsOf,
+  activity,
+  bondView,
   cardView,
   member as loadMember,
   memberOf as loadMemberOf,
   namesFor,
+  ownSongs,
   shown,
   shownMemories,
 };

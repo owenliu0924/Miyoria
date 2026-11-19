@@ -1,23 +1,22 @@
-// Her tools for her own money (docs/design/economy.md §13): what she does with her purse, the
-// goals she asks people to chip in for, and the bounties she pays. All medium risk, behind the
+// Her tools for her own money (docs/design/economy.md §13): what she does with her purse and the
+// bounties she pays. All medium risk, behind the
 // gate with their rate limits and the audit with her reason. They are hers to decide, not
 // something to talk her into: they need `economy.agency` (nobody has it by default), so she
 // calls them with `on_own`. Whoever she treats or pays is the person talking to her (the
 // requester of the turn), never a name in the arguments.
 
+import type { CommandReply } from "@miyoria/commands";
 import {
   type Capability,
   CapabilityError,
   defineCapability,
   type ExecContext,
-} from "@miyoria/actions";
-import type { CommandReply } from "@miyoria/commands";
+} from "@miyoria/gate/actions";
 import type { AccountRef, ContextKey, JsonObject } from "@miyoria/types";
 import { z } from "zod";
 import { NO_BOUNTY } from "./bounties.js";
-import { DealRefusal } from "./deals.js";
 import type { EconomyService } from "./economy.js";
-import { MAX_PROMISE_CHARS, MAX_TITLE_CHARS, NO_GOAL, OPEN_GOAL } from "./goals.js";
+import { TaskRefusal } from "./guard.js";
 import { EXPRESSION_WORD } from "./purse.js";
 import { receipt, someone } from "./receipt.js";
 import { EconomyError, GIFT_EXPRESSIONS } from "./types.js";
@@ -35,15 +34,11 @@ type Refused =
   | "invalid"
   | "already"
   | "forbidden"
-  | "no_goal"
-  | "open_goal"
   | "no_bounty";
 
 function reasonOf(error: EconomyError): Refused {
-  if (error instanceof DealRefusal) return "forbidden";
-  if (error.message === NO_GOAL) return "no_goal";
+  if (error instanceof TaskRefusal) return "forbidden";
   if (error.message === NO_BOUNTY) return "no_bounty";
-  if (error.message === OPEN_GOAL) return "open_goal";
   switch (error.status) {
     case 402:
       return "not_enough";
@@ -92,9 +87,6 @@ async function answering(what: string, fn: () => Promise<Answer>): Promise<Answe
   }
 }
 
-const NoArgs = z.strictObject({});
-type NoArgs = z.output<typeof NoArgs>;
-
 // ---- her purse ---------------------------------------------------------------------------
 
 const TreatArgs = z.strictObject({
@@ -116,6 +108,7 @@ export function treatCapability(economy: EconomyService): Capability {
     limits: { per_day: 30, per_person_per_day: 5, cooldown_ms: 0 },
     tool: {
       name: "treat_from_purse",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         `用你自己錢包裡的${cur}請正在跟你說話的人(陪你、逗你笑、幫了你)。這是你的錢,` +
         `不是憑空生的:錢包空了就沒了。每人每天最多 ${c.treat_per_person},所有人加起來每天最多 ` +
@@ -176,6 +169,7 @@ export function buyForSelfCapability(economy: EconomyService): Capability {
     },
     tool: {
       name: "buy_for_self",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         `用你自己錢包裡的 ${c.expression} ${cur}買一個表情給自己,直播中臉上做出來` +
         `(愛心眼 heart、臉紅 blush、＞＜ squint)。要開台、沒在唱歌才買得到,沒做出來錢會退回。` +
@@ -207,93 +201,6 @@ export function buyForSelfCapability(economy: EconomyService): Capability {
   }) as Capability;
 }
 
-// ---- goals -------------------------------------------------------------------------------
-
-const GoalArgs = z.strictObject({
-  title: z.string().trim().min(1).max(MAX_TITLE_CHARS),
-  promise: z.string().trim().min(1).max(MAX_PROMISE_CHARS),
-  target: z.number().int().min(1),
-  days: z.number().int().min(1),
-});
-type GoalArgs = z.output<typeof GoalArgs>;
-
-/** `economy.propose_goal` (tool `propose_goal`): a goal people chip in for. */
-export function proposeGoalCapability(economy: EconomyService): Capability {
-  const c = economy.config;
-  const cur = c.currency;
-  return defineCapability<GoalArgs>({
-    name: "economy.propose_goal",
-    summary: `提一個大家一起湊${cur}的目標`,
-    risk: "medium",
-    args: GoalArgs,
-    permission: PERMISSION,
-    limits: { per_day: 10, per_person_per_day: 10, cooldown_ms: 0 },
-    tool: {
-      name: "propose_goal",
-      description:
-        `提一個目標請大家一起湊${cur}:要多少、湊到了你會做什麼、幾天內。一次只有一個。` +
-        `大家的錢先放在託管,湊到了就是你的錢,而且你答應的事要做到;時間到沒湊滿全部退回去。` +
-        `你答應的只能是本來就是你自己能決定的事:需要被管的動作(開台、進語音、私訊、玩遊戲、` +
-        `唱歌…)、主人規則禁止的事、通不過審查的話都不行,系統也會擋。` +
-        `名稱最多 ${MAX_TITLE_CHARS} 字,承諾最多 ${MAX_PROMISE_CHARS} 字,目標最多 ` +
-        `${c.goal_max_target},最久 ${c.goal_max_days} 天。${OWN}`,
-      properties: {
-        title: { type: "string", maxLength: MAX_TITLE_CHARS, description: "目標的名稱" },
-        promise: {
-          type: "string",
-          maxLength: MAX_PROMISE_CHARS,
-          description: "湊到了你會做什麼",
-        },
-        target: {
-          type: "integer",
-          minimum: 1,
-          maximum: c.goal_max_target,
-          description: "要湊多少",
-        },
-        days: { type: "integer", minimum: 1, maximum: c.goal_max_days, description: "幾天內" },
-      },
-      required: ["title", "promise", "target", "days"],
-    },
-    async execute(args, ctx) {
-      return answering("沒有提出目標", async () => {
-        const goal = await economy.goalDesk.propose({ ...args, context: whereOf(ctx) });
-        return {
-          text:
-            `目標提出了:「${goal.title}」要湊 ${goal.target} ${cur},${args.days} 天內,` +
-            `湊到你要:${goal.promise}。時間到沒湊滿會全部退回。`,
-          data: { done: true, goal: goal.id, target: goal.target, days: args.days },
-        };
-      });
-    },
-  }) as Capability;
-}
-
-/** `economy.cancel_goal` (tool `cancel_goal`): she withdraws her open goal. */
-export function cancelGoalCapability(economy: EconomyService): Capability {
-  return defineCapability<NoArgs>({
-    name: "economy.cancel_goal",
-    summary: "取消她進行中的目標(全部退回)",
-    risk: "medium",
-    args: NoArgs,
-    permission: PERMISSION,
-    limits: { per_day: 5, per_person_per_day: 5, cooldown_ms: 0 },
-    tool: {
-      name: "cancel_goal",
-      description: `你不想做了,取消現在進行中的目標,大家投的${economy.config.currency}全部退回。${OWN}`,
-      properties: {},
-    },
-    async execute() {
-      return answering("沒有取消", async () => {
-        const { goal, refunded } = await economy.goalDesk.cancel();
-        return {
-          text: `取消了「${goal.title}」,大家投的 ${refunded} ${economy.config.currency}都退回去了。`,
-          data: { done: true, refunded },
-        };
-      });
-    },
-  }) as Capability;
-}
-
 // ---- bounties ----------------------------------------------------------------------------
 
 const BountyArgs = z.strictObject({
@@ -315,6 +222,7 @@ export function postBountyCapability(economy: EconomyService): Capability {
     limits: { per_day: 10, per_person_per_day: 10, cooldown_ms: 0 },
     tool: {
       name: "post_bounty",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         `用你自己錢包的${cur}貼一個懸賞:一件小事(最多 60 字)和獎金(最多 ${c.bounty_max})。` +
         `獎金先從你的錢包扣下來放著;有人做到了,由你判斷,再用 award_bounty 付給正在跟你說話的人。` +
@@ -359,6 +267,7 @@ export function awardBountyCapability(economy: EconomyService): Capability {
     limits: { per_day: 20, per_person_per_day: 3, cooldown_ms: 0 },
     tool: {
       name: "award_bounty",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
         `正在跟你說話的人真的完成了你貼的懸賞,由你判斷,就把獎金付給他(從託管給他,不是你再出)。` +
         `一個懸賞只能付一次。bounty 填懸賞的代號(你的錢包記錄裡方括號的那串)。` +
@@ -396,6 +305,7 @@ export function cancelBountyCapability(economy: EconomyService): Capability {
     limits: { per_day: 10, per_person_per_day: 10, cooldown_ms: 0 },
     tool: {
       name: "cancel_bounty",
+      meta: { effect: "spend", speed: "instant", group: "economy" },
       description: `撤下你貼的懸賞,放著的獎金回到你的錢包。bounty 填懸賞的代號。${OWN}`,
       properties: { bounty: { type: "string", description: "懸賞的代號" } },
       required: ["bounty"],
@@ -412,42 +322,11 @@ export function cancelBountyCapability(economy: EconomyService): Capability {
   }) as Capability;
 }
 
-/** `economy.goal_done` (tool `goal_done`): she says she kept a reached goal's promise. */
-export function goalDoneCapability(economy: EconomyService): Capability {
-  return defineCapability<NoArgs>({
-    name: "economy.goal_done",
-    summary: "記下她已經做到湊滿的目標答應的事",
-    risk: "low",
-    args: NoArgs,
-    permission: PERMISSION,
-    limits: { per_day: 5, per_person_per_day: 5, cooldown_ms: 0 },
-    tool: {
-      name: "goal_done",
-      description:
-        "大家湊滿的目標,你答應的事已經真的做到了(例如答應的歌唱完了),就呼叫,記成做到了。" +
-        `還沒做就不要呼叫;記下來之後就不會再提醒你。${OWN}`,
-      properties: {},
-    },
-    async execute() {
-      return answering("沒有記下來", async () => {
-        const goal = await economy.goalDesk.fulfill(null, "self");
-        return {
-          text: `記下來了:目標「${goal.title}」答應的「${goal.promise}」做到了。`,
-          data: { done: true, goal: goal.id },
-        };
-      });
-    },
-  }) as Capability;
-}
-
 /** Every tool for her own money. */
 export function agencyCapabilities(economy: EconomyService): Capability[] {
   return [
     treatCapability(economy),
     buyForSelfCapability(economy),
-    proposeGoalCapability(economy),
-    cancelGoalCapability(economy),
-    goalDoneCapability(economy),
     postBountyCapability(economy),
     awardBountyCapability(economy),
     cancelBountyCapability(economy),

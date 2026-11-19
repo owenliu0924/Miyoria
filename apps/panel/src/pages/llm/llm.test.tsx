@@ -1,7 +1,8 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { LlmCallRecord, LlmCallStats, Thought } from "@/api/types";
+import type { Thought } from "@/api/types";
+import type { LlmCallRecord, LlmCallStats } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const CALL: LlmCallRecord = {
@@ -9,12 +10,14 @@ const CALL: LlmCallRecord = {
   at: "2026-11-03T10:00:00.000Z",
   purpose: "mind",
   chain: "mind",
+  kind: "mind",
   model: "deepseek:deepseek-v4.1-flash",
   provider: "deepseek",
   status: "ok",
   fallbacks: [{ model: "local:qwen3-4b", error: "HTTP 503", kind: "http_5xx" }],
   retries: ["HTTP 429"],
   thinking: true,
+  reasoning: "off",
   json_mode: true,
   tools: [],
   max_tokens: 2400,
@@ -99,6 +102,46 @@ describe("LLM call inspector", () => {
     expect(within(sheet).getByText("換下一個模型")).toBeInTheDocument();
     expect(within(sheet).getByText("重送第 1 次")).toBeInTheDocument();
     expect(within(sheet).getByRole("link", { name: /她的想法/ })).toHaveAttribute("href", "/inner?tab=thoughts&thought=t1");
+  });
+
+  it("shows each call's chain of thought, filtered by kind", async () => {
+    const asked: URL[] = [];
+    const voice: LlmCallRecord = { ...CALL, id: "c2", kind: "voice", module: "agent", label: "voice", purpose: "chat" };
+    mockFetch((_m, url) => {
+      if (url.pathname === "/api/llm/thinking") {
+        asked.push(url);
+        const kind = url.searchParams.get("kind");
+        const items = [
+          { call: CALL, reasoning: "先想一下要不要開口", answer: '{"thought":"好"}', tool_calls: [], cut: 0 },
+          { call: voice, reasoning: "他在問天氣,簡短回就好", answer: "今天會下雨喔", tool_calls: [], cut: 0 },
+        ].filter((t) => !kind || t.call.kind === kind);
+        return {
+          body: {
+            items,
+            next_cursor: null,
+            matched: items.length,
+            by_kind: [
+              { kind: "mind", calls: 3, reasoned: 1 },
+              { kind: "voice", calls: 2, reasoned: 1 },
+            ],
+            kept: 5,
+          },
+        };
+      }
+      return undefined;
+    });
+    const user = userEvent.setup();
+    renderRoute("/llm?tab=thinking");
+    const list = await screen.findByRole("list", { name: "思路" });
+    expect(within(list).getByText("先想一下要不要開口")).toBeInTheDocument();
+    expect(within(list).getByText("他在問天氣,簡短回就好")).toBeInTheDocument();
+    expect(asked.at(-1)?.searchParams.get("reasoned")).toBe("true");
+
+    await user.click(screen.getByRole("radio", { name: /語音/ }));
+    await waitFor(() => expect(asked.at(-1)?.searchParams.get("kind")).toBe("voice"));
+    await waitFor(() => expect(screen.queryByText("先想一下要不要開口")).not.toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: /看回覆/ }));
+    expect(screen.getByLabelText("回覆")).toHaveTextContent("今天會下雨喔");
   });
 
   it("breaks the calls down with prices per model", async () => {

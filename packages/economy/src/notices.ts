@@ -1,6 +1,6 @@
 // What people see when they earned something they did not ask for in that moment: an achievement
 // unlocked, a daily quest done by sitting through a song or playing a game, coins for a song they
-// requested, a goal they pledged to that got met.
+// requested.
 //
 // * Earned through something they did (a command, her tool): a muted line on that answer, never a
 //   second card (`unlockLines`, `bonusLine`).
@@ -10,7 +10,7 @@
 // * No known place, no card: a background sweep posts nothing, and a channel is never guessed.
 
 import { type CardBlock, type CommandReply, cardReply, ReplySinkKey } from "@miyoria/commands";
-import { errorMessage } from "@miyoria/kernel";
+import { errorMessage } from "@miyoria/runtime/kernel";
 import type { AccountRef, ContextKey } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
 import { someone } from "./receipt.js";

@@ -1,20 +1,14 @@
 // The `StageLink` service: the connection to the Stage node and the requests other modules send.
 
-import { type EventBus, errorMessage, getLogger } from "@miyoria/kernel";
-import {
-  customEvent,
-  type Event,
-  type JsonValue,
-  type ModuleId,
-  newId,
-  serviceKey,
-} from "@miyoria/types";
+import { type EventBus, errorMessage, getLogger } from "@miyoria/runtime/kernel";
+import { type EventPayload, Events, type ModuleId, newId, serviceKey } from "@miyoria/types";
 import type WebSocket from "ws";
 import { z } from "zod";
 import {
   CLIP_REASON_MAX,
   CLOSE,
   type CoreMessage,
+  type DanmakuOutcome,
   defaultStageStatus,
   type GazeTarget,
   type GiftExpression,
@@ -33,17 +27,9 @@ import { ScenesConfigSchema } from "./scenes.js";
 
 const log = getLogger("stage.link");
 
-/**
- * Topic of status updates published by `stage.link`
- * (`{connected, vts, obs, scene, streaming, scenes, hotkeys, overlay_url}`).
- */
-export const STATUS_TOPIC = "stage.status";
-/** Topic of errors reported by the Stage node (`{message}`). */
-export const ERROR_TOPIC = "stage.error";
-/** Topic of a highlight the Stage node saved (`{reason, path}`; the path is on the streaming PC). */
-export const CLIP_TOPIC = "stage.clip";
-
 export const DEFAULT_BIND = "127.0.0.1:7882";
+/** The capability a node announces when it answers danmaku lines (`danmaku_done`). */
+export const DANMAKU_CAPABILITY = "danmaku";
 
 /** `[modules."stage.link"]` config section. */
 export const StageLinkConfigSchema = z.object({
@@ -179,7 +165,7 @@ export class StageLink {
 
   /**
    * Saves a highlight (OBS's replay buffer) with `reason` noted next to it. Resolves once saved
-   * (the file arrives as a `CLIP_TOPIC` event); rejects when OBS saved nothing.
+   * (the file arrives as a `Events.StageClip` event); rejects when OBS saved nothing.
    */
   clip(reason: string): Promise<StageStatus> {
     const text = [...reason.trim()].slice(0, CLIP_REASON_MAX).join("");
@@ -205,6 +191,22 @@ export class StageLink {
   /** @internal Queues a message for the node; false when none is connected or it is backed up. */
   send(msg: CoreMessage): boolean {
     return this.#conn?.trySendJson(msg) ?? false;
+  }
+
+  /**
+   * Sends a danmaku line to the node, which answers how it ended (`danmaku_done`). A line that
+   * cannot go out (no node, a node too old to answer, a full queue) is answered at once as
+   * `no_overlay`. Either way exactly one `stage.danmaku` follows.
+   */
+  sendDanmaku(id: string, msg: Extract<CoreMessage, { type: "danmaku" }> | null): void {
+    const answers = this.#conn?.capabilities.includes(DANMAKU_CAPABILITY) ?? false;
+    if (msg !== null && answers && this.send(msg)) return;
+    this.danmakuDone(id, "no_overlay");
+  }
+
+  /** @internal How a danmaku line ended: `stage.danmaku`. */
+  danmakuDone(id: string, outcome: DanmakuOutcome): void {
+    this.#bus.publish(this.#module, Events.StageDanmaku, { id, outcome });
   }
 
   #request(
@@ -240,7 +242,7 @@ export class StageLink {
 
   #setStatus(status: StageStatus | null): void {
     if (!this.#status.set(status ? { ...status } : null)) return;
-    const payload: JsonValue = status
+    const payload: EventPayload<typeof Events.StageStatus> = status
       ? {
           connected: true,
           vts: status.vts,
@@ -250,13 +252,11 @@ export class StageLink {
           scenes: [...status.scenes],
           hotkeys: [...status.hotkeys],
           overlay_url: status.overlay_url,
+          obs_collection: status.obs_collection,
+          obs_warning: status.obs_warning,
         }
       : { connected: false };
-    this.#publish(customEvent(STATUS_TOPIC, payload));
-  }
-
-  #publish(event: Event): void {
-    this.#bus.publish(this.#module, event);
+    this.#bus.publish(this.#module, Events.StageStatus, payload);
   }
 
   /** Closes the connection (module stop). */
@@ -387,7 +387,11 @@ export class StageLink {
       }
       case "clip_saved":
         log.info({ reason: msg.reason, path: msg.path }, "highlight saved");
-        this.#publish(customEvent(CLIP_TOPIC, { reason: msg.reason, path: msg.path }));
+        this.#bus.publish(this.#module, Events.StageClip, { reason: msg.reason, path: msg.path });
+        return;
+      case "danmaku_done":
+        // The economy keeps the line's price (shown) or gives it back (anything else).
+        this.danmakuDone(msg.id, msg.outcome);
         return;
       case "error": {
         log.warn({ message: msg.message, id: msg.id ?? null }, "stage node error");
@@ -396,7 +400,7 @@ export class StageLink {
           conn.pending.delete(msg.id);
           reply?.reject(new StageLinkError(msg.message));
         }
-        this.#publish(customEvent(ERROR_TOPIC, { message: msg.message }));
+        this.#bus.publish(this.#module, Events.StageError, { message: msg.message });
         return;
       }
     }
@@ -412,5 +416,5 @@ export class StageLink {
   }
 }
 
-/** Service key of the `StageLink` (Rust `Arc<StageLink>`). */
+/** Service key of the `StageLink`. */
 export const StageLinkKey = serviceKey<StageLink>("StageLink");

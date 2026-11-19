@@ -13,84 +13,62 @@ Miyoria
 ![Node.js 24](https://img.shields.io/badge/Node.js-24-339933.svg?style=flat-square&logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/Core-TypeScript-3178C6.svg?style=flat-square&logo=typescript&logoColor=white)
 ![Python](https://img.shields.io/badge/Workers-Python-3776AB.svg?style=flat-square&logo=python&logoColor=white)
-![SQLite](https://img.shields.io/badge/Store-SQLite%20%7C%20Postgres-003B57.svg?style=flat-square&logo=sqlite&logoColor=white)
+![SQLite](https://img.shields.io/badge/Store-SQLite-003B57.svg?style=flat-square&logo=sqlite&logoColor=white)
 ![Discord](https://img.shields.io/badge/Platform-Discord-5865F2.svg?style=flat-square&logo=discord&logoColor=white)
 
-## From an empty folder to her first reply
+## Set up your own copy
 
-You need Node.js 24 and a Discord bot token. Everything else has a default.
-
-```bash
-npx miyoria@latest init       # writes miyoria.toml, .env and profiles/: LLM endpoint, API key, model, Discord token
-npx miyoria doctor            # checks the config, the character, the LLM, Discord and the database
-npx miyoria chat              # talk to her in the terminal, no Discord needed
-npx miyoria core              # the Discord bot, her mind loop and the admin panel at http://127.0.0.1:7878/
-npx miyoria stage             # on the streaming PC: VTube Studio, OBS and the overlay
-npx miyoria stage obs-setup   # builds her OBS scenes and sources (add --dry-run to preview)
-```
-
-Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `npx miyoria config` changes settings one at a time. `miyoria status`, `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `npx miyoria --help` lists everything.
-
-## 快速開始:從全新的 clone 到「bot 在我的伺服器上線並回話」
-
-需要:Node.js 24(其餘 pnpm、Python、ffmpeg 由 `miyoria install` 補)、一個 Discord bot token(Developer Portal → Bot,打開 Message Content Intent;預設還要 Presence 和 Server Members Intent,不想開就之後 `miyoria config set modules."platform.discord.bot".presence_intents false`)、一組 LLM API key(DeepSeek 或任何 OpenAI 相容的服務)。**不需要顯卡**:語音辨識 / 合成、唱歌、VTube Studio、OBS、Minecraft 都是選用,預設全部關著,只有文字聊天。
+Start with [docs/SETUP.md](docs/SETUP.md) (Traditional Chinese): from an empty folder to her first reply in Discord, text only and no GPU, with voice, singing and a second machine as optional chapters. The npm package is not published yet; the page shows the repository path that works today.
 
 ```bash
-git clone <這個 repo> && cd Miyoria
-node scripts/setup.mjs        # 確認 pnpm(沒有就用 corepack 啟用)、pnpm install、然後開 miyoria init
+git clone <this repo> && cd Miyoria
+node scripts/setup.mjs     # needs Node.js 24: checks pnpm, installs packages, then runs `miyoria init`
+pnpm build:web             # the admin panel (only when running from the repository)
+pnpm dev up                # `miyoria up`: starts hostd, which starts Core; the panel is at http://127.0.0.1:7878/
 ```
 
-`miyoria init` 只問必要的:LLM 的 key、Discord token、這台電腦跑什麼(預設「只有 core」= 文字聊天,不用 GPU)。結束時會問要不要現在安裝這台電腦缺的東西,列出清單和大小、只問一次。之後:
+You need Node.js 24, a Discord bot token and an LLM API key; no GPU. In the repository `pnpm dev <command>` is the same as `miyoria <command>`. Her data lives in `data/miyoria.db` (SQLite through `node:sqlite`, so there is no database to install). `miyoria config` changes settings one at a time. `miyoria status` lists this machine's services (state, health, port) and, when Core answers, its modules and LLM usage; `miyoria decisions` (why she spoke or stayed quiet) and `miyoria events 'agent.*'` let you watch a running Core. `miyoria --help` lists everything.
+
+## Several machines: hostd, add and up
+
+Every machine runs one small daemon, hostd. It reads `host.toml` (what this machine runs) and each service's `service.toml` (its port, health check and what it needs installed), starts the services, restarts one that crashes, and keeps its logs. Core, the voice node, Stage, the GPU workers (`asr`, `tts`, `sing`, `turn`, `lyrics`) and MediaMTX are all services with a folder and a `service.toml`. The pieces that need the GPU are the Python workers; `sing` asks `asr` and `tts` to give up the card while it makes a song, so those three belong on the same machine.
+
+In the source folder (`pnpm dev <command>` is the same as `miyoria <command>`). The workers need [uv](https://docs.astral.sh/uv/):
 
 ```bash
-pnpm dev doctor               # 檢查 Node、pnpm、LLM、Discord、資料庫,以及選的角色缺什麼
-pnpm dev start                # 在 Windows Terminal 分頁啟動(其他系統:pnpm dev core)
-pnpm dev chat                 # 或先在終端機跟她聊天,不需要 Discord
+miyoria init                  # first question: what this machine does (text chat, text plus voice, or only serve another machine's Core); writes host.toml
+miyoria add asr tts turn      # builds each service's environment with uv and downloads the small files; lists what you still place by hand
+miyoria doctor                # what this machine lacks: environments, model files, ports, the link to Core
+miyoria up                    # starts hostd in the background; it starts every service host.toml enables
+miyoria status                # each service's state, health and port; --all also lists every machine Core knows
+miyoria logs asr -f           # one service's log
+miyoria down                  # stops every service and ends hostd
+miyoria update                # pull, rebuild what is out of date, sync environments, restart one at a time
 ```
 
-要加語音、唱歌或直播時,重新執行 `miyoria init` 改角色(`inference` = ASR / TTS / 唱歌,要 NVIDIA 顯卡;`broadcast` = voice node + stage),再 `miyoria install`。
+`restart`, `down` and `update` refuse to touch Core, the voice node or Stage while she is singing or live (`--force` overrides). Details are in [docs/OPERATIONS.md](docs/OPERATIONS.md).
 
-哪些只有 Windows:`miyoria start` 的分頁(其他系統用 `miyoria up` 或 `miyoria core`)、`winget` 自動安裝(macOS 用 Homebrew;Linux 會印出 apt / dnf 指令,不替你跑 sudo)、直播機的 OBS / VTube Studio / voice node 的 Go Live(官方只在 Windows 測過)。`miyoria install` 不會裝、只會檢查並說明:NVIDIA 驅動 / CUDA、Docker Desktop、OBS、VTube Studio、Minecraft / Prism Launcher。針對這台電腦的workaround(防毒軟體鎖住 esbuild 暫存檔、WinNAT 保留埠)不是預設步驟,只在出問題時由 `miyoria doctor --deep` 提示。
-
-## 多台電腦:角色、安裝和啟動
-
-服務分成三個角色,每台電腦只跑你選的那些(名稱集中在 `packages/cli/src/stack/roles.ts`,之後要改只改那裡):
-
-| 角色 | 服務 | 說明 |
-|---|---|---|
-| `broadcast`(直播機) | `voice-node`、`stage` | Discord 語音 + Go Live、VTube Studio / OBS / overlay。OBS、VTube Studio、遊戲也在這台,但不由 Miyoria 啟動 |
-| `core`(Bot 服務機) | `core`、`turn` | Discord bot、所有模組、資料庫、管理面板(:7878);`turn` 是判斷講完的 worker(`vad_engine = "silero"` 用);檔案沙箱要 Docker |
-| `inference`(GPU 推論機) | `asr`、`tts`、`sing` | 全部 AI 模型;三個要在同一台,因為 sing 做歌時要它們讓出顯卡 |
-
-在原始碼資料夾裡(`pnpm dev <指令>` 等於 `miyoria <指令>`):
+A second machine, for example the one with the GPU, does not need its own Discord token, LLM key or database. It joins the Core:
 
 ```bash
-miyoria init                  # 第一題:這台電腦跑什麼(單機全部、只有一個角色、或自訂);多台電腦時再問各角色的區網位址
-miyoria init --yes --roles inference --inference-host 192.168.1.20   # 不互動版(--roles:all、角色或服務名稱,可逗號分隔)
-miyoria install --dry-run     # 只安裝這台電腦需要的:node 套件和建置、每個 worker 的 venv 與 pip;最後列出要手動下載的
-miyoria install
-miyoria doctor                # 這台電腦的角色缺什麼:套件、venv、模型檔、Docker、其他電腦的位址和連線
-miyoria start --dry-run       # 會開哪些分頁、哪些已在執行而略過
-miyoria start                 # 這台電腦設定的角色;每個服務一個 Windows Terminal 分頁
-miyoria start inference       # 或指定角色 / 服務:broadcast、core、inference、all、asr、tts ...
+miyoria host invite                                  # on the Core machine: prints a one-time code (10 minutes) and the command for the other machine
+miyoria host join <core-address> --code <code>       # on the other machine
+miyoria host approve <name>                          # on the Core machine: until then the other machine's services are not used
+miyoria up                                           # on the other machine
 ```
 
-`miyoria start` 每個服務開一個分頁(同一個 Windows Terminal 視窗 `miyoria`),看得到輸出,要停就關分頁或在裡面按 Ctrl+C。已經在回應健康檢查、埠上有程式、或分頁還開著的服務不會再開第二份;不會自動重啟,也不會停任何服務。推論機會先開 asr、tts,等它們就緒再開 sing。`miyoria up` 是另一個選擇:背景執行、日誌寫檔、Ctrl+C 一起停,兩個指令都讀同一份 `[machine]`。
+The other machine dials out to Core's control link (port 7880). Core's requests, and big files such as finished songs, travel back over that same connection, so the other machine opens no port and needs no firewall rule. Only the speech workers (`asr`, `tts`, `turn`) need a direct address, because live voice does not go through the relay: set `[network] advertise` in that machine's `host.toml`. The step-by-step version is in [docs/SETUP.md](docs/SETUP.md) (second machine) and [docs/sing-remote-host.md](docs/sing-remote-host.md) (lending a GPU for singing).
 
-設定存在 `miyoria.toml`(不進 git):
+`host.toml` is not in git (`join` adds `[cluster] url` to it). A minimal one:
 
 ```toml
-[machine]
-roles = ["core"]               # broadcast | core | inference,可以多個;單機 = 三個都寫
-# services = ["core", "asr"]   # 自訂:直接列服務,寫了就取代 roles
-[machine.hosts]
-core = "192.168.1.10"          # 跑 core 的電腦:core 綁這個位址(admin API / voice.link / stage.link),直播機連它
-inference = "192.168.1.20"     # 跑 asr / tts / sing 的電腦:worker 綁這個位址,core 連它
+name = "gpu-pc"
+[services.asr]
+[services.tts]
+[services.sing]
 ```
 
-全部在同一台時兩個位址都是 `127.0.0.1`(預設)。分開時 `miyoria init` 會把位址寫到用得到的地方:Core 的 `bind`、stage 的 `core_url`、`.env` 的 `ASR_URL` / `TTS_URL`、`[modules.sing] url`;直播機要用 core 那邊的 `STAGE_LINK_TOKEN` / `VOICE_LINK_TOKEN`(init 會請你貼上),voice node 另外要在 `apps/voice-node/.env` 填 `SELF_TOKEN`。分開跑還有兩件事沒處理(見 [backlog](docs/design/backlog.md)):歌曲影片是推論機上的本機路徑,Minecraft 擴充在 core 那台開遊戲。
-
-沒有 `[machine]` 的舊設定檔行為不變。
+Old config files with `[machine]` and `[stack]` are no longer read; `miyoria host migrate` writes a `host.toml` from them. One thing is not handled yet when running split (see the [backlog](docs/design/backlog.md)): the Minecraft extension launches the game on the core machine. Song videos are fetched from the sing worker into Core's own `data/songs`, so Core and Stage must share a machine.
 
 ## Autonomy at a glance
 
@@ -136,6 +114,7 @@ apps/overlay      OBS browser-source overlay, served by the Stage node on :7884
 apps/voice-node   Self-account voice node: Discord voice and Go Live streaming
 workers/          Python GPU workers: asr (:8003), tts (:8002), sing (:8005), plus fakes for testing
 extensions/       The Minecraft bridge mod and adapter, and example extensions
+tools/            Developer tools that Core does not load: the incident eval set, the replay harness, the card renderer
 profiles/         Characters: persona, voice, avatar mapping (the first one is DeepSeek-chan)
 deploy/           Dockerfile and Compose files for Core and the speech workers
 docs/             Architecture, design notes, protocols, decisions and the roadmap

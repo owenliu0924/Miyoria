@@ -40,7 +40,7 @@ export {
 } from "./components.js";
 export { type ReplySink, ReplySinkKey, type UserResolver, UserResolverKey } from "./direct.js";
 export { HELP_NODE, registerHelp } from "./help.js";
-export { CARD_NODE, FORTUNE_NODE, registerKeepsakes } from "./keepsakes.js";
+export { CARD_DROP_ROUTE, CARD_NODE, registerKeepsakes } from "./keepsakes.js";
 export {
   MAX_MENUS_PER_TARGET,
   MENU_ROOT,
@@ -57,10 +57,8 @@ export {
   MESSAGE_EXCLUDE_NODE,
   REPLY_COOLDOWN_MS,
   registerMenus,
-  unregisterMenus,
 } from "./menus.js";
 export {
-  type CommandsConfig,
   CommandsConfigSchema,
   CommandsModule,
   type CommandsModuleOptions,
@@ -96,15 +94,13 @@ export {
 export {
   CHANNEL_TIERS,
   type ChannelTier,
-  PANEL_COMMANDS,
   type PanelsOptions,
   panelCommandPaths,
   panelDefs,
   registerPanels,
   tierOf,
-  unregisterPanels,
 } from "./panels.js";
-export { Permissions, parseAccount, ROLE_RANK, type Role } from "./perms.js";
+export { Permissions, parseAccount, type Role } from "./perms.js";
 export {
   type AuthorizerPreload,
   AuthorizerPreloadKey,
@@ -144,6 +140,7 @@ export {
   type Page,
   pageButtons,
   pageOf,
+  pictureParts,
   type ReplyFile,
   type ReplySession,
   replyEphemeral,

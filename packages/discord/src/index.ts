@@ -77,6 +77,13 @@ export {
   SHUTDOWN_GRACE_MS,
 } from "./module.js";
 export {
+  type ChannelView,
+  DiscordPlaces,
+  type GuildView,
+  guildViews,
+  placeRooms,
+} from "./places.js";
+export {
   ACCENT_COLORS,
   disableComponents,
   hasControls,
@@ -95,11 +102,15 @@ export {
   type ResolverClientLike,
 } from "./resolver.js";
 export {
+  DEFAULT_MAX_UPLOAD_BYTES,
   type DiscordOutgoing,
   DiscordSendError,
   DiscordSink,
+  MAX_MESSAGE_FILES,
+  type RestFile,
   type RestLike,
   type RestRequest,
+  type SinkAttachments,
 } from "./sink.js";
 export {
   buildTree,
