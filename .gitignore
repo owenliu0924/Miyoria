@@ -64,3 +64,6 @@ workers/mediamtx/mediamtx.exe
 workers/mediamtx/LICENSE
 workers/mediamtx/mediamtx.log
 .tmp-test
+
+# yt-dlp login cookies for the song worker (account session, never commit)
+workers/sing/cookies.txt
