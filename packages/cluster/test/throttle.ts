@@ -15,6 +15,8 @@ export interface ThrottleOptions {
   latencyMs: number;
   /** Bytes the bottleneck holds before the client is no longer read. Default 256 KiB. */
   queueBytes?: number;
+  /** The proxy's own port. Default an ephemeral one. */
+  listenPort?: number;
 }
 
 interface Pending {
@@ -121,7 +123,9 @@ export class Throttle {
       upstream.on("error", close);
     });
     self = new Throttle(server);
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    await new Promise<void>((resolve) =>
+      server.listen(options.listenPort ?? 0, "127.0.0.1", resolve),
+    );
     return self;
   }
 
