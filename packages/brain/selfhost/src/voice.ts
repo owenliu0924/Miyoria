@@ -371,6 +371,7 @@ export class VoiceHost implements VoiceRunner {
       case "started": {
         speech.started += 1;
         place.lastSelfAt = now;
+        if (playback.said !== undefined) this.#outlet.spoke(turn, text, playback.said);
         if (text === "") break;
         const [seq] = transcript.append(
           place.session,
@@ -406,7 +407,26 @@ export class VoiceHost implements VoiceRunner {
         break;
     }
     place.lane.push({ type: "playback", turn, state });
+    this.#echoWhenSaid(turn);
     if (speech.ended >= speech.queued && !this.#turns.has(turn)) this.#speech.delete(turn);
+  }
+
+  /**
+   * `text_echo`: once the run of `turn` is over. What was sent to TTS (`text_echo_text = "spoken"`)
+   * is known line by line as each starts, so that text waits for the last line to start.
+   */
+  #echoWhenSaid(turn: string): void {
+    if (this.#turns.has(turn)) return;
+    const speech = this.#speech.get(turn);
+    if (
+      this.#agent.config.voice.text_echo_text === "spoken" &&
+      speech !== undefined &&
+      speech.started < speech.queued &&
+      speech.ended < speech.queued
+    ) {
+      return;
+    }
+    void this.#outlet.echo(turn);
   }
 
   yieldTo(context: ContextKey, level: InterruptLevel): void {
@@ -901,6 +921,7 @@ export class VoiceHost implements VoiceRunner {
       this.#d.saved.end(turn, !run.dropped);
       this.#d.prompt.ended(turn);
       this.#forget(state);
+      this.#echoWhenSaid(turn);
       agent.mainline.holdsFloor(turn, false);
       floor?.turnEnded(turn);
       agent.ctx.services.get(VoiceTurnsKey)?.settle(turn);

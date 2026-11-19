@@ -8,6 +8,11 @@
 // playing (`Delivery.later`). Links and code blocks are never read out: they go to the voice
 // channel's text chat (`[modules.agent.voice] text_aside`) and into the transcript at once.
 //
+// With `[modules.agent.voice] text_echo` the sentences of a run are also written in that chat as
+// one message once the run is over (`echo`): as she wrote them, or as they were said
+// (`text_echo_text`), which is known once the last of them has started. A copy for people to read,
+// not a line of hers in the transcript, which has them as spoken.
+//
 // `PlaceOutlet` gives each line to the outlet of its place: voice channels here, the rest to the
 // text host's.
 
@@ -36,6 +41,8 @@ export interface VoiceOutletHost {
 export class VoiceOutlet implements Outlet {
   readonly #agent: Agent;
   readonly #host: VoiceOutletHost;
+  /** The sentences each run handed to the mouth, for `echo`. */
+  readonly #said = new Map<string, { place: ContextKey; lines: EchoLine[] }>();
 
   constructor(agent: Agent, host: VoiceOutletHost) {
     this.#agent = agent;
@@ -63,7 +70,41 @@ export class VoiceOutlet implements Outlet {
       turn: line.turn,
       source: "self",
     });
+    if (agent.config.voice.text_echo && line.place.kind === "voice") {
+      const said = this.#said.get(line.turn) ?? { place: line.place, lines: [] };
+      said.lines.push({ written: text, spoken: null });
+      this.#said.set(line.turn, said);
+    }
     return { status: "delivered", message_id: null, later: true };
+  }
+
+  /** The sentence `written` of `turn` started playing, sent to TTS as `spoken`. */
+  spoke(turn: string, written: string, spoken: string): void {
+    const line = this.#said
+      .get(turn)
+      ?.lines.find((l) => l.spoken === null && l.written.trim() === written.trim());
+    if (line !== undefined) line.spoken = spoken;
+  }
+
+  /**
+   * The run of `turn` is over: what it said is written in the voice channel's chat, as one
+   * message (`text_echo`). Best effort: a failure is only logged.
+   */
+  async echo(turn: string): Promise<void> {
+    const said = this.#said.get(turn);
+    if (said === undefined) return;
+    this.#said.delete(turn);
+    const agent = this.#agent;
+    const spoken = agent.config.voice.text_echo_text === "spoken";
+    const text = joinSaid(said.lines.map((l) => (spoken ? (l.spoken ?? l.written) : l.written)));
+    if (text === "") return;
+    // On Discord a voice channel's text chat has the channel's own id.
+    const chat: ContextKey = { ...said.place, kind: "channel" };
+    try {
+      await agent.mainline.say({ context: chat, text, turn, source: "self" });
+    } catch (error) {
+      agent.log.warn({ turn, err: String(error) }, "the spoken reply was not written in the chat");
+    }
   }
 
   /** A link or a code block: written in the voice channel's chat, never read out. */
@@ -79,6 +120,23 @@ export class VoiceOutlet implements Outlet {
     this.#host.wrote(place, line.text, line.turn);
     return { status: "delivered", message_id: null, later: true };
   }
+}
+
+/** A sentence handed to the mouth: as she wrote it, and as it was sent to TTS when that differs. */
+interface EchoLine {
+  written: string;
+  spoken: string | null;
+}
+
+/** Sentences as one text: a space only between two that would otherwise run into each other. */
+export function joinSaid(lines: readonly string[]): string {
+  let out = "";
+  for (const line of lines) {
+    const text = line.trim();
+    if (text === "") continue;
+    out += out !== "" && /[!-~]$/.test(out) && /^[!-~]/.test(text) ? ` ${text}` : text;
+  }
+  return out;
 }
 
 /** Each line to the outlet of its place: voice channels to `voice`, the rest to `text`. */
