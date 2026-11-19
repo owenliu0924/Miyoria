@@ -2,6 +2,9 @@
 // preparing → ready → (her mind decides | forced) → playing with lyrics cues and the vocal track,
 // the floor held while it plays, skip / stop, the queue integration and the prompt section.
 
+import { EventEmitter } from "node:events";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { CommandRegistry, CommandRegistryKey, Invocation, Permissions } from "@miyoria/commands";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
@@ -139,6 +142,15 @@ class FakeWorker implements SingWorker {
   #next = 1;
   cacheHit = false;
   cacheSeconds = 1;
+  /** The link songs say they were made from (`source.url`); `null`: none. */
+  sourceUrl: string | null = null;
+
+  #meta(id: string, title: string, seconds: number): SongMeta {
+    const song = meta(id, title, seconds);
+    return this.sourceUrl === null
+      ? song
+      : { ...song, source: { kind: "youtube", url: this.sourceUrl } };
+  }
 
   async submit(query: SongQuery): Promise<WorkerJob> {
     this.submitted.push(query);
@@ -154,7 +166,7 @@ class FakeWorker implements SingWorker {
       cached: this.cacheHit,
       position: 0,
       source: null,
-      song: this.cacheHit ? meta(`s-${id}`, title, this.cacheSeconds) : null,
+      song: this.cacheHit ? this.#meta(`s-${id}`, title, this.cacheSeconds) : null,
       exclusive: null,
       gpu: null,
     };
@@ -175,7 +187,7 @@ class FakeWorker implements SingWorker {
       state: "done",
       progress: 1,
       song_id: `s-${id}`,
-      song: meta(`s-${id}`, title, seconds),
+      song: this.#meta(`s-${id}`, title, seconds),
     });
   }
 
@@ -357,6 +369,8 @@ class Harness {
   module: SingModule | null = null;
   /** The songs' audio on "Core". */
   audio: MemorySongAudio | null = null;
+  /** What was started as yt-dlp (`video_source = "local"`); nothing is run. */
+  readonly spawned: { command: string; args: readonly string[] }[] = [];
 
   private constructor(withMind: boolean, store: MemorySettingsStore | null) {
     const s = this.sup.services;
@@ -393,6 +407,16 @@ class Harness {
       endpoints: oneWorker(),
       // The audio in memory: a real file read does not finish while the clock is a fake one.
       audio: (worker, tracks) => (h.audio = new MemorySongAudio(worker, tracks)),
+      // A yt-dlp that is not there: the local download fails and the worker is asked.
+      videoSpawner: (command, args) => {
+        h.spawned.push({ command, args });
+        const child = Object.assign(new EventEmitter(), { stderr: null, kill: () => true });
+        setImmediate(() => {
+          child.emit("error", Object.assign(new Error("spawn ENOENT"), { code: "ENOENT" }));
+          child.emit("close", -2);
+        });
+        return child;
+      },
       context: (services, context) => {
         expect(services).toBe(h.sup.services);
         h.sent.push(context);
@@ -831,6 +855,46 @@ describe("sing module", () => {
     expect(h.worker.downloaded).toEqual([
       { song: "s-j1", file: "video.mp4", dest: join(dir, "s-j1", "video.mp4") },
     ]);
+  });
+
+  it("video_source = worker (the default) never starts yt-dlp", async () => {
+    const dir = resolve("songs-cache");
+    h = await Harness.create({ video_dir: dir });
+    await h.join();
+    h.worker.cacheHit = true;
+    h.worker.sourceUrl = "https://www.youtube.com/watch?v=abc123";
+    await h.command("queue song request", { song: "Song MV" });
+    await settle(6000 + 400 + 2000);
+    expect(h.cues().find((c) => c.state === "started")).toMatchObject({
+      video: join(dir, "s-j1", "video.mp4"),
+    });
+    expect(h.spawned).toEqual([]);
+    expect(h.worker.downloaded).toEqual([
+      { song: "s-j1", file: "video.mp4", dest: join(dir, "s-j1", "video.mp4") },
+    ]);
+  });
+
+  it("video_source = local starts yt-dlp on the song's link, then asks the worker", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "sing-video-"));
+    try {
+      h = await Harness.create({ video_dir: dir, video_source: "local", ytdlp_path: "ytdlp-x" });
+      await h.join();
+      h.worker.cacheHit = true;
+      h.worker.sourceUrl = "https://www.youtube.com/watch?v=abc123";
+      await h.command("queue song request", { song: "Song MV" });
+      await settle(6000 + 400 + 2000);
+      // Real files: the fetch runs beside the fake clock and may end after the song started.
+      await vi.waitFor(() => expect(h.worker.downloaded).toHaveLength(1), { timeout: 5000 });
+      expect(h.spawned).toHaveLength(1);
+      expect(h.spawned[0]?.command).toBe("ytdlp-x");
+      expect(h.spawned[0]?.args.slice(-2)).toEqual([
+        "--",
+        "https://www.youtube.com/watch?v=abc123",
+      ]);
+      expect(h.worker.downloaded[0]?.dest).toBe(join(dir, "s-j1", "video.mp4"));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("sings without a video when the worker cannot give it", async () => {

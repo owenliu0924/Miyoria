@@ -34,6 +34,7 @@ import { registerCommands } from "./commands.js";
 import { SingConfigSchema } from "./config.js";
 import type { Endpoint, EndpointSource, EndpointsOption } from "./endpoints.js";
 import { type FailoverEntry, FailoverSingWorker } from "./failover.js";
+import { localVideoFetcher, type VideoSpawner } from "./local-video.js";
 import { PROMPT_KEY, SingPrompt } from "./prompt.js";
 import { ROOM_PROMPT_KEY, VoiceRoom, VoiceRoomPrompt } from "./room.js";
 import { Singer } from "./singer.js";
@@ -124,6 +125,7 @@ export class SingModule implements Module {
   readonly #endpoints: EndpointsOption | null;
   readonly #context: GpuContextSink | null;
   readonly #audio: SongAudioFactory | null;
+  readonly #videoSpawner: VideoSpawner | null;
   #running: Running | null = null;
 
   /**
@@ -131,6 +133,7 @@ export class SingModule implements Module {
    * `audio_dir` is relative to (the directory of `miyoria.toml`; default the working directory).
    * `endpoints`: Core's endpoint registry, where the song workers are. `context`: where else the
    * audience context goes (`GpuContextSink`). `audio`: replaces the songs' audio on disk (tests).
+   * `videoSpawner`: starts yt-dlp for `video_source = "local"` (tests give a fake one).
    */
   constructor(
     worker: SingWorkerFactory | null = null,
@@ -139,6 +142,7 @@ export class SingModule implements Module {
       endpoints?: EndpointsOption;
       context?: GpuContextSink;
       audio?: SongAudioFactory;
+      videoSpawner?: VideoSpawner;
     } = {},
   ) {
     this.#worker = worker;
@@ -146,6 +150,7 @@ export class SingModule implements Module {
     this.#endpoints = options.endpoints ?? null;
     this.#context = options.context ?? null;
     this.#audio = options.audio ?? null;
+    this.#videoSpawner = options.videoSpawner ?? null;
   }
 
   async start(ctx: ModuleContext): Promise<void> {
@@ -217,6 +222,7 @@ export class SingModule implements Module {
       videoDir,
       sink === null ? null : (context) => sink(ctx.services, context),
       audio,
+      localVideoFetcher(cfg, this.#videoSpawner ?? undefined),
     );
     listed = singer;
     const actuators = actuatorsFor(ctx);

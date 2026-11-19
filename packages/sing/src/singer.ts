@@ -86,6 +86,7 @@ import {
   type WorkerJob,
 } from "./client.js";
 import type { SingConfig } from "./config.js";
+import type { LocalVideoFetcher } from "./local-video.js";
 import { ensureVideo, singSong, sleep, songVideoPath } from "./player.js";
 import {
   type BackingMode,
@@ -257,6 +258,8 @@ export class Singer implements VoiceFloor, SpeechPause {
    * (`[modules.sing] video`), else `null`. `tellContext`: also gets who listens and which songs
    * are needed now, each time the worker is told (Core sends it on to the hosts' GPU arbiters).
    * `audio`: where the songs' audio is kept on Core (default in memory, from `worker.audio`).
+   * `localVideo`: downloads a song's video on this machine before the worker is asked
+   * (`video_source = "local"`), else `null`.
    */
   constructor(
     private readonly cfg: SingConfig,
@@ -265,6 +268,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     private readonly videoDir: string | null = null,
     private readonly tellContext: ((context: GpuContext) => void) | null = null,
     audio: SongAudio | null = null,
+    private readonly localVideo: LocalVideoFetcher | null = null,
   ) {
     this.list = new SetList(cfg);
     this.#audio =
@@ -646,7 +650,13 @@ export class Singer implements VoiceFloor, SpeechPause {
     }
     const running = this.#videoFetches.get(song.id);
     if (running !== undefined) return running;
-    const work = ensureVideo(this.worker, this.videoDir, song, new AbortController().signal)
+    const work = ensureVideo(
+      this.worker,
+      this.videoDir,
+      song,
+      new AbortController().signal,
+      this.localVideo,
+    )
       .then((path) => {
         if (path !== null) this.#videos.add(song.id);
         return path;
