@@ -251,6 +251,26 @@ describe("asking for a song", () => {
     await expect(rig.service.request(ALICE, "d")).resolves.toMatchObject({ created: true });
   });
 
+  it("keeps a made song in preparation while its files are still on their way", async () => {
+    const a = await rig.service.request(ALICE, "slow link");
+    rig.worker.finish(rig.store.song(a.song.id)?.job as string, referenceOf(song, "k-slow"));
+    rig.worker.breakFiles = 2;
+    await rig.service.tick(signal);
+    expect(rig.service.song(ALICE, a.song.id)).toMatchObject({ state: "preparing" });
+    await rig.service.tick(signal);
+    expect(rig.service.song(ALICE, a.song.id)).toMatchObject({ state: "preparing" });
+    await rig.service.tick(signal);
+    expect(rig.service.song(ALICE, a.song.id)).toMatchObject({ state: "ready", error: null });
+  });
+
+  it("fails a made song whose files never arrive", async () => {
+    const a = await rig.service.request(ALICE, "dead link");
+    rig.worker.finish(rig.store.song(a.song.id)?.job as string, referenceOf(song, "k-dead"));
+    rig.worker.breakFiles = 1000;
+    for (let i = 0; i < 8; i++) await rig.service.tick(signal);
+    expect(rig.service.song(ALICE, a.song.id).error).toBe("準備好了但拿不到檔案,再點一次");
+  });
+
   it("says why a song could not be prepared", async () => {
     const a = await rig.service.request(ALICE, "https://youtu.be/long");
     const ja = rig.store.song(a.song.id)?.job as string;
