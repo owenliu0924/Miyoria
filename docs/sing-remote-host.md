@@ -169,7 +169,7 @@ sing = ["你的名字", "他自己那台的名字"]
 
 ## 7. 已知限制
 
-1. **歌曲影片**:Core 播歌前會從 worker 的 `/songs/{id}/files/video.mp4` 把影片下載到自己的 `data/songs/<id>/`(也走同一條連線),所以 worker 在別台也能放影片。前提是 Core 和 Stage 在同一台(Stage 讀的是 Core 這台的本機路徑)。
+1. **歌曲影片**:Core 播歌前會從 worker 的 `/songs/{id}/files/video.mp4` 把影片下載到自己的 `data/songs/<id>/`(也走同一條連線),所以 worker 在別台也能放影片。前提是 Core 和 Stage 在同一台(Stage 讀的是 Core 這台的本機路徑)。連線慢時(例如只有不到 1 Mbit/s 的上傳,幾十 MB 的影片唱完都還沒到),在 `[modules.sing]` 設 `video_source = "local"`:Core 自己用 yt-dlp(`ytdlp_path`,轉 mp4 要有 ffmpeg)從歌的連結下載影片,失敗才跟 worker 拿;只有 worker 說有影片的歌才放。
 2. **做歌時不會讓 TTS / ASR 讓出顯卡**:你的電腦上沒有它們,所以她說話和做歌不會互相搶 VRAM(反而更好),但也沒有「她先說一句我去準備歌」的流程;若 Core 端還是有這句提示,Owen 可以把 `[modules.sing] prepare_notice = false`。
 3. 這個 worker 一次只做一首歌(佇列),你那邊 GPU 被別的程式(遊戲)占住時會變慢。
 4. 做歌的細節(GPU 怎麼和別的程式分)見 [workers/README.md](../workers/README.md) 第 9 節。
