@@ -50,11 +50,32 @@ AI 本體是 [osu_rl](https://github.com/SQL1024-sql/osu_RL) 的 vision 學生:�
 - 拿掉強度(`level`、`osu_ai_set_level`)和手感(`feel`、`/queue osu feel`):vision 學生沒有這兩樣。
 - 設定的 `url`、`public_url`、`account`、`blocked_accounts` 不再使用:AI 用哪個帳號改由 osu_rl 在每次進房和每打一首前自己檢查(只能是 AI 的帳號、連的是私人伺服器)。舊設定留著不會出錯。
 
-## 設定
+## 開起來
 
-1. 照 osu_rl 的 [live/README.md](https://github.com/SQL1024-sql/osu_RL/blob/master/live/README.md) 在直播機開好 fork 和 `live.stream --requests 8766`(或 `live.requests`)、`live.room_play`,記下 `OSU_RL_CONTROL_TOKEN`。
-2. 建置:先 `pnpm build` packages/sdk,再在這裡 `pnpm install && pnpm build`。
-3. `miyoria.toml`:
+要準備三個地方:伺服器上的 AI 帳號、跑 AI 的直播機(osu_rl)、跑 Miyoria 的機器。直播機和 Miyoria 可以是同一台。
+
+### 1. 伺服器
+
+在私人伺服器(例如 Illyaverse)註冊 AI 自己的帳號(開台的話就是 Miyo 的 osu 帳號)。AI 在多人房和手動開的譜打出的成績,會跟一般玩家一樣送上伺服器。
+
+### 2. 直播機(osu_rl)
+
+照 osu_rl 的 [live/README.md](https://github.com/SQL1024-sql/osu_RL/blob/requests-queue/live/README.md)「安裝」和「啟動」做。簡單說:
+
+1. clone osu_rl(`requests-queue` 分支,學生模型也在裡面)和 fork(`SQL1024-sql/osu` 的 `feature/rl-bot`,放在 osu_rl 旁邊的 `ppy-osu`),build fork。
+2. `python -m live.setup`:寫好 `live/.env`,產生控制金鑰 `OSU_RL_CONTROL_TOKEN`,最後印出這裡要貼的設定。
+3. 開 fork 副本 9,連私人伺服器,在視窗裡手動登入 AI 的帳號(密碼自己打)。
+4. 每次開台開兩支(`OSU_RL_INSTANCE=9`):`python -m live.room_play`(`127.0.0.1:8767`,多人房)和 `python -m live.stream --requests 8766`(`127.0.0.1:8766`,點播)。
+
+### 3. Miyoria
+
+1. 拉到有這個擴充的 Miyoria,建置擴充(連同 `@miyoria/sdk`):
+
+```bash
+pnpm --filter "@miyoria/ext-osu..." build
+```
+
+2. `miyoria.toml`:
 
 ```toml
 [modules.extensions]
@@ -65,8 +86,19 @@ call_timeout_ms = 120000
 [extensions."miyoria.osu"]
 queue_url = "http://127.0.0.1:8766"      # live.stream --requests / live.requests
 seat_url = "http://127.0.0.1:8767"       # live.room_play
-env = { MIYORIA_OSU_TOKEN = "<OSU_RL_CONTROL_TOKEN>" }
+env = { MIYORIA_OSU_TOKEN = "<直播機 live/.env 裡的 OSU_RL_CONTROL_TOKEN>" }
 ```
+
+3. 重開 Miyoria。log 沒有 `miyoria.osu` 的警告(例如沒設金鑰)就是載入了。
+4. 在 Discord 試 `/queue osu status`(接 `live.room_play`)和 `/queue osu list`(接點播):回 AI 正在做什麼、佇列內容就是接上了。回「連不到直播機的 osu! AI」是 `live.room_play` 沒開或 `seat_url` 不對;回「金鑰不對」是 `MIYORIA_OSU_TOKEN` 跟直播機的 `OSU_RL_CONTROL_TOKEN` 不一樣。
+
+**兩台分開時**:
+
+- 直播機那邊改成 `live.room_play --host 0.0.0.0` 和 `live.stream --requests 8766 --requests-host 0.0.0.0`,兩台之間走 Tailscale。
+- 上面的 `queue_url`、`seat_url` 改成直播機的 Tailscale 位址。
+- 這個擴充 `miyoria.extension.toml` 的 `network` 也要改成同樣的位址(只准連那裡)。
+
+## 設定
 
 | 設定 | 環境變數 | 預設 |
 |---|---|---|
@@ -75,8 +107,6 @@ env = { MIYORIA_OSU_TOKEN = "<OSU_RL_CONTROL_TOKEN>" }
 | `queue_url` | `MIYORIA_OSU_QUEUE_URL` | 無(沒設就沒有點播指令) |
 | `queue_permissions` | | `{ request = "queue.request", list = "queue.list", skip = "queue.osu.skip", clear = "queue.osu.clear", room = "queue.osu.room" }` |
 | `seat_url` | `MIYORIA_OSU_SEAT_URL` | 無(沒設就沒有 `/queue osu status`、`join`、`leave` 和進房的工具) |
-
-直播機不在同一台時,osu_rl 那邊加 `--requests-host 0.0.0.0`(`live.room_play` 用 `--host 0.0.0.0`),兩台之間走 Tailscale,manifest 的 `network` 也要改成那個位址。
 
 ## 測試
 
