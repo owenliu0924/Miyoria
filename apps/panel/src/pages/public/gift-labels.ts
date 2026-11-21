@@ -2,6 +2,7 @@
 // collection and 經濟 / 禮物.
 
 import type { AdminGiftItem, GiftViewItem } from "@miyoria/contracts/api";
+import { fmtInt } from "@/lib/format";
 
 type Status = GiftViewItem["status"];
 type Kind = NonNullable<GiftViewItem["kind"]>;
@@ -49,6 +50,15 @@ export const PRICED_BY: Record<AdminGiftItem["priced_by"], string> = {
   fallback: "預設價",
   rule: "規則",
 };
+
+/** `NT$6,000`. */
+export const twdText = (twd: number) => `NT$${fmtInt(twd)}`;
+
+/** `約 NT$6,000 → 6,000 魚幣`, or the coins alone when there is no NT$ estimate (a coin pin, the fallback, an old tier). */
+export function giftPrice(price: number, twd: number | null, currency: string): string {
+  const coins = `${fmtInt(price)} ${currency}`;
+  return twd === null ? coins : `約 ${twdText(twd)} → ${coins}`;
+}
 
 /** `2026.11.21`. */
 export function giftDate(iso: string): string {

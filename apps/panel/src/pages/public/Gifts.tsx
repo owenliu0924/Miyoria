@@ -1,5 +1,5 @@
-// 送她禮物 on the member page (docs/design/economy.md §16): they name anything, the Core prices it by
-// tier, and nothing is charged until they press 確認, the same two steps as on Discord. She takes
+// 送她禮物 on the member page (docs/design/economy.md §16): they name anything, the Core estimates it
+// in NT$ and turns that into coins, and nothing is charged until they press 確認, the same two steps as on Discord. She takes
 // it or gives it back in full. A fixed food (白飯, 鋼盆, 甜點) is fed at once, as the wallet does.
 // Below: what they gave her and what she said. A Core without the routes leaves the block out, the
 // economy stopped is one line, and someone she does not know never gets this far.
@@ -17,7 +17,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { fmtDateTime, fmtInt, fmtRelative } from "@/lib/format";
-import { GIFT_STATUS, giftDate } from "./gift-labels";
+import { GIFT_STATUS, giftDate, giftPrice } from "./gift-labels";
 import { newKey, priceText, say, usePatchWallet, useWallet } from "./spend";
 
 export const MY_GIFTS = ["member", "gifts"] as const;
@@ -63,9 +63,9 @@ function usePassed(iso: string): boolean {
   return passed;
 }
 
-function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+function Fact({ label, wide, children }: { label: string; wide?: boolean; children: React.ReactNode }) {
   return (
-    <div className="grid min-w-0 gap-0.5">
+    <div className={wide ? "col-span-2 grid min-w-0 gap-0.5" : "grid min-w-0 gap-0.5"}>
       <dt className="text-xs text-muted-foreground">{label}</dt>
       <dd className="truncate text-sm font-medium tabular-nums">{children}</dd>
     </div>
@@ -90,12 +90,22 @@ function Quote({
     <section aria-label="報價" className="grid gap-3 border-t border-border pt-3">
       <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
         <span className="text-sm font-medium break-words">{quote.item}</span>
-        <span className="text-xs text-muted-foreground">{quote.kind_word}</span>
+        <span className="text-xs text-muted-foreground">
+          {quote.kind_word}
+          {quote.band && ` · ${quote.band}`}
+        </span>
       </p>
       <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-        <Fact label={quote.tier_word}>{priceText(quote.price, quote.currency)}</Fact>
+        <Fact label="價錢" wide>
+          {giftPrice(quote.price, quote.twd, quote.currency)}
+        </Fact>
         <Fact label="送出後剩">{priceText(quote.balance_after, quote.currency)}</Fact>
       </dl>
+      {quote.big && (
+        <p className="text-[13px]">
+          這是一份大禮:{priceText(quote.price, quote.currency)},送出後只剩 {priceText(quote.balance_after, quote.currency)}。
+        </p>
+      )}
       {quote.fallback && quote.note && <p className="text-xs text-muted-foreground">{quote.note}</p>}
       <p className="text-xs text-muted-foreground">收不收由她決定,她不收會全額退回。</p>
       <div className="grid grid-cols-2 gap-2">
@@ -294,7 +304,7 @@ function PictureDialog({ gift, onClose }: { gift: GiftViewItem | null; onClose: 
   );
 }
 
-function GiftRow({ gift, onPicture }: { gift: GiftViewItem; onPicture: () => void }) {
+function GiftRow({ gift, currency, onPicture }: { gift: GiftViewItem; currency: string; onPicture: () => void }) {
   return (
     <li className="grid gap-0.5 py-(--row-y)">
       <div className="flex items-center gap-2">
@@ -314,12 +324,13 @@ function GiftRow({ gift, onPicture }: { gift: GiftViewItem; onPicture: () => voi
           </Button>
         )}
       </div>
+      <p className="text-xs text-muted-foreground tabular-nums">{giftPrice(gift.price, gift.twd, currency)}</p>
       {gift.line && <p className="text-[13px] text-muted-foreground">「{gift.line}」</p>}
     </li>
   );
 }
 
-function GiftList({ gifts }: { gifts: GiftViewItem[] }) {
+function GiftList({ gifts, currency }: { gifts: GiftViewItem[]; currency: string }) {
   const [all, setAll] = useState(false);
   const [shown, setShown] = useState<GiftViewItem | null>(null);
   if (gifts.length === 0) return <EmptyLine>你還沒有送過她東西</EmptyLine>;
@@ -328,7 +339,7 @@ function GiftList({ gifts }: { gifts: GiftViewItem[] }) {
     <>
       <ul className="divide-y divide-line-soft">
         {list.map((g) => (
-          <GiftRow key={g.id} gift={g} onPicture={() => setShown(g)} />
+          <GiftRow key={g.id} gift={g} currency={currency} onPicture={() => setShown(g)} />
         ))}
       </ul>
       {gifts.length > LIST_MAX && (
@@ -433,7 +444,7 @@ export function GiftsCard() {
           <p className="text-xs text-muted-foreground">禮物改變不了她對你的感覺,只是一份心意。</p>
           <section aria-label="你送她的東西" className="grid gap-1">
             <h3 className="text-[13px] font-medium text-muted-foreground">你送她的東西</h3>
-            <GiftList gifts={gifts.data.gifts} />
+            <GiftList gifts={gifts.data.gifts} currency={gifts.data.currency} />
           </section>
         </div>
       )}
