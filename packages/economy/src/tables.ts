@@ -785,6 +785,33 @@ export class DocTables implements EconomyDocStore {
       .all()
       .map(docOf);
   }
+
+  async prune(
+    _profile: ProfileId,
+    kind: string,
+    before: Timestamp,
+    limit: number,
+  ): Promise<number> {
+    if (limit <= 0) return 0;
+    try {
+      return this.#db.tx(() => {
+        const old = this.#db.orm
+          .select({ id: X.id })
+          .from(X)
+          .where(and(eq(X.kind, kind), sql`${X.created_at} < ${toMicros(before)}`))
+          .orderBy(asc(X.created_at), asc(X.id))
+          .limit(limit);
+        return Number(
+          this.#db.orm
+            .delete(X)
+            .where(and(eq(X.kind, kind), inArray(X.id, old)))
+            .run().changes,
+        );
+      });
+    } catch (cause) {
+      throw new StoreError("cannot prune the economy documents", { cause });
+    }
+  }
 }
 
 /** The economy plugin's code over its tables. */

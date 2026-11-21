@@ -21,7 +21,8 @@
 // from the memories the member page shows them, in her voice, nobody else named), within
 // `quest_pick_secs`; without one, or when it gives nothing, it is one of `PLAIN_PICKS`. It is kept
 // as an economy document (`quest_pick:<person>:<day>`, created once), so it never changes during
-// the day and a restart keeps it. An admin's look at someone's quests does not choose it.
+// the day and a restart keeps it. An admin's look at someone's quests does not choose it. The
+// economy's sweep deletes the ones older than `PICK_KEEP_DAYS` days.
 
 import { errorMessage } from "@miyoria/runtime/kernel";
 import { type AccountRef, toTimestamp } from "@miyoria/types";
@@ -79,6 +80,14 @@ export const PLAIN_PICKS: readonly string[] = [
 /** The longest `her_pick` kept (characters); a longer one she wrote is not used. */
 export const MAX_PICK_CHARS = 30;
 
+/**
+ * Days a `her_pick` is kept after its own: only today's is ever read, the rest is room to look
+ * back. The sweep deletes older ones (`QuestDesk.prune`).
+ */
+export const PICK_KEEP_DAYS = 7;
+/** Picks one prune deletes at most; a backlog goes over the next sweeps. */
+const PRUNE_ROWS = 500;
+
 const PICK = "quest_pick";
 const MAX_ROWS = 2_000;
 const MAX_TOPIC_CHARS = 40;
@@ -121,8 +130,23 @@ function pickOf(doc: EconomyDoc): Pick {
 export class QuestDesk {
   /** Picks being written now, by document id: two looks at once ask her once. */
   readonly #writing = new Map<string, Promise<Pick>>();
+  /** The day the last prune found nothing more to delete: the next is due on another day. */
+  #prunedOn: number | null = null;
 
   constructor(private readonly e: EconomyService) {}
+
+  /**
+   * Deletes the picks of days more than `PICK_KEEP_DAYS` ago; how many went. Once a day, a backlog
+   * `PRUNE_ROWS` at a time. The ledger rows of quests done are not touched.
+   */
+  async prune(): Promise<number> {
+    const day = this.e.today();
+    if (this.#prunedOn === day) return 0;
+    const before = this.e.dayStart(day - PICK_KEEP_DAYS);
+    const gone = await this.e.docs().prune(this.e.profile, PICK, before, PRUNE_ROWS);
+    if (gone < PRUNE_ROWS) this.#prunedOn = day;
+    return gone;
+  }
 
   async #rowsToday(who: Member) {
     return this.e.ledger().entries(this.e.profile, who.wallet, {

@@ -278,6 +278,12 @@ export interface EconomyDocStore {
   ): Promise<boolean>;
   /** Newest first (by creation, the id breaking a tie), at most `filter.limit`. */
   list(profile: ProfileId, kind: string, filter: DocFilter): Promise<EconomyDoc[]>;
+  /**
+   * Deletes at most `limit` documents of `kind` created before `before`, oldest first; how many
+   * went. Only for kinds that are of use for a while and say nothing about coins (today's quest
+   * picks); what coins were paid for is never pruned.
+   */
+  prune(profile: ProfileId, kind: string, before: Timestamp, limit: number): Promise<number>;
 }
 
 // Service keys: Core provides the economy plugin's tables under them (`store.plugin`).

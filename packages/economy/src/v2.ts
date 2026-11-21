@@ -96,9 +96,17 @@ export class V2 implements Economy2 {
     }
   }
 
-  /** Settles what ran out: predictions nobody called, stakes a crash left halfway. */
+  /**
+   * Settles what ran out: predictions nobody called, stakes a crash left halfway; and deletes the
+   * quest picks of days long gone.
+   */
   async sweep(): Promise<void> {
     await this.prediction.sweep();
+    try {
+      await this.quest.prune();
+    } catch (error) {
+      this.e.log.warn({ err: errorMessage(error) }, "cannot prune the old quest picks");
+    }
   }
 
   /**
