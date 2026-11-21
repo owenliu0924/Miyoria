@@ -128,22 +128,23 @@ describe("a service's [routing] in the report", () => {
     expect(status.load).toBeUndefined();
   });
 
-  it("says a card too small or unreadable is not ready", T, async () => {
-    const tables = ["[routing]", 'class = "job"', "[routing.needs]", "vram_gb = 8"].join("\n");
-    const unread = daemonFor(workspace([fake("c", "health.cjs", { tables })]));
-    await unread.start();
-    expect((await one(unread, "c")).routing).toMatchObject({
-      ready: false,
-      reason: "讀不到顯卡,不知道有沒有 8 GB",
-    });
-    const small = daemonFor(workspace([fake("c", "health.cjs", { tables })]), {
-      readGpu: async () => ({ name: "small", total_mb: 6144, used_mb: 0 }),
-    });
-    await small.start();
-    await small.call("host.info", {}, OP);
-    expect((await one(small, "c")).routing).toMatchObject({
-      ready: false,
-      reason: "顯卡只有 6.0 GB,需要 8 GB",
-    });
-  });
+  it(
+    "says a card too small is not ready, and does not hold back one it cannot read",
+    T,
+    async () => {
+      const tables = ["[routing]", 'class = "job"', "[routing.needs]", "vram_gb = 8"].join("\n");
+      const unread = daemonFor(workspace([fake("c", "health.cjs", { tables })]));
+      await unread.start();
+      expect((await one(unread, "c")).routing?.ready).toBe(true);
+      const small = daemonFor(workspace([fake("c", "health.cjs", { tables })]), {
+        readGpu: async () => ({ name: "small", total_mb: 6144, used_mb: 0 }),
+      });
+      await small.start();
+      await small.call("host.info", {}, OP);
+      expect((await one(small, "c")).routing).toMatchObject({
+        ready: false,
+        reason: "顯卡只有 6.0 GB,需要 8 GB",
+      });
+    },
+  );
 });

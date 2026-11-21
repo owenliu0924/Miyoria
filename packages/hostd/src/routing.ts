@@ -182,9 +182,12 @@ export function serviceRouting(
   }
   const vram = routing.needs.vram_gb;
   if (vram !== undefined) {
+    // A card not read (yet) does not hold the service back: before the first reading, or on a
+    // machine whose card cannot be read, the worker itself still falls back as it always did.
     const total = ctx.gpuTotalMb();
-    if (total === null) reasons.push(`讀不到顯卡,不知道有沒有 ${vram} GB`);
-    else if (total / 1024 < vram) reasons.push(`顯卡只有 ${gb(total)} GB,需要 ${vram} GB`);
+    if (total !== null && total / 1024 < vram) {
+      reasons.push(`顯卡只有 ${gb(total)} GB,需要 ${vram} GB`);
+    }
   }
   const owner = override.concurrency;
   const variant = routing.variant;

@@ -316,6 +316,10 @@ export class Daemon implements HostApi {
   /** The checkout as last read; `null` when it is not one, `undefined` before the first read. */
   #checkout: HostCheckout | null | undefined = undefined;
   #checkoutTimer: ReturnType<typeof setInterval> | null = null;
+  /** Looks at the services' `[routing]` readiness and variant again (a file that appeared). */
+  #routingTimer: ReturnType<typeof setInterval> | null = null;
+  /** What that look found last, as JSON. */
+  #routingSeen = "";
   #checkoutReading: Promise<void> | null = null;
   /**
    * `host.toml [update] allow_remote` (default `true`, also without the table), read at start and
@@ -326,6 +330,8 @@ export class Daemon implements HostApi {
   #upgrader: Upgrader | null = null;
   /** The variant hashes of `[routing]` (v5-hostd §15), with what they read cached. */
   readonly #variants = new VariantHasher();
+  /** The card's total memory as last read, to tell when it changed. */
+  #gpuTotal: number | null = null;
 
   constructor(options: DaemonOptions) {
     this.#options = options;
@@ -515,6 +521,11 @@ export class Daemon implements HostApi {
     const every = this.#options.upgrade?.checkoutEveryMs ?? 60_000;
     this.#checkoutTimer = setInterval(() => void this.#readCheckout(), every);
     this.#checkoutTimer.unref();
+    this.#routingTimer = setInterval(
+      () => this.#checkRouting(),
+      this.#options.upgrade?.checkoutEveryMs === undefined ? 30_000 : every,
+    );
+    this.#routingTimer.unref();
     this.#startLink(host);
     void this.#gpu.read();
     if (this.#arbitration.mode === "hostd") await this.#arbitration.ensure();
@@ -541,6 +552,8 @@ export class Daemon implements HostApi {
   async #stop(): Promise<void> {
     if (this.#checkoutTimer !== null) clearInterval(this.#checkoutTimer);
     this.#checkoutTimer = null;
+    if (this.#routingTimer !== null) clearInterval(this.#routingTimer);
+    this.#routingTimer = null;
     // An update still waiting goes away; one that changed something already finishes its step.
     this.#upgrader?.cancel();
     // Before the services: a holder stopping now gives nothing back by itself.
@@ -1011,6 +1024,23 @@ export class Daemon implements HostApi {
     });
   }
 
+  /**
+   * Reports again when a service's readiness or variant changed without anything else changing
+   * (a model file was put in place): those are read when a report is made, and nothing else would
+   * make one.
+   */
+  #checkRouting(): void {
+    const now = JSON.stringify(
+      [...this.#services.values()].map((s) => {
+        const r = this.#routingOf(s);
+        return r === undefined ? null : [s.name, r.ready, r.reason ?? null, r.variant ?? null];
+      }),
+    );
+    if (now === this.#routingSeen) return;
+    this.#routingSeen = now;
+    this.#serviceHost?.changed();
+  }
+
   /** Why a service that uses the card is held up from outside: another service holds a lease. */
   #outside(name: string): string | undefined {
     const service = this.#services.get(name);
@@ -1021,10 +1051,21 @@ export class Daemon implements HostApi {
 
   // ---- GPU arbitration (H7) --------------------------------------------------------------------
 
-  /** One read of the card; `null` when it cannot be read. */
+  /**
+   * One read of the card; `null` when it cannot be read. A new total (the first reading) is a
+   * change of the report: a service's `[routing] needs.vram_gb` is judged by it (§15.1).
+   */
   #readGpu(): Promise<GpuSample | null> {
     const read = this.#readCard;
-    return read === null ? Promise.resolve(null) : read().catch(() => null);
+    const sample = read === null ? Promise.resolve(null) : read().catch(() => null);
+    return sample.then((s) => {
+      const total = s?.total_mb ?? null;
+      if (total !== this.#gpuTotal) {
+        this.#gpuTotal = total;
+        this.#serviceHost?.changed();
+      }
+      return s;
+    });
   }
 
   /**
