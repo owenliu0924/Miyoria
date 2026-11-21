@@ -13,6 +13,10 @@
 //   ?exchange-demo=local      RICE's (no volume; what moved today's open)
 //   ?exchange-demo=map        熱力圖: 伺服器持股圖 (=map-tw, =map-us for the 熱門 maps)
 //   ?exchange-demo=owner      經濟 / 交易所 for the owner, with the mint report's warning
+//   ?exchange-demo=closed     a Sunday on a brand-new instance: 台股 and 美股 at their last close
+//                             (收盤價, 休市中), the local stocks at their opening reference before
+//                             the first tick, a waiting order with the next open (=closed-map,
+//                             =closed-chart for its heat map and 2330.TW's page)
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -36,11 +40,17 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ExchangeTab } from "@/pages/economy/ExchangeTab";
 import { Exchange } from "../Exchange";
 
-const scene = new URLSearchParams(window.location.search).get("exchange-demo") ?? "";
+const raw = new URLSearchParams(window.location.search).get("exchange-demo") ?? "";
+/** The closed-market Sunday: the same scenes, every market closed. */
+const closed = raw.startsWith("closed");
+const scene = closed ? (raw === "closed-map" ? "map-tw" : raw === "closed-chart" ? "chart" : "") : raw;
 const colors: "tw" | "us" = scene.endsWith("-us") && scene.startsWith("chart") ? "us" : "tw";
 
 const BASE = "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。";
-const NOW = Date.UTC(2026, 10, 20, 5, 25); // Friday 13:25 Taipei: Taiwan open, the US closed
+// Friday 13:25 Taipei: Taiwan open, the US closed; or Sunday 11:30 Taipei, everything closed.
+const NOW = closed ? Date.UTC(2026, 10, 22, 3, 30) : Date.UTC(2026, 10, 20, 5, 25);
+/** The next opens from that Sunday: Taiwan Monday 09:00, the US Monday 22:30 Taipei, the local stocks 12:00. */
+const NEXT_OPEN = { tw: "2026-11-23T01:00:00.000Z", us: "2026-11-23T14:30:00.000Z", local: "2026-11-22T04:00:00.000Z" } as const;
 
 /** A seeded number in [0, 1). */
 function rng(seed: string): () => number {
@@ -105,22 +115,35 @@ const WHAT_MOVES: Record<string, [string, string]> = {
 
 const byCode = new Map(STOCKS.map((s) => [s.code, s]));
 
+/** The local stocks' anchors: what a brand-new instance shows before their first tick. */
+const ANCHOR: Record<string, number> = { RICE: 100, WHLE: 108, NAPS: 88, CUBE: 116, DPSK: 94 };
+
 function lineOf(s: Stock): ExchangeLine {
   const local = s.market === "local";
   const rate = s.market === "us" ? 30 : 1;
-  const open = s.market === "tw" || local;
+  const open = !closed && (s.market === "tw" || local);
+  // Closed: a real stock at Friday's close, a local one at its anchor before its first tick.
+  const reference = closed && local;
+  const price = reference ? (ANCHOR[s.code] ?? s.price) : s.price;
+  const basis = reference ? "reference" : open ? "quote" : "close";
+  const date = "2026-11-20";
   return {
     code: s.code,
     name: s.name,
     market: s.market,
-    price: s.price,
+    price,
+    basis,
+    price_date: reference ? null : date,
+    price_note:
+      basis === "quote" ? null : basis === "reference" ? "開盤參考價・第一筆價格在 11/22(日)12:00" : `收盤價(11/20)・${open ? "等今天第一筆報價" : "休市中"}`,
+    next_open: open ? null : closed ? NEXT_OPEN[s.market] : s.market === "us" ? "2026-11-20T14:30:00.000Z" : null,
     currency: local ? "COIN" : s.market === "us" ? "USD" : "TWD",
-    local: local ? { what_moves: WHAT_MOVES[s.code]?.[0] ?? "", today: WHAT_MOVES[s.code]?.[1] ?? null } : null,
-    coin_price: Math.round(s.price * rate * 100) / 100,
-    age_minutes: open ? 2 : 1_045,
+    local: local ? { what_moves: WHAT_MOVES[s.code]?.[0] ?? "", today: reference ? null : (WHAT_MOVES[s.code]?.[1] ?? null) } : null,
+    coin_price: Math.round(price * rate * 100) / 100,
+    age_minutes: basis === "quote" ? 2 : null,
     source: local ? "這裡獨家:價格由程式模擬" : "資料來源:Yahoo Finance",
-    change: s.change,
-    at: new Date(NOW - (open ? 120_000 : 62_700_000)).toISOString(),
+    change: reference ? null : s.change,
+    at: reference ? null : new Date(open ? NOW - 120_000 : s.market === "us" ? Date.UTC(2026, 10, 20, 21, 0) : Date.UTC(2026, 10, 20, 5, 30, 1)).toISOString(),
     open,
     stale: false,
     quotes: "intraday",
@@ -153,6 +176,8 @@ function candlesOf(s: Stock, tf: ExchangeCandles["tf"]): ExchangeCandles {
           ? Date.UTC(2026, 10, 19, 14, 30)
           : Date.UTC(2026, 10, 20, 1, 0)
       : Date.UTC(2026, 10, 20, s.market === "us" ? 14 : 1, s.market === "us" ? 30 : 0) - (n - 1) * step;
+  // A brand-new instance has no local ticks yet: no candles for them.
+  if (closed && local) closes.length = 0;
   const candles = closes.map((c, i) => {
     const o = i === 0 ? c * (1 + (r() - 0.5) * vol) : (closes[i - 1] as number) * (1 + (r() - 0.5) * vol * 0.4);
     const h = Math.max(o, c) * (1 + r() * vol * 0.6);
@@ -195,7 +220,7 @@ const MARKET: ExchangeMarket = {
   rates: { twd_per_coin: 1, twd_per_usd: 30 },
   house: { buys_halted: false, net_today: 412, cap_daily: 0 },
   sessions: [
-    { market: "tw", open: true, hours: "09:00–13:30", zone: "Asia/Taipei", stale: false, notice: null },
+    { market: "tw", open: !closed, hours: "09:00–13:30", zone: "Asia/Taipei", stale: false, notice: null },
     { market: "us", open: false, hours: "09:30–16:00", zone: "America/New_York", stale: false, notice: null },
   ],
   lists: [
@@ -208,7 +233,7 @@ const MARKET: ExchangeMarket = {
     { kind: "recent", label: "我最近看過" },
     { kind: "watch", label: "我的觀察" },
   ],
-  default_list: "mine",
+  default_list: closed ? "tw" : "mine",
   rules: {
     fee: 0.01,
     fee_min: 1,
@@ -258,7 +283,12 @@ const PORTFOLIO: ExchangePortfolio = {
     { id: "p2", code: "AAPL", name: "示範蘋果", leverage: 2, qty: 200_000, cost: 1_988, margin: 994, loan: 994, price: 10_276.8, value: 2_055, equity: 1_061, ratio: 1.07, line_price: 8_286, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-12T15:00:00.000Z", can_sell: true },
     { id: "p3", code: "RICE", name: "白飯食品", leverage: 1, qty: 3_000_000, cost: 293, margin: 293, loan: 0, price: 101.2, value: 303.6, equity: 303.6, ratio: null, line_price: null, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-19T05:00:00.000Z", can_sell: true },
   ],
-  orders: [],
+  orders: closed
+    ? [
+        { id: "o1", code: "2330.TW", side: "buy", coins: 2_020, qty: 1_000_000, leverage: 1, position: null, status: "open", why: null, at: new Date(NOW - 600_000).toISOString(), next_open: NEXT_OPEN.tw },
+        { id: "o2", code: "AAPL", side: "sell", coins: 0, qty: 100_000, leverage: 1, position: null, status: "open", why: null, at: new Date(NOW - 300_000).toISOString(), next_open: NEXT_OPEN.us },
+      ]
+    : [],
   fills: [{ id: "f1", code: "RICE", side: "buy", kind: "fill", qty: 3_000_000, price: 97.5, gross: 293, fee: 3, paid: 0, shortfall: 0, leverage: 1, at: "2026-11-19T05:00:00.000Z" }],
   notices: [],
   bankrupt: null,
@@ -279,8 +309,9 @@ function starterMap(kind: "tw" | "us"): ExchangeMap {
   return {
     kind,
     title: kind === "tw" ? "熱門台股圖" : "熱門美股圖",
-    footnote: "格子大小為預設權重,非即時市值",
+    footnote: "格子大小為預設權重,非即時市值;單一格最多占整張圖的 35%,超過的縮到這個大小",
     hidden: 0,
+    max_share: 0.35,
     tiles: STOCKS.filter((s) => s.market === kind).map((s) => {
       const l = lineOf(s);
       return { code: s.code, name: s.name, sector: s.sector, weight: s.weight, change: s.change, price: l.price, currency: l.currency, coin_price: l.coin_price, basis: `預設權重 ${s.weight}` };
@@ -305,8 +336,9 @@ const HELD: [string, number, number][] = [
 const HOLDINGS_MAP: ExchangeMap = {
   kind: "holdings",
   title: "伺服器持股圖",
-  footnote: "格子大小為伺服器合計持有的市值(魚幣,照最新報價);少於 2 人持有的併入「其他」,不顯示是誰持有",
+  footnote: "格子大小為伺服器合計持有的市值(魚幣,照最後的價格);少於 2 人持有的併入「其他」,不顯示是誰持有;單一格最多占整張圖的 35%,超過的縮到這個大小",
   hidden: 0,
+  max_share: 0.35,
   tiles: [
     ...HELD.map(([code, value, people]) => {
       const s = byCode.get(code) as Stock;
@@ -354,7 +386,7 @@ const ADMIN: ExchangeAdmin = {
       warning: "過去 7 天交易所淨發出 5,410 魚幣,是現在所有錢包合計的 5.6%,超過提醒線 5.0%。沒有每天淨發出上限時,上漲的市場會讓魚幣變多;要限制,在 系統 / 交易所 設「每天最多淨發出」。",
     },
   },
-  tickers: STOCKS.slice(0, 6).map((s) => ({ code: s.code, name: s.name, market: s.market, exchange: s.market === "us" ? "NMS" : s.market === "local" ? "LOCAL" : "TAI", type: "EQUITY", status: "active", reason: null, added_at: "2026-11-02T02:00:00.000Z", missing_days: 0, holders: 3 })),
+  tickers: STOCKS.slice(0, 6).map((s, i) => ({ code: s.code, name: s.name, provider_name: `Demo Provider Name ${i + 1} Corporation Limited`, name_override: i === 1 ? s.name : null, market: s.market, exchange: s.market === "us" ? "NMS" : s.market === "local" ? "LOCAL" : "TAI", type: "EQUITY", status: "active", reason: null, added_at: "2026-11-02T02:00:00.000Z", missing_days: 0, holders: 3 })),
   providers: [{ id: "yahoo", last_error: null }],
   refresh_seconds: 60,
   positions: [{ id: "p1", name: "小魚乾", code: "2330.TW", leverage: 1, qty: 1_000_000, value: 2000 }],
@@ -389,7 +421,13 @@ function answer(method: string, path: string, query: URLSearchParams): Response 
   if (path === "/api/member/exchange/lookup") return json({ instrument: lineOf(STOCKS[0] as Stock) });
   if (path === "/api/member/exchange/watch") return json({ watching: true, count: 2 });
   if (path === "/api/member/exchange/quote" && method === "POST")
-    return json({ side: "buy", code: "2330.TW", price: 2000, open: true, coins: 101, margin: 100, exposure: 100, fee: 1, qty: 50_000, leverage: 1, gross: 0, net: 0, line_price: null, sentence: "付 101 魚幣(含手續費 1),照現價約 0.0500 股,下一筆有效報價成交。買進後 10 分鐘才能賣。", warning: null });
+    return json(
+      closed
+        ? { side: "buy", code: "2330.TW", price: 2000, open: false, coins: 2_020, margin: 2_000, exposure: 2_000, fee: 20, qty: 1_000_000, leverage: 1, gross: 0, net: 0, line_price: null, price_note: "收盤價(11/20)・休市中", next_open: NEXT_OPEN.tw, sentence: "付 2020 魚幣(含手續費 20),照收盤價(11/20)估約 1.0000 股,現在休市,下一個開盤 11/23(一)09:00(台北時間)後第一筆有效報價成交,之前都可以取消。買進後 10 分鐘才能賣。", warning: null }
+        : { side: "buy", code: "2330.TW", price: 2000, open: true, coins: 101, margin: 100, exposure: 100, fee: 1, qty: 50_000, leverage: 1, gross: 0, net: 0, line_price: null, price_note: null, next_open: null, sentence: "付 101 魚幣(含手續費 1),照現價約 0.0500 股,下一筆有效報價成交。買進後 10 分鐘才能賣。", warning: null },
+    );
+  if (path === "/api/member/exchange/order" && method === "POST")
+    return json({ id: "o9", code: "2330.TW", side: "buy", coins: 101, qty: 50_000, leverage: 1, position: null, status: "open", why: null, at: new Date(NOW).toISOString(), next_open: closed ? NEXT_OPEN.tw : null });
   if (path.startsWith("/api/")) return json({ error: "no such endpoint" }, 404);
   return null;
 }

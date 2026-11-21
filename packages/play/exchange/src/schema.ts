@@ -518,6 +518,15 @@ export const exchangeInstruments = sqliteTable(
     missing_days: integer().notNull().default(0),
     last_viewed_at: micros(),
     updated_at: micros().notNull(),
+    /** The owner's display name for it (`null`: the starter list's, else the provider's). */
+    name_override: text(),
+    /**
+     * The provider's last price outside a session (the previous close), fetched on demand while
+     * its market is closed: shown and used to value holdings, never traded at.
+     */
+    close_price: real(),
+    close_prev: real(),
+    close_at: micros(),
   },
   (t) => [
     index("exchange_instruments_status_idx").on(t.status),

@@ -657,6 +657,15 @@ export {
   ExchangeWalletKey,
   exchangeSmallPrint,
 } from "./exchange.js";
+export {
+  AMOUNT_HELP,
+  amountExamples,
+  type OrderAmount,
+  type OrderAmountResult,
+  parseOrderAmount,
+  SHARE_DECIMALS,
+  sharesWord,
+} from "./exchange-amount.js";
 export { type GameTaskOutcome, parseGameOutcome } from "./game-outcome.js";
 export {
   assignHandle,

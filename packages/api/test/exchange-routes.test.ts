@@ -142,7 +142,7 @@ describe("the exchange's routes", () => {
       audience: "admin",
       permission: null,
     });
-    for (const name of ["ticker", "split", "settle", "sell"]) {
+    for (const name of ["ticker", "name", "split", "settle", "sell"]) {
       expect(routeMeta(contract, ["exchangeAdmin", name])).toMatchObject({
         audience: "admin",
         permission: "admin.economy.adjust",
@@ -215,6 +215,13 @@ describe("the exchange's routes", () => {
     expect(
       (admin.tickers as { code: string; holders: number }[]).find((t) => t.code === "RICE"),
     ).toMatchObject({ holders: 1 });
+    // The owner's name for a ticker: shown everywhere, audited; null goes back to the default.
+    const named = await hono.request("/api/exchange/name", json({ code: "RICE", name: "白飯" }));
+    expect(await named.json()).toEqual({ name: "白飯" });
+    const line = await body(await hono.request("/api/member/exchange/ticker/RICE"));
+    expect((line.line as { name: string }).name).toBe("白飯");
+    const back = await hono.request("/api/exchange/name", json({ code: "RICE", name: null }));
+    expect(await back.json()).toEqual({ name: "白飯食品" });
     // The mint report: today's burn of the buy, against the coins in wallets.
     const mint = (
       admin.report as {
@@ -262,7 +269,11 @@ describe("the exchange's routes", () => {
     expect(held).toMatchObject({ kind: "holdings", title: "伺服器持股圖", tiles: [], hidden: 1 });
     expect(JSON.stringify(held)).not.toContain("小魚乾");
     const tw = await body(await hono.request("/api/member/exchange/map/tw"));
-    expect(tw).toMatchObject({ kind: "tw", footnote: "格子大小為預設權重,非即時市值" });
+    expect(tw).toMatchObject({
+      kind: "tw",
+      footnote: "格子大小為預設權重,非即時市值;單一格最多占整張圖的 35%,超過的縮到這個大小",
+      max_share: 0.35,
+    });
     expect((await hono.request("/api/member/exchange/map/nope")).status).toBe(400);
   });
 

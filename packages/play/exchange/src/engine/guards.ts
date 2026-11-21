@@ -71,7 +71,7 @@ export interface Trader {
   known_days: number;
   /** Their tier's place on the bond ladder (0: 認識); -1 below it (陌生人, 討厭). */
   tier: number;
-  /** An owner or admin: sees the hidden numbers, never trades. */
+  /** An owner or admin while `staff_may_trade` is off: kept out of trading. */
   insider: boolean;
   /** Her own account. */
   self: boolean;
@@ -115,7 +115,7 @@ export function limitsFor(
 /** Whether they may open an account. */
 export function checkOpen(rules: Rules, t: Trader): GuardRefusal | null {
   if (t.self) return no("self", "她自己不能開戶");
-  if (t.insider) return no("insider", "看得到市場內部數字的人(owner、管理員)不能交易");
+  if (t.insider) return no("insider", "這裡設定了 owner 和管理員不能交易(staff_may_trade 關著)");
   if (t.blocked) return no("blocked", "你現在不能開戶");
   if (t.tier < rules.min_tier) return no("tier", "要和她更熟一點(羈絆到「認識」以上)才能開戶");
   if (t.known_days < rules.min_days) {
@@ -260,7 +260,7 @@ export function checkSell(
 ): GuardRefusal | null {
   if (!rules.enabled || rules.paused) return no("closed", "交易所現在暫停,不能下單");
   if (t.self) return no("self", "她自己沒有持股");
-  if (t.insider) return no("insider", "看得到市場內部數字的人不能交易");
+  if (t.insider) return no("insider", "這裡設定了 owner 和管理員不能交易(staff_may_trade 關著)");
   if (req.limit !== null && !(Number.isSafeInteger(req.limit) && req.limit > 0))
     return no("limit", "限價要是正的價格");
   if (req.days < 1 || req.days > rules.limit_days_max)

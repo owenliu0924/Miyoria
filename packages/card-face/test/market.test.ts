@@ -5,6 +5,8 @@
 import { describe, expect, it } from "vitest";
 import {
   changeText,
+  approxTextWidth,
+  capShares,
   layoutMap,
   MARKET_GREEN,
   MARKET_RED,
@@ -137,5 +139,30 @@ describe("the treemap", () => {
     expect(tileRoom(80, 40)).toBe(2);
     expect(tileRoom(35, 20)).toBe(1);
     expect(tileRoom(20, 12)).toBe(0);
+  });
+});
+
+describe("capShares", () => {
+  const share = (ts: { weight: number }[], i: number) =>
+    (ts[i]?.weight ?? 0) / ts.reduce((s, t) => s + t.weight, 0);
+
+  it("cuts a tile over the cap to it and keeps the others in proportion, the total unchanged", () => {
+    const tiles = [300, 30, 23, 20, 11, 10, 12, 10, 9, 6, 3, 3, 6, 4, 4, 2].map((weight, i) => ({ code: `T${i}`, weight }));
+    const out = capShares(tiles, 0.35);
+    expect(share(out, 0)).toBeCloseTo(0.35, 10);
+    expect(out.reduce((s, t) => s + t.weight, 0)).toBeCloseTo(453, 6);
+    expect((out[1]?.weight ?? 0) / (out[2]?.weight ?? 1)).toBeCloseTo(30 / 23, 10);
+  });
+
+  it("repeats until none is over, gives equal shares when the cap cannot hold, and 1 is off", () => {
+    const two = capShares([{ weight: 50 }, { weight: 45 }, { weight: 5 }, { weight: 1 }], 0.35);
+    expect(two.every((_, i) => share(two, i) <= 0.35 + 1e-9)).toBe(true);
+    expect(capShares([{ weight: 9 }, { weight: 1 }], 0.35).map((t) => t.weight)).toEqual([5, 5]);
+    expect(capShares([{ weight: 9 }, { weight: 1 }], 1).map((t) => t.weight)).toEqual([9, 1]);
+  });
+
+  it("measures CJK wider than Latin for the panel's tile labels", () => {
+    expect(approxTextWidth("台積電", 12)).toBe(36);
+    expect(approxTextWidth("2330", 10)).toBeCloseTo(24.8, 5);
   });
 });

@@ -131,6 +131,7 @@ function Mint({ v }: { v: ExchangeAdmin }) {
 type Action =
   | { kind: "ticker"; code: string; action: "block" | "unblock" | "remove" }
   | { kind: "split"; code: string }
+  | { kind: "name"; code: string; provider: string; current: string | null }
   | { kind: "settle"; code: string; at: "last" | "zero" }
   | { kind: "sell"; position: string; label: string };
 
@@ -139,10 +140,12 @@ function Tickers({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; o
   const qc = useQueryClient();
   const [ask, setAsk] = useState<Action | null>(null);
   const [ratio, setRatio] = useState("");
+  const [name, setName] = useState("");
   const run = useMutation({
     mutationFn: async (a: Action) => {
       if (a.kind === "ticker") await api.rpc.exchangeAdmin.ticker({ body: { code: a.code, action: a.action } });
       else if (a.kind === "split") await api.rpc.exchangeAdmin.split({ body: { code: a.code, ratio: Number(ratio) } });
+      else if (a.kind === "name") await api.rpc.exchangeAdmin.name({ body: { code: a.code, name: name.trim() === "" ? null : name.trim() } });
       else if (a.kind === "settle") await api.rpc.exchangeAdmin.settle({ body: { code: a.code, at: a.at } });
       else await api.rpc.exchangeAdmin.sell({ body: { position: a.position } });
     },
@@ -163,6 +166,8 @@ function Tickers({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; o
         ? `${ask.action === "block" ? "停止買進" : ask.action === "unblock" ? "恢復買進" : "移除"} ${ask.code}`
         : ask.kind === "split"
           ? `確認 ${ask.code} 分割`
+          : ask.kind === "name"
+            ? `${ask.code} 的顯示名稱`
           : ask.kind === "settle"
             ? `結算 ${ask.code}(${ask.at === "last" ? "最後價格" : "歸零"})`
             : `賣掉 ${ask.label}`;
@@ -180,8 +185,21 @@ function Tickers({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; o
             {v.tickers.map((t) => (
               <li key={t.code} className="flex flex-wrap items-center gap-3 py-(--row-y) text-sm">
                 <span className="w-24 shrink-0 font-mono text-[13px] font-medium">{t.code}</span>
-                <span className="min-w-0 flex-1 truncate">{`${t.name}・${t.exchange} ${t.type}・${t.holders} 人持有`}</span>
+                <span className="min-w-0 flex-1 truncate" title={t.provider_name}>
+                  {`${t.name}${t.name_override ? "(你取的)" : ""}・${t.exchange} ${t.type}・${t.holders} 人持有`}
+                </span>
                 <span className="shrink-0 text-xs text-muted-foreground">{`${STATUS[t.status] ?? t.status}${t.missing_days > 0 ? `・${t.missing_days} 天沒報價` : ""}`}</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={denied}
+                  onClick={() => {
+                    setName(t.name_override ?? "");
+                    setAsk({ kind: "name", code: t.code, provider: t.provider_name, current: t.name_override });
+                  }}
+                >
+                  改名稱
+                </Button>
                 {t.market !== "local" && (
                   <span className="flex shrink-0 gap-1.5">
                     {t.status === "blocked" ? (
@@ -241,7 +259,15 @@ function Tickers({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; o
         )}
       </Card>
       <ConfirmDialog open={ask !== null} title={title} confirmLabel="確定" busy={run.isPending} onConfirm={() => ask && run.mutate(ask)} onClose={() => setAsk(null)}>
-        {ask?.kind === "split" ? (
+        {ask?.kind === "name" ? (
+          <div className="grid gap-1">
+            <label htmlFor="exchange-name" className="text-xs">
+              顯示名稱(最多 60 字;空白 = 用熱門清單的名稱,沒有就用報價來源的)
+            </label>
+            <Input id="exchange-name" value={name} maxLength={60} onChange={(e) => setName(e.target.value)} />
+            <p className="text-xs text-muted-foreground">{`報價來源的名稱:${ask.provider}。這會寫進稽核紀錄。`}</p>
+          </div>
+        ) : ask?.kind === "split" ? (
           <div className="grid gap-1">
             <label htmlFor="exchange-split-ratio" className="text-xs">
               每一股變成幾股(1 拆 4 就填 4,4 合 1 就填 0.25)

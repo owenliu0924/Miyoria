@@ -381,11 +381,22 @@ CREATE INDEX \`exchange_real_positions_person_idx\` ON \`exchange_real_positions
 CREATE INDEX \`exchange_real_positions_status_idx\` ON \`exchange_real_positions\` (\`status\`,\`code\`);
 `;
 
+/**
+ * Version 3 (2026-11-22, after the first live start): the owner's display name of a ticker, and the
+ * provider's previous close fetched while its market is closed (shown, never traded at).
+ */
+const NAMES_AND_CLOSES = `ALTER TABLE \`exchange_instruments\` ADD \`name_override\` text;
+ALTER TABLE \`exchange_instruments\` ADD \`close_price\` real;
+ALTER TABLE \`exchange_instruments\` ADD \`close_prev\` real;
+ALTER TABLE \`exchange_instruments\` ADD \`close_at\` integer;
+`;
+
 /** The market's state, the book, the vault, the news, the accounts, the notices, her words; the real side. */
 export const exchangeSchema: PluginSchema = {
   plugin: "exchange",
   migrations: [
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "real", sql: REAL },
+    { version: 3, name: "names_and_closes", sql: NAMES_AND_CLOSES },
   ],
 };

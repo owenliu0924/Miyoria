@@ -11,8 +11,12 @@
 //   sector from the list itself (Yahoo's keyless endpoint gives neither): static approximations by
 //   size that the owner may edit, which the footnote says.
 //
+// No tile takes more than `map_max_share` of a map (2330 alone is two thirds of the Taiwan list's
+// weights): a bigger one is cut to that share and the others keep their proportions. The weights
+// here are the real ones; the cap is applied where the map is laid out, and the footnote says so.
+//
 // The layout is not here: the panel and the picture lay the same tiles out with the same code
-// (`@miyoria/card-face`'s `market.ts`), so they agree.
+// (`@miyoria/card-face`'s `market.ts`, `capShares`), so they agree.
 
 import { OTHER_SECTOR, type StarterEntry } from "../config.js";
 import type { RealLine } from "./desk.js";
@@ -40,7 +44,10 @@ export interface MapTileData {
   sector: string;
   /** The tile's area (coins held, or the starter list's weight). */
   weight: number;
-  /** Today's change as a fraction (`null`: none known, or the merged tile). */
+  /**
+   * The move of its last session as a fraction: today's while its market trades, the last
+   * session's while it is closed (`null`: none known, or the merged tile).
+   */
   change: number | null;
   /** The last price in its own currency, and in coins. */
   price: number | null;
@@ -58,6 +65,15 @@ export interface MapData {
   footnote: string;
   /** Tickers left out of the holdings map because too few people are in 其他. */
   hidden: number;
+  /** No tile is laid out bigger than this share of the map (`1`: no cap). */
+  max_share: number;
+}
+
+/** The footnote's words for the cap (empty when there is none). */
+export function capWords(maxShare: number): string {
+  return maxShare < 1
+    ? `;單一格最多占整張圖的 ${Math.round(maxShare * 100)}%,超過的縮到這個大小`
+    : "";
 }
 
 const coinWord = (n: number) => Math.round(n).toLocaleString("en-US");
@@ -92,7 +108,10 @@ export function holdingsMap(input: {
   lines: ReadonlyMap<string, RealLine>;
   sectorOf: (line: RealLine) => string;
   minHolders: number;
+  /** `map_max_share` (default: none). */
+  maxShare?: number;
 }): MapData {
+  const maxShare = input.maxShare ?? 1;
   const by = new Map<string, { value: number; people: Set<string> }>();
   for (const h of input.held) {
     if (!(h.value > 0)) continue;
@@ -141,8 +160,9 @@ export function holdingsMap(input: {
     kind: "holdings",
     title: MAP_TITLE.holdings,
     tiles: tiles.filter((t) => t.weight > 0),
-    footnote: `格子大小為伺服器合計持有的市值(魚幣,照最新報價);少於 ${input.minHolders} 人持有的併入「其他」,不顯示是誰持有${left}`,
+    footnote: `格子大小為伺服器合計持有的市值(魚幣,照最後的價格);少於 ${input.minHolders} 人持有的併入「其他」,不顯示是誰持有${left}${capWords(maxShare)}`,
     hidden,
+    max_share: maxShare,
   };
 }
 
@@ -150,6 +170,7 @@ export function holdingsMap(input: {
 export function starterMap(
   market: "tw" | "us",
   entries: readonly { entry: StarterEntry; line: RealLine | null }[],
+  maxShare = 1,
 ): MapData {
   const tiles = entries.flatMap(({ entry, line }) =>
     line ? [tileOf(line, entry.sector, entry.weight, `預設權重 ${entry.weight}`)] : [],
@@ -158,7 +179,8 @@ export function starterMap(
     kind: market,
     title: MAP_TITLE[market],
     tiles,
-    footnote: "格子大小為預設權重,非即時市值",
+    footnote: `格子大小為預設權重,非即時市值${capWords(maxShare)}`,
     hidden: 0,
+    max_share: maxShare,
   };
 }

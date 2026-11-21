@@ -122,6 +122,34 @@ export interface MapLayout<T extends MapTileInput> {
 type Node<T> = { name: string; tile?: T; children?: Node<T>[] };
 
 /**
+ * The tiles with no one taking more than `maxShare` of their total (2330 alone is two thirds of
+ * the Taiwan list): a bigger tile is cut to exactly that share and the rest share what is left in
+ * their own proportions, repeated until none is over (water-filling). The total stays the same.
+ * When the cap cannot hold (fewer than 1 ÷ `maxShare` tiles) every tile gets an equal share.
+ * `maxShare` of 1 or more (or not a number) changes nothing.
+ */
+export function capShares<T extends { weight: number }>(tiles: readonly T[], maxShare: number): T[] {
+  const kept = tiles.filter((t) => Number.isFinite(t.weight) && t.weight > 0);
+  if (!(maxShare > 0 && maxShare < 1) || kept.length === 0) return [...tiles];
+  const total = kept.reduce((s, t) => s + t.weight, 0);
+  if (kept.length * maxShare < 1) return kept.map((t) => ({ ...t, weight: total / kept.length }));
+  const capped = new Set<T>();
+  for (;;) {
+    const free = kept.filter((t) => !capped.has(t));
+    const freeTotal = free.reduce((s, t) => s + t.weight, 0);
+    const left = 1 - capped.size * maxShare;
+    const over = free.filter((t) => (t.weight / freeTotal) * left > maxShare + 1e-12);
+    if (over.length === 0) {
+      return kept.map((t) => ({
+        ...t,
+        weight: capped.has(t) ? maxShare * total : (t.weight / freeTotal) * left * total,
+      }));
+    }
+    for (const t of over) capped.add(t);
+  }
+}
+
+/**
  * Lays tiles out in a `width` × `height` box: one squarified treemap of the sectors, each sector
  * a squarified treemap of its tiles, every area by weight. Sectors keep `header` px on top for their
  * label and `gap` px between neighbours. The order is stable: bigger first, then by name (a
@@ -131,11 +159,18 @@ export function layoutMap<T extends MapTileInput>(
   tiles: readonly T[],
   width: number,
   height: number,
-  options: { header?: number; gap?: number } = {},
+  options: { header?: number; gap?: number; maxShare?: number } = {},
 ): MapLayout<T> {
   const header = options.header ?? 14;
   const gap = options.gap ?? 1;
-  const kept = tiles.filter((t) => Number.isFinite(t.weight) && t.weight > 0);
+  // The layout's weights, capped; the tiles handed back are the caller's own (real weights).
+  const real = tiles.filter((t) => Number.isFinite(t.weight) && t.weight > 0);
+  const sized = capShares(
+    real.map((tile) => ({ tile, weight: tile.weight })),
+    options.maxShare ?? 1,
+  );
+  const area = new Map(sized.map((x) => [x.tile, x.weight]));
+  const kept = real;
   if (kept.length === 0 || width <= 0 || height <= 0) return { sectors: [], tiles: [] };
   const bySector = new Map<string, T[]>();
   for (const t of kept) bySector.set(t.sector, [...(bySector.get(t.sector) ?? []), t]);
@@ -147,7 +182,7 @@ export function layoutMap<T extends MapTileInput>(
     })),
   };
   const root = hierarchy<Node<T>>(data, (d) => d.children)
-    .sum((d) => (d.tile ? d.tile.weight : 0))
+    .sum((d) => (d.tile ? (area.get(d.tile) ?? 0) : 0))
     .sort((a, b) => (b.value ?? 0) - (a.value ?? 0) || a.data.name.localeCompare(b.data.name));
   const laid = treemap<Node<T>>()
     .tile(treemapSquarify)
@@ -177,6 +212,39 @@ export function layoutMap<T extends MapTileInput>(
       : [],
   );
   return { sectors, tiles: placed };
+}
+
+/**
+ * What a heat map tile writes, best first (owner 2026-11-22: the name people know first): its
+ * display name over its code in a smaller size and its move; the name and the move; the code and
+ * the move; the code alone. The first that fits the tile is drawn; none: nothing (the tooltip, the
+ * label and the picture's alt text always carry the name and the code).
+ */
+export const TILE_LINES = [
+  ["name", "code", "move"],
+  ["name", "move"],
+  ["code", "move"],
+  ["code"],
+] as const;
+export type TileLines = (typeof TILE_LINES)[number];
+
+/**
+ * A rough width in px of `text` at `size` px, for the panel's choice of what a tile writes (the
+ * picture measures its own font): a CJK or full-width character, an arrow or a math sign is an em,
+ * a capital or a digit
+ * about 0.62 em, other Latin about 0.52 em, a space 0.3 em; bold about 6% wider.
+ */
+export function approxTextWidth(text: string, size: number, bold = false): number {
+  let em = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0) ?? 0;
+    // CJK, full-width, and the arrows, math signs and shapes (▲ ▼ −) a move is written with.
+    if (c >= 0x2e80 || (c >= 0xff00 && c <= 0xffef) || (c >= 0x2190 && c <= 0x25ff)) em += 1;
+    else if (c === 0x20) em += 0.3;
+    else if ((c >= 0x41 && c <= 0x5a) || (c >= 0x30 && c <= 0x39) || c === 0x25) em += 0.62;
+    else em += 0.52;
+  }
+  return em * size * (bold ? 1.06 : 1);
 }
 
 /**

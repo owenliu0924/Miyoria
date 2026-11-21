@@ -363,6 +363,7 @@ export {
   ExchangeMapSchema,
   type ExchangeMarket,
   ExchangeMarketSchema,
+  ExchangeNameRequestSchema,
   type ExchangeOrder,
   type ExchangeOrderRequest,
   ExchangeOrderRequestSchema,
