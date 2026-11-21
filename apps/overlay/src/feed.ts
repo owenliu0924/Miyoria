@@ -137,6 +137,19 @@ export interface KaraokeLine {
   parts: KaraokeParts | null;
   /** Their pitch lately, for the pitch lanes (`null` without any, and after the round). */
   pitch: KaraokePitch | null;
+  /** Cheers they got this round from the people watching (an older Core sends none). */
+  cheers: number;
+}
+
+/** What someone watching cheered a singer with: 「加油」「好聽」「太強了」「安可」. */
+export type KaraokeCheerKind = "cheer" | "nice" | "wow" | "encore";
+
+/** A cheer for a singer (`to` names them as the board does), from `by`; `id` is never reused. */
+export interface KaraokeCheer {
+  id: string;
+  kind: KaraokeCheerKind;
+  to: { name: string; color: number };
+  by: { name: string; color: number };
 }
 
 /** The four parts of a score (out of 60, 15, 15 and 10); `null`: not given. */
@@ -209,6 +222,8 @@ export interface KaraokeScene {
   qrWhileSinging: boolean;
   /** The song is over and the round is being settled, or `null`. */
   settling: KaraokeSettling | null;
+  /** The round's latest cheers, oldest first (each shown once, by its id). */
+  cheers: KaraokeCheer[];
 }
 
 /**
@@ -556,7 +571,28 @@ function parseBoardLine(raw: unknown): KaraokeLine | null {
     onAir: raw.on_air === true,
     parts: parseParts(raw.parts),
     pitch: parsePitch(raw.pitch),
+    cheers: whole(raw.cheers, 0, 1_000_000, 0),
   };
+}
+
+const CHEER_KINDS: readonly KaraokeCheerKind[] = ["cheer", "nice", "wow", "encore"];
+const KARAOKE_CHEERS_MAX = 12;
+
+/** Someone in a cheer: a name and a colour; else none. */
+function parseWho(raw: unknown): { name: string; color: number } | null {
+  if (!isRecord(raw)) return null;
+  const name = cut(raw.name, KARAOKE_NAME_MAX);
+  return name ? { name, color: whole(raw.color, 0, 7, 0) } : null;
+}
+
+function parseCheer(raw: unknown): KaraokeCheer | null {
+  if (!isRecord(raw)) return null;
+  const id = cut(raw.id, 32);
+  const kind = CHEER_KINDS.find((k) => k === raw.kind);
+  const to = parseWho(raw.to);
+  const by = parseWho(raw.by);
+  if (!id || kind === undefined || to === null || by === null) return null;
+  return { id, kind, to, by };
 }
 
 /** The four parts of a result; a part that is not a number in 0..100 is not given. */
@@ -685,6 +721,7 @@ function parseKaraoke(raw: Raw): Parsed["karaoke"] | null {
       joinUrl: joinUrl(raw.join_url),
       qrWhileSinging: raw.qr_while_singing === true,
       settling: parseSettling(raw.settling),
+      cheers: list(raw.cheers, KARAOKE_CHEERS_MAX, parseCheer),
     },
   };
 }
