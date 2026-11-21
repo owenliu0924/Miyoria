@@ -2,7 +2,7 @@
 
 這份文件講「怎麼把 Miyoria 跑起來並維持運作」:選部署型態、第一次設定、服務的安裝與啟動(hostd)、多台電腦、Discord 設定、升級、備份、日誌、安全與疑難排解。第一次從零架一套,先看 [SETUP.md](SETUP.md)。架構背景見 [ARCHITECTURE.md](ARCHITECTURE.md) §1、§16。
 
-> 狀態:Phase 0–8 的程式都已實作(TypeScript,Node 24);Discord 文字、DeepSeek、語音模型和 Minecraft 已經實際跑過(見 [design/v4-plan.md](design/v4-plan.md) §1、[design/minecraft-findings.md](design/minecraft-findings.md));VTube Studio、OBS、Go Live 的實測進度見 [ROADMAP.md](ROADMAP.md) 各 phase 的「實測」項目。
+> 狀態:V5 階段 0 到 5 已合併,線上在跑(Discord 文字、語音、Go Live、唱歌、VTube Studio、OBS、DeepSeek 經 OpenCode),各階段和還沒做的事見 [design/v5-architecture.md](design/v5-architecture.md) §15 與 [design/backlog.md](design/backlog.md);Minecraft 暫停,見 [design/minecraft-findings.md](design/minecraft-findings.md)。[ROADMAP.md](ROADMAP.md) 的舊 phase 清單是歷史。
 >
 > 指令寫法:下面的 `miyoria <指令>` 在 repository 裡是 `pnpm dev <指令>`(在 repo 根目錄)。`miyoria` 套件還沒有發佈到 npm(見 [SETUP.md](SETUP.md)),發佈之後才能用 `pnpm dlx miyoria <指令>`(npm 是 `npx miyoria <指令>`)。
 >
@@ -714,7 +714,7 @@ miyoria core                                     # 8. 第一次啟動:其餘的�
 - **刪除時會發生什麼**:快取這份資料的模組(memory、social、mood、self、agent、initiative、world、queue、sandbox 中相關的)先停下來,同一個交易裡刪除,再把模組啟動;頻道設定同時從 agent 的記憶體裡清掉,權限刪除後 auth 會重新載入。少數東西要重新啟動 Core 才完全生效:Persona 修改刪除後,執行中的人格要等 Core 重啟才回到 profile 檔案的內容;模組開關刪除後,下次啟動才回到設定檔的預設。語音同意有最多一分鐘的快取。
 - **回到初始狀態**(危險區):刪除上表「她的資料」與「共用資料」的所有內容,回到剛安裝的狀態。流程:按「下載備份」→ Core 產生完整備份(含稽核紀錄)並下載到瀏覽器,同時發一個 15 分鐘內有效、只能用一次的憑證 → 輸入 profile id → 確認。沒有這個憑證 Core 會拒絕重設,所以不可能跳過備份。重設會保留稽核紀錄(並新增 `data.backup`、`data.reset` 兩筆)、LLM 用量與面板登入;角色與權限回到內建角色,設定檔 `[modules.commands] owners` 的擁有者仍是擁有者。
 - **API**:`GET /api/data`、`GET /api/data/export?categories=a,b`、`POST /api/data/wipe`(`{ categories, confirm }`)、`POST /api/data/backup`(回應標頭 `x-miyoria-backup-token`)、`POST /api/data/reset`(`{ confirm, backup_token }`)。每次匯出、刪除與重設都寫進稽核紀錄。
-- **從備份還原尚未支援**:面板的 JSON 備份是給人看與留存的(不含記憶的 embedding 與搜尋 token);要整個復原,請用上面的資料庫備份(SQLite 檔案或 `scripts/backup`)。重設前先做一次資料庫備份最保險。
+- **從備份還原尚未支援**:面板的 JSON 備份是給人看與留存的(不含記憶的 embedding 與搜尋 token);要整個復原,請用上面的資料庫備份(SQLite 檔案)。重設前先做一次資料庫備份最保險。
 - 這個頁面只處理目前的 profile;共用資料會影響同一個資料庫裡的其他角色(多角色的節點要注意)。
 
 ## 8. 日誌
