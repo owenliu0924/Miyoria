@@ -44,12 +44,12 @@ async function running(
       throw new Error("no network in tests");
     },
   });
-  await sup.register(module, config, true);
+  await sup.register(module, config as never, true);
   await sup.startAll();
   return { sup, tools, tables };
 }
 
-const ctx = {
+const base = {
   turn: "t1",
   context: HERE,
   account: STRANGER,
@@ -57,7 +57,8 @@ const ctx = {
   message: { context: HERE, id: "m1" },
   priority: "normal",
   signal: new AbortController().signal,
-} as never;
+};
+const ctx = base as never;
 
 describe("module report", () => {
   it("offers no tool without a token, and still serves the drafts", async () => {
@@ -85,7 +86,7 @@ describe("module report", () => {
       ok: true,
       text: REPORT_TOOL.ok,
     });
-    const second = { ...ctx, message: { context: HERE, id: "m2" } } as never;
+    const second = { ...base, message: { context: HERE, id: "m2" } } as never;
     expect(await h.tools.run(REPORT_PROBLEM, second, { ...FIELDS })).toEqual({
       ok: true,
       text: REPORT_TOOL.personCap(1),
