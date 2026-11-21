@@ -1,8 +1,8 @@
-// One renderer per concept (docs/design/v2-architecture.md §3.5, phase 0 item 18): her own state
+// One renderer per concept (docs/design/v2-architecture.md §3.5): her own state
 // for the trusted system part (`SELF_BLOCK_KEYS`) and the people present for the data part.
 //
 // Each renderer reads the v2 blackboard service when it is there and falls back to today's
-// sources otherwise (docs/design/v2-implementation.md W1):
+// sources otherwise:
 //
 // | block           | service                         | fallback                               |
 // |-----------------|---------------------------------|----------------------------------------|

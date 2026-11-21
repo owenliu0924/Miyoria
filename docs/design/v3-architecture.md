@@ -790,4 +790,4 @@ Owner 決定全部做完再一起實測,所以下表的驗收都還沒做。`[co
 ## 22. 參考
 
 - 調查報告與來源:[v3-research.md](v3-research.md)
-- 前一版:[v2-architecture.md](v2-architecture.md)、[v2-implementation.md](v2-implementation.md)
+- 前一版:[v2-architecture.md](v2-architecture.md)

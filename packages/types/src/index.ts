@@ -483,7 +483,7 @@ export {
   type SegmentFlushOutcome,
 } from "./memory-layers.js";
 
-// ---- v2 contracts (docs/design/v2-architecture.md, docs/design/v2-implementation.md) ----------
+// ---- v2 contracts (docs/design/v2-architecture.md) ----------
 
 export {
   type ActivityFailure,

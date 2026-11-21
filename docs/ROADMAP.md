@@ -151,7 +151,7 @@ Phase 0–8 先用 Rust 寫成原型(留在 git 歷史裡),之後整個改寫成
 
 ## v2 架構重整
 
-設計與 review 見 [design/v2-architecture.md](design/v2-architecture.md),實作紀錄見 [design/v2-implementation.md](design/v2-implementation.md)。
+設計與 review 見 [design/v2-architecture.md](design/v2-architecture.md)。
 
 - [x] 階段 0–1:對話管線(回合擁有權、選擇性 barge-in、延遲、prompt 編譯器、推理分級、人設重寫)
 - [x] 階段 2:Arbiter(Impulse、唯一底線、Ledger;取代 initiative)

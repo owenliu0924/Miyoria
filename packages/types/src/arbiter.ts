@@ -9,7 +9,7 @@
 // `ArbiterDecision` (`Events.ArbiterDecided`).
 //
 // Until the Arbiter lands, sources keep publishing `agent.initiative` as today; the Arbiter
-// takes those over source by source (see docs/design/v2-implementation.md).
+// takes those over source by source (docs/design/v2-architecture.md §3.3).
 
 import type { ArbiterDecisionData, ImpulseData, LedgerEntryData } from "@miyoria/contracts/events";
 import type { Handle } from "./handle.js";
