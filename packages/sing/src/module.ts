@@ -170,11 +170,26 @@ export class SingModule implements Module {
       // The registry is looked up again at every use: one that was not there when this module
       // started (the `cluster` module restarted, or started later) is found then.
       refresh: () => follow(),
+      // Each new song counts on its worker in the registry until its job ends (v5-hostd §15).
+      reserve: (id, what) => {
+        const client = clients.get(id);
+        if (client === undefined || source?.reserve === undefined) return null;
+        return source.reserve(client.endpoint, what === undefined ? {} : { what });
+      },
+      openSession: (room) => {
+        const endpoint = source?.openSession?.("sing", `karaoke:${room}`) ?? null;
+        return endpoint === null ? null : endpointId(endpoint);
+      },
     });
     const follow = () => {
       if (source === null) return;
+      // In the registry's order (for `job` work, its dispatch order), with the workers that take
+      // no new work now (drained, excluded, her speech host) still listed for what they hold.
+      const taking = new Set(
+        source.candidates("sing", { ignoreResting: true }).map((endpoint) => endpointId(endpoint)),
+      );
       const entries: FailoverEntry[] = source
-        .candidates("sing", { ignoreResting: true })
+        .candidates("sing", { ignoreResting: true, all: true })
         .map((endpoint) => {
           const id = endpointId(endpoint);
           const key = JSON.stringify([endpoint.via, endpoint.url, endpoint.headers]);
@@ -188,7 +203,13 @@ export class SingModule implements Module {
             client = { key, endpoint, worker: made };
             clients.set(id, client);
           } else client.endpoint = endpoint;
-          return { id, name: endpoint.url, url: endpoint.url, worker: client.worker };
+          return {
+            id,
+            name: endpoint.url,
+            url: endpoint.url,
+            worker: client.worker,
+            takesWork: taking.has(id),
+          };
         });
       worker.update(entries);
     };
