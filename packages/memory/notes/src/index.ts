@@ -207,6 +207,7 @@ export {
   NEAR_DUPLICATE,
   nearDuplicateShare,
   type PickedDocument,
+  peopleOf,
   pickDocuments,
   TIDIED_REASON,
   TIDY_REASON,

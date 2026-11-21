@@ -18,10 +18,14 @@
 // - What is applied is one change set per group (`NotesStore.merge`, author `reflect`, reason
 //   `tidy`): the lines merged are outdated (`tidied`) and point at the new line; they stay in
 //   history and come back with `revert` like any outdated line. A new line takes the most
-//   cautious provenance and the lowest confidence of what it merges, `told_by` only when all of
-//   them share it, and their evidence (not the redacted), as long as it fits the store's cap per
-//   line: a merge that would drop evidence is refused, so "do not remember this" still finds
-//   every line it should.
+//   cautious provenance and the lowest confidence of what it merges, and their evidence (not the
+//   redacted), as long as it fits the store's cap per line: a merge that would drop evidence is
+//   refused, so "do not remember this" still finds every line it should.
+// - "Forget me" too: lines that rest on two different people (`told_by`, or whose words the
+//   evidence quotes: `peopleOf`) are never merged, and a merged line resting on one person keeps
+//   them as `told_by`, so forgetting that person removes it. The reply is refused here and the
+//   store refuses the merge (`NotesStore.merge`). The model is shown who each line is from as a
+//   letter of the call (來源 A), never an id or a name.
 // - Spending: each call is counted (USD from the router's `onCall`, tokens for a model with no
 //   price); once the run's cap is reached it stops before the next call. The caller's signal
 //   (the nightly figure) stops it too.
@@ -245,6 +249,7 @@ export function tidyPrompt(lineChars: number): string {
 - 講同一件事、重複、或可以合在一起的,合併成一條;寫得太長的改短。
 - 只用筆記裡已經有的事,不要補充、不要猜、不要改變意思;互相矛盾的不要硬合,各自留著。
 - 「別人說的」「我推測的」不要寫成確定的事。
+- 不同的人說的事不要合併成一條,就算講的是同一件事也各自留著:筆記後面的「來源 A」「來源 B」是不同的人。
 - 每一條原本的筆記都要出現在剛好一條新筆記的 from 裡;不用改的就照原文寫一條,from 只放它自己。
 - 新筆記的 section 寫它來源那幾條筆記其中一條的節名,不要用其他節。
 - 一條最多 ${lineChars} 字,一條寫一件事,寫成日後單獨看也懂的一句話。
@@ -255,16 +260,34 @@ export function tidyPrompt(lineChars: number): string {
 {"lines": [{"section": "節名", "text": "一句話", "from": ["L1", "L3"]}]}`;
 }
 
+/** `A`, `B`, ... `Z`, `A2`, ...: the letters people are shown by in one call. */
+const personLetter = (n: number) =>
+  `${String.fromCharCode(65 + (n % 26))}${n >= 26 ? Math.floor(n / 26) + 1 : ""}`;
+
 /** The one message of a group's call: the document's name, its sections, the group's lines. */
 export function tidyMessage(doc: NoteDocument, group: TidyGroup): string {
   const sections = [...new Set(group.lines.map((l) => l.section))].sort(
     (a, b) => sectionOrder(doc.kind, a) - sectionOrder(doc.kind, b),
   );
+  // Who a line rests on, as a letter of this call only (no id, no name): what the model needs to
+  // keep different people's lines apart.
+  const letters = new Map<PersonId, string>();
+  const who = (line: NoteLine): string => {
+    const tags = [...peopleOf([line])].map((p) => {
+      let tag = letters.get(p);
+      if (tag === undefined) {
+        tag = personLetter(letters.size);
+        letters.set(p, tag);
+      }
+      return tag;
+    });
+    return tags.length === 0 ? "" : `;來源 ${tags.join("、")}`;
+  };
   const body = sections.map((section) => {
     const rows = group.lines
       .map((line, i) => ({ line, ref: `L${i + 1}` }))
       .filter((r) => r.line.section === section)
-      .map((r) => `- ${r.ref} ${r.line.text}(${SOURCE_LABELS[r.line.provenance]})`);
+      .map((r) => `- ${r.ref} ${r.line.text}(${SOURCE_LABELS[r.line.provenance]}${who(r.line)})`);
     return `【${sectionLabel(doc.kind, section)}】\n${rows.join("\n")}`;
   });
   const title = doc.title === "" ? KIND_NAME[doc.kind] : safeName(doc.title, 60);
@@ -304,20 +327,30 @@ export function mergedSource(lines: readonly NoteLine[]): {
   told_by: PersonId | null;
 } {
   const provenance = CAUTION[Math.min(...lines.map((l) => CAUTION.indexOf(l.provenance)))];
-  const tellers = new Set(lines.map((l) => l.told_by));
-  const [only] = [...tellers];
-  const told =
-    tellers.size === 1 &&
-    only !== null &&
-    only !== undefined &&
-    (provenance === "told_by_subject" || provenance === "told_by_other")
-      ? only
-      : null;
+  const [one, ...more] = lines;
+  // One line rewritten keeps its own; lines merged rest on at most one person (`peopleOf`), who
+  // is kept as `told_by` whatever the provenance, so forgetting them removes the merged line.
+  const [only] = [...peopleOf(lines)];
+  const told = one !== undefined && more.length === 0 ? one.told_by : (only ?? null);
   return {
     provenance: provenance ?? "concluded",
     confidence: Math.min(...lines.map((l) => l.confidence)),
     told_by: told,
   };
+}
+
+/**
+ * Whom `lines` rest on: who told them (`told_by`) and whose words their evidence quotes (not the
+ * redacted). "Forget me" removes a line through either, so lines of two people are never merged:
+ * the merged line would outlive one of them being forgotten.
+ */
+export function peopleOf(lines: readonly NoteLine[]): Set<PersonId> {
+  const out = new Set<PersonId>();
+  for (const line of lines) {
+    if (line.told_by !== null) out.add(line.told_by);
+    for (const e of line.evidence) if (!e.redacted && e.person_id !== null) out.add(e.person_id);
+  }
+  return out;
 }
 
 const evidenceKey = (e: NoteEvidence) =>
@@ -344,9 +377,9 @@ export function mergedEvidence(lines: readonly NoteLine[]): EvidenceInput[] {
     }));
 }
 
-/** A source label at the end of a line, in ASCII or full-width brackets. */
+/** A source label at the end of a line (with who it is from), in ASCII or full-width brackets. */
 const ECHOED_SOURCE = new RegExp(
-  `\\s*[(\\uff08](?:${Object.values(SOURCE_LABELS).join("|")})[)\\uff09]\\s*$`,
+  `\\s*[(\\uff08](?:${Object.values(SOURCE_LABELS).join("|")})(?:[;\\uff1b][^()\\uff08\\uff09]*)?[)\\uff09]\\s*$`,
 );
 
 export type CheckedReply =
@@ -400,6 +433,11 @@ export function checkReply(
       first.section === section
     ) {
       continue;
+    }
+    if (from.length > 1) {
+      const tellers = new Set(from.flatMap((l) => (l.told_by === null ? [] : [l.told_by])));
+      if (tellers.size > 1) return no("a line merges what different people told");
+      if (peopleOf(from).size > 1) return no("a line merges what different people said");
     }
     const evidence = mergedEvidence(from);
     if (evidence.length > limits.evidencePerLine) {

@@ -5,7 +5,9 @@ import {
   checkReply,
   groupByScope,
   type LineInput,
+  mergedEvidence,
   mergedSource,
+  type NoteDocument,
   type NoteLine,
   type NoteScope,
   NotesError,
@@ -17,7 +19,9 @@ import {
   TIDIED_REASON,
   TIDY_REASON,
   type TidyConfig,
+  tidyMessage,
   tidyNotes,
+  tidyPrompt,
 } from "../src/index.js";
 import { BEN, MINUTE, OWEN, rig, SESSION, SPACE, testClock } from "./helpers.js";
 
@@ -153,6 +157,17 @@ function mixedDocument(notes: NotesStore, clock: ReturnType<typeof testClock>) {
 }
 
 const MARKS = ["伺服器:", "私訊:", "自己:"];
+
+/** The code of the `NotesError` `fn` throws; `null`: it threw none. */
+function codeOf(fn: () => unknown): string | null {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    if (error instanceof NotesError) return error.code;
+    throw error;
+  }
+}
 
 describe("the nightly tidy", () => {
   it("calls the model once per scope, showing it only that scope's lines", async () => {
@@ -492,33 +507,32 @@ describe("the nightly tidy", () => {
     ).toEqual(before);
   });
 
-  it("merges to the most cautious source and carries the evidence over", async () => {
+  it("merges to the most cautious source, keeps who told it, and carries the evidence over", async () => {
     const { notes, clock } = await rig(testClock());
     const [a, b, c] = addLines(notes, clock, OWEN_DOC, [
       { text: "Owen 會彈鋼琴", scope: inSpace, provenance: "told_by_subject", confidence: 0.9 },
       {
-        text: "Owen 鋼琴彈得很好",
+        text: "Owen 鋼琴應該彈很久了",
         scope: inSpace,
-        provenance: "told_by_other",
-        told_by: BEN,
-        confidence: 0.5,
-        evidence: [
-          { quote: "他鋼琴很強", person_id: BEN, session: SESSION, seq_from: 7, message_id: "m7" },
-        ],
+        provenance: "concluded",
+        told_by: null,
+        evidence: [],
       },
       { text: "Owen 喜歡蕭邦", scope: inSpace, provenance: "observed", told_by: null },
     ]);
-    const merged = mergedSource([a, b, c] as NoteLine[]);
-    expect(merged).toEqual({ provenance: "told_by_other", confidence: 0.5, told_by: null });
-    // Hearsay of one person stays theirs.
-    expect(mergedSource([b, b] as NoteLine[]).told_by).toBe(BEN);
+    // Owen told one of them, the others rest on no one else: the merged line stays his.
+    expect(mergedSource([a, b, c] as NoteLine[])).toEqual({
+      provenance: "concluded",
+      confidence: 0.4,
+      told_by: OWEN,
+    });
     const [group] = groupByScope(notes.lines(OWEN_DOC, "owner"));
     if (group === undefined) throw new Error("no group");
     const refs = group.lines.map((_, i) => `L${i + 1}`);
     const checked = checkReply(
       "person",
       group,
-      { lines: [{ section: "近況", text: "Owen 鋼琴彈得好", from: refs }] },
+      { lines: [{ section: "近況", text: "Owen 彈鋼琴、喜歡蕭邦", from: refs }] },
       notes.limits,
     );
     expect(checked.ok).toBe(true);
@@ -529,9 +543,111 @@ describe("the nightly tidy", () => {
     });
     const added = result.applied.find((x) => x.op === "add");
     const line = added === undefined ? null : notes.line(added.line);
-    expect(line).toMatchObject({ provenance: "told_by_other", told_by: null, confidence: 0.5 });
+    expect(line).toMatchObject({ provenance: "concluded", told_by: OWEN, confidence: 0.4 });
     expect(line?.scope).toEqual(inSpace);
-    expect(line?.evidence.map((e) => e.message_id).sort()).toEqual(["m0", "m2", "m7"]);
+    expect(line?.evidence.map((e) => e.message_id).sort()).toEqual(["m0", "m2"]);
+  });
+
+  it("never merges what two different people told or said", async () => {
+    const { notes, clock } = await rig(testClock());
+    addLines(notes, clock, placeSubject("p1"), [
+      // Two different tellers.
+      { text: "Owen 說週五有聚會", scope: inSpace, provenance: "told_by_other", told_by: OWEN },
+      {
+        text: "Ben 說週五有聚會",
+        scope: inSpace,
+        provenance: "told_by_other",
+        told_by: BEN,
+        evidence: [{ quote: "週五聚會喔", person_id: BEN, session: SESSION, seq_from: 9 }],
+      },
+      // No teller, but backed by Ben's words, and one by Owen's.
+      {
+        text: "聚會在晚上",
+        scope: inSpace,
+        provenance: "observed",
+        told_by: null,
+        evidence: [{ quote: "晚上喔", person_id: BEN, session: SESSION, seq_from: 10 }],
+      },
+      { text: "聚會在晚上七點", scope: inSpace, provenance: "observed", told_by: null },
+    ]);
+    const [group] = groupByScope(notes.lines(placeSubject("p1"), "owner"));
+    if (group === undefined) throw new Error("no group");
+    // Newest first: L1 七點 (Owen's words), L2 晚上 (Ben's), L3 Ben told, L4 Owen told.
+    const reply = (merged: string[]) => ({
+      lines: [
+        { section: "近況", text: "週五有聚會", from: merged },
+        ...["L1", "L2", "L3", "L4"]
+          .filter((r) => !merged.includes(r))
+          .map((r) => ({
+            section: "近況",
+            text: group.lines[Number(r.slice(1)) - 1]?.text ?? "",
+            from: [r],
+          })),
+      ],
+    });
+    expect(checkReply("place", group, reply(["L3", "L4"]), notes.limits)).toEqual({
+      ok: false,
+      why: "a line merges what different people told",
+    });
+    expect(checkReply("place", group, reply(["L1", "L2"]), notes.limits)).toEqual({
+      ok: false,
+      why: "a line merges what different people said",
+    });
+    // Ben told one, Ben's words back the other: one person, and the line stays his.
+    const ok = checkReply("place", group, reply(["L2", "L3"]), notes.limits);
+    expect(ok.ok).toBe(true);
+    expect(ok.ok ? ok.merges[0]?.line.told_by : null).toBe(BEN);
+    // The prompt tells the model who each line is from, by a letter, and not to merge them.
+    const message = tidyMessage(notes.document(placeSubject("p1")) as NoteDocument, group);
+    expect(message).toContain("L1 聚會在晚上七點(我看到的;來源 A)");
+    expect(message).toContain("L2 聚會在晚上(我看到的;來源 B)");
+    expect(message).not.toContain(OWEN);
+    expect(tidyPrompt(200)).toContain("不同的人說的事不要合併成一條");
+  });
+
+  it("lets forgetting the person who told it remove a merged line", async () => {
+    const { notes, clock } = await rig(testClock());
+    const lines = addLines(notes, clock, placeSubject("p1"), [
+      {
+        text: "Ben 說這裡週五有聚會",
+        scope: inSpace,
+        provenance: "told_by_other",
+        told_by: BEN,
+        evidence: [{ quote: "週五聚會喔", person_id: BEN, session: SESSION, seq_from: 9 }],
+      },
+      {
+        text: "這裡週五晚上有聚會",
+        scope: inSpace,
+        provenance: "observed",
+        told_by: null,
+        evidence: [],
+      },
+    ]);
+    const result = notes.merge(
+      placeSubject("p1"),
+      [
+        {
+          from: lines.map((l) => l.id),
+          line: {
+            section: "近況",
+            text: "週五晚上有聚會",
+            ...mergedSource(lines),
+            scope: inSpace,
+            evidence: mergedEvidence(lines),
+          },
+        },
+      ],
+      { author: "reflect", reason: TIDY_REASON },
+    );
+    const added = result.applied.find((x) => x.op === "add")?.line ?? "";
+    expect(notes.line(added)?.told_by).toBe(BEN);
+    notes.forgetPerson([BEN]);
+    expect(notes.line(added)).toBeNull();
+    expect(notes.lines(placeSubject("p1"), "owner").map((l) => l.text)).toEqual([]);
+    // What Ben did not tell is outdated, still there to restore.
+    expect(notes.lines(placeSubject("p1"), "owner", { outdated: true }).map((l) => l.text)).toEqual(
+      ["這裡週五晚上有聚會"],
+    );
   });
 
   it("drops a source label the reply copied back, so a line kept word for word is unchanged", async () => {
@@ -595,9 +711,55 @@ describe("NotesStore.merge", () => {
         ],
         { author: "reflect", reason: TIDY_REASON },
       );
-    expect(merge).toThrow(NotesError);
+    expect(codeOf(merge)).toBe("bad_scope");
     expect(notes.document(OWEN_DOC)?.version).toBe(version);
     expect(notes.lines(OWEN_DOC, "owner")).toHaveLength(2);
+  });
+
+  it("refuses to merge lines of different people, or to drop who told them", async () => {
+    const { notes, clock } = await rig(testClock());
+    const place = placeSubject("p1");
+    const [owen, ben, nobody, bensWords] = addLines(notes, clock, place, [
+      { text: "Owen 說的", scope: inSpace, provenance: "told_by_other", told_by: OWEN },
+      {
+        text: "Ben 說的",
+        scope: inSpace,
+        provenance: "told_by_other",
+        told_by: BEN,
+        evidence: [{ quote: "嗯", person_id: BEN, session: SESSION, seq_from: 3 }],
+      },
+      { text: "沒人說的", scope: inSpace, provenance: "observed", told_by: null, evidence: [] },
+      {
+        text: "Ben 的話撐著的",
+        scope: inSpace,
+        provenance: "observed",
+        told_by: null,
+        evidence: [{ quote: "對", person_id: BEN, session: SESSION, seq_from: 4 }],
+      },
+    ]);
+    const meta = { author: "reflect" as const, reason: TIDY_REASON };
+    const merge = (from: Array<NoteLine | undefined>, told_by: typeof OWEN | null) => () =>
+      notes.merge(
+        place,
+        [
+          {
+            from: from.map((l) => l?.id ?? ""),
+            line: { section: "近況", text: "合", provenance: "observed", told_by, scope: inSpace },
+          },
+        ],
+        meta,
+      );
+    const version = notes.document(place)?.version;
+    // Two tellers; a teller and another person's words.
+    expect(codeOf(merge([owen, ben], null))).toBe("mixed_people");
+    expect(codeOf(merge([owen, bensWords], OWEN))).toBe("mixed_people");
+    // One teller and a line of no one's: only if the merged line keeps them.
+    expect(codeOf(merge([owen, nobody], null))).toBe("mixed_people");
+    // A line rewritten keeps who told it.
+    expect(codeOf(merge([ben], null))).toBe("mixed_people");
+    expect(notes.document(place)?.version).toBe(version);
+    expect(notes.lines(place, "owner")).toHaveLength(4);
+    expect(merge([owen, nobody], OWEN)().version).toBe((version ?? 0) + 1);
   });
 
   it("refuses a line that is no longer in use, and one named twice", async () => {
@@ -606,15 +768,21 @@ describe("NotesStore.merge", () => {
       { text: "一", scope: inSpace },
       { text: "二", scope: inSpace },
     ]);
-    const line = { section: "近況", text: "一二", provenance: "observed" as const, scope: inSpace };
+    const line = {
+      section: "近況",
+      text: "一二",
+      provenance: "observed" as const,
+      told_by: OWEN,
+      scope: inSpace,
+    };
     const meta = { author: "reflect" as const, reason: TIDY_REASON };
-    expect(() => notes.merge(OWEN_DOC, [{ from: [x?.id ?? "", x?.id ?? ""], line }], meta)).toThrow(
-      NotesError,
-    );
+    expect(
+      codeOf(() => notes.merge(OWEN_DOC, [{ from: [x?.id ?? "", x?.id ?? ""], line }], meta)),
+    ).toBe("duplicate");
     notes.outdate(OWEN_DOC, y?.id ?? "", "不對", write);
-    expect(() => notes.merge(OWEN_DOC, [{ from: [x?.id ?? "", y?.id ?? ""], line }], meta)).toThrow(
-      NotesError,
-    );
+    expect(
+      codeOf(() => notes.merge(OWEN_DOC, [{ from: [x?.id ?? "", y?.id ?? ""], line }], meta)),
+    ).toBe("outdated");
     expect(notes.lines(OWEN_DOC, "owner").map((l) => l.id)).toEqual([x?.id]);
   });
 });

@@ -190,7 +190,8 @@ export type NotesErrorCode =
   | "document_full"
   | "section_full"
   | "outdated"
-  | "duplicate";
+  | "duplicate"
+  | "mixed_people";
 
 /** Size limits, so a prompt card stays bounded. */
 export interface NotesLimits {

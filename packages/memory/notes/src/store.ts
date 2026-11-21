@@ -1159,7 +1159,9 @@ export class NotesStore {
    * Puts fewer lines in the place of more as one change set (the nightly tidy, `tidy.ts`): every
    * line a merge names in `from` is marked outdated with `reason` and points at the merge's new
    * line. A line named must be in use in this document, be named once, and have the very scope of
-   * its merge's new line: a merge never carries text from one scope into another. The outdates go
+   * its merge's new line: a merge never carries text from one scope into another. Lines merged
+   * rest on one person at most (who told them, whose words their evidence quotes) and the new line
+   * names that person as `told_by`; one line rewritten keeps its own. The outdates go
    * first, so the limits count the lines that stay. All or nothing; a call that merges nothing
    * gets no version.
    */
@@ -1205,6 +1207,33 @@ export class NotesStore {
           }
           return row;
         });
+      });
+      // "Forget me" removes a line through who told it or whose words back it: a merged line
+      // rests on one person at most, and names them, so forgetting them still removes it.
+      const evidence = this.#evidenceOf([...named]);
+      rows.forEach((list, index) => {
+        const told = merges[index]?.line.told_by ?? null;
+        const [only] = list;
+        if (list.length === 1 && only !== undefined) {
+          if (told !== only.told_by) {
+            throw new NotesError("mixed_people", "a line rewritten keeps who told it");
+          }
+          return;
+        }
+        const people = new Set<string>();
+        for (const row of list) {
+          if (row.told_by !== null) people.add(row.told_by);
+          for (const e of evidence.get(row.id) ?? []) {
+            if (e.redacted_at === null && e.person_id !== null) people.add(e.person_id);
+          }
+        }
+        if (people.size > 1) {
+          throw new NotesError("mixed_people", "lines of different people are not merged");
+        }
+        const [person] = [...people];
+        if (told !== (person ?? null)) {
+          throw new NotesError("mixed_people", "a merged line names the one person it rests on");
+        }
       });
       const applied: AppliedOp[] = [];
       rows.forEach((list, index) => {
