@@ -483,7 +483,9 @@ describe("job: Core's speech host", () => {
       }),
     ]);
     s.reg.setLink("main", { local: true });
-    s.host("friend", [sing("friend", { running: 0, queued: 0 }, {}, { yields_to: ["tts", "asr"] })]);
+    s.host("friend", [
+      sing("friend", { running: 0, queued: 0 }, {}, { yields_to: ["tts", "asr"] }),
+    ]);
     expect(s.order()).toEqual(["friend"]);
     expect(s.order("sing", { all: true })).toEqual(["friend", "sing.fallback.1"]);
   });
