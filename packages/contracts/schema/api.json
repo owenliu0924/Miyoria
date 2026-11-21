@@ -2159,6 +2159,145 @@
         "capabilities"
       ]
     },
+    "ApiClusterCapabilityRouting": {
+      "type": "object",
+      "properties": {
+        "capability": {
+          "type": "string"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostRoutingClass"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostRoutingLatency"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "yields_to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speech_mode": {
+          "$ref": "#/$defs/ApiClusterSpeechHostMode"
+        },
+        "conflict": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "used": {
+                  "type": "string"
+                },
+                "others": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "used",
+                "others"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "class_conflict": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterEndpointRouting"
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterDispatchDecision"
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "host",
+              "service",
+              "since"
+            ]
+          }
+        },
+        "result_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "capability",
+        "class",
+        "latency",
+        "yields_to",
+        "variant",
+        "speech_mode",
+        "conflict",
+        "class_conflict",
+        "endpoints",
+        "decisions",
+        "sessions",
+        "result_mb"
+      ]
+    },
     "ApiClusterCoreCheckout": {
       "type": "object",
       "properties": {
@@ -2216,6 +2355,190 @@
         "id",
         "name",
         "key"
+      ]
+    },
+    "ApiClusterDispatchDecision": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "score_s": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "host",
+              "service",
+              "score_s"
+            ]
+          }
+        }
+      },
+      "required": [
+        "at",
+        "host",
+        "service",
+        "scores"
+      ]
+    },
+    "ApiClusterEndpointRouting": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "link"
+          ]
+        },
+        "healthy": {
+          "type": "boolean"
+        },
+        "resting": {
+          "type": "boolean"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "score_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "parts": {
+          "$ref": "#/$defs/ApiClusterScoreParts"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostServiceRouting"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "load": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "running": {
+                  "type": "number"
+                },
+                "queued": {
+                  "type": "number"
+                },
+                "age_ms": {
+                  "type": "number"
+                },
+                "outside": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "running",
+                "queued",
+                "age_ms"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "speech": {
+          "type": "boolean"
+        },
+        "estimate": {
+          "type": "object",
+          "properties": {
+            "unit_s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "rate_mb_s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "units": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "transfers": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "unit_s",
+            "rate_mb_s",
+            "units",
+            "transfers"
+          ]
+        }
+      },
+      "required": [
+        "host",
+        "service",
+        "via",
+        "healthy",
+        "resting",
+        "eligible",
+        "score_s",
+        "routing",
+        "load",
+        "pending",
+        "speech",
+        "estimate"
       ]
     },
     "ApiClusterEndpointView": {
@@ -2542,6 +2865,269 @@
         "link_url"
       ]
     },
+    "ApiClusterRouting": {
+      "type": "object",
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterCapabilityRouting"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "local": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rtt_ms": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "drained": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "weight": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "host",
+              "local",
+              "rtt_ms",
+              "drained",
+              "weight"
+            ]
+          }
+        },
+        "activity": {
+          "type": "object",
+          "properties": {
+            "in_voice": {
+              "type": "boolean"
+            },
+            "live": {
+              "type": "boolean"
+            },
+            "last_spoke_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idle": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "in_voice",
+            "live",
+            "last_spoke_at",
+            "idle"
+          ]
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "allow_on_speech_host": {
+              "$ref": "#/$defs/ApiClusterSpeechHostMode"
+            },
+            "idle_minutes": {
+              "type": "number"
+            },
+            "weights": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "drain": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "capabilities": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "allow_on_speech_host": {
+                    "$ref": "#/$defs/ApiClusterSpeechHostMode"
+                  },
+                  "pin": {
+                    "type": "string"
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "variant": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "exclude"
+                ]
+              }
+            }
+          },
+          "required": [
+            "allow_on_speech_host",
+            "idle_minutes",
+            "weights",
+            "drain",
+            "capabilities"
+          ]
+        },
+        "panel": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterRoutingControl"
+          }
+        }
+      },
+      "required": [
+        "capabilities",
+        "hosts",
+        "activity",
+        "config",
+        "panel"
+      ]
+    },
+    "ApiClusterRoutingControl": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ApiClusterRoutingControlKind"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "capability",
+        "host",
+        "value",
+        "by",
+        "at"
+      ]
+    },
+    "ApiClusterRoutingControlKind": {
+      "type": "string",
+      "enum": [
+        "pin",
+        "exclude",
+        "weight",
+        "drain"
+      ]
+    },
+    "ApiClusterRoutingControlRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "set",
+            "clear"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiClusterRoutingControlKind"
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "value": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "action",
+        "kind",
+        "host"
+      ]
+    },
+    "ApiClusterScoreParts": {
+      "type": "object",
+      "properties": {
+        "wait_ms": {
+          "type": "number"
+        },
+        "run_ms": {
+          "type": "number"
+        },
+        "transfer_ms": {
+          "type": "number"
+        },
+        "penalty_ms": {
+          "type": "number"
+        },
+        "penalties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "weight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "wait_ms",
+        "run_ms",
+        "transfer_ms",
+        "penalty_ms",
+        "penalties",
+        "weight"
+      ]
+    },
     "ApiClusterServiceActionRequest": {
       "type": "object",
       "properties": {
@@ -2638,6 +3224,12 @@
             "policy",
             "leased"
           ]
+        },
+        "routing": {
+          "$ref": "#/$defs/HostServiceRouting"
+        },
+        "load": {
+          "$ref": "#/$defs/HostServiceLoad"
         }
       },
       "required": [
@@ -2648,6 +3240,14 @@
         "since",
         "healthy",
         "restarts"
+      ]
+    },
+    "ApiClusterSpeechHostMode": {
+      "type": "string",
+      "enum": [
+        "never",
+        "when_idle",
+        "always"
       ]
     },
     "ApiClusterUpgradeCancelResult": {
@@ -21576,6 +22176,108 @@
       },
       "required": [
         "allowed"
+      ]
+    },
+    "HostRoutingClass": {
+      "type": "string",
+      "enum": [
+        "single",
+        "session",
+        "job"
+      ]
+    },
+    "HostRoutingLatency": {
+      "type": "string",
+      "enum": [
+        "realtime",
+        "interactive",
+        "batch"
+      ]
+    },
+    "HostServiceLoad": {
+      "type": "object",
+      "properties": {
+        "running": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "age_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "outside": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "running",
+        "queued",
+        "age_ms"
+      ]
+    },
+    "HostServiceRouting": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/HostRoutingClass"
+        },
+        "latency": {
+          "$ref": "#/$defs/HostRoutingLatency"
+        },
+        "concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queue": {
+          "type": "boolean"
+        },
+        "yields_to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "variant": {
+          "type": "string"
+        },
+        "accept": {
+          "type": "boolean"
+        },
+        "owner_concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unit_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "result_mb": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "class",
+        "latency",
+        "concurrency",
+        "queue",
+        "yields_to",
+        "ready",
+        "accept"
       ]
     },
     "HostServiceState": {

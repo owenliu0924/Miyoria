@@ -794,6 +794,35 @@
           }
         }
       },
+      "routing": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/cluster/routing"
+          }
+        }
+      },
+      "routingControl": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "owner.cluster.route",
+            "refusal": "調整分派需要 owner.cluster.route 權限(預設只有擁有者有)"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/cluster/routing/controls"
+          }
+        }
+      },
       "join": {
         "~orpc": {
           "errorMap": {},

@@ -131,7 +131,8 @@ export interface DispatchedUnit {
   accepted(): void;
   /**
    * It ended. `run_ms`: how long it ran there (else, when the host was idle when it was sent, the
-   * time since it was sent). `bytes`: the size of its results.
+   * time since it was sent). `bytes`: the size of its results. `ok: false` teaches nothing (it
+   * failed, or it was not a usual unit).
    */
   done(outcome?: { ok?: boolean; run_ms?: number; bytes?: number }): void;
 }

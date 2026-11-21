@@ -65,6 +65,7 @@ export {
   type ClusterModuleOptions,
   type ClusterRouting,
   type ClusterService,
+  clusterRouting,
   type RoutingControlInput,
   type RoutingSnapshot,
 } from "./module.js";

@@ -197,8 +197,8 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-/** The routing service over the registry and the controls table. */
-function routingOf(
+/** The routing service over the registry and the controls table (stand-ins use it too). */
+export function clusterRouting(
   registry: EndpointRegistry,
   tables: ClusterTables,
   config: RoutingConfig,
@@ -435,7 +435,7 @@ export class ClusterModule implements Module {
       publicUrl: config.public_url ?? null,
       context: (context) => link.sendContext(context),
       checkout: this.#options.checkout ?? null,
-      routing: routingOf(registry, tables, config.routing),
+      routing: clusterRouting(registry, tables, config.routing),
     });
 
     // Where her voice is, for the speech-host rule (v5-hostd §15.5).
