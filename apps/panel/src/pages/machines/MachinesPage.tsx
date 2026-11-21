@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 import { isApiError } from "@/api/http";
-import { useClusterEndpoints, useClusterHosts } from "@/app/queries";
+import { useClusterEndpoints, useClusterHosts, useClusterRouting } from "@/app/queries";
 import { Page, PageHeader } from "@/components/page";
 import { EmptyLine, QueryView } from "@/components/query-state";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,7 @@ import { InviteDialog } from "./Dialogs";
 import { EndpointList } from "./Endpoints";
 import { HostList } from "./Hosts";
 import { updatable } from "./labels";
+import { RoutingView } from "./Routing";
 import { UpgradeBar } from "./Upgrade";
 
 /** The cluster module is off: every route answers 503. */
@@ -82,16 +83,28 @@ function Hosts({ onInvite }: { onInvite: () => void }) {
   );
 }
 
+/**
+ * Job dispatch, or, from a Core without it (404 on the route, or 503 from a cluster module that
+ * offers no routing), the plain list of who answers what.
+ */
 function Endpoints() {
-  const endpoints = useClusterEndpoints();
+  const routing = useClusterRouting();
+  const older = routing.isError && isApiError(routing.error) && (routing.error.kind === "not_provided" || routing.error.kind === "unavailable");
+  const endpoints = useClusterEndpoints(older);
   return (
     <Card>
       <CardHeader>
         <CardTitle>誰負責什麼</CardTitle>
       </CardHeader>
-      <QueryView query={endpoints} isEmpty={(d) => d.capabilities.length === 0} empty={<EmptyLine>還沒有任何能力</EmptyLine>}>
-        {(data) => <EndpointList data={data} />}
-      </QueryView>
+      {older ? (
+        <QueryView query={endpoints} isEmpty={(d) => d.capabilities.length === 0} empty={<EmptyLine>還沒有任何能力</EmptyLine>}>
+          {(data) => <EndpointList data={data} />}
+        </QueryView>
+      ) : (
+        <QueryView query={routing} isEmpty={(d) => d.capabilities.length === 0 && d.hosts.length === 0} empty={<EmptyLine>還沒有任何能力</EmptyLine>}>
+          {(data) => <RoutingView data={data} />}
+        </QueryView>
+      )}
     </Card>
   );
 }
