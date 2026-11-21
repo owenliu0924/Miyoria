@@ -12,7 +12,9 @@ full with nothing left out.
 Tokens: `src/index.css` (`:root` variables + Tailwind v4 `@theme inline`). Appearance store:
 `src/app/appearance.ts`. Primitives: `src/components/ui/*` (shadcn, Radix per component). App
 components: `src/components/*`. Charts: `src/components/charts/*` (hand-drawn SVG, no chart
-library). Chart blocks over the Core's telemetry: `src/components/trends.tsx`.
+library). Chart blocks over the Core's telemetry: `src/components/trends.tsx`. The one exception is
+深海交易所's candle chart (`src/pages/public/exchange/CandleChart.tsx`, TradingView Lightweight
+Charts, loaded only when a ticker is opened, its attribution logo kept as its licence asks).
 
 The same app is also the public site (`src/pages/public/`), for people without panel access. See
 "Public site" below; everything here applies to it unless that section says otherwise.
@@ -103,7 +105,17 @@ Two accents, everything else neutral. Coloured controls are always solid.
 | Secondary line | `--secondary-line` | Mixed from secondary, `#a78bfa`-like | Meters, single-series charts |
 | Neutral | `--control`, `--control-hover`, `--hover` | White 10%, 17%, 7% | Row actions, the current nav item, every other control |
 | Lines | `--border`, `--line-strong` | White 11%, 20% | Hairlines |
-| Exception | `--stop` | `#d6373f` | The emergency stop. Nothing else is red |
+| Exception | `--stop` | `#d6373f` | The emergency stop. Nothing else is red, except market moves (below) |
+
+**The market's red and green (owner, 2026-11-21).** 深海交易所 uses a red and a green for market up
+and down only, and nowhere else: price moves, candles, volume bars, the moving averages' direction
+arrows and the heat maps' tiles. `#ef5f5f` and `#3fc48a` for lines, text and candles; the tiles mix
+from a neutral `#3b3f4c` towards a deeper `#b8383d` / `#1d8a5a` (full at ±3%) so white text reads on
+them. Which is up follows the exchange's `colors` setting (`tw`: red up, the default; `us`: green
+up), every view states it in a legend, and colour is never the only carrier: a move always has its
+arrow and sign (`▲ +1.2%`, `▼ −0.8%`). The candle chart's averages are MA5 `--chart-3`, MA20
+`--chart-2`, MA60 `--chart-1` (the light neutral first, since MA5 lies on the candles). The values
+live once in `packages/card-face/src/market.ts`, shared by the panel and the pictures.
 
 | Theme | Primary | Secondary | Chart 1 | Chart 2 |
 |---|---|---|---|---|
