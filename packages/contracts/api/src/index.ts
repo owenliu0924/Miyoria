@@ -32,6 +32,7 @@ import { evalRoutes } from "./eval.js";
 import { exchange, exchangeAdmin } from "./exchange.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
+import { gifts, giftsAdmin, giftsPublic } from "./gifts.js";
 import { githubLink } from "./github-link.js";
 import { self, world } from "./inner.js";
 import { karaoke, karaokeAdmin } from "./karaoke.js";
@@ -392,6 +393,38 @@ export {
   type IssuedFortune,
   IssuedFortuneSchema,
 } from "./fortune.js";
+export {
+  type AdminGiftItem,
+  AdminGiftSchema,
+  type AdminGifts,
+  AdminGiftsSchema,
+  type GiftAskResult,
+  GiftAskResultSchema,
+  type GiftConfirmResult,
+  GiftConfirmResultSchema,
+  GiftKindSchema,
+  type GiftOverride,
+  GiftOverrideSchema,
+  type GiftPicture,
+  GiftPictureSchema,
+  type GiftPinRequest,
+  GiftPinRequestSchema,
+  type GiftQuoteRequest,
+  GiftQuoteRequestSchema,
+  GiftQuoteSchema,
+  type GiftQuoteView,
+  GiftStatusSchema,
+  type GiftUnpinRequest,
+  GiftUnpinRequestSchema,
+  type GiftViewItem,
+  GiftViewSchema,
+  type MyGifts,
+  MyGiftsSchema,
+  type PublicGiftItem,
+  PublicGiftSchema,
+  type PublicGifts,
+  PublicGiftsSchema,
+} from "./gifts.js";
 export {
   type GithubLinkView,
   GithubLinkViewSchema,
@@ -1139,6 +1172,9 @@ export const contract = {
   marketAdmin,
   exchange,
   exchangeAdmin,
+  gifts,
+  giftsAdmin,
+  giftsPublic,
   karaoke,
   karaokeAdmin,
   karaokeRooms,

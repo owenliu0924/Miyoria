@@ -3057,6 +3057,171 @@
         }
       }
     },
+    "gifts": {
+      "mine": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/gifts"
+          }
+        }
+      },
+      "quote": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/gifts/quote"
+          }
+        }
+      },
+      "confirm": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/gifts/{id}/confirm"
+          }
+        }
+      },
+      "cancel": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/gifts/{id}/cancel"
+          }
+        }
+      },
+      "picture": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/gifts/{id}/picture"
+          }
+        }
+      }
+    },
+    "giftsAdmin": {
+      "list": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/gifts"
+          }
+        }
+      },
+      "refund": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/economy/gifts/{id}/refund"
+          }
+        }
+      },
+      "prices": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/economy/gifts/prices"
+          }
+        }
+      },
+      "pin": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/economy/gifts/prices"
+          }
+        }
+      },
+      "unpin": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "DELETE",
+            "path": "/api/economy/gifts/prices"
+          }
+        }
+      }
+    },
+    "giftsPublic": {
+      "collection": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/gifts"
+          }
+        }
+      }
+    },
     "karaoke": {
       "overview": {
         "~orpc": {

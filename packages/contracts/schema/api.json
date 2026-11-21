@@ -572,6 +572,182 @@
         "field"
       ]
     },
+    "ApiAdminGift": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind_word": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "$ref": "#/$defs/ApiGiftStatus"
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favourite": {
+          "type": "boolean"
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "her",
+                "system",
+                "admin"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "answer_due": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "answered_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "giver": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "priced_by": {
+          "type": "string",
+          "enum": [
+            "model",
+            "cache",
+            "pinned",
+            "fallback",
+            "rule"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "discord",
+            "web"
+          ]
+        },
+        "refunded_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "tier",
+        "price",
+        "status",
+        "line",
+        "favourite",
+        "answered_by",
+        "created_at",
+        "expires_at",
+        "answer_due",
+        "answered_at",
+        "giver",
+        "person",
+        "priced_by",
+        "reason",
+        "source",
+        "refunded_by"
+      ]
+    },
+    "ApiAdminGifts": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "tiers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "gifts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiAdminGift"
+          }
+        }
+      },
+      "required": [
+        "currency",
+        "tiers",
+        "gifts"
+      ]
+    },
     "ApiAffectBiases": {
       "type": "object",
       "properties": {
@@ -6231,6 +6407,413 @@
           ]
         }
       }
+    },
+    "ApiGiftAskResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "quote",
+            "fixed",
+            "refused"
+          ]
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftQuote"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "rice",
+                "big_bowl",
+                "dessert"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "quote",
+        "item",
+        "reason",
+        "message"
+      ]
+    },
+    "ApiGiftConfirmResult": {
+      "type": "object",
+      "properties": {
+        "gift": {
+          "$ref": "#/$defs/ApiGiftView"
+        },
+        "charged": {
+          "type": "boolean"
+        },
+        "balance": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "gift",
+        "charged",
+        "balance"
+      ]
+    },
+    "ApiGiftKind": {
+      "type": "string",
+      "enum": [
+        "food",
+        "drink",
+        "small_object",
+        "big_object",
+        "experience"
+      ]
+    },
+    "ApiGiftOverride": {
+      "type": "object",
+      "properties": {
+        "item_key": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "model",
+            "pinned",
+            "blocked"
+          ]
+        },
+        "by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_key",
+        "item",
+        "kind",
+        "tier",
+        "source",
+        "by",
+        "at"
+      ]
+    },
+    "ApiGiftPicture": {
+      "type": "object",
+      "properties": {
+        "alt": {
+          "type": "string"
+        },
+        "png": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "alt",
+        "png"
+      ]
+    },
+    "ApiGiftPinRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "tier": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiGiftKind"
+        },
+        "block": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ApiGiftQuote": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiGiftKind"
+        },
+        "kind_word": {
+          "type": "string"
+        },
+        "tier": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "tier_word": {
+          "type": "string"
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "currency": {
+          "type": "string"
+        },
+        "balance": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "balance_after": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "tier",
+        "tier_word",
+        "price",
+        "currency",
+        "balance",
+        "balance_after",
+        "expires_at",
+        "fallback",
+        "note"
+      ]
+    },
+    "ApiGiftQuoteRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ApiGiftStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "cancelled",
+        "expired",
+        "rejected",
+        "confirmed",
+        "accepted",
+        "refused",
+        "refunded",
+        "refund_due"
+      ]
+    },
+    "ApiGiftUnpinRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ApiGiftView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind_word": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "status": {
+          "$ref": "#/$defs/ApiGiftStatus"
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favourite": {
+          "type": "boolean"
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "her",
+                "system",
+                "admin"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "answer_due": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "answered_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "tier",
+        "price",
+        "status",
+        "line",
+        "favourite",
+        "answered_by",
+        "created_at",
+        "expires_at",
+        "answer_due",
+        "answered_at"
+      ]
     },
     "ApiGithubLinkView": {
       "type": "object",
@@ -13176,6 +13759,37 @@
         "cards"
       ]
     },
+    "ApiMyGifts": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "tiers": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "gifts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiGiftView"
+          }
+        }
+      },
+      "required": [
+        "open",
+        "currency",
+        "tiers",
+        "gifts"
+      ]
+    },
     "ApiMyTickets": {
       "type": "object",
       "properties": {
@@ -15525,6 +16139,82 @@
         "hours_live",
         "hours_in_voice",
         "date"
+      ]
+    },
+    "ApiPublicGift": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind_word": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favourite": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "line",
+        "favourite",
+        "at",
+        "from"
+      ]
+    },
+    "ApiPublicGifts": {
+      "type": "object",
+      "properties": {
+        "recent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPublicGift"
+          }
+        },
+        "favourites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPublicGift"
+          }
+        }
+      },
+      "required": [
+        "recent",
+        "favourites"
       ]
     },
     "ApiPublicSong": {

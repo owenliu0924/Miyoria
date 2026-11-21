@@ -66,6 +66,7 @@ import { exchangeAdminRpc, exchangeRpc } from "./exchange-routes.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
+import { giftsAdminRpc, giftsPublicRpc, giftsRpc } from "./gift-routes.js";
 import { githubLinkRpc } from "./github-link.js";
 import { selfRpc, worldRpc } from "./inner.js";
 import { karaokeAdminRpc, karaokeRefusals, karaokeRoomsRpc, karaokeRpc } from "./karaoke-routes.js";
@@ -134,6 +135,9 @@ export const router = os.router({
   marketAdmin: marketAdminRpc,
   exchange: exchangeRpc,
   exchangeAdmin: exchangeAdminRpc,
+  gifts: giftsRpc,
+  giftsAdmin: giftsAdminRpc,
+  giftsPublic: giftsPublicRpc,
   karaoke: karaokeRpc,
   karaokeAdmin: karaokeAdminRpc,
   karaokeRooms: karaokeRoomsRpc,
@@ -185,6 +189,8 @@ const PUBLIC_SIDE = new Set([
   "fortune",
   "market",
   "exchange",
+  "gifts",
+  "giftsPublic",
   "karaoke",
   "karaokeRooms",
   "githubLink",
