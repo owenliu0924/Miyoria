@@ -1,8 +1,9 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { ActivitySnapshot, ActivityTask, ArbiterDecisionView, DecisionRecord, LedgerView, PromptSummary, SavedPrompt, TurnOutcomeRecord } from "@miyoria/contracts/api";
+import { ArbiterReasonSchema, type ActivitySnapshot, type ActivityTask, type ArbiterDecisionView, type DecisionRecord, type LedgerView, type PromptSummary, type SavedPrompt, type TurnOutcomeRecord } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
+import { REASON_LABEL } from "./labels";
 
 const AT = "2026-11-02T12:00:00.000Z";
 const CTX = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" } as const;
@@ -276,6 +277,12 @@ describe("Activity: the arbiter ledger", () => {
       expect(calls.some((u) => u.includes("/api/arbiter/decisions") && u.includes("verdict=rejected"))).toBe(true);
     });
     await waitFor(() => expect(within(screen.getByRole("table", { name: "裁決" })).queryByText("通過")).toBeNull());
+  });
+});
+
+describe("Activity: the reasons in words", () => {
+  it("has words for every reason the arbiter gives", () => {
+    for (const reason of ArbiterReasonSchema.options) expect(REASON_LABEL[reason]).toMatch(/\S/);
   });
 });
 
