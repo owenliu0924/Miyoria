@@ -30,6 +30,7 @@ import {
   EventLogKey,
   type EventPayload,
   Events,
+  EXCHANGE_REASONS,
   HandleDirectoryKey,
   type HeartEvidenceInput,
   HeartKey,
@@ -189,6 +190,14 @@ const MARKET_LABEL: Readonly<Record<string, string>> = {
   [MARKET_REASONS.lotteryPrize]: "每週樂透中獎",
   [MARKET_REASONS.auctionHold]: "拍賣出價(押著)",
   [MARKET_REASONS.auctionRelease]: "拍賣出價退回",
+};
+
+/** What the deep-sea exchange's rows say (docs/design/exchange.md). */
+const EXCHANGE_LABEL: Readonly<Record<string, string>> = {
+  [EXCHANGE_REASONS.in]: "交易所:買進",
+  [EXCHANGE_REASONS.out]: "交易所:賣出或退回",
+  [EXCHANGE_REASONS.fee]: "交易所:手續費和稅(燒掉)",
+  [EXCHANGE_REASONS.feeBack]: "交易所:沒成交,手續費退回",
 };
 
 /** What karaoke rooms' rows say (docs/design/karaoke.md 「做了什麼第四步」). */
@@ -787,6 +796,11 @@ export class EconomyService implements Economy {
       case MARKET_REASONS.auctionHold:
       case MARKET_REASONS.auctionRelease:
         return MARKET_LABEL[r.reason] ?? r.reason;
+      case EXCHANGE_REASONS.in:
+      case EXCHANGE_REASONS.out:
+      case EXCHANGE_REASONS.fee:
+      case EXCHANGE_REASONS.feeBack:
+        return EXCHANGE_LABEL[r.reason] ?? r.reason;
       case KARAOKE_REASONS.room:
       case KARAOKE_REASONS.roomRefund:
       case KARAOKE_REASONS.prize:

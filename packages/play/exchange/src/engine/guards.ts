@@ -82,9 +82,9 @@ export interface Trader {
   leverage_opt_in: boolean;
 }
 
-export type Refusal = { ok: false; code: string; message: string };
+export type GuardRefusal = { ok: false; code: string; message: string };
 
-const no = (code: string, message: string): Refusal => ({ ok: false, code, message });
+const no = (code: string, message: string): GuardRefusal => ({ ok: false, code, message });
 
 /** The holding limits for someone, widened by tier and time known. */
 export function limitsFor(
@@ -105,7 +105,7 @@ export function limitsFor(
 }
 
 /** Whether they may open an account. */
-export function checkOpen(rules: Rules, t: Trader): Refusal | null {
+export function checkOpen(rules: Rules, t: Trader): GuardRefusal | null {
   if (t.self) return no("self", "她自己不能開戶");
   if (t.insider) return no("insider", "看得到市場內部數字的人(owner、管理員)不能交易");
   if (t.blocked) return no("blocked", "你現在不能開戶");
@@ -120,7 +120,7 @@ export function checkOpen(rules: Rules, t: Trader): Refusal | null {
 }
 
 /** Whether they may take leverage (on top of an account). */
-export function checkLeverageOptIn(rules: Rules, p: EngineParams, t: Trader): Refusal | null {
+export function checkLeverageOptIn(rules: Rules, p: EngineParams, t: Trader): GuardRefusal | null {
   if (!p.leverage.enabled) return no("leverage_off", "槓桿現在沒有開放");
   const open = checkOpen(rules, t);
   if (open) return open;
@@ -164,7 +164,7 @@ export function checkBuy(
   t: Trader,
   req: BuyRequest,
   f: BuyFacts,
-): { ok: true; split: BuySplit } | Refusal {
+): { ok: true; split: BuySplit } | GuardRefusal {
   if (!rules.enabled || rules.paused) return no("closed", "交易所現在暫停,不能下單");
   const open = checkOpen(rules, t);
   if (open) return open;
@@ -244,7 +244,12 @@ export interface SellFacts {
   pending_close: boolean;
 }
 
-export function checkSell(rules: Rules, t: Trader, req: SellRequest, f: SellFacts): Refusal | null {
+export function checkSell(
+  rules: Rules,
+  t: Trader,
+  req: SellRequest,
+  f: SellFacts,
+): GuardRefusal | null {
   if (!rules.enabled || rules.paused) return no("closed", "交易所現在暫停,不能下單");
   if (t.self) return no("self", "她自己沒有持股");
   if (t.insider) return no("insider", "看得到市場內部數字的人不能交易");
@@ -260,6 +265,7 @@ export function checkSell(rules: Rules, t: Trader, req: SellRequest, f: SellFact
     if (f.pending_close) return no("pending", "這個部位已經有一筆賣單在等了");
     return null;
   }
+  if (f.sellable <= 0) return no("t1", "沒有可以賣的股票(今天買的明天才能賣)");
   if (!Number.isSafeInteger(req.qty) || req.qty <= 0) return no("qty", "要賣多少?");
   if (req.qty > f.sellable) {
     return no(

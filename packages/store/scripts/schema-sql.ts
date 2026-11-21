@@ -36,6 +36,8 @@ import { transcriptSchema } from "../../memory/transcript/src/migrations.js";
 import * as transcriptTables from "../../memory/transcript/src/schema.js";
 import { CARDS_CATALOGUE_SQL, cardsSchema } from "../../play/cards/src/migrations.js";
 import * as cardsTables from "../../play/cards/src/schema.js";
+import { exchangeSchema } from "../../play/exchange/src/migrations.js";
+import * as exchangeTables from "../../play/exchange/src/schema.js";
 import { karaokeSchema } from "../../play/karaoke/src/migrations.js";
 import * as karaokeTables from "../../play/karaoke/src/schema.js";
 import { marketSchema } from "../../play/market/src/migrations.js";
@@ -111,6 +113,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   cluster: { tables: clusterTables, schema: clusterSchema },
   directive: { tables: directiveTables, schema: directiveSchema },
   economy: { tables: economyTables, schema: economySchema },
+  exchange: { tables: exchangeTables, schema: exchangeSchema },
   heart: { tables: heartTables, schema: heartSchema },
   initiative: { tables: initiativeTables, schema: initiativeSchema },
   karaoke: { tables: karaokeTables, schema: karaokeSchema },

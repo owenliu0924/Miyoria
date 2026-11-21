@@ -23,6 +23,7 @@ import { memoryTables } from "@miyoria/memory/memory";
 import { notesTables } from "@miyoria/memory/notes";
 import { transcriptTables } from "@miyoria/memory/transcript";
 import { cardsTables } from "@miyoria/play/cards";
+import { exchangeTables } from "@miyoria/play/exchange";
 import { karaokeTables } from "@miyoria/play/karaoke";
 import { marketTables } from "@miyoria/play/market";
 import {
@@ -104,6 +105,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   clusterTables,
   directiveTables,
   economyTables,
+  exchangeTables,
   heartTables,
   initiativeTables,
   karaokeTables,

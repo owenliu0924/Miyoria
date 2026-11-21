@@ -27,6 +27,7 @@ export {
   uniqueFrameOf,
   WALLET_NODE,
 } from "./economy.js";
+export { EconomyExchangeWallet } from "./exchange-wallet.js";
 export { TaskRefusal } from "./guard.js";
 export { EconomyKaraokeWallet } from "./karaoke-wallet.js";
 export { EconomyMarketWallet } from "./market-wallet.js";

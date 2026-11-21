@@ -95,6 +95,13 @@ export interface CoinLedgerStore extends LedgerStatsStore {
    * `rule`, the balance.
    */
   post(entry: CoinEntry, rule?: CoinRule): Promise<CoinPost>;
+  /**
+   * Appends `rows` (one wallet, each with its own key) in one transaction: all of them or none.
+   * The first row's key decides a retry (`duplicate`, with that row); with `covered`, refused
+   * (`short`) when their sum would take the balance below zero. The exchange books a sale and its
+   * burned fee this way, so the fee is a row of its own without a moment the two disagree.
+   */
+  postAll?(rows: readonly CoinEntry[], rule?: { covered?: boolean }): Promise<CoinPost>;
   balance(profile: ProfileId, wallet: PersonId): Promise<number>;
   /** Rows of the wallet, newest first, at most `limit`; `reasons` and `since` narrow them. */
   entries(

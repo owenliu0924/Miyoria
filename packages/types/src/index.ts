@@ -644,6 +644,20 @@ export {
   type TurnSilencer,
   TurnSilencerKey,
 } from "./emergency.js";
+export {
+  EXCHANGE_REASONS,
+  type ExchangeDayFacts,
+  type ExchangeEntry,
+  type ExchangeNewsDraft,
+  type ExchangePerson,
+  type ExchangePost,
+  type ExchangeRatingItem,
+  type ExchangeReason,
+  type ExchangeWallet,
+  ExchangeWalletKey,
+  type ExchangeWords,
+  ExchangeWordsKey,
+} from "./exchange.js";
 export { type GameTaskOutcome, parseGameOutcome } from "./game-outcome.js";
 export {
   assignHandle,
@@ -798,6 +812,10 @@ export {
   type AdminProfilePicture,
   type AuctionPictureData,
   type DexPictureData,
+  type ExchangeBoardPicture,
+  type ExchangeDayPicture,
+  type ExchangePortfolioPicture,
+  type ExchangeQuotePicture,
   type LotteryPictureData,
   type MemberPictureKind,
   type MemberPictureResult,

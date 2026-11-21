@@ -7,7 +7,7 @@
 // store answers `dailyTotals` with one `GROUP BY` (`LedgerStatsStore`, provided by the app); with
 // none, the table says it is not available rather than inventing numbers.
 
-import { CARD_REASONS, KARAOKE_REASONS, MARKET_REASONS } from "@miyoria/types";
+import { CARD_REASONS, EXCHANGE_REASONS, KARAOKE_REASONS, MARKET_REASONS } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
 import { type LedgerDayTotal, LedgerStatsKey, type LedgerStatsStore } from "./records.js";
 import { DANMAKU_REASON, DANMAKU_REFUND_REASON } from "./types.js";
@@ -50,6 +50,9 @@ export const RECOVERED_REASONS: readonly string[] = [
   DANMAKU_REASON,
   // Opening a karaoke room is burned; a room that sang no round through gives it back.
   KARAOKE_REASONS.room,
+  // The exchange's fees, tax and carry are burned (docs/design/exchange.md §3). What goes into
+  // its vault is neither issued nor recovered: it comes back out when people sell.
+  EXCHANGE_REASONS.fee,
 ];
 
 /**
@@ -65,6 +68,7 @@ export const GIVEN_BACK_REASONS: readonly string[] = [
   MARKET_REASONS.lotteryPrize,
   DANMAKU_REFUND_REASON,
   KARAOKE_REASONS.roomRefund,
+  EXCHANGE_REASONS.feeBack,
 ];
 
 const WEEK = 7;

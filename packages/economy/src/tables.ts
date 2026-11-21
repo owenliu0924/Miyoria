@@ -229,41 +229,81 @@ export class LedgerTables implements CoinLedgerStore {
         if (delta === null) return { status: "capped", balance };
         if (rule.covered && balance + delta < 0) return { status: "short", balance };
         const posted: CoinEntry = { ...entry, person: wallet, delta };
-        this.#db.orm
-          .insert(L)
-          .values({
-            id: posted.id,
-            person_id: wallet,
-            delta,
-            reason: posted.reason,
-            ref: posted.ref,
-            idem_key: posted.idem_key,
-            ts: posted.ts,
-          })
-          .run();
-        // Its record on the event log, in this transaction: both are written, or neither.
-        const data: EconomyPostedData = {
-          entry_id: posted.id,
-          person_id: wallet,
-          delta,
-          reason: posted.reason,
-          ref: posted.ref,
-          idem_key: posted.idem_key,
-          balance: balance + delta,
-        };
-        this.#events.appendNow({
-          draft: {
-            id: newId(),
-            at: posted.ts,
-            type: EconomyPosted.type,
-            v: EconomyPosted.v,
-            person_id: wallet === PURSE ? null : wallet,
-            key: `ledger:${posted.id}`,
-            data,
-          },
-          source: LEDGER_SOURCE,
-        });
+        this.#insert(posted, balance);
         return { status: "posted", entry: posted, balance: balance + delta };
+      });
+    } catch (cause) {
+      if (cause instanceof StoreError) throw cause;
+      throw new StoreError("cannot write to the coin ledger", { cause });
+    }
+  }
+
+  /** One row and its `economy.posted` event; inside a transaction. */
+  #insert(posted: CoinEntry, balance: number): void {
+    const wallet = posted.person;
+    const delta = posted.delta;
+    this.#db.orm
+      .insert(L)
+      .values({
+        id: posted.id,
+        person_id: wallet,
+        delta,
+        reason: posted.reason,
+        ref: posted.ref,
+        idem_key: posted.idem_key,
+        ts: posted.ts,
+      })
+      .run();
+    // Its record on the event log, in this transaction: both are written, or neither.
+    const data: EconomyPostedData = {
+      entry_id: posted.id,
+      person_id: wallet,
+      delta,
+      reason: posted.reason,
+      ref: posted.ref,
+      idem_key: posted.idem_key,
+      balance: balance + delta,
+    };
+    this.#events.appendNow({
+      draft: {
+        id: newId(),
+        at: posted.ts,
+        type: EconomyPosted.type,
+        v: EconomyPosted.v,
+        person_id: wallet === PURSE ? null : wallet,
+        key: `ledger:${posted.id}`,
+        data,
+      },
+      source: LEDGER_SOURCE,
+    });
+  }
+
+  async postAll(rows: readonly CoinEntry[], rule: { covered?: boolean } = {}): Promise<CoinPost> {
+    const first = rows[0];
+    if (first === undefined) throw new StoreError("nothing to post");
+    for (const r of rows) {
+      if (!Number.isSafeInteger(r.delta)) throw new StoreError("a coin delta must be whole");
+      if (r.idem_key === null) throw new StoreError("every row of a posting needs its key");
+      if (r.person !== first.person) throw new StoreError("one posting is one wallet");
+    }
+    try {
+      return this.#db.tx((): CoinPost => {
+        const wallet = this.#wallet(first.person);
+        const done = this.#first(wallet, first.idem_key as string);
+        if (done) return { status: "duplicate", entry: done, balance: this.#sumOf(wallet) };
+        let balance = this.#sumOf(wallet);
+        const total = rows.reduce((t, r) => t + r.delta, 0);
+        if (rule.covered && balance + total < 0) return { status: "short", balance };
+        for (const r of rows) {
+          if (r !== first && this.#first(wallet, r.idem_key as string)) {
+            throw new StoreError(`a key of the posting is taken: ${r.idem_key}`);
+          }
+        }
+        for (const r of rows) {
+          this.#insert({ ...r, person: wallet }, balance);
+          balance += r.delta;
+        }
+        return { status: "posted", entry: { ...first, person: wallet }, balance };
       });
     } catch (cause) {
       if (cause instanceof StoreError) throw cause;

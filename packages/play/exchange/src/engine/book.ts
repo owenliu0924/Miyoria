@@ -915,7 +915,7 @@ function closeRound(book: Book, input: RoundInput, day: number, out: RoundOutcom
       changed(out, pos);
     }
   }
-  out.news.push(...closeDay(book.market, seed, day, p));
+  out.news.push(...closeDay(book.market, seed, day, p, book.held_day === day));
   // Sunday: what the vault holds above `vault_burn_level` of the holdings is burned.
   if (weekdayOf(day) === 0) {
     const o = Math.max(obligationsOf(book), p.level_floor);

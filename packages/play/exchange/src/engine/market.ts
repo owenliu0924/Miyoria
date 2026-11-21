@@ -210,7 +210,10 @@ export function closeDay(
   seed: string,
   day: number,
   p: EngineParams,
+  traded = true,
 ): NewsDraw[] {
+  // A day nothing traded on (the market off, paused or down) has no mood change and no earnings.
+  if (!traded) return [];
   const rng = rngFor(seed, "close", day);
   if (rng.chance(p.mood_switch)) {
     const others = ([-1, 0, 1] as const).filter((m) => m !== state.mood);

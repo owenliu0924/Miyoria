@@ -13,6 +13,7 @@ import {
 import {
   CardWalletKey,
   Events,
+  ExchangeWalletKey,
   KaraokeWalletKey,
   MarketWalletKey,
   ParticipationKey,
@@ -27,6 +28,7 @@ import { EconomyCommands } from "./commands.js";
 import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
 import { EconomyService } from "./economy.js";
+import { EconomyExchangeWallet } from "./exchange-wallet.js";
 import { EconomyKaraokeWallet } from "./karaoke-wallet.js";
 import { EconomyMarketWallet } from "./market-wallet.js";
 import { WATCHED_TOPICS } from "./prediction-watch.js";
@@ -117,6 +119,8 @@ export class EconomyModule implements Module {
     ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
     // The weekly market is paid through it (`@miyoria/play/market`).
     ctx.provide(MarketWalletKey, new EconomyMarketWallet(economy));
+    // The deep-sea exchange is paid through it (`@miyoria/play/exchange`).
+    ctx.provide(ExchangeWalletKey, new EconomyExchangeWallet(economy));
     // Karaoke rooms are paid through it (`@miyoria/play/karaoke`).
     ctx.provide(KaraokeWalletKey, new EconomyKaraokeWallet(economy));
     ctx.provide(ParticipationKey, economy.v2.play);
