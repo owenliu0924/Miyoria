@@ -306,7 +306,8 @@ export const EconomyConfigSchema = z
     /**
      * The one fixed rate between New Taiwan dollars and coins (owner 2026-11-21): one coin is this
      * many NT$, about one (a bowl of rice is 10). Never fetched, never floating. Free-form gifts
-     * price by it; the exchange's `twd_per_coin` is meant to be this same number.
+     * price by it, and the exchange reads this same key through its wallet (it has no rate of its
+     * own for coins, only `[modules.exchange] twd_per_usd`).
      */
     twd_per_coin: z.number().positive().default(1),
     /**
