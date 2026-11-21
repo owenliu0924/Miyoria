@@ -14,6 +14,7 @@ import {
   EconomyDocsKey,
   economyTables,
   FortuneStoreKey,
+  giftTables,
   LedgerStatsKey,
 } from "@miyoria/economy";
 import { ActionsModule, ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
@@ -106,6 +107,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   directiveTables,
   economyTables,
   exchangeTables,
+  giftTables,
   heartTables,
   initiativeTables,
   karaokeTables,

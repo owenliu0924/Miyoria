@@ -189,6 +189,24 @@ export interface AuctionPictureData {
   history: { amount: number; name: string; at: string }[];
 }
 
+/**
+ * A gift she kept (docs/design/economy.md §16), for its giver to show: what it was, her line and
+ * the day. No price and no bond: only what the member page shows them.
+ */
+export interface GiftPictureData {
+  /** The giver's display name. */
+  name: string;
+  /** The gift as it was named (`一杯珍奶`). */
+  item: string;
+  /** 「吃的」「小東西」; `""` when unknown. */
+  kind: string;
+  /** Her line, or the plain line when it was taken for her. */
+  line: string;
+  /** `2026-11-21`. */
+  date: string;
+  favourite: boolean;
+}
+
 // ---- the deep-sea exchange (docs/design/exchange.md §7), filled by `@miyoria/play/exchange` ----
 
 /** One company's quote: its price, the day's move and the last two weeks as a line. */
@@ -281,6 +299,7 @@ export interface PictureDataMap {
   exchange_day: ExchangeDayPicture;
   exchange_rich: ExchangeBoardPicture;
   exchange_volume: ExchangeBoardPicture;
+  gift: GiftPictureData;
 }
 
 export type PictureKind = keyof PictureDataMap;

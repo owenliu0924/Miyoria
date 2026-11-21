@@ -33,6 +33,8 @@ export const ISSUED_REASONS: readonly string[] = [
 /** Reasons that take coins out for good: they were spent on something that does not give them back. */
 export const RECOVERED_REASONS: readonly string[] = [
   "feed",
+  // A gift named in words (gifts.ts): burned but for her share; one she said no to is refunded.
+  "gift",
   "screen_message",
   "dedication",
   "draw", // drawing collectibles, removed: the days before still count

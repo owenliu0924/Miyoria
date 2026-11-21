@@ -59,6 +59,7 @@ import { BountyBoard } from "./bounties.js";
 import type { EconomyConfig } from "./config.js";
 import { DanmakuDesk } from "./danmaku.js";
 import { type EconomyDocStore, EconomyDocsKey, MemoryDocs } from "./docs.js";
+import { GIFT_REASON, giftHunger, giftLabel } from "./gift-words.js";
 import { Purse } from "./purse.js";
 import {
   type CoinCap,
@@ -641,9 +642,10 @@ export class EconomyService implements Economy {
    */
   #feedLeft(rows: readonly CoinEntry[]): number {
     const refunded = new Set(rows.filter((r) => r.reason === "refund").map((r) => r.ref));
+    // Food named as a gift (gifts.ts) counts against the same share as rice.
     const taken = rows
-      .filter((r) => r.reason === "feed" && !refunded.has(r.id))
-      .reduce((n, r) => n + hungerOf(r), 0);
+      .filter((r) => (r.reason === "feed" || r.reason === GIFT_REASON) && !refunded.has(r.id))
+      .reduce((n, r) => n + (r.reason === "feed" ? hungerOf(r) : giftHunger(r)), 0);
     const left = this.#d.config.feed_hunger_cap - taken;
     return left > FEED_EPSILON ? left : 0;
   }
@@ -810,7 +812,11 @@ export class EconomyService implements Economy {
         return r.delta > c.checkin ? "每日簽到(連續 7 天)" : EARN_LABEL.checkin;
       default:
         return (
-          labelV2(r, c) ?? RETIRED_LABEL[r.reason] ?? EARN_LABEL[r.reason as EarnReason] ?? r.reason
+          labelV2(r, c) ??
+          giftLabel(r) ??
+          RETIRED_LABEL[r.reason] ??
+          EARN_LABEL[r.reason as EarnReason] ??
+          r.reason
         );
     }
   }

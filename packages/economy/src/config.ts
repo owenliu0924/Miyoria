@@ -1,5 +1,6 @@
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
 import { z } from "zod";
+import { DEFAULT_FREE_GIFTS, FreeGiftConfigSchema } from "./gift-config.js";
 
 const coins = z.number().int().nonnegative();
 
@@ -302,6 +303,11 @@ export const EconomyConfigSchema = z
     // that were taken back in a week the table says "inflating".
     health_days: z.number().int().positive().max(90).default(14),
     health_warn_ratio: z.number().min(0).max(1).default(0.6),
+    /**
+     * Gifts a member names in their own words (`[modules.economy.free_gifts]`, gift-config.ts,
+     * docs/design/economy.md §16): priced by tier, confirmed by the member, taken or refused by her.
+     */
+    free_gifts: FreeGiftConfigSchema.default(DEFAULT_FREE_GIFTS),
     /** Where "today" starts. */
     utc_offset_minutes: z.number().int().min(-720).max(840).default(480),
     frames: z

@@ -15,6 +15,8 @@ import { type BoardLine, PAID_ITEMS } from "./types.js";
 export const BOARD_REASONS: readonly string[] = [
   ...new Set([
     "feed",
+    // A gift named in words (gifts.ts); one she said no to was refunded, so it does not count.
+    "gift",
     "frame",
     CARD_REASONS.daily,
     ...PAID_ITEMS,

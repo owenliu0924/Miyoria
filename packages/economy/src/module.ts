@@ -10,6 +10,7 @@ import {
   type ModuleCardFact,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
+import { StoreKey } from "@miyoria/store";
 import {
   CardWalletKey,
   Events,
@@ -29,6 +30,9 @@ import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
 import { EconomyService } from "./economy.js";
 import { EconomyExchangeWallet } from "./exchange-wallet.js";
+import { giftTables } from "./gift-tables.js";
+import { answerGiftCapability } from "./gift-tools.js";
+import { FreeGiftsKey, GiftDesk } from "./gifts.js";
 import { EconomyKaraokeWallet } from "./karaoke-wallet.js";
 import { EconomyMarketWallet } from "./market-wallet.js";
 import { WATCHED_TOPICS } from "./prediction-watch.js";
@@ -39,6 +43,8 @@ import { Economy2Key } from "./v2-types.js";
 
 /** How often a finished voice window is paid when nobody speaks to end it. */
 const VOICE_TICK_MS = 30_000;
+/** How often gift quotes and unanswered gifts are settled. */
+const GIFT_TICK_MS = 15_000;
 /** How often danmaku left in the middle are settled and her note is due. */
 const DANMAKU_TICK_MS = 5_000;
 /** The card's action that takes every danmaku line off the overlay. */
@@ -115,6 +121,11 @@ export class EconomyModule implements Module {
     };
     ctx.provide(EconomyKey, economy);
     this.#economy = economy;
+    // Gifts named in words (gifts.ts): their own tables, her answer, the sweep below.
+    const store = ctx.services.get(StoreKey);
+    const gifts = new GiftDesk(economy, () => store?.plugin(giftTables) ?? null);
+    ctx.provide(FreeGiftsKey, gifts);
+    off.push(actuators.register(answerGiftCapability(economy, gifts)));
     // Her cards are paid through it (`@miyoria/play/cards`).
     ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
     // The weekly market is paid through it (`@miyoria/play/market`).
@@ -169,6 +180,16 @@ export class EconomyModule implements Module {
           await economy.v2.sweep();
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "the economy 2.0 sweep failed");
+        }
+      }
+    });
+    // Gift quotes that ran out, gifts she did not answer in time, forgotten givers' gifts.
+    ctx.spawn("gifts", async (signal) => {
+      for await (const _ of interval(GIFT_TICK_MS, signal)) {
+        try {
+          await gifts.sweep();
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "the gift sweep failed");
         }
       }
     });

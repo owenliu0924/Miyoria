@@ -24,6 +24,8 @@ import { initiativeSchema } from "../../brain/selfhost/src/initiative-migrations
 import * as initiativeTables from "../../brain/selfhost/src/initiative-schema.js";
 import { clusterSchema } from "../../cluster/src/migrations.js";
 import * as clusterTables from "../../cluster/src/schema.js";
+import { giftSchema } from "../../economy/src/gift-migrations.js";
+import * as giftTables from "../../economy/src/gift-schema.js";
 import { economySchema } from "../../economy/src/migrations.js";
 import * as economyTables from "../../economy/src/schema.js";
 import { heartSchema } from "../../heart/person/src/migrations.js";
@@ -114,6 +116,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   directive: { tables: directiveTables, schema: directiveSchema },
   economy: { tables: economyTables, schema: economySchema },
   exchange: { tables: exchangeTables, schema: exchangeSchema },
+  gifts: { tables: giftTables, schema: giftSchema },
   heart: { tables: heartTables, schema: heartSchema },
   initiative: { tables: initiativeTables, schema: initiativeSchema },
   karaoke: { tables: karaokeTables, schema: karaokeSchema },

@@ -816,6 +816,7 @@ export {
   type ExchangeDayPicture,
   type ExchangePortfolioPicture,
   type ExchangeQuotePicture,
+  type GiftPictureData,
   type LotteryPictureData,
   type MemberPictureKind,
   type MemberPictureResult,

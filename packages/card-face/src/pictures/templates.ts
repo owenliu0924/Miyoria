@@ -57,6 +57,7 @@ import {
   exchangeRichPicture,
   exchangeVolumePicture,
 } from "./exchange.js";
+import { giftPicture } from "./gift.js";
 import { textWidth } from "./measure.js";
 
 /** A template's result: the layout and the summary. */
@@ -554,4 +555,5 @@ export const TEMPLATES: { readonly [K in PictureKind]: Template<PictureDataMap[K
   exchange_day: exchangeDayPicture,
   exchange_rich: exchangeRichPicture,
   exchange_volume: exchangeVolumePicture,
+  gift: giftPicture,
 };

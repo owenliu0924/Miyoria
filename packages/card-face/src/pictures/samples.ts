@@ -230,6 +230,14 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     ],
     me: null,
   },
+  gift: {
+    name: "小魚乾",
+    item: "一杯珍奶",
+    kind: "喝的",
+    line: "珍珠好多!你怎麼知道我今天想喝甜的,下次換我請你",
+    date: "2026-11-21",
+    favourite: true,
+  },
 };
 
 const LONG_NAME = "超級無敵長的名字的小魚乾是我 The Longest Display Name";
@@ -363,4 +371,11 @@ export const LONG_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] } = 
     me: { rank: null, hidden: true },
   },
   exchange_volume: { ...PICTURE_SAMPLES.exchange_volume, rows: [] },
+  gift: {
+    ...PICTURE_SAMPLES.gift,
+    name: LONG_NAME,
+    item: "一把會自己彈奏月光奏鳴曲的透明電吉他和一整箱備用的弦",
+    line: "一段很長很長的話。".repeat(12),
+    kind: "",
+  },
 };
