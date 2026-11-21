@@ -5,6 +5,8 @@
 import { EXCHANGE_REASONS } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyExchangeWallet } from "../src/exchange-wallet.js";
+import { giftTables } from "../src/gift-tables.js";
+import { GiftDesk } from "../src/gifts.js";
 import { ALICE, BOB, balance, CAROL, DAVE, fund, rig } from "./rig.js";
 
 const R = EXCHANGE_REASONS;
@@ -75,5 +77,17 @@ describe("the exchange wallet", () => {
     expect(await w.transferredIn(bob.person, since)).toBe(0);
     await r.economy.transfer(ALICE, BOB, 50, "t1");
     expect(await w.transferredIn(bob.person, since)).toBe(50);
+  });
+
+  it("gives the exchange the same NT$ per coin that gift pricing uses, and follows a change", async () => {
+    const r = await rig();
+    const w = new EconomyExchangeWallet(r.economy);
+    const desk = new GiftDesk(r.economy, () => r.store.plugin(giftTables));
+    // The default: one coin is NT$1.
+    expect(w.twdPerCoin).toBe(1);
+    expect(w.twdPerCoin).toBe(desk.rate);
+    (r.economy.config as { twd_per_coin: number }).twd_per_coin = 2;
+    expect(w.twdPerCoin).toBe(2);
+    expect(w.twdPerCoin).toBe(desk.rate);
   });
 });
