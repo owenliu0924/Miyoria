@@ -69,6 +69,13 @@ import {
 } from "./presence.js";
 import { DiscordUserResolver, type ResolverClientLike } from "./resolver.js";
 import { DiscordSink } from "./sink.js";
+import {
+  type ServerSticker,
+  type StickerSourceLike,
+  StickerTable,
+  StickerUsage,
+  serverSticker,
+} from "./stickers.js";
 import { runSyncLoop, syncRunner } from "./sync.js";
 
 const log = getLogger("discord.handler");
@@ -86,6 +93,8 @@ export interface GuildLike {
   voiceStates: { cache: { values(): Iterable<VoiceStateLike> } };
   /** Custom emoji (the server emoji table). */
   emojis?: { cache: { values(): Iterable<EmojiLike> } };
+  /** Stickers (the server sticker table). */
+  stickers?: { cache: { values(): Iterable<StickerSourceLike> } };
 }
 
 /** The parts of a discord.js `MessageReaction` the bridge reads. */
@@ -104,6 +113,9 @@ export class Shared {
   /** Custom emoji of every guild she is in, and what she used per channel. */
   readonly emoji = new EmojiTable();
   readonly emojiUsage = new EmojiUsage();
+  /** Stickers of every guild she is in, and what she sent per channel. */
+  readonly stickers = new StickerTable();
+  readonly stickerUsage = new StickerUsage();
   /** Messages with live controls (panels). */
   readonly sessions = new PanelSessions({
     onError: (error) => log.debug({ error: errorMessage(error) }, "cannot disable a panel"),
@@ -202,10 +214,33 @@ export class GatewayBridge {
     client.on(Events.GuildCreate, (guild) =>
       this.guard("guild snapshot", () => this.snapshotGuild(guild as unknown as GuildLike)),
     );
-    client.on(Events.GuildDelete, (guild) => this.shared.emoji.dropGuild(guild.id));
+    client.on(Events.GuildDelete, (guild) => {
+      this.shared.emoji.dropGuild(guild.id);
+      this.shared.stickers.dropGuild(guild.id);
+    });
     client.on(Events.GuildEmojiCreate, (emoji) => this.onEmoji(emoji.guild.id, emoji, false));
     client.on(Events.GuildEmojiUpdate, (_old, emoji) => this.onEmoji(emoji.guild.id, emoji, false));
     client.on(Events.GuildEmojiDelete, (emoji) => this.onEmoji(emoji.guild.id, emoji, true));
+    client.on(Events.GuildStickerCreate, (sticker) =>
+      this.onSticker(sticker.guildId, sticker, false),
+    );
+    client.on(Events.GuildStickerUpdate, (_old, sticker) =>
+      this.onSticker(sticker.guildId, sticker, false),
+    );
+    client.on(Events.GuildStickerDelete, (sticker) =>
+      this.onSticker(sticker.guildId, sticker, true),
+    );
+  }
+
+  /** A sticker added, changed or removed (only a guild's own stickers have a guild). */
+  onSticker(guild: string | null, sticker: StickerSourceLike, removed: boolean): void {
+    if (guild === null) return;
+    if (removed) {
+      if (sticker.id) this.shared.stickers.remove(guild, sticker.id);
+      return;
+    }
+    const s = serverSticker(sticker);
+    if (s) this.shared.stickers.upsert(guild, s);
   }
 
   /** A custom emoji added, changed or removed. */
@@ -226,6 +261,12 @@ export class GatewayBridge {
     if (guild.emojis) {
       const list = [...guild.emojis.cache.values()].map(serverEmoji).filter((e) => e !== null);
       this.shared.emoji.setGuild(guild.id, list);
+    }
+    if (guild.stickers) {
+      const list = [...guild.stickers.cache.values()]
+        .map(serverSticker)
+        .filter((s): s is ServerSticker => s !== null);
+      this.shared.stickers.setGuild(guild.id, list);
     }
     if (this.shared.config.presence_intents) {
       try {
@@ -358,6 +399,7 @@ export class GatewayBridge {
       this.ctx.publish(BusEvents.PlatformReady, { platform: PLATFORM, self_account: account(id) });
     }
     const emojiConfig = this.shared.config.emoji;
+    const stickerConfig = this.shared.config.stickers;
     const sink = new DiscordSink(
       client.rest,
       () => this.ctx.services.get(ModerationKey),
@@ -370,6 +412,13 @@ export class GatewayBridge {
       {
         source: () => this.ctx.services.get(AttachmentSourceKey),
         maxBytes: () => this.shared.config.max_upload_bytes,
+      },
+      {
+        table: this.shared.stickers,
+        usage: this.shared.stickerUsage,
+        enabled: () => stickerConfig.enabled,
+        limits: () => stickerConfig,
+        now: () => this.ctx.clock.now(),
       },
     );
     this.shared.sinks?.register(sink);

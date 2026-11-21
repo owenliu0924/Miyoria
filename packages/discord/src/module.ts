@@ -44,12 +44,19 @@ import {
   DESCRIBE_PROMPT,
   DESCRIPTION_PREFIX,
   type Describe,
+  DescribeQueue,
   type DescriptionStore,
   EmojiDescriber,
 } from "./emoji-describe.js";
 import { GatewayBridge, Shared } from "./handler.js";
 import { PLATFORM, parseUserIds } from "./mapping.js";
 import { DiscordPlaces } from "./places.js";
+import {
+  STICKER_DESCRIBE_PROMPT,
+  STICKER_DESCRIPTION_PREFIX,
+  StickerDescriber,
+  stickerContributor,
+} from "./stickers.js";
 
 /** How long to wait for the gateway to close after a shutdown request. */
 export const SHUTDOWN_GRACE_MS = 3_000;
@@ -138,16 +145,24 @@ export class DiscordBotModule implements Module {
     new GatewayBridge(ctx, shared).attach(client);
     // The servers and channels for the panel's pickers, from the connected guild cache.
     ctx.provide(PlaceDirectoryKey, new DiscordPlaces(client, () => shared.ready));
-    this.#startEmoji(ctx, shared);
+    // Emoji and stickers are looked at one picture at a time, on one queue.
+    const describing = new DescribeQueue();
+    this.#startEmoji(ctx, shared, describing);
+    this.#startStickers(ctx, shared, describing);
     // The token stays in this closure; it is never logged or put in an error message.
     const token = config.token;
     ctx.spawn("gateway", (signal) => runGateway(client, token, shared, ctx, signal));
   }
 
   /** The server emoji block, and meanings written for new emoji in the background. */
-  #startEmoji(ctx: ModuleContext, shared: Shared): void {
+  #startEmoji(ctx: ModuleContext, shared: Shared, queue: DescribeQueue): void {
     const config = shared.config.emoji;
-    const describer = new EmojiDescriber(descriptionStore(ctx), describeWithModel(ctx));
+    const describer = new EmojiDescriber(
+      descriptionStore(ctx, DESCRIPTION_PREFIX),
+      describeWithModel(ctx, "emoji", DESCRIBE_PROMPT),
+      undefined,
+      queue,
+    );
     const owner = (name: string): string | undefined =>
       config.descriptions[name]?.trim() || undefined;
     const contributors = ctx.services.get(PromptContributorsKey);
@@ -166,6 +181,39 @@ export class DiscordBotModule implements Module {
       void describer.describeMissing(
         shared.emoji.all().filter((e) => e.available),
         (e) => owner(e.name) !== undefined,
+        controller.signal,
+      );
+    });
+    this.#unregister.push(off);
+  }
+
+  /** The server sticker block, and meanings written for new stickers in the background. */
+  #startStickers(ctx: ModuleContext, shared: Shared, queue: DescribeQueue): void {
+    const config = shared.config.stickers;
+    const describer = new StickerDescriber(
+      descriptionStore(ctx, STICKER_DESCRIPTION_PREFIX),
+      describeWithModel(ctx, "sticker", STICKER_DESCRIBE_PROMPT),
+      undefined,
+      queue,
+    );
+    const owner = (name: string): string | undefined =>
+      config.descriptions[name]?.trim() || undefined;
+    const contributors = ctx.services.get(PromptContributorsKey);
+    const contributor = stickerContributor(
+      shared.stickers,
+      { owner, described: (id) => describer.get(id) },
+      { max_listed: config.max_listed, enabled: () => config.enabled },
+    );
+    contributors?.register(contributor);
+    this.#unregister.push(() => contributors?.unregister(contributor.key));
+    void describer.load();
+    if (!config.enabled || !config.auto_describe) return;
+    const controller = new AbortController();
+    this.#unregister.push(() => controller.abort());
+    const off = shared.stickers.onChange(() => {
+      void describer.describeMissing(
+        shared.stickers.all().filter((s) => s.available),
+        (s) => owner(s.name) !== undefined,
         controller.signal,
       );
     });
@@ -191,35 +239,39 @@ export class DiscordBotModule implements Module {
   }
 }
 
-/** Written emoji meanings in the settings store; `null` without one. */
-function descriptionStore(ctx: ModuleContext): DescriptionStore | null {
+/** Written meanings under `prefix` in the settings store; `null` without one. */
+function descriptionStore(ctx: ModuleContext, prefix: string): DescriptionStore | null {
   const store = ctx.services.get(SettingsStoreKey);
   const profile = ctx.services.get(ProfileIdKey);
   if (!store || profile === undefined) return null;
   return {
     async load() {
       const out = new Map<string, string>();
-      for (const [key, value] of await store.list(profile, DESCRIPTION_PREFIX)) {
-        if (typeof value === "string") out.set(key.slice(DESCRIPTION_PREFIX.length), value);
+      for (const [key, value] of await store.list(profile, prefix)) {
+        if (typeof value === "string") out.set(key.slice(prefix.length), value);
       }
       return out;
     },
-    save: (id, line) => store.set(profile, `${DESCRIPTION_PREFIX}${id}`, line),
+    save: (id, line) => store.set(profile, `${prefix}${id}`, line),
   };
 }
 
-/** The chat model looks at an emoji, when it takes images; `null` otherwise. */
-function describeWithModel(ctx: ModuleContext): Describe | null {
+/** The chat model looks at an emoji or a sticker, when it takes images; `null` otherwise. */
+function describeWithModel(
+  ctx: ModuleContext,
+  label: "emoji" | "sticker",
+  prompt: (name: string) => string,
+): Describe | null {
   return async (dataUrl, name, signal) => {
     const router = ctx.services.get(LlmRouterKey);
     if (router?.takesImages("chat") !== true) return null;
-    const response = await withLlmTag({ module: "discord", label: "emoji" }, () =>
+    const response = await withLlmTag({ module: "discord", label }, () =>
       router.complete(
         "chat",
         {
           messages: [
             userMessage([
-              { type: "text", text: DESCRIBE_PROMPT(name) },
+              { type: "text", text: prompt(name) },
               { type: "image_url", image_url: { url: dataUrl, detail: "low" } },
             ]),
           ],

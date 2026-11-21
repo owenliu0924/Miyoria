@@ -54,6 +54,31 @@ export const EmojiConfigSchema = z.object({
 
 export type EmojiConfig = z.output<typeof EmojiConfigSchema>;
 
+/**
+ * `[modules."platform.discord.bot".stickers]`: the server's stickers (docs/design/server-emoji.md).
+ * She writes `[貼圖: 名字]` in a line and the sticker goes with that message; never in voice.
+ *
+ *   [modules."platform.discord.bot".stickers]
+ *   descriptions = { "貓咪鞠躬" = "道謝用" }
+ */
+export const StickerConfigSchema = z.object({
+  /** Show her the server's stickers and send the ones she writes. */
+  enabled: z.boolean().default(true),
+  /** The owner's meaning per sticker name; wins over the written one and the server's own. */
+  descriptions: z.record(z.string(), z.string()).default({}),
+  /** Have the image model write a line for stickers without one (once each, kept). */
+  auto_describe: z.boolean().default(true),
+  /** Stickers listed in her prompt, at most (ones with a meaning first). */
+  max_listed: z.number().int().nonnegative().default(20),
+  /** Of her last `window_messages` messages in a channel, at most `max_in_window` carry one. */
+  window_messages: z.number().int().positive().default(5),
+  max_in_window: z.number().int().nonnegative().default(1),
+  /** Stickers per channel per rolling hour, at most. */
+  per_hour: z.number().int().nonnegative().default(3),
+});
+
+export type StickerConfig = z.output<typeof StickerConfigSchema>;
+
 export const DiscordConfigSchema = z.object({
   /** Bot token. Keep it in the environment, not in the file. */
   token: z.string(),
@@ -86,6 +111,7 @@ export const DiscordConfigSchema = z.object({
   /** Channels (or the channels threads belong to) where she may follow ambient chat. */
   ambient_channels: z.array(Snowflake).default([]),
   emoji: EmojiConfigSchema.prefault({}),
+  stickers: StickerConfigSchema.prefault({}),
   /**
    * The most bytes the files of one message of hers may be together (artifacts she shares as
    * attachments). Discord's own default limit for a bot is 10 MiB; a boosted guild takes more,
