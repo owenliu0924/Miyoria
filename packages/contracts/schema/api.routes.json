@@ -1769,6 +1769,34 @@
           }
         }
       },
+      "resolvePrediction": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/economy/predictions/{id}/resolve"
+          }
+        }
+      },
+      "cancelPrediction": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/economy/predictions/{id}/cancel"
+          }
+        }
+      },
       "room": {
         "~orpc": {
           "errorMap": {},
@@ -2584,6 +2612,36 @@
             "inputStructure": "detailed",
             "method": "GET",
             "path": "/api/member/quests"
+          }
+        }
+      },
+      "predictions": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/predictions"
+          }
+        }
+      },
+      "bet": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/bet"
           }
         }
       }

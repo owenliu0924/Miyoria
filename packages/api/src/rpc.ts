@@ -84,6 +84,7 @@ import { partyRpc } from "./party.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
 import { planRpc } from "./plan.js";
+import { walletPlayRpc } from "./play-routes.js";
 import { outcomesRpc, promptsRpc } from "./prompts.js";
 import { limitMember, publicRpc } from "./public.js";
 import { reportsRpc } from "./reports.js";
@@ -124,7 +125,7 @@ export const router = os.router({
   member: { ...memberRpc, ...livePatRpc },
   cards: cardsRpc,
   cardsAdmin: cardsAdminRpc,
-  wallet: walletRpc,
+  wallet: { ...walletRpc, ...walletPlayRpc },
   agency: agencyRpc,
   fortune: fortuneRpc,
   market: marketRpc,

@@ -87,18 +87,22 @@ class Handler2 {
               : p.status === "resolved"
                 ? `結果：${p.winner}`
                 : "取消了";
+        const how =
+          p.status === "open" || p.status === "closed"
+            ? p.settles.label
+            : (p.settled_by?.note ?? "");
         const options = p.options
           .map((o, i) => `${i + 1}. ${o.label}　${o.staked}（${o.backers} 人）`)
           .join("\n");
         const mine = p.my_bet ? `\n你押了 ${p.my_bet.amount} 在「${p.my_bet.option}」` : "";
-        return `**[${p.id}] ${p.question}**　${state}\n${options}${mine}`;
+        return `**[${p.id}] ${p.question}**　${state}${how ? `\n-# ${how}` : ""}\n${options}${mine}`;
       });
       return cardReply(
         [
           { type: "text", text: lines.join("\n\n") },
           {
             type: "muted",
-            text: `猜中的人平分大家押的，不是她出錢；沒人猜中或取消就全部退回。用 ${typed(inv, "me bet")} 押。`,
+            text: `猜中的人平分大家押的（抽一點燒掉），不是她出錢；沒人猜中、取消或看不出結果就全部退回。用 ${typed(inv, "me bet")} 押。`,
           },
         ],
         { accent: "neutral", title: "預測" },

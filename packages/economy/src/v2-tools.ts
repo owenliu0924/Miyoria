@@ -171,7 +171,9 @@ function predictionLine(p: PredictionView, cur: string): string {
     p.status === "open"
       ? "還在收"
       : p.status === "closed"
-        ? "已截止,還沒公布結果"
+        ? p.settles.kind === "her"
+          ? "已截止,還沒公布結果"
+          : "已截止,等結果"
         : p.status === "resolved"
           ? `結果:${p.winner}`
           : "取消了";
@@ -182,7 +184,11 @@ function predictionLine(p: PredictionView, cur: string): string {
           : `(${{ won: "猜中", lost: "沒猜中", refunded: "已退回" }[p.my_bet.outcome]})`
       }`
     : "";
-  return `[${p.id}]「${p.question}」${state}:${options}${mine}`;
+  const how =
+    p.status === "open" || p.status === "closed"
+      ? `(${p.settles.label})`
+      : `(${p.settled_by?.note ?? ""})`;
+  return `[${p.id}]「${p.question}」${how}${state}:${options}${mine}`;
 }
 
 /** `economy.predictions` (tool `check_predictions`): what is open to stake on. */
@@ -290,8 +296,9 @@ export function placeBetCapability(economy: EconomyService): Capability {
 
 const OpenArgs = z.strictObject({
   question: z.string().trim().min(1).max(80),
-  options: z.array(z.string().trim().min(1).max(24)).min(2).max(4),
+  options: z.array(z.string().trim().min(1).max(24)).min(2).max(4).optional(),
   minutes: z.number().int().min(1),
+  settle_by: z.enum(["soup", "goal"]).optional(),
 });
 type OpenArgs = z.output<typeof OpenArgs>;
 
@@ -311,10 +318,12 @@ export function openPredictionCapability(economy: EconomyService): Capability {
       meta: { effect: "act", speed: "instant", group: "economy" },
       description:
         `開一個預測讓大家押${cur}猜:你這場遊戲會怎麼樣、一件之後一定看得出結果的事。` +
-        `猜中的人平分大家押的${cur}(不是你出錢),沒人猜中就全部退回。題目最多 80 字,` +
-        `2 到 4 個選項、每個最多 24 字,截止最久 ${c.prediction_max_minutes} 分鐘,` +
-        `同時最多 ${c.predictions_open} 個。結果要由你公布(resolve_prediction),要是公布不了,` +
-        `超過一天沒人公布會自動取消退回。${OWN}`,
+        `猜中的人平分大家押的${cur}(不是你出錢,抽 ${Math.round(c.prediction_rake * 100)}% 燒掉),沒人猜中就全部退回。` +
+        `題目最多 80 字,截止最久 ${c.prediction_max_minutes} 分鐘,同時最多 ${c.predictions_open} 個。` +
+        `settle_by 讓它照系統看到的結果自己結算,選項是固定的、不用給:soup 是現在這碗海龜湯會不會被猜中` +
+        `(猜中/沒猜中),goal 是你現在的遊戲目標做不做得到(做到/沒做到);這兩種押注 ${c.prediction_auto_close_minutes} 分鐘內截止,` +
+        `看不出結果就全部退回,你不用也不能公布。其他的要給 2 到 4 個選項(每個最多 24 字),` +
+        `結果由你公布(resolve_prediction),超過 ${c.prediction_expire_hours} 小時沒人公布會自動取消退回。${OWN}`,
       properties: {
         question: { type: "string", maxLength: 80, description: "要猜什麼" },
         options: {
@@ -330,15 +339,32 @@ export function openPredictionCapability(economy: EconomyService): Capability {
           maximum: c.prediction_max_minutes,
           description: "幾分鐘後截止",
         },
+        settle_by: {
+          type: "string",
+          enum: ["soup", "goal"],
+          description: "讓它自己結算:soup 現在的海龜湯、goal 你現在的遊戲目標;不填就由你公布",
+        },
       },
-      required: ["question", "options", "minutes"],
+      required: ["question", "minutes"],
     },
-    async execute(args) {
+    async execute(args, ctx) {
       return answering("沒有開成", async (): Promise<Answer> => {
-        const p = await economy.v2.openPrediction(args);
+        if (args.settle_by === undefined && (args.options?.length ?? 0) < 2) {
+          throw new EconomyError(400, "要給 2 到 4 個選項,或用 settle_by 讓它自己結算");
+        }
+        const p = await economy.v2.openPrediction({
+          question: args.question,
+          options: args.options ?? [],
+          minutes: args.minutes,
+          settle_by: args.settle_by ?? null,
+          context: ctx.request.message?.context ?? null,
+        });
+        const minutes = Math.max(Math.round((Date.parse(p.closes_at) - economy.now()) / 60_000), 1);
         return {
-          text: `開好了:[${p.id}]「${p.question}」,選項 ${p.options.map((o) => o.label).join("、")},${args.minutes} 分鐘後截止。`,
-          data: { done: true, id: p.id },
+          text:
+            `開好了:[${p.id}]「${p.question}」,選項 ${p.options.map((o) => o.label).join("、")},` +
+            `${minutes} 分鐘後截止,${p.settles.label}。`,
+          data: { done: true, id: p.id, settles: p.settles.kind },
         };
       });
     },
@@ -365,8 +391,9 @@ export function resolvePredictionCapability(economy: EconomyService): Capability
       name: "resolve_prediction",
       meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
-        `預測的結果已經看得出來時公布:option 是贏的選項的號碼或名字。猜中的人平分大家押的${cur},` +
-        `沒人猜中全部退回。要誠實:這是結果,不是你想讓誰贏。${OWN}`,
+        `你自己開、由你公布的預測,結果已經看得出來時公布:option 是贏的選項的號碼或名字。猜中的人平分大家押的${cur},` +
+        `沒人猜中全部退回。要誠實:這是結果,不是你想讓誰贏;別人說的結果不算,要你自己看到的。` +
+        `會自己結算的預測(海龜湯、遊戲目標)不用也不能公布。${OWN}`,
       properties: {
         prediction: { type: "string", description: "預測的代號" },
         option: { type: "string", description: "贏的選項的號碼或名字" },
@@ -378,14 +405,14 @@ export function resolvePredictionCapability(economy: EconomyService): Capability
         const r = await economy.v2.resolvePrediction(args.prediction, args.option);
         const text = r.refunded
           ? `沒有人猜中,${r.pool} ${cur}全部退回了。`
-          : `公布了:「${r.winner}」,${r.winners} 個人猜中,分走 ${r.pool} ${cur}。`;
+          : `公布了:「${r.winner}」,${r.winners} 個人猜中,分走 ${r.pool - r.rake} ${cur}${r.rake > 0 ? `(${r.rake} 燒掉)` : ""}。`;
         return {
           text,
           data: { done: true, winner: r.winner, winners: r.winners, pool: r.pool },
           receipt: receipt(
             "🎯 預測結果",
             r.refunded ? "沒有人猜中,押的都退回了" : `結果:「${r.winner}」,${r.winners} 個人猜中`,
-            `${r.pool} ${cur}`,
+            r.rake > 0 ? `${r.pool} ${cur} · ${r.rake} 燒掉` : `${r.pool} ${cur}`,
           ),
         };
       });

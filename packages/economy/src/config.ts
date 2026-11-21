@@ -277,6 +277,18 @@ export const EconomyConfigSchema = z
     prediction_max_minutes: z.number().int().positive().default(120),
     predictions_open: z.number().int().positive().default(3),
     prediction_expire_hours: z.number().int().positive().default(24),
+    /**
+     * The cut of the pool a prediction with winners burns (v5-play §4.2: 5% to 10%); nothing is
+     * taken when every stake goes back.
+     */
+    prediction_rake: z.number().min(0).max(0.1).default(0.05),
+    /**
+     * Predictions that settle by themselves (prediction-watch.ts): betting closes at most this many
+     * minutes after opening (the result may come at any moment), and one whose result has not come
+     * this many minutes after betting closed gives every stake back.
+     */
+    prediction_auto_close_minutes: z.number().int().positive().default(5),
+    prediction_auto_wait_minutes: z.number().int().positive().default(120),
     // Her room (room.ts): what the audience can fund together, and the most one person puts in one.
     room_items: z
       .array(RoomItemSchema)

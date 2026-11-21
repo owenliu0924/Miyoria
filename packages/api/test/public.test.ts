@@ -740,9 +740,11 @@ describe("the route table", () => {
       "GET /api/member/market/lottery",
       "GET /api/member/market/tickets",
       "GET /api/member/me",
+      "GET /api/member/predictions",
       "GET /api/member/quests",
       "GET /api/member/session",
       "GET /api/member/wallet",
+      "POST /api/member/bet",
       "POST /api/member/board",
       "POST /api/member/card",
       "POST /api/member/checkin",
@@ -2769,6 +2771,56 @@ describe("the wallet", () => {
       expect((other.body as { quests: unknown[] }).quests).toEqual([]);
     }
     expect(asked).toHaveLength(1);
+  });
+
+  it("shows the predictions with their own stake, takes a stake once per key, never says which operator", async () => {
+    // Taking part pays nothing here: only the stake moves.
+    const r = await walletRig({ prediction_rake: 0, play_rewards: {} });
+    r.sup.services.provide("economy", Economy2Key, r.economy2);
+    const p = await r.economy2.openPrediction({
+      question: "她會唱完嗎",
+      options: ["會", "不會"],
+      minutes: 30,
+    });
+    await r.fund(ALICE, 100);
+    const alice = await r.login("alice");
+    const list = await r.get("/api/member/predictions", alice);
+    expect(list.status).toBe(200);
+    expect((list.body as { predictions: unknown[] }).predictions[0]).toMatchObject({
+      id: p.id,
+      status: "open",
+      settles: { kind: "her", label: "她公布結果" },
+      settled_by: null,
+      my_bet: null,
+    });
+    const body = { prediction: p.id, option: "1", amount: 20 };
+    const first = await r.spend("/api/member/bet", alice, body, "k1");
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      prediction: p.id,
+      question: "她會唱完嗎",
+      option: "會",
+      amount: 20,
+      balance: 80,
+      duplicate: false,
+    });
+    expect((await r.spend("/api/member/bet", alice, body, "k1")).body).toMatchObject({
+      duplicate: true,
+      balance: 80,
+    });
+    expect((await r.spend("/api/member/bet", alice, body, "k2")).status).toBe(409);
+    expect(await r.balanceOf(ALICE)).toBe(80);
+    const dave = await r.login("dave");
+    expect((await r.spend("/api/member/bet", dave, body, "k3")).status).toBe(403);
+    await r.economy2.resolvePredictionByAdmin(p.id, 1, "owner:999");
+    const after = (await r.get("/api/member/predictions", alice)).body as {
+      predictions: {
+        settled_by: { by: string; who: string | null };
+        my_bet: { outcome: string };
+      }[];
+    };
+    expect(after.predictions[0]?.settled_by).toMatchObject({ by: "admin", who: null });
+    expect(after.predictions[0]?.my_bet.outcome).toBe("won");
   });
 
   it("shows her bounties to everyone", async () => {

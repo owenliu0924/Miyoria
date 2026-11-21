@@ -624,3 +624,20 @@ owner 2026-11-18:直播的互動用魚幣付,先只做彈幕。分支 `v5p5e`。
 - **測試**:`packages/economy/test/quests.test.ts`(付錢、獎勵、上限、舊的列、和別人的人數、她想的寫一次和退回一般的、重啟、工具、指令)、`packages/api/test/quest-words.test.ts`、`public.test.ts` 的會員路由、面板 `public.test.tsx`。
 
 沒做的:她不會主動提醒誰還有任務沒做;她想的那句沒有評測(`tools/eval` 的 `play` 沒有加這一題);`quest_pick` 文件不會刪(一人一天一列,很小)。
+
+### 11.8 預測自動結算:做了什麼
+
+分支 `v5p5t`。§4.2 寫的是「改成由遊戲和直播的事件自動結算,抽成 5% 到 10% 燒掉」。以前只有她能用 `resolve_prediction` 公布結果,公布不了就一天後取消退回。
+
+- **自己結算的兩種**(`packages/economy/src/prediction-watch.ts`):她開預測時給 `settle_by`,預測就綁在她現在在跑的東西上,選項固定、不用她給:
+  - `soup`:現在這碗海龜湯(`PartyOverview` 列出的;好幾碗時取她在的那個頻道的)「猜中 / 沒猜中」。湯結束時 party 模組經新的 `PartyOutcomesKey` 說結果:裁判判猜中(遊戲自己記的,`SoupGame.solved()`)就是猜中,其他結束方式(公布湯底、時間到、沒人、她走了、主持人結束)都是沒猜中。模組關掉時中途結束的不會說,等到期退回。
+  - `goal`:她現在的遊戲目標(從 `game.director.decision` 記下的,一次只能有一個遊戲有目標)「做到 / 沒做到」。`game.director.goal` 是這個目標而且 `done` 就是做到;放棄、沒進展、死掉、逾時這些是沒做到;取消、被換掉、`busy`、`invalid`、斷線、當掉是「沒有真的結束」,全部退回;遊戲 session 先停了也全部退回。她正在做什麼只記在記憶體:重啟後要等導演下一次決定才綁得上,中間結束的目標看不到,到期退回。
+- **不從任何人打的字結算**:兩種都只看遊戲自己發的結果。自己結算的預測她不能用 `resolve_prediction` 公布(回「不用你公布」),她的工具說明也寫了「別人說的結果不算,要你自己看到的」。
+- **押注的時間**:自己結算的押注最多開 `prediction_auto_close_minutes` 5 分鐘(結果隨時會來);結果比截止早來就直接結算,之後不能再押。截止後 `prediction_auto_wait_minutes` 120 分鐘還沒有結果就全部退回(她自己公布的照舊 `prediction_expire_hours` 24 小時)。
+- **抽成**:有人猜中時從獎池抽 `prediction_rake` 0.05(無條件捨去)燒掉,沒有一列帳本拿到它;猜中的人平分剩下的,捨去剩的零頭照舊給她的錢包。全部退回(取消、沒人猜中、看不出結果)不抽。結算時把當時的比例記在預測上,當掉後重跑照同一個比例。「押 1 賠多少」已經扣掉抽成。
+- **誰結算的紀錄**:每個預測多了 `settles`(她公布 / 照這碗海龜湯的結果自動結算 / 照她的遊戲目標「…」的結果自動結算)和結算後的 `settled_by`(`auto`、`her`、`admin`、`expired`,一句說明、時間;`admin` 另外記操作的人,只有 owner 看得到)。審計 `economy.prediction.resolve` / `cancel` 多了 `by`、`who`、`rake`;她的錢包新聞也寫出是怎麼結算的。
+- **owner 手動**:`POST /api/economy/predictions/{id}/resolve {option}`、`POST /api/economy/predictions/{id}/cancel`(要 `admin.economy.adjust`,和手動調魚幣一樣),自己結算的也可以;面板「經濟 → 預測」每個還在等的預測下面有「結算為「…」」和「取消並退回」,先確認;沒有權限時按鈕停用並說明。之後遊戲的結果才來,已經結算的不會再動。
+- **會員**:`GET /api/member/predictions`(每個預測怎麼結算、誰結算的、自己押的和結果)、`POST /api/member/bet {prediction, option, amount}`(帶 `Idempotency-Key`,和 `/me play bet` 同一套規則)。會員頁的主欄在市集下面多一張「預測」:每一題的狀態、怎麼結算、每個選項押了多少幾個人、押 1 賠多少、自己押的;還開著又還沒押的有選項和數量可以押。沒有預測、陌生人、舊的 Core 都不顯示。Discord `/me play predictions` 每一題下面多一行怎麼結算或誰結算的。
+- **測試**:`packages/economy/test/prediction-auto.test.ts`(抽成、湯、目標、沒真的結束、到期、owner 手動、重啟、重送不付兩次)、`persistence.test.ts`(模組從 bus 收到目標的結束就結算)、`packages/play/party/test/module.test.ts`(湯的結果)、`packages/api/test/admin-views.test.ts`、`public.test.ts`、面板 `economy.test.tsx`、`public.test.tsx`。
+
+沒做的:唱 K 的分數、樂透、點歌這些還不能綁(唱 K 一場有估計和正式兩個分數,而且唱 K 另外有人在改;樂透和點歌的結果會被押的人自己影響);她不會自己找時機開這種預測,只是多了一個選項;舊的預測(這次以前開的)沒有 `settles`,當成她公布的。

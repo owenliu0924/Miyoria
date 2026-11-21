@@ -2,7 +2,7 @@
 // the service's ledger, its turns and its caps. Nothing here changes a balance without a ledger row.
 
 import { errorMessage } from "@miyoria/runtime/kernel";
-import type { AccountRef } from "@miyoria/types";
+import type { AccountRef, ContextKey } from "@miyoria/types";
 import { AchievementDesk } from "./achievements.js";
 import type { EconomyConfig } from "./config.js";
 import type { EconomyService, Member } from "./economy.js";
@@ -19,6 +19,7 @@ import type {
   BetResult,
   Economy2,
   HealthView,
+  PredictionSourceKind,
   PredictionView,
   QuestId,
   QuestResult,
@@ -133,6 +134,8 @@ export class V2 implements Economy2 {
     question: string;
     options: readonly string[];
     minutes: number;
+    settle_by?: PredictionSourceKind | null;
+    context?: ContextKey | null;
   }): Promise<PredictionView> {
     return this.prediction.open(req);
   }
@@ -153,6 +156,18 @@ export class V2 implements Economy2 {
 
   cancelPrediction(ref: string): Promise<ResolveResult> {
     return this.prediction.cancel(ref);
+  }
+
+  resolvePredictionByAdmin(
+    ref: string,
+    option: string | number,
+    who: string,
+  ): Promise<ResolveResult> {
+    return this.prediction.resolveByAdmin(ref, option, who);
+  }
+
+  cancelPredictionByAdmin(ref: string, who: string): Promise<ResolveResult> {
+    return this.prediction.cancelByAdmin(ref, who);
   }
 
   room(): Promise<RoomView[]> {

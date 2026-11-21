@@ -1102,6 +1102,63 @@
         }
       ]
     },
+    "ApiBetRequest": {
+      "type": "object",
+      "properties": {
+        "prediction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "option": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "prediction",
+        "option",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "ApiBetResult": {
+      "type": "object",
+      "properties": {
+        "prediction": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "option": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prediction",
+        "question",
+        "option",
+        "amount",
+        "balance",
+        "duplicate"
+      ]
+    },
     "ApiBidRequest": {
       "type": "object",
       "properties": {
@@ -12896,6 +12953,90 @@
         }
       }
     },
+    "ApiPredictionResolveRequest": {
+      "type": "object",
+      "properties": {
+        "option": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        }
+      },
+      "required": [
+        "option"
+      ],
+      "additionalProperties": false
+    },
+    "ApiPredictionSettled": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "winner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "winners": {
+          "type": "number"
+        },
+        "pool": {
+          "type": "number"
+        },
+        "paid": {
+          "type": "number"
+        },
+        "rake": {
+          "type": "number"
+        },
+        "refunded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "winner",
+        "winners",
+        "pool",
+        "paid",
+        "rake",
+        "refunded"
+      ]
+    },
+    "ApiPredictionSettledBy": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "her",
+            "admin",
+            "expired"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "who": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "note",
+        "at",
+        "who"
+      ]
+    },
     "ApiPredictionView": {
       "type": "object",
       "properties": {
@@ -12955,6 +13096,36 @@
             "null"
           ]
         },
+        "settles": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "her",
+                "soup",
+                "goal"
+              ]
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "label"
+          ]
+        },
+        "settled_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiPredictionSettledBy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "my_bet": {
           "anyOf": [
             {
@@ -13000,6 +13171,8 @@
         "closes_at",
         "status",
         "winner",
+        "settles",
+        "settled_by",
         "my_bet"
       ]
     },

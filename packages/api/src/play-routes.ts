@@ -4,6 +4,10 @@
 // * `GET /api/member/quests`: today's three quests. The first look of the day has her think of the
 //   one she picks for them (`QuestPickerKey`, `quest-words.ts`); someone she does not know reads
 //   no quests.
+// * `GET /api/member/predictions`: what is open to stake on and what was settled lately, how each
+//   settles and who settled it (never which operator), and their own stake.
+// * `POST /api/member/bet` `{ prediction, option, amount }` with an `Idempotency-Key`: a stake;
+//   the economy's refusals are their status and sentence, as in Discord.
 //
 // Read through `Economy2Key` (the economy module); without it, a 503 that names it. Responses are
 // built field by field.
@@ -11,10 +15,11 @@
 import type { QuestsView } from "@miyoria/economy";
 import type { AccountRef } from "@miyoria/types";
 import { os } from "./contract.js";
-import { economyView } from "./economy.js";
+import { economyView, predictionView } from "./economy.js";
 import { ApiError } from "./errors.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext } from "./state.js";
+import { keyOf } from "./wallet.js";
 
 function accountOf(c: ApiContext): AccountRef {
   return (c.get("member") as SessionRecord).account;
@@ -56,5 +61,24 @@ export const walletPlayRpc = {
   quests: os.wallet.quests.handler(async ({ context: { state, c } }) => {
     const v2 = economyView(state);
     return questsView(v2.currency, await guard(() => v2.quests(accountOf(c), { pick: true })));
+  }),
+  predictions: os.wallet.predictions.handler(async ({ context: { state, c } }) => {
+    const v2 = economyView(state);
+    const list = await guard(() => v2.predictions(accountOf(c)));
+    return { currency: v2.currency, predictions: list.map((p) => predictionView(p, false)) };
+  }),
+  bet: os.wallet.bet.handler(async ({ input, context: { state, c } }) => {
+    const v2 = economyView(state);
+    const key = `web:${keyOf(input.headers["idempotency-key"])}`;
+    const { prediction, option, amount } = input.body;
+    const r = await guard(() => v2.placeBet(accountOf(c), prediction, option, amount, key));
+    return {
+      prediction: r.prediction,
+      question: r.question,
+      option: r.option,
+      amount: r.amount,
+      balance: r.balance,
+      duplicate: r.duplicate,
+    };
   }),
 };

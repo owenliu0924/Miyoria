@@ -117,10 +117,15 @@ export {
   type WalletView,
 } from "./types.js";
 export {
+  type BetResult,
   type Economy2,
   Economy2Key,
+  type PredictionSettledBy,
+  type PredictionSourceKind,
+  type PredictionView,
   type QuestId,
   type QuestPicker,
   QuestPickerKey,
   type QuestsView,
+  type ResolveResult,
 } from "./v2-types.js";

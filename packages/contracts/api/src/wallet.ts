@@ -6,7 +6,7 @@
 // charged when it is sent and given back by itself when the overlay could not show it.
 
 import { z } from "zod";
-import { QuestsViewSchema } from "./economy.js";
+import { PredictionViewSchema, QuestsViewSchema } from "./economy.js";
 import { IssuedFortuneSchema } from "./fortune.js";
 import { IdempotencyHeaders, route } from "./route.js";
 
@@ -214,6 +214,30 @@ export const FramesResultSchema = z
   .meta({ id: "ApiFramesResult" });
 export type FramesResult = z.output<typeof FramesResultSchema>;
 
+/** Body of `POST /api/member/bet`: which prediction (its code), which option (number from 1 or words), how much. */
+export const BetRequestSchema = z
+  .strictObject({
+    prediction: z.string().trim().min(1).max(32),
+    option: z.string().trim().min(1).max(24),
+    amount: z.number().int().min(1),
+  })
+  .meta({ id: "ApiBetRequest" });
+export type BetRequest = z.input<typeof BetRequestSchema>;
+
+/** `POST /api/member/bet`. */
+export const BetResultSchema = z
+  .object({
+    prediction: z.string(),
+    question: z.string(),
+    option: z.string(),
+    amount: z.number(),
+    balance: z.number(),
+    /** The key was used before: nothing new was staked. */
+    duplicate: z.boolean(),
+  })
+  .meta({ id: "ApiBetResult" });
+export type BetResult = z.output<typeof BetResultSchema>;
+
 const spend = <B extends z.ZodType>(path: `/${string}`, body: B) =>
   route
     .meta({ audience: "member", permission: null, limited: true })
@@ -260,4 +284,14 @@ export const wallet = {
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/quests" })
     .output(QuestsViewSchema),
+  /** The predictions open now and the ones settled lately, with their own stake (`my_bet`). */
+  predictions: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "GET", path: "/api/member/predictions" })
+    .output(z.object({ currency: z.string(), predictions: z.array(PredictionViewSchema) })),
+  /**
+   * A stake on an option of an open prediction (`409` closed or already staked, `402` short, `429`
+   * the day's limit, `403` someone she does not know). The same `Idempotency-Key` is the same stake.
+   */
+  bet: spend("/api/member/bet", BetRequestSchema).output(BetResultSchema),
 };

@@ -73,6 +73,8 @@ export interface PartyEnded {
   title: string;
   context: ContextKey;
   reason: EndReason;
+  /** Turtle soup: whether the bottom was guessed; `null` for a game without one. */
+  solved: boolean | null;
   /** The people who played (made a move or scored); never her. */
   players: { account: AccountRef; name: string }[];
 }
@@ -601,6 +603,7 @@ export class Table {
       title: session.game.title,
       context: session.context,
       reason,
+      solved: session.game.solved?.() ?? null,
       players: session
         .humans()
         .filter((p) => p.active || p.score > 0)

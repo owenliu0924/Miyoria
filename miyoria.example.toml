@@ -454,6 +454,10 @@ dirs = ["extensions"]
 # prediction_max_minutes = 120
 # predictions_open = 3
 # prediction_expire_hours = 24
+# prediction_rake = 0.05      # 有人猜中時從獎池抽幾成燒掉(0 到 0.1);全部退回時不抽
+# # 自己結算的預測(海龜湯會不會被猜中、她的遊戲目標做不做得到):押注最多開幾分鐘,截止後等結果最多幾分鐘,等不到就全部退回
+# prediction_auto_close_minutes = 5
+# prediction_auto_wait_minutes = 120
 # # 她的房間:大家一起出錢買的家具、衣服、背景(room_items = [{ id, label, kind = "furniture" | "outfit" | "background", price }])
 # room_pledge_max = 100       # 一個人對一件最多出多少
 # # 經濟健康表:顯示幾天,和一週內發出去的幣被收回的比例低於多少就標「通膨」

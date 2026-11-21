@@ -10,7 +10,8 @@
 // * `GET /api/member/danmaku` (what a danmaku line costs them now, and why they cannot send one),
 //   `POST /api/member/danmaku` `{ text }` (one line across her stream: 409 when she is not live;
 //   given back by itself when the overlay did not show it).
-// * `GET /api/member/quests` (`play-routes.ts`): today's three quests.
+// * `GET /api/member/quests`, `GET /api/member/predictions`, `POST /api/member/bet`: economy 2.0's
+//   own, in `play-routes.ts` (joined to this group in `rpc.ts`).
 // * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
 //   same words for every reason they cannot take them); `POST /api/member/board` `{ on }`: join or
 //   leave the sponsor board (`GET /api/public/board` is in `board.ts`).
@@ -41,7 +42,6 @@ import { type AccountRef, newId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { checkinFortune } from "./fortune-routes.js";
-import { walletPlayRpc } from "./play-routes.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -183,7 +183,7 @@ export async function walletExport(state: ApiState, account: AccountRef): Promis
 
 // ---- routes -------------------------------------------------------------------------------
 
-/** The wallet routes; served only while the public side is on (see `rpc.ts`). */
+/** The wallet routes; served only while the public side is on (see `rpc.ts`). `rpc.ts` adds `walletPlayRpc`. */
 export const walletRpc = {
   view: os.wallet.view.handler(async ({ context: { state, c } }) => {
     return walletView(await withWallet(state, (e) => e.wallet(accountOf(c))));
@@ -244,6 +244,4 @@ export const walletRpc = {
     if (select !== undefined) req.select = select;
     return framesResult(await withWallet(state, (e) => e.frame(accountOf(c), req, key)));
   }),
-  // Economy 2.0's own: the daily quests.
-  ...walletPlayRpc,
 };

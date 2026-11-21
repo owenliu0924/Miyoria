@@ -2,7 +2,7 @@
 // other parts of her share. `Economy2` is what `Economy2Key` provides; the basic `Economy` of
 // types.ts is unchanged so nothing that implements or fakes it breaks.
 
-import type { AccountRef } from "@miyoria/types";
+import type { AccountRef, ContextKey } from "@miyoria/types";
 import { serviceKey } from "@miyoria/types";
 
 // ---- quests ----------------------------------------------------------------------------------
@@ -79,6 +79,26 @@ export interface AchievementsView {
 
 // ---- predictions -----------------------------------------------------------------------------
 
+/**
+ * What a prediction that settles by itself is bound to: a turtle soup going on (guessed or not),
+ * or the game goal she is working on (done or not).
+ */
+export type PredictionSourceKind = "soup" | "goal";
+
+/**
+ * Who settled a prediction and how, kept on it. `auto`: what it was bound to came out (or could
+ * not be told: then every stake went back). `her`: her own call. `admin`: the owner, by hand
+ * (`who`). `expired`: nobody could tell in time.
+ */
+export interface PredictionSettledBy {
+  by: "auto" | "her" | "admin" | "expired";
+  /** One line for people (`海龜湯被猜中了`, `管理員公布的結果`). */
+  note: string;
+  at: string;
+  /** The operator, for the owner's own record; `null` otherwise. */
+  who: string | null;
+}
+
 /** What one option of a prediction stands at. */
 export interface PredictionOption {
   label: string;
@@ -100,6 +120,10 @@ export interface PredictionView {
   /** `closed`: betting ended and the result is not called yet. */
   status: "open" | "closed" | "resolved" | "cancelled";
   winner: string | null;
+  /** How it will be (or was) settled: by her, or by itself on what it is bound to. */
+  settles: { kind: "her" | PredictionSourceKind; label: string };
+  /** Who settled it; `null` while it is open. */
+  settled_by: PredictionSettledBy | null;
   /** This person's own stake, if they have one. */
   my_bet: {
     option: string;
@@ -129,6 +153,8 @@ export interface ResolveResult {
   pool: number;
   /** What went back to people (their payouts, or every stake given back). */
   paid: number;
+  /** The cut of the pool that was burned (0 when everything went back). */
+  rake: number;
   /** Everyone got their stake back. */
   refunded: boolean;
 }
@@ -196,11 +222,17 @@ export interface Economy2 {
   achievements(account: AccountRef): Promise<AchievementsView>;
   /** The predictions open now and the ones settled lately; `account` adds their own stake. */
   predictions(account: AccountRef | null): Promise<PredictionView[]>;
-  /** A prediction people can stake on for `minutes` (`EconomyError`: 400 a bad one, 429 too many). */
+  /**
+   * A prediction people can stake on for `minutes` (`EconomyError`: 400 a bad one, 409 nothing to
+   * bind `settle_by` to, 429 too many). With `settle_by` it settles by itself on the soup or game
+   * goal going on (`context`: where she is), and its options are fixed by that.
+   */
   openPrediction(req: {
     question: string;
     options: readonly string[];
     minutes: number;
+    settle_by?: PredictionSourceKind | null;
+    context?: ContextKey | null;
   }): Promise<PredictionView>;
   /**
    * Stakes `amount` on an option (its number from 1, or its words) of the prediction `ref`
@@ -214,10 +246,21 @@ export interface Economy2 {
     amount: number,
     key: string,
   ): Promise<BetResult>;
-  /** Calls the result: the ones who were right share the pool; nobody right gives all back. */
+  /**
+   * Her call of the result: the ones who were right share the pool; nobody right gives all back.
+   * 409 for one that settles by itself.
+   */
   resolvePrediction(ref: string, option: string | number): Promise<ResolveResult>;
-  /** Calls a prediction off: every stake is given back. */
+  /** She calls a prediction off: every stake is given back. */
   cancelPrediction(ref: string): Promise<ResolveResult>;
+  /** The owner settles any open prediction by hand; `who` is the operator, kept on it. */
+  resolvePredictionByAdmin(
+    ref: string,
+    option: string | number,
+    who: string,
+  ): Promise<ResolveResult>;
+  /** The owner calls any open prediction off by hand: every stake is given back. */
+  cancelPredictionByAdmin(ref: string, who: string): Promise<ResolveResult>;
   /** Her room: every item with how far the audience got. */
   room(): Promise<RoomView[]>;
   /** Puts coins into an item of her room (`EconomyError` 400/402/403/409/429). */
