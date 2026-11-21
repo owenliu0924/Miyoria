@@ -572,6 +572,196 @@
         "field"
       ]
     },
+    "ApiAdminGift": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind_word": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ApiGiftStatus"
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favourite": {
+          "type": "boolean"
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "her",
+                "system",
+                "admin"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "answer_due": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "answered_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "giver": {
+          "type": "string"
+        },
+        "person": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "priced_by": {
+          "type": "string",
+          "enum": [
+            "model",
+            "cache",
+            "pinned",
+            "fallback",
+            "rule"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "discord",
+            "web"
+          ]
+        },
+        "refunded_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "tier",
+        "price",
+        "twd",
+        "status",
+        "line",
+        "favourite",
+        "answered_by",
+        "created_at",
+        "expires_at",
+        "answer_due",
+        "answered_at",
+        "giver",
+        "person",
+        "priced_by",
+        "reason",
+        "source",
+        "refunded_by"
+      ]
+    },
+    "ApiAdminGifts": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "twd_per_coin": {
+          "type": "number"
+        },
+        "big_gift_coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "gifts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiAdminGift"
+          }
+        }
+      },
+      "required": [
+        "currency",
+        "twd_per_coin",
+        "big_gift_coins",
+        "gifts"
+      ]
+    },
     "ApiAffectBiases": {
       "type": "object",
       "properties": {
@@ -1983,6 +2173,145 @@
         "capabilities"
       ]
     },
+    "ApiClusterCapabilityRouting": {
+      "type": "object",
+      "properties": {
+        "capability": {
+          "type": "string"
+        },
+        "class": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostRoutingClass"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "latency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostRoutingLatency"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "yields_to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "variant": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speech_mode": {
+          "$ref": "#/$defs/ApiClusterSpeechHostMode"
+        },
+        "conflict": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "used": {
+                  "type": "string"
+                },
+                "others": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "used",
+                "others"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "class_conflict": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterEndpointRouting"
+          }
+        },
+        "decisions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterDispatchDecision"
+          }
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "since": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "key",
+              "host",
+              "service",
+              "since"
+            ]
+          }
+        },
+        "result_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "capability",
+        "class",
+        "latency",
+        "yields_to",
+        "variant",
+        "speech_mode",
+        "conflict",
+        "class_conflict",
+        "endpoints",
+        "decisions",
+        "sessions",
+        "result_mb"
+      ]
+    },
     "ApiClusterCoreCheckout": {
       "type": "object",
       "properties": {
@@ -2040,6 +2369,190 @@
         "id",
         "name",
         "key"
+      ]
+    },
+    "ApiClusterDispatchDecision": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "what": {
+          "type": "string"
+        },
+        "scores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "service": {
+                "type": "string"
+              },
+              "score_s": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "host",
+              "service",
+              "score_s"
+            ]
+          }
+        }
+      },
+      "required": [
+        "at",
+        "host",
+        "service",
+        "scores"
+      ]
+    },
+    "ApiClusterEndpointRouting": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "via": {
+          "type": "string",
+          "enum": [
+            "direct",
+            "link"
+          ]
+        },
+        "healthy": {
+          "type": "boolean"
+        },
+        "resting": {
+          "type": "boolean"
+        },
+        "eligible": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "score_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "parts": {
+          "$ref": "#/$defs/ApiClusterScoreParts"
+        },
+        "routing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostServiceRouting"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "load": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "running": {
+                  "type": "number"
+                },
+                "queued": {
+                  "type": "number"
+                },
+                "age_ms": {
+                  "type": "number"
+                },
+                "outside": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "running",
+                "queued",
+                "age_ms"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pending": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "speech": {
+          "type": "boolean"
+        },
+        "estimate": {
+          "type": "object",
+          "properties": {
+            "unit_s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "rate_mb_s": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "units": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "transfers": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "unit_s",
+            "rate_mb_s",
+            "units",
+            "transfers"
+          ]
+        }
+      },
+      "required": [
+        "host",
+        "service",
+        "via",
+        "healthy",
+        "resting",
+        "eligible",
+        "score_s",
+        "routing",
+        "load",
+        "pending",
+        "speech",
+        "estimate"
       ]
     },
     "ApiClusterEndpointView": {
@@ -2366,6 +2879,269 @@
         "link_url"
       ]
     },
+    "ApiClusterRouting": {
+      "type": "object",
+      "properties": {
+        "capabilities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterCapabilityRouting"
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "local": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "rtt_ms": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "drained": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "weight": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "host",
+              "local",
+              "rtt_ms",
+              "drained",
+              "weight"
+            ]
+          }
+        },
+        "activity": {
+          "type": "object",
+          "properties": {
+            "in_voice": {
+              "type": "boolean"
+            },
+            "live": {
+              "type": "boolean"
+            },
+            "last_spoke_at": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "idle": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "in_voice",
+            "live",
+            "last_spoke_at",
+            "idle"
+          ]
+        },
+        "config": {
+          "type": "object",
+          "properties": {
+            "allow_on_speech_host": {
+              "$ref": "#/$defs/ApiClusterSpeechHostMode"
+            },
+            "idle_minutes": {
+              "type": "number"
+            },
+            "weights": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "number"
+              }
+            },
+            "drain": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "capabilities": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "allow_on_speech_host": {
+                    "$ref": "#/$defs/ApiClusterSpeechHostMode"
+                  },
+                  "pin": {
+                    "type": "string"
+                  },
+                  "exclude": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "variant": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "exclude"
+                ]
+              }
+            }
+          },
+          "required": [
+            "allow_on_speech_host",
+            "idle_minutes",
+            "weights",
+            "drain",
+            "capabilities"
+          ]
+        },
+        "panel": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiClusterRoutingControl"
+          }
+        }
+      },
+      "required": [
+        "capabilities",
+        "hosts",
+        "activity",
+        "config",
+        "panel"
+      ]
+    },
+    "ApiClusterRoutingControl": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ApiClusterRoutingControlKind"
+        },
+        "capability": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "value": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "by": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "capability",
+        "host",
+        "value",
+        "by",
+        "at"
+      ]
+    },
+    "ApiClusterRoutingControlKind": {
+      "type": "string",
+      "enum": [
+        "pin",
+        "exclude",
+        "weight",
+        "drain"
+      ]
+    },
+    "ApiClusterRoutingControlRequest": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "set",
+            "clear"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiClusterRoutingControlKind"
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "value": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 100
+        }
+      },
+      "required": [
+        "action",
+        "kind",
+        "host"
+      ]
+    },
+    "ApiClusterScoreParts": {
+      "type": "object",
+      "properties": {
+        "wait_ms": {
+          "type": "number"
+        },
+        "run_ms": {
+          "type": "number"
+        },
+        "transfer_ms": {
+          "type": "number"
+        },
+        "penalty_ms": {
+          "type": "number"
+        },
+        "penalties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "weight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "wait_ms",
+        "run_ms",
+        "transfer_ms",
+        "penalty_ms",
+        "penalties",
+        "weight"
+      ]
+    },
     "ApiClusterServiceActionRequest": {
       "type": "object",
       "properties": {
@@ -2462,6 +3238,12 @@
             "policy",
             "leased"
           ]
+        },
+        "routing": {
+          "$ref": "#/$defs/HostServiceRouting"
+        },
+        "load": {
+          "$ref": "#/$defs/HostServiceLoad"
         }
       },
       "required": [
@@ -2472,6 +3254,14 @@
         "since",
         "healthy",
         "restarts"
+      ]
+    },
+    "ApiClusterSpeechHostMode": {
+      "type": "string",
+      "enum": [
+        "never",
+        "when_idle",
+        "always"
       ]
     },
     "ApiClusterUpgradeCancelResult": {
@@ -3978,6 +4768,2131 @@
         "no_checkout"
       ]
     },
+    "ApiExchangeAccount": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "known": {
+          "type": "boolean"
+        },
+        "blocked": {
+          "type": "boolean"
+        },
+        "opened": {
+          "type": "boolean"
+        },
+        "opened_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cannot_open": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "leverage": {
+          "type": "object",
+          "properties": {
+            "allowed": {
+              "type": "boolean"
+            },
+            "why": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "opted_in": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "allowed",
+            "why",
+            "opted_in"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "company": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "total": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "mult": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "company",
+            "total",
+            "mult"
+          ]
+        },
+        "today": {
+          "type": "object",
+          "properties": {
+            "orders": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "bought": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "orders_left": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "buy_left": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "orders",
+            "bought",
+            "orders_left",
+            "buy_left"
+          ]
+        },
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "investable": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "hide_boards": {
+          "type": "boolean"
+        },
+        "show_holdings": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "currency",
+        "known",
+        "blocked",
+        "opened",
+        "opened_at",
+        "cannot_open",
+        "leverage",
+        "limits",
+        "today",
+        "balance",
+        "investable",
+        "hide_boards",
+        "show_holdings"
+      ]
+    },
+    "ApiExchangeAdmin": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "rates": {
+          "type": "object",
+          "properties": {
+            "twd_per_coin": {
+              "type": "number"
+            },
+            "twd_per_usd": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "twd_per_coin",
+            "twd_per_usd"
+          ]
+        },
+        "report": {
+          "type": "object",
+          "properties": {
+            "today": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "date": {
+                  "type": "string"
+                },
+                "burned": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "minted": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "net": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "written_off": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "buys_halted": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "day",
+                "date",
+                "burned",
+                "minted",
+                "net",
+                "written_off",
+                "buys_halted"
+              ]
+            },
+            "days": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "day": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "burned": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "minted": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "net": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "written_off": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "day",
+                  "date",
+                  "burned",
+                  "minted",
+                  "net",
+                  "written_off"
+                ]
+              }
+            },
+            "cap_daily": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "bankrupt": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string"
+                  },
+                  "until": {
+                    "type": "string"
+                  },
+                  "written_off": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "name",
+                  "since",
+                  "until",
+                  "written_off"
+                ]
+              }
+            },
+            "quotes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "price": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "refused": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "last_refusal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "price",
+                  "at",
+                  "refused",
+                  "last_refusal"
+                ]
+              }
+            },
+            "books": {
+              "type": "object",
+              "properties": {
+                "postings": {
+                  "type": "number"
+                },
+                "lines": {
+                  "type": "number"
+                },
+                "pending": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "postings",
+                "lines",
+                "pending"
+              ]
+            },
+            "mint": {
+              "type": "object",
+              "properties": {
+                "windows": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "days": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "burned": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "minted": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "net": {
+                        "type": "integer",
+                        "minimum": -9007199254740991,
+                        "maximum": 9007199254740991
+                      },
+                      "share": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "days",
+                      "burned",
+                      "minted",
+                      "net",
+                      "share"
+                    ]
+                  }
+                },
+                "circulation": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "warn_share": {
+                  "type": "number"
+                },
+                "warning": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "windows",
+                "circulation",
+                "warn_share",
+                "warning"
+              ]
+            }
+          },
+          "required": [
+            "today",
+            "days",
+            "cap_daily",
+            "bankrupt",
+            "quotes",
+            "books",
+            "mint"
+          ]
+        },
+        "tickers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string"
+              },
+              "exchange": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "added_at": {
+                "type": "string"
+              },
+              "missing_days": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "holders": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "market",
+              "exchange",
+              "type",
+              "status",
+              "reason",
+              "added_at",
+              "missing_days",
+              "holders"
+            ]
+          }
+        },
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "last_error"
+            ]
+          }
+        },
+        "refresh_seconds": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "leverage": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "qty": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "code",
+              "leverage",
+              "qty",
+              "value"
+            ]
+          }
+        }
+      },
+      "required": [
+        "enabled",
+        "rates",
+        "report",
+        "tickers",
+        "providers",
+        "refresh_seconds",
+        "positions"
+      ]
+    },
+    "ApiExchangeAdminSellRequest": {
+      "type": "object",
+      "properties": {
+        "position": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "position"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeBoards": {
+      "type": "object",
+      "properties": {
+        "currency": {
+          "type": "string"
+        },
+        "rich": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rank": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "name": {
+                "type": "string"
+              },
+              "worth": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "holdings": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "value"
+                      ]
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "me": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "rank",
+              "name",
+              "worth",
+              "holdings",
+              "me"
+            ]
+          }
+        },
+        "me": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "rich": {
+                  "anyOf": [
+                    {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hidden": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "rich",
+                "hidden"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "currency",
+        "rich",
+        "me"
+      ]
+    },
+    "ApiExchangeCancelRequest": {
+      "type": "object",
+      "properties": {
+        "order": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "order"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeCandles": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "tf": {
+          "type": "string",
+          "enum": [
+            "intraday",
+            "daily",
+            "weekly",
+            "monthly"
+          ]
+        },
+        "zone": {
+          "type": "string"
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "TWD",
+            "USD",
+            "COIN"
+          ]
+        },
+        "candles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "t": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "o": {
+                "type": "number"
+              },
+              "h": {
+                "type": "number"
+              },
+              "l": {
+                "type": "number"
+              },
+              "c": {
+                "type": "number"
+              },
+              "v": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "t",
+              "o",
+              "h",
+              "l",
+              "c",
+              "v"
+            ]
+          }
+        },
+        "volume": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "provider",
+            "ticks"
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "marks": {
+          "type": "object",
+          "properties": {
+            "avg_cost": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "liquidation": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              }
+            }
+          },
+          "required": [
+            "avg_cost",
+            "liquidation"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "tf",
+        "zone",
+        "currency",
+        "candles",
+        "volume",
+        "source",
+        "stale",
+        "marks"
+      ]
+    },
+    "ApiExchangeLeverageRequest": {
+      "type": "object",
+      "properties": {
+        "accept": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "accept"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeLine": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "market": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us",
+            "crypto",
+            "local"
+          ]
+        },
+        "price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "currency": {
+          "type": "string",
+          "enum": [
+            "TWD",
+            "USD",
+            "COIN"
+          ]
+        },
+        "local": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "what_moves": {
+                  "type": "string"
+                },
+                "today": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "what_moves",
+                "today"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coin_price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "age_minutes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "type": "string"
+        },
+        "change": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "quotes": {
+          "type": "string",
+          "enum": [
+            "intraday",
+            "close"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "name",
+        "market",
+        "price",
+        "currency",
+        "local",
+        "coin_price",
+        "age_minutes",
+        "source",
+        "change",
+        "at",
+        "open",
+        "stale",
+        "quotes"
+      ]
+    },
+    "ApiExchangeList": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "local",
+            "popular",
+            "movers",
+            "tw",
+            "us",
+            "mine",
+            "recent",
+            "watch"
+          ]
+        },
+        "label": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": [
+                  "tw",
+                  "us",
+                  "crypto",
+                  "local"
+                ]
+              },
+              "price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "TWD",
+                  "USD",
+                  "COIN"
+                ]
+              },
+              "local": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "what_moves": {
+                        "type": "string"
+                      },
+                      "today": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "what_moves",
+                      "today"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "coin_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "age_minutes": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "type": "string"
+              },
+              "change": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "open": {
+                "type": "boolean"
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "quotes": {
+                "type": "string",
+                "enum": [
+                  "intraday",
+                  "close"
+                ]
+              },
+              "holders": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "market",
+              "price",
+              "currency",
+              "local",
+              "coin_price",
+              "age_minutes",
+              "source",
+              "change",
+              "at",
+              "open",
+              "stale",
+              "quotes",
+              "holders"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "label",
+        "rows"
+      ]
+    },
+    "ApiExchangeLookupRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        }
+      },
+      "required": [
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeMap": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "holdings",
+            "tw",
+            "us"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "footnote": {
+          "type": "string"
+        },
+        "hidden": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "tiles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "sector": {
+                "type": "string"
+              },
+              "weight": {
+                "type": "number"
+              },
+              "change": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "currency": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "TWD",
+                      "USD",
+                      "COIN"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "coin_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "basis": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "sector",
+              "weight",
+              "change",
+              "price",
+              "currency",
+              "coin_price",
+              "basis"
+            ]
+          }
+        }
+      },
+      "required": [
+        "kind",
+        "title",
+        "footnote",
+        "hidden",
+        "tiles"
+      ]
+    },
+    "ApiExchangeMarket": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "colors": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us"
+          ]
+        },
+        "rates": {
+          "type": "object",
+          "properties": {
+            "twd_per_coin": {
+              "type": "number"
+            },
+            "twd_per_usd": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "twd_per_coin",
+            "twd_per_usd"
+          ]
+        },
+        "house": {
+          "type": "object",
+          "properties": {
+            "buys_halted": {
+              "type": "boolean"
+            },
+            "net_today": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "cap_daily": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "buys_halted",
+            "net_today",
+            "cap_daily"
+          ]
+        },
+        "sessions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "market": {
+                "type": "string",
+                "enum": [
+                  "tw",
+                  "us",
+                  "crypto",
+                  "local"
+                ]
+              },
+              "open": {
+                "type": "boolean"
+              },
+              "hours": {
+                "type": "string"
+              },
+              "zone": {
+                "type": "string"
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "notice": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "market",
+              "open",
+              "hours",
+              "zone",
+              "stale",
+              "notice"
+            ]
+          }
+        },
+        "lists": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "popular",
+                  "movers",
+                  "tw",
+                  "us",
+                  "mine",
+                  "recent",
+                  "watch"
+                ]
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ]
+          }
+        },
+        "default_list": {
+          "type": "string",
+          "enum": [
+            "local",
+            "popular",
+            "movers",
+            "tw",
+            "us",
+            "mine",
+            "recent",
+            "watch"
+          ]
+        },
+        "rules": {
+          "type": "object",
+          "properties": {
+            "fee": {
+              "type": "number"
+            },
+            "fee_min": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "order_min": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "order_max": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "orders_per_day": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "buy_per_day": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "limit_total": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "min_hold_minutes": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "leverage": {
+              "type": "boolean"
+            },
+            "leverage_line": {
+              "type": "number"
+            },
+            "leverage_min_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "leverage_min_tier": {
+              "type": "string"
+            },
+            "margin_cap": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "account_min_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "account_min_tier": {
+              "type": "string"
+            },
+            "bankrupt_cooling_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "quote_max_age_seconds": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "payout_cap_daily": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "watch_max": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "fee",
+            "fee_min",
+            "order_min",
+            "order_max",
+            "orders_per_day",
+            "buy_per_day",
+            "limit_total",
+            "min_hold_minutes",
+            "leverage",
+            "leverage_line",
+            "leverage_min_days",
+            "leverage_min_tier",
+            "margin_cap",
+            "account_min_days",
+            "account_min_tier",
+            "bankrupt_cooling_days",
+            "quote_max_age_seconds",
+            "payout_cap_daily",
+            "watch_max"
+          ]
+        },
+        "small_print": {
+          "type": "object",
+          "properties": {
+            "base": {
+              "type": "string"
+            },
+            "real": {
+              "type": "string"
+            },
+            "leverage": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "base",
+            "real",
+            "leverage"
+          ]
+        },
+        "no_dividends": {
+          "type": "string"
+        },
+        "no_exchange": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "enabled",
+        "currency",
+        "colors",
+        "rates",
+        "house",
+        "sessions",
+        "lists",
+        "default_list",
+        "rules",
+        "small_print",
+        "no_dividends",
+        "no_exchange"
+      ]
+    },
+    "ApiExchangeOrder": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "side": {
+          "type": "string",
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "qty": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "leverage": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "position": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "why": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "code",
+        "side",
+        "coins",
+        "qty",
+        "leverage",
+        "position",
+        "status",
+        "why",
+        "at"
+      ]
+    },
+    "ApiExchangeOrderRequest": {
+      "type": "object",
+      "properties": {
+        "side": {
+          "type": "string",
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "coins": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "shares": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000
+        },
+        "all": {
+          "type": "boolean"
+        },
+        "leverage": {
+          "anyOf": [
+            {
+              "type": "number",
+              "const": 1
+            },
+            {
+              "type": "number",
+              "const": 2
+            }
+          ]
+        },
+        "position": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        }
+      },
+      "required": [
+        "side",
+        "code"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangePortfolio": {
+      "type": "object",
+      "properties": {
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "holdings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "leverage": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "qty": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "cost": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "margin": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "loan": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "equity": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ratio": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "line_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "warn_half_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "warn_near_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "opened_at": {
+                "type": "string"
+              },
+              "can_sell": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "name",
+              "leverage",
+              "qty",
+              "cost",
+              "margin",
+              "loan",
+              "price",
+              "value",
+              "equity",
+              "ratio",
+              "line_price",
+              "warn_half_price",
+              "warn_near_price",
+              "opened_at",
+              "can_sell"
+            ]
+          }
+        },
+        "orders": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiExchangeOrder"
+          }
+        },
+        "fills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "side": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "qty": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "price": {
+                "type": "number"
+              },
+              "gross": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "fee": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "paid": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "shortfall": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "leverage": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "code",
+              "side",
+              "kind",
+              "qty",
+              "price",
+              "gross",
+              "fee",
+              "paid",
+              "shortfall",
+              "leverage",
+              "at"
+            ]
+          }
+        },
+        "notices": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "text": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "kind",
+              "text",
+              "at"
+            ]
+          }
+        },
+        "bankrupt": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "since": {
+                  "type": "string"
+                },
+                "until": {
+                  "type": "string"
+                },
+                "written_off": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "since",
+                "until",
+                "written_off"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "totals": {
+          "type": "object",
+          "properties": {
+            "cost": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "value": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "cost",
+            "value"
+          ]
+        }
+      },
+      "required": [
+        "balance",
+        "holdings",
+        "orders",
+        "fills",
+        "notices",
+        "bankrupt",
+        "totals"
+      ]
+    },
+    "ApiExchangeQuote": {
+      "type": "object",
+      "properties": {
+        "side": {
+          "type": "string",
+          "enum": [
+            "buy",
+            "sell"
+          ]
+        },
+        "code": {
+          "type": "string"
+        },
+        "price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "open": {
+          "type": "boolean"
+        },
+        "coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "margin": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "exposure": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "fee": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "qty": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "leverage": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "gross": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "net": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "line_price": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "sentence": {
+          "type": "string"
+        },
+        "warning": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "side",
+        "code",
+        "price",
+        "open",
+        "coins",
+        "margin",
+        "exposure",
+        "fee",
+        "qty",
+        "leverage",
+        "gross",
+        "net",
+        "line_price",
+        "sentence",
+        "warning"
+      ]
+    },
+    "ApiExchangeSettleRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "at": {
+          "type": "string",
+          "enum": [
+            "last",
+            "zero"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeSplitRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "code",
+        "ratio"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeTicker": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "$ref": "#/$defs/ApiExchangeLine"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "at",
+              "price"
+            ]
+          }
+        },
+        "watching": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "line",
+        "points",
+        "watching"
+      ]
+    },
+    "ApiExchangeTickerRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "block",
+            "unblock",
+            "remove"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "action"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeVisibilityRequest": {
+      "type": "object",
+      "properties": {
+        "hide_boards": {
+          "type": "boolean"
+        },
+        "show_holdings": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ApiExchangeWatchRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "on"
+      ],
+      "additionalProperties": false
+    },
     "ApiExtensionInfo": {
       "type": "object",
       "properties": {
@@ -4430,6 +7345,479 @@
           ]
         }
       }
+    },
+    "ApiGiftAskResult": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "quote",
+            "fixed",
+            "refused"
+          ]
+        },
+        "quote": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftQuote"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "item": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "rice",
+                "big_bowl",
+                "dessert"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "quote",
+        "item",
+        "reason",
+        "message"
+      ]
+    },
+    "ApiGiftConfirmResult": {
+      "type": "object",
+      "properties": {
+        "gift": {
+          "$ref": "#/$defs/ApiGiftView"
+        },
+        "charged": {
+          "type": "boolean"
+        },
+        "balance": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "gift",
+        "charged",
+        "balance"
+      ]
+    },
+    "ApiGiftKind": {
+      "type": "string",
+      "enum": [
+        "food",
+        "drink",
+        "small_object",
+        "big_object",
+        "experience"
+      ]
+    },
+    "ApiGiftOverride": {
+      "type": "object",
+      "properties": {
+        "item_key": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coins": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refuse": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "model",
+            "pinned",
+            "blocked"
+          ]
+        },
+        "by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_key",
+        "item",
+        "kind",
+        "twd",
+        "coins",
+        "price",
+        "refuse",
+        "source",
+        "by",
+        "at"
+      ]
+    },
+    "ApiGiftPicture": {
+      "type": "object",
+      "properties": {
+        "alt": {
+          "type": "string"
+        },
+        "png": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "alt",
+        "png"
+      ]
+    },
+    "ApiGiftPinRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "coins": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "twd": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiGiftKind"
+        },
+        "block": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ApiGiftQuote": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiGiftKind"
+        },
+        "kind_word": {
+          "type": "string"
+        },
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "twd_per_coin": {
+          "type": "number"
+        },
+        "band": {
+          "type": "string"
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "currency": {
+          "type": "string"
+        },
+        "balance": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "balance_after": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "big": {
+          "type": "boolean"
+        },
+        "fallback": {
+          "type": "boolean"
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "twd",
+        "twd_per_coin",
+        "band",
+        "price",
+        "currency",
+        "balance",
+        "balance_after",
+        "expires_at",
+        "big",
+        "fallback",
+        "note"
+      ]
+    },
+    "ApiGiftQuoteRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ApiGiftStatus": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "cancelled",
+        "expired",
+        "rejected",
+        "confirmed",
+        "accepted",
+        "refused",
+        "refunded",
+        "refund_due"
+      ]
+    },
+    "ApiGiftUnpinRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "ApiGiftView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind_word": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "tier": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/ApiGiftStatus"
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favourite": {
+          "type": "boolean"
+        },
+        "answered_by": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "her",
+                "system",
+                "admin"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": "string"
+        },
+        "answer_due": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "answered_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "tier",
+        "price",
+        "twd",
+        "status",
+        "line",
+        "favourite",
+        "answered_by",
+        "created_at",
+        "expires_at",
+        "answer_due",
+        "answered_at"
+      ]
     },
     "ApiGithubLinkView": {
       "type": "object",
@@ -11375,6 +14763,38 @@
         "cards"
       ]
     },
+    "ApiMyGifts": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "currency": {
+          "type": "string"
+        },
+        "twd_per_coin": {
+          "type": "number"
+        },
+        "big_gift_coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "gifts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiGiftView"
+          }
+        }
+      },
+      "required": [
+        "open",
+        "currency",
+        "twd_per_coin",
+        "big_gift_coins",
+        "gifts"
+      ]
+    },
     "ApiMyTickets": {
       "type": "object",
       "properties": {
@@ -13724,6 +17144,82 @@
         "hours_live",
         "hours_in_voice",
         "date"
+      ]
+    },
+    "ApiPublicGift": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "item": {
+          "type": "string"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiGiftKind"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind_word": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "favourite": {
+          "type": "boolean"
+        },
+        "at": {
+          "type": "string"
+        },
+        "from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "item",
+        "kind",
+        "kind_word",
+        "line",
+        "favourite",
+        "at",
+        "from"
+      ]
+    },
+    "ApiPublicGifts": {
+      "type": "object",
+      "properties": {
+        "recent": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPublicGift"
+          }
+        },
+        "favourites": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiPublicGift"
+          }
+        }
+      },
+      "required": [
+        "recent",
+        "favourites"
       ]
     },
     "ApiPublicSong": {
@@ -19085,6 +22581,108 @@
       },
       "required": [
         "allowed"
+      ]
+    },
+    "HostRoutingClass": {
+      "type": "string",
+      "enum": [
+        "single",
+        "session",
+        "job"
+      ]
+    },
+    "HostRoutingLatency": {
+      "type": "string",
+      "enum": [
+        "realtime",
+        "interactive",
+        "batch"
+      ]
+    },
+    "HostServiceLoad": {
+      "type": "object",
+      "properties": {
+        "running": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "age_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "outside": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "running",
+        "queued",
+        "age_ms"
+      ]
+    },
+    "HostServiceRouting": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/HostRoutingClass"
+        },
+        "latency": {
+          "$ref": "#/$defs/HostRoutingLatency"
+        },
+        "concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queue": {
+          "type": "boolean"
+        },
+        "yields_to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "variant": {
+          "type": "string"
+        },
+        "accept": {
+          "type": "boolean"
+        },
+        "owner_concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unit_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "result_mb": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "class",
+        "latency",
+        "concurrency",
+        "queue",
+        "yields_to",
+        "ready",
+        "accept"
       ]
     },
     "HostServiceState": {

@@ -124,6 +124,51 @@ export const parseCapabilities = (raw: string): string[] => [
 /** What the host's services provide, in first-seen order. */
 export const reportedCapabilities = (services: ServiceStatus[]): string[] => [...new Set(services.flatMap((s) => s.provides))];
 
+// --- job dispatch (v5-hostd §15) -------------------------------------------------------
+
+export type ServiceRouting = NonNullable<ServiceStatus["routing"]>;
+export type ServiceLoad = NonNullable<ServiceStatus["load"]>;
+
+export const ROUTING_CLASS: Record<ServiceRouting["class"], string> = { single: "唯一", session: "工作階段", job: "工作" };
+
+export const ROUTING_LATENCY: Record<ServiceRouting["latency"], string> = { realtime: "即時", interactive: "互動", batch: "批次" };
+
+export const SPEECH_MODE: Record<"never" | "when_idle" | "always", string> = {
+  never: "不送到她語音所在的電腦",
+  when_idle: "她閒置時才可以",
+  always: "都可以",
+};
+
+/** `12.3 秒` from seconds; whole seconds from 100 up. */
+export const fmtSeconds = (s: number): string => `${s < 100 ? s.toFixed(1) : Math.round(s)} 秒`;
+
+/** `2.0 秒` from ms, for the parts of a score. */
+export const fmtMsAsSeconds = (ms: number): string => fmtSeconds(ms / 1000);
+
+/** `執行 1 · 排隊 2`, with what Core sent that the host's report does not show yet. */
+export function loadWords(load: Pick<ServiceLoad, "running" | "queued">, pending = 0): string {
+  const parts = [`執行 ${load.running}`, `排隊 ${load.queued}`];
+  if (pending > 0) parts.push(`剛送出 ${pending}`);
+  return parts.join(" · ");
+}
+
+/** What a host reports of one service's routing, in short words; nothing from an older hostd. */
+export function serviceRoutingLines(s: ServiceStatus): { text: string; alert?: boolean }[] {
+  const r = s.routing;
+  const lines: { text: string; alert?: boolean }[] = [];
+  if (r) {
+    lines.push({ text: `${ROUTING_CLASS[r.class]} · ${r.ready ? "就緒" : "沒準備好"}` });
+    if (!r.ready && r.reason) lines.push({ text: r.reason, alert: true });
+    if (!r.accept) lines.push({ text: "這台的主人不接受工作", alert: true });
+    if (r.owner_concurrency !== undefined) lines.push({ text: `主人限制同時 ${r.owner_concurrency} 個` });
+  }
+  if (s.load) {
+    lines.push({ text: loadWords(s.load) });
+    if (s.load.outside) lines.push({ text: s.load.outside });
+  }
+  return lines;
+}
+
 // --- versions and remote updates (v5-hostd §14) ----------------------------------------
 
 export type HostCheckout = NonNullable<ClusterHostView["checkout"]>;

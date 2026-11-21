@@ -156,6 +156,9 @@ export function Transfer() {
         <p className="text-xs text-muted-foreground">
           只能轉給她認識的人,每天有上限。另收{fmtInt(Math.round(w.transfer_fee * 100))}% 手續費(至少 1),由你付,不會到任何人手上。
         </p>
+        <p className="text-xs text-muted-foreground">
+          魚幣只是遊戲裡的點數,沒有現金價值。禁止用真錢或任何現實物品買賣、交換魚幣;違反者可能被凍結錢包,衍生的糾紛或損失請自行負責。
+        </p>
       </form>
       <ConfirmDialog
         open={asking}

@@ -2093,6 +2093,113 @@
         "never"
       ]
     },
+    "HostRouting": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/HostRoutingClass"
+        },
+        "latency": {
+          "default": "interactive",
+          "$ref": "#/$defs/HostRoutingLatency"
+        },
+        "concurrency": {
+          "default": 1,
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queue": {
+          "default": false,
+          "type": "boolean"
+        },
+        "needs": {
+          "default": {
+            "files": []
+          },
+          "$ref": "#/$defs/HostRoutingNeeds"
+        },
+        "variant": {
+          "$ref": "#/$defs/HostRoutingVariant"
+        },
+        "yields_to": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "unit_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "result_mb": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "class"
+      ],
+      "additionalProperties": false
+    },
+    "HostRoutingClass": {
+      "type": "string",
+      "enum": [
+        "single",
+        "session",
+        "job"
+      ]
+    },
+    "HostRoutingLatency": {
+      "type": "string",
+      "enum": [
+        "realtime",
+        "interactive",
+        "batch"
+      ]
+    },
+    "HostRoutingNeeds": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "vram_gb": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "HostRoutingVariant": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "env": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "HostRun": {
       "type": "object",
       "properties": {
@@ -2241,6 +2348,9 @@
         },
         "launch": {
           "$ref": "#/$defs/HostLaunch"
+        },
+        "routing": {
+          "$ref": "#/$defs/HostRouting"
         }
       },
       "required": [
@@ -2291,6 +2401,14 @@
             "policy"
           ],
           "additionalProperties": false
+        },
+        "accept": {
+          "type": "boolean"
+        },
+        "concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "additionalProperties": false
@@ -2527,6 +2645,33 @@
         "services"
       ]
     },
+    "HostServiceLoad": {
+      "type": "object",
+      "properties": {
+        "running": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queued": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "age_ms": {
+          "type": "number",
+          "minimum": 0
+        },
+        "outside": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "running",
+        "queued",
+        "age_ms"
+      ]
+    },
     "HostServiceLogLine": {
       "type": "object",
       "properties": {
@@ -2610,6 +2755,65 @@
       "required": [
         "service",
         "stopped"
+      ]
+    },
+    "HostServiceRouting": {
+      "type": "object",
+      "properties": {
+        "class": {
+          "$ref": "#/$defs/HostRoutingClass"
+        },
+        "latency": {
+          "$ref": "#/$defs/HostRoutingLatency"
+        },
+        "concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "queue": {
+          "type": "boolean"
+        },
+        "yields_to": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "variant": {
+          "type": "string"
+        },
+        "accept": {
+          "type": "boolean"
+        },
+        "owner_concurrency": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "unit_s": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "result_mb": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "class",
+        "latency",
+        "concurrency",
+        "queue",
+        "yields_to",
+        "ready",
+        "accept"
       ]
     },
     "HostServiceState": {
@@ -2702,6 +2906,12 @@
             "policy",
             "leased"
           ]
+        },
+        "routing": {
+          "$ref": "#/$defs/HostServiceRouting"
+        },
+        "load": {
+          "$ref": "#/$defs/HostServiceLoad"
         }
       },
       "required": [

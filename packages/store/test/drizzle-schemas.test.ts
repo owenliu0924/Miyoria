@@ -91,6 +91,8 @@ it("covers identity, config, the artifact store and the plugins that own their t
     "config",
     "directive",
     "economy",
+    "exchange",
+    "gifts",
     "heart",
     "identity",
     "initiative",

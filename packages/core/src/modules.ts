@@ -5,7 +5,7 @@
 // which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, heart, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
-// stage.link, economy, cards, market, web, sandbox (opt-in), imagegen (opt-in), party, eval, report (opt-in), Discord bot, Admin API, terminal chat, then the
+// stage.link, economy, cards, market, exchange, web, sandbox (opt-in), imagegen (opt-in), party, eval, report (opt-in), Discord bot, Admin API, terminal chat, then the
 // extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
 // her decisions, how each turn ended) from the bus.
 
@@ -38,11 +38,12 @@ import {
   OpenAiFactory,
   parseModelRef,
 } from "@miyoria/llm/llm";
-import { FactsModule } from "@miyoria/memory/facts";
+import { FactsConfigSchema, FactsModule } from "@miyoria/memory/facts";
 import { ConversationModule, KnowledgeModule, ReflectModule } from "@miyoria/memory/learning";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldModule } from "@miyoria/memory/world";
 import { CardsModule } from "@miyoria/play/cards";
+import { ExchangeModule } from "@miyoria/play/exchange";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/play/game";
 import { KaraokeModule } from "@miyoria/play/karaoke";
 import { MarketModule } from "@miyoria/play/market";
@@ -233,6 +234,9 @@ async function coreModules({
     new CardsModule(),
     // The weekly market: the song priority ticket, the weekly auction and the weekly lottery.
     new MarketModule(),
+    // The deep-sea exchange: off until the owner turns `[modules.exchange] enabled` on. Its local
+    // stocks count songs from ambient observations, which the facts module folds after this long.
+    new ExchangeModule({ ambientDays: factsFoldDays(config) }),
     // Karaoke on the member page: songs prepared on the song workers, scored again by Core.
     new KaraokeModule({ baseDir }),
     new WebModule(),
@@ -245,6 +249,12 @@ async function coreModules({
     // Problem reports members make through her, for GitHub issues (opt-in).
     new ReportModule(),
   ];
+}
+
+/** `[modules.facts] fold_after_days`: how long ambient observations stay whole on the event log. */
+function factsFoldDays(config: Config): number {
+  const parsed = FactsConfigSchema.safeParse(config.module(FactsModule.ID).config ?? {});
+  return parsed.success ? parsed.data.fold_after_days : FactsConfigSchema.parse({}).fold_after_days;
 }
 
 async function discoverExtensions(config: Config, baseDir: string): Promise<ExtensionDiscovery> {

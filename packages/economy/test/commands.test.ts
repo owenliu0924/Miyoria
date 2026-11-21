@@ -11,7 +11,7 @@ import {
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { type AccountRef, type ContextKey, type Keepsakes, KeepsakesKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { EconomyCommands, PATHS, walletText } from "../src/commands.js";
+import { EconomyCommands, PATHS, TRANSFER_SMALL_PRINT, walletText } from "../src/commands.js";
 import { STRANGER } from "../src/economy.js";
 import {
   type BountyView,
@@ -472,7 +472,11 @@ describe("wallet commands", () => {
     const spec = registry.get(["me", "give"]);
     expect(spec?.ephemeral).toBe(true);
     const reply = await run(registry, "me give", { user: "77", amount: 25 });
-    expect(reply.text).toBe("轉了 25 魚幣給 Bob，另付手續費 2（燒掉），剩 90。");
+    expect(reply.text).toBe(
+      `轉了 25 魚幣給 Bob，另付手續費 2（燒掉），剩 90。
+-# ${TRANSFER_SMALL_PRINT}`,
+    );
+    expect(TRANSFER_SMALL_PRINT).toContain("禁止用真錢");
     expect(reply.card?.accent).toBe("neutral");
     expect(calls[0]).toMatch(/^transfer:discord:77:25:discord:/);
     // Another platform's account is not someone one can reach, in the receiver's usual words.

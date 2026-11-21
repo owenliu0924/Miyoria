@@ -17,7 +17,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";
 import { Earnings } from "../src/earn.js";
-import { MAX_PICK_CHARS, PLAIN_PICKS, plainPick } from "../src/quests.js";
+import { MAX_PICK_CHARS, PICK_KEEP_DAYS, PLAIN_PICKS, plainPick } from "../src/quests.js";
 import { v2Capabilities } from "../src/v2-tools.js";
 import { Economy2Key, type QuestPicker, QuestPickerKey } from "../src/v2-types.js";
 import { ledgerOf, walletOf } from "./ledger.js";
@@ -299,6 +299,34 @@ describe("the quest she thinks of", () => {
     const later = picker(again, "別的");
     expect((await pickOf(again, ALICE))?.label).toBe("跟她說說新家整理好了沒");
     expect([...asked, ...later]).toEqual(["1"]);
+  });
+
+  it("is deleted by the sweep once its day is more than a week gone, in memory and in the store", async () => {
+    for (const durable of [false, true]) {
+      const r = await rig({}, { durable });
+      const docs = r.economy.docs();
+      const ids = async () =>
+        (await docs.list("p", "quest_pick", { limit: 100 })).map((d) => d.data.day);
+      const first = r.economy.today();
+      for (let d = 0; d <= PICK_KEEP_DAYS + 2; d++) {
+        await pickOf(r, ALICE);
+        await pickOf(r, BOB);
+        if (d === 0) await r.economy.v2.completeQuest(ALICE, "her_pick");
+        if (d < PICK_KEEP_DAYS + 2) r.clock.at += DAY;
+      }
+      const today = r.economy.today();
+      expect(today).toBe(first + PICK_KEEP_DAYS + 2);
+      expect(await ids()).toHaveLength(2 * (PICK_KEEP_DAYS + 3));
+      // A quest done on an old day stays in the ledger: only the picks go.
+      await r.economy.v2.sweep();
+      const left = await ids();
+      expect(left).toHaveLength(2 * (PICK_KEEP_DAYS + 1));
+      expect(Math.min(...left.map(Number))).toBe(today - PICK_KEEP_DAYS);
+      expect(await balance(r, ALICE)).toBe(10);
+      // Today's pick is untouched, and a second sweep the same day does nothing more.
+      expect((await pickOf(r, ALICE, false))?.by).not.toBeNull();
+      expect(await r.economy.v2.quest.prune()).toBe(0);
+    }
   });
 });
 

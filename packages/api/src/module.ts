@@ -23,7 +23,7 @@
 import type { AddressInfo } from "node:net";
 import { isIPv4, isIPv6 } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
-import { QuestPickerKey } from "@miyoria/economy";
+import { GiftPricerKey, QuestPickerKey } from "@miyoria/economy";
 import { BondRingImagesKey } from "@miyoria/heart/person";
 import { tokenize } from "@miyoria/memory/memory";
 import { CardFacesKey } from "@miyoria/play/cards";
@@ -38,6 +38,7 @@ import { ArtifactStoreKey, SettingsStoreKey } from "@miyoria/store";
 import { ActivityManagerKey, Events, KeepsakesKey, PicturesKey } from "@miyoria/types";
 import { z } from "zod";
 import { CardFaceService } from "./card-faces.js";
+import { GiftPriceService } from "./gift-price.js";
 import { KeepsakeService } from "./keepsakes.js";
 import { MONITOR_TOPICS, Monitor } from "./monitor.js";
 import { DiscordOAuthConfigSchema, OAuth, recheckMs, sessionTtlMs } from "./oauth.js";
@@ -268,6 +269,8 @@ export class ApiModule implements Module {
     ctx.provide(CardFacesKey, new CardFaceService(state));
     // The daily quest she thinks of for each person, from what the member page shows them.
     ctx.provide(QuestPickerKey, new QuestPickService(state));
+    // The tier of a gift a member named in words (one small model call per new name).
+    ctx.provide(GiftPricerKey, new GiftPriceService(state));
     // The bond ring's picture for `/me profile` and `/admin person show`.
     ctx.provide(BondRingImagesKey, new RingImages());
     // Her picture messages: the templates drawn to PNG, kept in the artifact store.

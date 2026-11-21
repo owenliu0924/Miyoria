@@ -40,6 +40,7 @@ import type {
   WorkersKaraokePiece,
 } from "@miyoria/contracts/workers";
 import { parseTouch } from "./touch.js";
+import { MAX_BANDS } from "./wave.js";
 
 // The frames Core sends are written once, in `@miyoria/contracts/overlay`. This page takes that
 // contract as types only (`import type`: no schema library reaches the bundle) and keeps its own
@@ -466,7 +467,7 @@ const PARSERS: { [K in OverlayMessage["type"]]: (raw: Raw) => Parsed[K] | null }
     if (typeof rms !== "number" || !Number.isFinite(rms)) return null;
     const b = raw.bands;
     const bands =
-      Array.isArray(b) && b.length > 0 && b.length <= 16 && b.every((x) => typeof x === "number" && Number.isFinite(x))
+      Array.isArray(b) && b.length > 0 && b.length <= MAX_BANDS && b.every((x) => typeof x === "number" && Number.isFinite(x))
         ? (b as number[]).map((x) => Math.max(x, 0))
         : null;
     return { type: "levels", rms: clamp01(rms), bands };

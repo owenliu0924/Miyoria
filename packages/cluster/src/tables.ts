@@ -8,9 +8,19 @@
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { Db, StorePlugin } from "@miyoria/store";
 import { type Clock, newId, systemClock, type Timestamp, toTimestamp } from "@miyoria/types";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
+import type { EstimateRow, EstimateStore } from "./estimates.js";
 import { clusterSchema } from "./migrations.js";
-import { type ClusterHostRow, clusterHosts, clusterInvites, type HostStatus } from "./schema.js";
+import type { PanelControls } from "./registry.js";
+import {
+  type ClusterHostRow,
+  type ControlKind,
+  clusterControls,
+  clusterEstimates,
+  clusterHosts,
+  clusterInvites,
+  type HostStatus,
+} from "./schema.js";
 
 /** A request the cluster refuses: a taken name, an unknown host, a bad code. */
 export class ClusterError extends Error {
@@ -286,16 +296,160 @@ export class Invites {
   }
 }
 
+/** What Core measured of each host (`cluster_estimates`, v5-hostd §15.4). */
+export class EstimateTable implements EstimateStore {
+  readonly #db: Db;
+
+  constructor(db: Db) {
+    this.#db = db;
+  }
+
+  load(): EstimateRow[] {
+    return this.#db.orm
+      .select()
+      .from(clusterEstimates)
+      .all()
+      .map((row) => ({ ...row, updated_at: Date.parse(row.updated_at) }));
+  }
+
+  save(row: EstimateRow): void {
+    const values = { ...row, updated_at: toTimestamp(row.updated_at) };
+    this.#db.orm
+      .insert(clusterEstimates)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [clusterEstimates.host, clusterEstimates.capability],
+        set: values,
+      })
+      .run();
+  }
+}
+
+/** One of the owner's routing controls from the panel. */
+export interface ControlRecord {
+  kind: ControlKind;
+  /** `""` for a host's weight or drain. */
+  capability: string;
+  host: string;
+  value: number | null;
+  by: string;
+  at: Timestamp;
+}
+
+/** The owner's pins, exclusions, weights and drains from the panel (`cluster_controls`, §15.6). */
+export class Controls {
+  readonly #db: Db;
+  readonly #clock: Clock;
+
+  constructor(db: Db, clock: Clock) {
+    this.#db = db;
+    this.#clock = clock;
+  }
+
+  list(): ControlRecord[] {
+    return this.#db.orm
+      .select()
+      .from(clusterControls)
+      .orderBy(
+        asc(clusterControls.kind),
+        asc(clusterControls.capability),
+        asc(clusterControls.host),
+      )
+      .all();
+  }
+
+  /** Sets one; a pin replaces the capability's other pin. */
+  set(control: {
+    kind: ControlKind;
+    capability?: string;
+    host: string;
+    value?: number;
+    by: string;
+  }): ControlRecord {
+    const capability =
+      control.kind === "pin" || control.kind === "exclude" ? (control.capability ?? "") : "";
+    if ((control.kind === "pin" || control.kind === "exclude") && capability === "") {
+      throw new ClusterError(`a ${control.kind} names a capability`);
+    }
+    if (control.kind === "weight" && !(control.value !== undefined && control.value > 0)) {
+      throw new ClusterError("a weight is a number above 0");
+    }
+    const row = {
+      kind: control.kind,
+      capability,
+      host: control.host,
+      value: control.kind === "weight" ? (control.value as number) : null,
+      by: control.by,
+      at: toTimestamp(this.#clock.now()),
+    };
+    this.#db.tx(() => {
+      if (control.kind === "pin") {
+        this.#db.orm
+          .delete(clusterControls)
+          .where(and(eq(clusterControls.kind, "pin"), eq(clusterControls.capability, capability)))
+          .run();
+      }
+      this.#db.orm
+        .insert(clusterControls)
+        .values(row)
+        .onConflictDoUpdate({
+          target: [clusterControls.kind, clusterControls.capability, clusterControls.host],
+          set: { value: row.value, by: row.by, at: row.at },
+        })
+        .run();
+    });
+    return row;
+  }
+
+  /** Removes one; whether it was there. */
+  clear(control: { kind: ControlKind; capability?: string; host: string }): boolean {
+    const capability =
+      control.kind === "pin" || control.kind === "exclude" ? (control.capability ?? "") : "";
+    const removed = this.#db.orm
+      .delete(clusterControls)
+      .where(
+        and(
+          eq(clusterControls.kind, control.kind),
+          eq(clusterControls.capability, capability),
+          eq(clusterControls.host, control.host),
+        ),
+      )
+      .returning()
+      .all();
+    return removed.length > 0;
+  }
+
+  /** The controls as the registry takes them. */
+  view(): PanelControls {
+    const pins: Record<string, string> = {};
+    const excludes: Record<string, string[]> = {};
+    const weights: Record<string, number> = {};
+    const drained: string[] = [];
+    for (const c of this.list()) {
+      if (c.kind === "pin") pins[c.capability] = c.host;
+      else if (c.kind === "exclude")
+        excludes[c.capability] = [...(excludes[c.capability] ?? []), c.host];
+      else if (c.kind === "weight" && c.value !== null) weights[c.host] = c.value;
+      else if (c.kind === "drain") drained.push(c.host);
+    }
+    return { pins, excludes, weights, drained };
+  }
+}
+
 /** The `cluster` plugin's code over its tables. */
 export class ClusterTables {
   readonly hosts: Hosts;
   readonly invites: Invites;
+  readonly estimates: EstimateTable;
+  readonly controls: Controls;
   readonly #db: Db;
 
   constructor(db: Db, clock: Clock = systemClock) {
     this.#db = db;
     this.hosts = new Hosts(db, clock);
     this.invites = new Invites(db, clock, this.hosts);
+    this.estimates = new EstimateTable(db);
+    this.controls = new Controls(db, clock);
   }
 
   /** The same tables, with another clock (the module's, a test's). */

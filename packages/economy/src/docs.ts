@@ -8,7 +8,7 @@
 // Coins never live here: every balance change is a ledger row. A document says what the coins were
 // for and where the thing stands; if one is lost, the ledger still shows who paid what.
 
-import { type ProfileId, sameAccount } from "@miyoria/types";
+import { type ProfileId, sameAccount, type Timestamp } from "@miyoria/types";
 import {
   type DocFilter,
   type DocUpdate,
@@ -82,5 +82,19 @@ export class MemoryDocs implements EconomyDocStore {
     }
     out.sort(newestFirst);
     return out.slice(0, Math.max(filter.limit, 0)).map((d) => structuredClone(d));
+  }
+
+  async prune(
+    _profile: ProfileId,
+    kind: string,
+    before: Timestamp,
+    limit: number,
+  ): Promise<number> {
+    const old = [...this.#docs.values()]
+      .filter((d) => d.kind === kind && d.created_at < before)
+      .sort((a, b) => -newestFirst(a, b))
+      .slice(0, Math.max(limit, 0));
+    for (const d of old) this.#docs.delete(this.#key(d.kind, d.id));
+    return old.length;
   }
 }

@@ -95,6 +95,13 @@ export interface CoinLedgerStore extends LedgerStatsStore {
    * `rule`, the balance.
    */
   post(entry: CoinEntry, rule?: CoinRule): Promise<CoinPost>;
+  /**
+   * Appends `rows` (one wallet, each with its own key) in one transaction: all of them or none.
+   * The first row's key decides a retry (`duplicate`, with that row); with `covered`, refused
+   * (`short`) when their sum would take the balance below zero. The exchange books a sale and its
+   * burned fee this way, so the fee is a row of its own without a moment the two disagree.
+   */
+  postAll?(rows: readonly CoinEntry[], rule?: { covered?: boolean }): Promise<CoinPost>;
   balance(profile: ProfileId, wallet: PersonId): Promise<number>;
   /** Rows of the wallet, newest first, at most `limit`; `reasons` and `since` narrow them. */
   entries(
@@ -278,6 +285,12 @@ export interface EconomyDocStore {
   ): Promise<boolean>;
   /** Newest first (by creation, the id breaking a tie), at most `filter.limit`. */
   list(profile: ProfileId, kind: string, filter: DocFilter): Promise<EconomyDoc[]>;
+  /**
+   * Deletes at most `limit` documents of `kind` created before `before`, oldest first; how many
+   * went. Only for kinds that are of use for a while and say nothing about coins (today's quest
+   * picks); what coins were paid for is never pruned.
+   */
+  prune(profile: ProfileId, kind: string, before: Timestamp, limit: number): Promise<number>;
 }
 
 // Service keys: Core provides the economy plugin's tables under them (`store.plugin`).

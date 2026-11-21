@@ -12,6 +12,13 @@ export const HostServiceConfigSchema = z
     extras: z.array(z.string()).optional(),
     /** Overrides the descriptor's `[gpu] policy`. */
     gpu: z.object({ policy: HostGpuPolicySchema }).strict().optional(),
+    /**
+     * `false`: the service runs here, but Core sends it no work (v5-hostd §15.6). The host's
+     * owner decides; Core cannot change it. An older hostd rejects this key: update it first.
+     */
+    accept: z.boolean().optional(),
+    /** At most this many units at once from Core, below the descriptor's `[routing] concurrency`. */
+    concurrency: z.number().int().positive().optional(),
   })
   .strict()
   .meta({ id: "HostServiceConfig" });

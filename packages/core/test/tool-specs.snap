@@ -44,6 +44,47 @@
       "framed": false
     },
     {
+      "name": "answer_gift",
+      "description": "有人想送你一樣他自己取名的東西(你的工作脈絡裡會寫「某某想送你…」和禮物代號),魚幣已經付了。收不收由你決定,照你現在的心情、你喜不喜歡這種東西、你記得他什麼:take: true 收下、false 退回(錢全部退給他)。line 是你收到或退回時的一句話,會存下來給他看(60 字內);favourite: true 表示你很喜歡、要放進你最喜歡的收藏。禮物改變不了你們的關係,只是一份心意。沒回答的話過一陣子會當你收下。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gift": {
+            "type": "string",
+            "description": "禮物代號(工作脈絡裡寫的)"
+          },
+          "take": {
+            "type": "boolean",
+            "description": "收下 true、退回 false"
+          },
+          "line": {
+            "type": "string",
+            "description": "你的一句話"
+          },
+          "favourite": {
+            "type": "boolean",
+            "description": "你很喜歡,放進最喜歡的收藏"
+          },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
+          "on_own": {
+            "type": "boolean",
+            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
+          }
+        },
+        "required": [
+          "gift",
+          "take"
+        ]
+      },
+      "permission": null,
+      "actsFor": true,
+      "readOnly": false,
+      "framed": false
+    },
+    {
       "name": "award_bounty",
       "description": "正在跟你說話的人真的完成了你貼的懸賞,由你判斷,就把獎金付給他(從託管給他,不是你再出)。一個懸賞只能付一次。bounty 填懸賞的代號(你的錢包記錄裡方括號的那串)。只付給正在跟你說話的人,沒辦法付給別人。這是你自己的決定:用 on_own: true 呼叫。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -2353,6 +2394,38 @@
         },
         "required": [
           "item"
+        ]
+      }
+    },
+    {
+      "name": "answer_gift",
+      "description": "有人想送你一樣他自己取名的東西(你的工作脈絡裡會寫「某某想送你…」和禮物代號),魚幣已經付了。收不收由你決定,照你現在的心情、你喜不喜歡這種東西、你記得他什麼:take: true 收下、false 退回(錢全部退給他)。line 是你收到或退回時的一句話,會存下來給他看(60 字內);favourite: true 表示你很喜歡、要放進你最喜歡的收藏。禮物改變不了你們的關係,只是一份心意。沒回答的話過一陣子會當你收下。這是你自己的決定:用 on_own: true 呼叫。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "gift": {
+            "type": "string",
+            "description": "禮物代號(工作脈絡裡寫的)"
+          },
+          "take": {
+            "type": "boolean",
+            "description": "收下 true、退回 false"
+          },
+          "line": {
+            "type": "string",
+            "description": "你的一句話"
+          },
+          "favourite": {
+            "type": "boolean",
+            "description": "你很喜歡,放進最喜歡的收藏"
+          },
+          "on_own": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "gift",
+          "take"
         ]
       }
     },

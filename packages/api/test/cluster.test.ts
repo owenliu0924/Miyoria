@@ -8,9 +8,11 @@ import {
   type CheckoutSource,
   ClusterKey,
   type ClusterService,
+  clusterRouting,
   clusterTables,
   EndpointRegistry,
   type HostConnection,
+  RoutingConfigSchema,
 } from "@miyoria/cluster";
 import { contract, routeMeta } from "@miyoria/contracts/api";
 import { HOST_ERROR_CODE, type HostInfo } from "@miyoria/contracts/host";
@@ -103,8 +105,10 @@ async function harness(
     clock: { now: () => clock.t },
     static: { friend: { provides: ["sing"], url: "http://f:8005", token: "static-secret" } },
   });
+  const routingConfig = RoutingConfigSchema.parse({ drain: ["old-pc"] });
   const cluster: ClusterService = {
     registry,
+    routing: clusterRouting(registry, tables, routingConfig),
     guards: undefined as never,
     address: { address: "127.0.0.1", family: "IPv4", port: 7880 },
     publicUrl: options.publicUrl ?? null,
@@ -726,5 +730,117 @@ describe("remote updates", () => {
     expect(answer.body).toMatchObject({ cancelled: true, job: { id: "job-1" } });
     const missing = await h.admin("POST", "/api/cluster/hosts/nope/upgrade/cancel", {});
     expect(missing.status).toBe(404);
+  });
+});
+
+describe("job dispatch (v5-hostd §15)", () => {
+  const sing = (name: string, running: number) => ({
+    name: "sing",
+    kind: "worker" as const,
+    provides: ["sing"],
+    state: "running" as const,
+    since: 1,
+    healthy: true,
+    restarts: 0,
+    advertised: `http://${name}:8005`,
+    token: "service-secret-token",
+    routing: {
+      class: "job" as const,
+      latency: "batch" as const,
+      concurrency: 1,
+      queue: true,
+      yields_to: ["tts", "asr"],
+      ready: true,
+      variant: "v1",
+      accept: true,
+    },
+    load: { running, queued: 0, age_ms: 0 },
+  });
+
+  it("needs owner.cluster.route to change anything, which only the owner role holds", () => {
+    expect(routeMeta(contract, ["cluster", "routingControl"])?.permission).toBe(
+      "owner.cluster.route",
+    );
+    expect(routeMeta(contract, ["cluster", "routing"])?.permission).toBeNull();
+    const holds = (role: string) => {
+      const r = builtinRoles().find((x) => x.name === role);
+      if (r === undefined) throw new Error(`no role ${role}`);
+      const node = "owner.cluster.route";
+      return !r.denies.some((p) => matches(p, node)) && r.grants.some((p) => matches(p, node));
+    };
+    expect(holds("owner")).toBe(true);
+    expect(holds("admin")).toBe(false);
+    expect(holds("moderator")).toBe(false);
+  });
+
+  it("shows each capability's class, the scores and why a host takes nothing, never a token", async () => {
+    const h = await harness();
+    for (const name of ["a", "b"]) {
+      h.registry.setHost(name, ["sing"]);
+      h.registry.report(name, { ...INFO, name, services: [sing(name, name === "a" ? 1 : 0)] });
+    }
+    const ep = h.registry.pick("sing");
+    if (ep === null) throw new Error("no endpoint");
+    h.registry.reserve(ep, { what: "one song" });
+    const answer = await h.admin("GET", "/api/cluster/routing");
+    expect(answer.status).toBe(200);
+    expectNoSecrets(answer.text);
+    const body = answer.body as {
+      capabilities: Array<Record<string, unknown> & { endpoints: Array<Record<string, unknown>> }>;
+      config: Record<string, unknown>;
+      activity: Record<string, unknown>;
+    };
+    const singView = body.capabilities.find((c) => c.capability === "sing");
+    expect(singView).toMatchObject({ class: "job", variant: "v1", speech_mode: "never" });
+    // All three take work; after the reservation on b they tie at two units and go by name.
+    expect(singView?.endpoints.map((e) => [e.host, e.eligible, e.score_s])).toEqual([
+      ["a", true, 240],
+      ["b", true, 240],
+      ["friend", true, 240],
+    ]);
+    expect(singView?.decisions).toEqual([
+      expect.objectContaining({ host: "b", what: "one song", at: expect.any(String) }),
+    ]);
+    expect(body.config).toMatchObject({ allow_on_speech_host: "never", drain: ["old-pc"] });
+    expect(body.activity).toMatchObject({ in_voice: false, idle: true, last_spoke_at: null });
+  });
+
+  it("pins, drains and weighs from the panel, audits each, and refuses one without what it needs", async () => {
+    const h = await harness();
+    for (const name of ["a", "b"]) {
+      h.registry.setHost(name, ["sing"]);
+      h.registry.report(name, { ...INFO, name, services: [sing(name, 0)] });
+    }
+    const set = (body: Record<string, unknown>) =>
+      h.admin("POST", "/api/cluster/routing/controls", body);
+    const pinned = await set({ action: "set", kind: "pin", capability: "sing", host: "b" });
+    expect(pinned.status).toBe(200);
+    expect(h.registry.candidates("sing").map((e) => e.host)).toEqual(["b"]);
+    expect((pinned.body as { panel: unknown[] }).panel).toEqual([
+      expect.objectContaining({ kind: "pin", capability: "sing", host: "b", by: "api" }),
+    ]);
+    expect((await set({ action: "set", kind: "drain", host: "b" })).status).toBe(200);
+    expect(h.registry.candidates("sing")).toEqual([]);
+    expect((await set({ action: "clear", kind: "drain", host: "b" })).status).toBe(200);
+    expect(
+      (await set({ action: "clear", kind: "pin", capability: "sing", host: "b" })).status,
+    ).toBe(200);
+    expect((await set({ action: "set", kind: "weight", host: "a", value: 2 })).status).toBe(200);
+    expect(h.registry.hostRouting().find((x) => x.host === "a")?.weight).toBe(2);
+    expect((await set({ action: "set", kind: "pin", host: "a" })).status).toBe(400);
+    expect((await set({ action: "set", kind: "weight", host: "a" })).status).toBe(400);
+    const audit = await h.store.audit.recent(20, "api");
+    const routing = audit.filter((e) => e.action.startsWith("cluster.routing."));
+    expect(routing.map((e) => [e.action, e.target, e.ok])).toEqual(
+      [
+        ["cluster.routing.set.pin", "sing/b", true],
+        ["cluster.routing.set.drain", "b", true],
+        ["cluster.routing.clear.drain", "b", true],
+        ["cluster.routing.clear.pin", "sing/b", true],
+        ["cluster.routing.set.weight", "a", true],
+        ["cluster.routing.set.pin", "-/a", false],
+        ["cluster.routing.set.weight", "a", false],
+      ].reverse(),
+    );
   });
 });

@@ -176,6 +176,9 @@ ambient_channels = []
 # Privileged Gateway Intents 打開 Presence Intent 與 Server Members Intent;
 # 沒開就設成 false,否則 Discord 會拒絕連線
 presence_intents = true
+# 她傳給人的檔案(附件)一則訊息加起來最多幾 bytes。預設 10 MiB 是 Discord 一般伺服器的上限,
+# 加成過的伺服器收得更大,調大才有用。
+# max_upload_bytes = 10485760
 
 # 伺服器自訂 emoji(docs/design/server-emoji.md):她看得到每個 emoji 的意思、寫 :名字: 就會送出那個 emoji。
 # 沒寫意思的 emoji,如果聊天模型看得懂圖,會自己看一次圖寫一句(存起來,只看一次)。
@@ -184,16 +187,27 @@ presence_intents = true
 # (字數上限是 [modules.agent.mainline] 的 emoji_chars)。
 # [modules."platform.discord.bot".emoji]
 # enabled = true
-
-# 她傳給人的檔案(附件)一則訊息加起來最多幾 bytes。預設 10 MiB 是 Discord 一般伺服器的上限,
-# 加成過的伺服器收得更大,調大才有用。
-# max_upload_bytes = 10485760
 # auto_describe = true
 # max_listed = 40
 # per_message = 1
 # window_messages = 3
 # max_in_window = 1
 # descriptions = { fanfan = "一碗白飯,討飯用" }
+
+# 伺服器貼圖(同一份文件):她看得到這個伺服器的貼圖和意思,在訊息裡寫 [貼圖: 名字] 就會跟著那則訊息送出那張貼圖
+# (別人傳的貼圖她看到的也是 [貼圖: 名字])。只有這個伺服器自己的貼圖,私訊和語音裡不能用。
+# 意思:這裡的 descriptions 優先,其次是看圖模型看一次寫的一句(存起來,只看一次;動態的 Lottie 貼圖看不了,只列名字和標籤),
+# 再來是伺服器自己寫的說明。頻率:一則最多一張;同一個頻道最近 window_messages 則裡最多 max_in_window 則有;
+# 同一張不連續用;每個頻道每小時最多 per_hour 張。超過的就拿掉,只剩貼圖的那則就不送。
+# 清單在主線提示詞對話紀錄前面那段,字數上限跟 emoji 一樣是 [modules.agent.mainline] 的 emoji_chars。下面都是預設值
+# [modules."platform.discord.bot".stickers]
+# enabled = true
+# auto_describe = true
+# max_listed = 20
+# window_messages = 5
+# max_in_window = 1
+# per_hour = 3
+# descriptions = { "貓咪鞠躬" = "道謝用" }
 
 # Admin API:CLI(`miyoria module ...`)和之後的管理面板用。token 由 `miyoria init` 產生
 [modules.api]
@@ -470,6 +484,32 @@ dirs = ["extensions"]
 #   { id = "abyss", label = "深海", price = 150 },
 #   { id = "gold", label = "金框", price = 300 },
 # ]
+# twd_per_coin = 1                 # 固定匯率:一魚幣等於幾新台幣(一碗白飯 10)。自己取名的禮物照這個換算;
+# #                                 交易所的 twd_per_coin 應該和這個一樣(同一個匯率)
+# # ---- 自己取名的禮物(docs/design/economy.md §16):會員寫一樣東西(「一杯珍奶」),系統問一次小模型,
+# # 估一個普通款在台灣大概多少新台幣,用上面的 twd_per_coin 換成魚幣(四捨五入,夾在 min_coins 到 max_coins);
+# # 名字裡寫的價錢不算。同一個名字對每個人都一樣,第一次的估價記住(記的是台幣,改匯率價錢跟著變)。
+# # 會員看到「約 NT$X → Y 魚幣」按確認才扣,她自己決定收不收,不收全部退回;白飯、鋼盆、甜點照舊,不用確認。
+# # 錢的去向和餵食一樣(her_share 給她,其他燒掉)。吃的、喝的算進上面的 feed_hunger_cap。
+# # 任何價錢的禮物都不會改變羈絆。名字可以在面板「經濟 → 禮物」指定價錢(魚幣或台幣)或封鎖。
+# [modules.economy.free_gifts]
+# on = true
+# min_coins = 1                     # 最便宜一魚幣
+# max_coins = 1000000               # 只是防呆的上限:估價超過這個(乘上匯率)就當沒估到
+# fallback_coins = 50               # 估不到價(沒有模型、失敗、不合理的答案)時用的價錢,確認畫面會說,不記住
+# big_gift_coins = 1000             # 超過這個,確認畫面多一行「這是一份大禮」和送出後的餘額
+# band_coins = [100, 1000, 10000]   # 她看到的價錢感覺:到 100 隨手的小東西、到 1000 有點心意、到 10000 很貴重、再上去誇張
+# food_hunger_max = 0.5             # 吃的最多讓她少餓多少:max × 魚幣 ÷ (魚幣 + half),喝的一半
+# food_hunger_half_coins = 100      # 多少魚幣的吃的讓她少餓 max 的一半(一杯 60 的飲料約 0.09)
+# max_chars = 24                    # 名字最多幾個字
+# confirm_s = 180                   # 多久內要按確認;過了就作廢,不扣錢
+# answer_s = 300                    # 她這麼久沒回答就當她收下(和餵食一樣不等她)
+# per_day = 3                       # 一個人一天最多送幾份(0 = 關掉)
+# coins_per_day = 0                 # 一個人一天最多花多少在這些禮物上(0 = 不限)
+# objects_per_day = 2               # 吃喝以外的,一個人一天最多幾份
+# price_calls_per_person = 5        # 一個人一天最多讓系統問幾次價(問過的名字不算)
+# price_calls_per_day = 200         # 所有人加起來一天最多問幾次價;用完就「晚點再試」,不扣錢
+# price_timeout_s = 15              # 問價最多等幾秒,等不到用 fallback_coins
 
 # 她給你的卡(docs/design/v5-play.md §2、cards.md):每日卡用魚幣買,每天第一張也要錢;部件照公開的機率抽,
 # 表情由你們的關係決定,買不到也抽不到。卡不能交易、不能送。卡框和閃卡在 [modules.economy](frames、card_foil)。
@@ -537,6 +577,123 @@ dirs = ["extensions"]
 # lottery_weekday = 0         # 星期幾開獎(0 = 星期日)
 # lottery_time = "20:00"
 # lottery_min_buyers = 3      # 至少幾個不同的人買才開獎
+
+# 深海交易所(docs/design/exchange.md):用魚幣模擬買賣真實的台股、美股(報價來自 Yahoo Finance,非官方、
+# 可能延遲或停掉),和五檔這裡獨家、跟她的生活有關的股票(新手推薦,一股約 100 魚幣,不開放槓桿)。
+# 交易所是對手方:買進的魚幣燒掉,賣出時重新發出;一筆 1% 手續費燒掉。買多少、持有多少、每天淨發出多少,預設都不設上限
+# (owner 2026-11-21:不然沒辦法玩);這表示漲的市場會讓魚幣變多,owner 頁有今天 / 7 天 / 30 天的淨發出和提醒。
+# 下面每個上限填 0 = 不限,填一個數字就生效。
+# 魚幣是遊戲點數,沒有現金價值,永遠不能換成真錢或現實中的物品。匯率固定:魚幣對台幣用
+# [modules.economy] twd_per_coin(預設 1 魚幣 = NT$1),美元對台幣用這裡的 twd_per_usd。
+# /me market overview(清單、報價圖、買賣)、/me market quote、/me market mine、/me market rich,和會員頁。預設不開。
+# [modules.exchange]
+# open = false                # 交易所開關:關著時不成交也不能下單;關掉時掛著的委託全部退回,持股留著
+# utc_offset_minutes = 480    # 「今天」從哪個時區算(每日上限、每日報表)
+# colors = "tw"               # 漲跌顏色:"tw" 紅漲綠跌(預設)、"us" 綠漲紅跌;每張圖都會標示
+# local_stocks = true         # 新手推薦的五檔獨家股票(價格由程式模擬,每天 12:00–23:00 每小時一筆)
+# twd_per_usd = 30            # 一美元等於幾台幣(固定;改了所有美股持股的市值一起變,股數不變)
+# # ---- 報價(預設兩個市場都用 Yahoo Finance)
+# provider_tw = "yahoo"
+# provider_us = "yahoo"
+# quotes_tw = "intraday"      # "intraday" 盤中報價,或 "close" 只用收盤價(委託在下一個收盤成交)
+# quotes_us = "intraday"
+# quote_poll_seconds = 60     # 多久問一次報價(只問有人持有、掛單、剛看過、或活躍的人觀察中的股票)
+# quote_max_age_seconds = 300 # 報價最久多舊還能成交;更舊就不成交、也不自動賣出
+# close_grace_minutes = 180
+# holidays_tw = []            # 休市日(那個市場自己的日期),例如 ["2026-12-25"]
+# holidays_us = []
+# batch_size = 20             # 一次請求最多幾檔
+# view_minutes = 5            # 看過的股票之後多久繼續更新報價
+# suspend_after_days = 3      # 有人持有的股票連續幾個交易日沒有報價就暫停,等 owner 結算
+# # ---- 哪些股票可以交易(誰查過的代號,第一次會向報價來源確認)
+# allowed_exchanges_tw = ["TAI", "TWO"]
+# allowed_exchanges_us = ["NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS"]
+# allowed_types = ["EQUITY", "ETF"]
+# blocked = []                # 不能買進的代號(還能賣)
+# allow_only = []             # 非空時只有這些代號能交易
+# lookups_per_hour = 20       # 每人每小時最多查幾個新代號
+# negative_cache_minutes = 60 # 查不到的代號多久內不再問
+# # 熱門台股 / 熱門美股:代號、產業(熱門股票圖的分組)和權重(格子大小,約略照市值大小排的固定值,不是即時市值,可以自己改);
+# # 只寫代號也可以("2330"),產業算「其他」、權重 1
+# starters_tw = [
+#   { code = "2330", sector = "半導體", weight = 300 }, { code = "2317", sector = "科技", weight = 30 },
+#   { code = "2454", sector = "半導體", weight = 23 }, { code = "2308", sector = "科技", weight = 20 },
+#   { code = "2382", sector = "科技", weight = 11 }, { code = "2412", sector = "電信", weight = 10 },
+#   { code = "2881", sector = "金融", weight = 12 }, { code = "2882", sector = "金融", weight = 10 },
+#   { code = "2891", sector = "金融", weight = 9 }, { code = "2303", sector = "半導體", weight = 6 },
+#   { code = "1301", sector = "原物料", weight = 3 }, { code = "2002", sector = "原物料", weight = 3 },
+#   { code = "0050", sector = "ETF", weight = 6 }, { code = "0056", sector = "ETF", weight = 4 },
+#   { code = "00878", sector = "ETF", weight = 4 }, { code = "006208", sector = "ETF", weight = 2 },
+# ]
+# starters_us = [
+#   { code = "AAPL", sector = "科技", weight = 38 }, { code = "MSFT", sector = "科技", weight = 38 },
+#   { code = "NVDA", sector = "半導體", weight = 45 }, { code = "AMZN", sector = "消費", weight = 24 },
+#   { code = "GOOGL", sector = "科技", weight = 30 }, { code = "META", sector = "科技", weight = 18 },
+#   { code = "TSLA", sector = "消費", weight = 14 }, { code = "BRK-B", sector = "金融", weight = 10 },
+#   { code = "JPM", sector = "金融", weight = 8 }, { code = "V", sector = "金融", weight = 7 },
+#   { code = "SPY", sector = "ETF", weight = 7 }, { code = "QQQ", sector = "ETF", weight = 4 },
+#   { code = "VOO", sector = "ETF", weight = 7 }, { code = "VTI", sector = "ETF", weight = 5 },
+#   { code = "DIA", sector = "ETF", weight = 1 },
+# ]
+# watch_max = 20              # 觀察清單最多幾檔
+# watch_active_days = 3       # 觀察中的股票只有在那個人這幾天用過交易所、而且開盤時才更新報價
+# suggest_per_minute = 60     # 打字時的建議,每人每分鐘最多幾次(有快取,不會每打一個字就問報價來源)
+# component_minutes = 15      # Discord 上的按鈕和選單多久後過期
+# # ---- 開戶和委託(都是市價單,以下一筆有效報價成交)
+# account_min_days = 7        # 她認識你滿幾天才能開戶
+# staff_may_trade = true      # owner 和管理員也能交易;false = 看得到市場內部數字的人不能開戶和下單
+# account_min_tier = "認識"   # 羈絆至少到哪一級
+# order_min = 10              # 一筆買進最少(含手續費)
+# order_max = 0               # 一筆買進最多(0 = 不限)
+# orders_per_day = 20         # 一天最多幾筆委託(買賣合計)
+# buy_per_day = 0             # 一天最多買多少魚幣(0 = 不限)
+# transfer_lock_hours = 24    # 別人轉給你的魚幣要過多久才能投入
+# min_hold_minutes = 10       # 買進後多久才能賣
+# fee = 0.01                  # 每筆手續費,無條件進位,燒掉
+# fee_min = 1
+# # ---- 持有上限(照成本算,2 倍照全部部位算;隨羈絆和認識的時間放寬)
+# limit_total = 0             # 0 = 不限
+# limit_bond_step = 0.25
+# limit_age_step = 0.1
+# limit_age_days = 30
+# limit_max_mult = 2
+# # ---- 交易所的錢
+# payout_cap_daily = 0       # 每天最多淨發出(0 = 不限);設了之後,到了當天停止買進,賣出照常全額付
+# mint_warn_share = 0.05      # 7 天淨發出超過流通魚幣的這個比例時,owner 頁提醒(只提醒,不停止)
+# map_min_holders = 2         # 伺服器持股圖:少於這麼多人持有的股票併入「其他」,看不出是誰持有
+# # ---- 2 倍(交叉保證金:賠超過保證金時先扣錢包、再賣其他持股;最壞賠光,不會欠錢,破產有冷靜期)
+# leverage = true             # false = 不能開新的 2 倍部位
+# leverage_line = 0.2         # 保證金剩這麼多就依規則自動賣出
+# leverage_warn_half = 0.5
+# leverage_warn_near = 0.35
+# leverage_carry_daily = 0
+# leverage_min_coin_price = 50   # 一股至少幾魚幣、有前一天收盤價的股票才能 2 倍
+# leverage_min_days = 30      # 2 倍:她認識你滿幾天
+# leverage_min_tier = "朋友"  # 2 倍:羈絆至少到哪一級
+# leverage_margin_cap = 0     # 一個人所有 2 倍部位的保證金合計最多(0 = 不限)
+# bankrupt_cooling_days = 7   # 破產後幾天不能買進
+# # [modules.exchange.local_anchors]   # 五檔獨家股票的起始價和長期會回到的價位(魚幣)
+# # RICE = 100
+# # WHLE = 108
+# # NAPS = 88
+# # CUBE = 116
+# # DPSK = 94
+# # [modules.exchange.local_signals]   # 她的真事怎麼推動五檔獨家股票(docs/design/exchange.md §9)
+# # baseline_days = 14        # 和前幾天比:那些天的中位數和離散
+# # min_history_days = 7      # 紀錄不到這麼多天就不推(新的實例)
+# # spread = 3                # 滿格要離中位數幾個離散
+# # relative = 0.5            # 也至少要離中位數的這個比例
+# # slow_call_seconds = 30    # DPSK:模型回得比這慢就算太慢
+# # RICE = { floor = 10, up = 1, down = 1 }   # 滿格至少要比平常多(少)幾次;up / down 是最多推到滿格的幾成
+# # WHLE = { floor = 3, up = 1, down = 1 }
+# # NAPS = { floor = 3, up = 1, down = 1 }
+# # CUBE = { floor = 3, up = 1, down = 1 }
+# # DPSK = { floor = 10, down = 1 }   # 只會跌(up 一律 0),跌幅壓在一次來回手續費以下
+# # [modules.exchange.yahoo]
+# # host = "query1.finance.yahoo.com"
+# # daily_budget = 3000       # 一天最多幾次請求,用完就停到隔天、報價標為停滯
+# # timeout_ms = 8000
+# # max_backoff_seconds = 1800
 
 # 唱 K 第一步(docs/design/karaoke.md「做了什麼(第一步)」):會員頁一個人唱。貼連結或打歌名,
 # 唱歌 worker 做伴唱軌和參考旋律;在自己的瀏覽器唱、算音高,唱完 Core 用同一份評分重算,
@@ -782,6 +939,11 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # pace_ms_per_char = 40          # 一次回覆分成幾則短訊息時,依下一則的長度隔開並顯示輸入中:每字這麼久
 # pace_min_ms = 300              # 但最短
 # pace_max_ms = 1800             # 最長
+# 對她說的話如果只是單純的道謝或道別(「謝謝」「掰掰」「晚安」「thanks」「おやすみ」),有時她只按一個表情、不叫模型。
+# 有問題、附件、提到別人、那裡有派對遊戲或她開的工作在等、她上一句在問對方、那裡正在回話時都不會。這個反應也算 reactions_per_hour
+# courtesy_react = true          # 開關
+# courtesy_chance = 0.35         # 這種話有多少機率只按表情(其餘照常回)
+# courtesy_per_hour = 3          # 每個頻道每小時最多幾次
 
 # 她自己起頭的事:她設的時間到了、外面發生的事、該追問的事、答應過
 # 還沒做的事、這裡安靜了、想念某人、早上醒來,都先過程式的關卡,過了才叫醒她,說不說由她決定。

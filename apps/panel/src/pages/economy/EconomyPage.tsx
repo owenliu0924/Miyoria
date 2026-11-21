@@ -2,6 +2,8 @@ import { getRouteApi, useNavigate } from "@tanstack/react-router";
 import { ECONOMY_TABS, type EconomyTab } from "@/app/nav";
 import { Page, PageHeader } from "@/components/page";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ExchangeTab } from "./ExchangeTab";
+import { GiftsTab } from "./GiftsTab";
 import { HealthTab } from "./HealthTab";
 import { MarketTab } from "./MarketTab";
 import { PredictionsTab, RoomTab } from "./OpenTabs";
@@ -34,6 +36,12 @@ export function EconomyPage() {
         </TabsContent>
         <TabsContent value="market">
           <MarketTab />
+        </TabsContent>
+        <TabsContent value="exchange">
+          <ExchangeTab />
+        </TabsContent>
+        <TabsContent value="gifts">
+          <GiftsTab />
         </TabsContent>
       </Page>
     </Tabs>

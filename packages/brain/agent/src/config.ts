@@ -327,7 +327,8 @@ export const MainLineConfigSchema = z.object({
   notebook_chars: z.number().int().nonnegative().default(600),
   /**
    * The server's custom emoji and their meanings (contributor `server_emoji`, Discord), before
-   * the history: they change when someone adds or renames one, not every turn.
+   * the history: they change when someone adds or renames one, not every turn. The server's
+   * stickers (`server_stickers`) are a block of their own with the same limit.
    */
   emoji_chars: z.number().int().nonnegative().default(1200),
   /** What she did just now, across every place (contributor `just_now`), after the history. */

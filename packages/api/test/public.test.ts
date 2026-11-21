@@ -709,6 +709,7 @@ describe("the route table", () => {
       "GET /api/public/card-art/:file",
       "GET /api/public/card/:serial",
       "GET /api/public/cards/odds",
+      "GET /api/public/gifts",
       "GET /api/public/live",
       "GET /api/public/live/video/:file",
       "GET /api/public/songs",
@@ -734,8 +735,19 @@ describe("the route table", () => {
       "GET /api/member/cards/pity",
       "GET /api/member/cards/wishlist",
       "GET /api/member/danmaku",
+      "GET /api/member/exchange",
+      "GET /api/member/exchange/account",
+      "GET /api/member/exchange/boards",
+      "GET /api/member/exchange/candles/:code",
+      "GET /api/member/exchange/list/:kind",
+      "GET /api/member/exchange/map/:kind",
+      "GET /api/member/exchange/portfolio",
+      "GET /api/member/exchange/suggest",
+      "GET /api/member/exchange/ticker/:code",
       "GET /api/member/export",
       "GET /api/member/fortune",
+      "GET /api/member/gifts",
+      "GET /api/member/gifts/:id/picture",
       "GET /api/member/github",
       "GET /api/member/github/callback",
       "GET /api/member/github/link",
@@ -762,9 +774,20 @@ describe("the route table", () => {
       "POST /api/member/card",
       "POST /api/member/checkin",
       "POST /api/member/danmaku",
+      "POST /api/member/exchange/account",
+      "POST /api/member/exchange/cancel",
+      "POST /api/member/exchange/leverage",
+      "POST /api/member/exchange/lookup",
+      "POST /api/member/exchange/order",
+      "POST /api/member/exchange/quote",
+      "POST /api/member/exchange/visibility",
+      "POST /api/member/exchange/watch",
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
+      "POST /api/member/gifts/:id/cancel",
+      "POST /api/member/gifts/:id/confirm",
+      "POST /api/member/gifts/quote",
       "POST /api/member/github/mention",
       "POST /api/member/github/unlink",
       "POST /api/member/karaoke/rooms",
@@ -801,7 +824,9 @@ describe("the route table", () => {
     // and one that is not theirs is not found; a series names one of their own titles; a karaoke
     // song is nobody's, and a karaoke session (and its files) that is not theirs is not found; a
     // room's code names a room, which anyone with the code may join or watch; a queue entry is one
-    // of that room's, which only its adder, the opener or a panel admin may take out or move.
+    // of that room's, which only its adder, the opener or a panel admin may take out or move; an
+    // exchange ticker's code names a stock and a list's kind one of the fixed lists; a gift id
+    // names a gift, and one that is not theirs is refused.
     const named = all.filter(
       (r) =>
         r.member &&
@@ -812,6 +837,11 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/rooms\/:code(\/queue\/:entry)?/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
+          .replace(
+            /^\/api\/member\/exchange\/(ticker\/:code|candles\/:code|list\/:kind|map\/:kind)$/,
+            "",
+          )
+          .replace(/^\/api\/member\/gifts\/:id\/(confirm|cancel|picture)$/, "")
           .includes(":"),
     );
     expect(named).toEqual([]);

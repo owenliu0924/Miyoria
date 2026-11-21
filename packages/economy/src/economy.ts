@@ -30,6 +30,7 @@ import {
   EventLogKey,
   type EventPayload,
   Events,
+  EXCHANGE_REASONS,
   HandleDirectoryKey,
   type HeartEvidenceInput,
   HeartKey,
@@ -58,6 +59,7 @@ import { BountyBoard } from "./bounties.js";
 import type { EconomyConfig } from "./config.js";
 import { DanmakuDesk } from "./danmaku.js";
 import { type EconomyDocStore, EconomyDocsKey, MemoryDocs } from "./docs.js";
+import { GIFT_REASON, giftHunger, giftLabel } from "./gift-words.js";
 import { Purse } from "./purse.js";
 import {
   type CoinCap,
@@ -189,6 +191,18 @@ const MARKET_LABEL: Readonly<Record<string, string>> = {
   [MARKET_REASONS.lotteryPrize]: "每週樂透中獎",
   [MARKET_REASONS.auctionHold]: "拍賣出價(押著)",
   [MARKET_REASONS.auctionRelease]: "拍賣出價退回",
+};
+
+/** What the deep-sea exchange's rows say (docs/design/exchange.md). */
+const EXCHANGE_LABEL: Readonly<Record<string, string>> = {
+  [EXCHANGE_REASONS.in]: "交易所:買進",
+  [EXCHANGE_REASONS.out]: "交易所:賣出或退回",
+  [EXCHANGE_REASONS.fee]: "交易所:手續費和稅(燒掉)",
+  [EXCHANGE_REASONS.feeBack]: "交易所:沒成交,手續費退回",
+  [EXCHANGE_REASONS.burn]: "交易所:買進(真實行情)",
+  [EXCHANGE_REASONS.burnBack]: "交易所:沒成交,退回",
+  [EXCHANGE_REASONS.mint]: "交易所:賣出(真實行情)",
+  [EXCHANGE_REASONS.loss]: "交易所:槓桿賠超過保證金的部分",
 };
 
 /** What karaoke rooms' rows say (docs/design/karaoke.md 「做了什麼第四步」). */
@@ -347,7 +361,7 @@ export interface EconomyDeps {
 export class EconomyService implements Economy {
   readonly #d: EconomyDeps;
   readonly #turns = new SerialQueue();
-  /** Her own coins (purse.ts), her crowdfunding goals (goals.ts) and her bounties (bounties.ts). */
+  /** Her own coins (purse.ts) and her bounties (bounties.ts). */
   readonly purse: Purse;
   readonly bountyDesk: BountyBoard;
   /** Danmaku on the stream overlay (danmaku.ts, docs/design/v5-play.md §11.6). */
@@ -632,9 +646,10 @@ export class EconomyService implements Economy {
    */
   #feedLeft(rows: readonly CoinEntry[]): number {
     const refunded = new Set(rows.filter((r) => r.reason === "refund").map((r) => r.ref));
+    // Food named as a gift (gifts.ts) counts against the same share as rice.
     const taken = rows
-      .filter((r) => r.reason === "feed" && !refunded.has(r.id))
-      .reduce((n, r) => n + hungerOf(r), 0);
+      .filter((r) => (r.reason === "feed" || r.reason === GIFT_REASON) && !refunded.has(r.id))
+      .reduce((n, r) => n + (r.reason === "feed" ? hungerOf(r) : giftHunger(r)), 0);
     const left = this.#d.config.feed_hunger_cap - taken;
     return left > FEED_EPSILON ? left : 0;
   }
@@ -787,6 +802,15 @@ export class EconomyService implements Economy {
       case MARKET_REASONS.auctionHold:
       case MARKET_REASONS.auctionRelease:
         return MARKET_LABEL[r.reason] ?? r.reason;
+      case EXCHANGE_REASONS.in:
+      case EXCHANGE_REASONS.out:
+      case EXCHANGE_REASONS.fee:
+      case EXCHANGE_REASONS.feeBack:
+      case EXCHANGE_REASONS.burn:
+      case EXCHANGE_REASONS.burnBack:
+      case EXCHANGE_REASONS.mint:
+      case EXCHANGE_REASONS.loss:
+        return EXCHANGE_LABEL[r.reason] ?? r.reason;
       case KARAOKE_REASONS.room:
       case KARAOKE_REASONS.roomRefund:
       case KARAOKE_REASONS.prize:
@@ -796,7 +820,11 @@ export class EconomyService implements Economy {
         return r.delta > c.checkin ? "每日簽到(連續 7 天)" : EARN_LABEL.checkin;
       default:
         return (
-          labelV2(r, c) ?? RETIRED_LABEL[r.reason] ?? EARN_LABEL[r.reason as EarnReason] ?? r.reason
+          labelV2(r, c) ??
+          giftLabel(r) ??
+          RETIRED_LABEL[r.reason] ??
+          EARN_LABEL[r.reason as EarnReason] ??
+          r.reason
         );
     }
   }

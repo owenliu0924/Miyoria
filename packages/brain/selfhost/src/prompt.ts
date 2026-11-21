@@ -119,8 +119,11 @@ const QUERY_LINES = 3;
 /** Contributors whose words come from elsewhere here: memory (retrieval), the recap (block 4). */
 const MEMORY_CONTRIBUTOR = "memory";
 const RECAP_CONTRIBUTOR = "conversation";
-/** Contributor sections of block 4 (today's `SLOW_ORDER`), the most stable first. */
-const SLOW_ORDER: readonly string[] = ["server_emoji", "notebook"];
+/**
+ * Contributor sections of block 4, the most stable first: the server's emoji and stickers
+ * (Discord's `server_emoji`, `server_stickers`) change when someone adds or renames one.
+ */
+const SLOW_ORDER: readonly string[] = ["server_emoji", "server_stickers", "notebook"];
 const SLOW_SECTIONS: ReadonlySet<string> = new Set(SLOW_ORDER);
 /** No budget but the blocks' own. */
 const UNLIMITED = Number.MAX_SAFE_INTEGER;
@@ -488,7 +491,12 @@ export class HostPrompt implements PromptSource {
     const { data } = contributedData(sections);
     const budgeted = budgetBlocks(data, {
       total: UNLIMITED,
-      budgets: { server_emoji: m.emoji_chars, notebook: m.notebook_chars, life: m.life_chars },
+      budgets: {
+        server_emoji: m.emoji_chars,
+        server_stickers: m.emoji_chars,
+        notebook: m.notebook_chars,
+        life: m.life_chars,
+      },
       defaultBudget: m.notebook_chars,
     });
     out.push(...budgeted.blocks);

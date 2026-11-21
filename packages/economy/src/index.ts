@@ -27,6 +27,47 @@ export {
   uniqueFrameOf,
   WALLET_NODE,
 } from "./economy.js";
+export { EconomyExchangeWallet } from "./exchange-wallet.js";
+export { type FreeGiftConfig, FreeGiftConfigSchema, OLD_TIER_COINS } from "./gift-config.js";
+export { giftSchema } from "./gift-migrations.js";
+export {
+  type GiftPrice,
+  type GiftRecord,
+  type GiftStatus,
+  GiftTables,
+  giftTables,
+} from "./gift-tables.js";
+export {
+  BAND_WORD,
+  bandOf,
+  coinsOf,
+  foodHunger,
+  GIFT_KINDS,
+  GIFT_REASON,
+  GIFT_REFUSALS,
+  type GiftKind,
+  type GiftPricer,
+  GiftPricerKey,
+  type GiftRefusal,
+  type GiftVerdict,
+  giftKey,
+  giftName,
+  KIND_WORD,
+  REFUSAL_TEXT,
+} from "./gift-words.js";
+export {
+  type AdminGift,
+  FreeGiftsKey,
+  type GiftAsk,
+  type GiftConfirmed,
+  GiftDesk,
+  type GiftNo,
+  type GiftQuote,
+  type GiftView,
+  MAX_GIFT_LINE,
+  type PublicGift,
+  TAKEN_FOR_HER,
+} from "./gifts.js";
 export { TaskRefusal } from "./guard.js";
 export { EconomyKaraokeWallet } from "./karaoke-wallet.js";
 export { EconomyMarketWallet } from "./market-wallet.js";

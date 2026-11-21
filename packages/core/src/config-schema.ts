@@ -52,6 +52,7 @@ import {
 import { EmbeddingConfigSchema, MemoryConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldConfigSchema, WorldModule } from "@miyoria/memory/world";
 import { CardsConfigSchema, CardsModule } from "@miyoria/play/cards";
+import { ExchangeConfigSchema, ExchangeModule } from "@miyoria/play/exchange";
 import {
   GameChatConfigSchema,
   GameChatModule,
@@ -145,6 +146,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [EconomyModule.ID, EconomyConfigSchema],
   [CardsModule.ID, CardsConfigSchema],
   [MarketModule.ID, MarketConfigSchema],
+  [ExchangeModule.ID, ExchangeConfigSchema],
   [KaraokeModule.ID, KaraokeConfigSchema],
   [WebModule.ID, WebConfigSchema],
   [SandboxModule.ID, SandboxConfigSchema],

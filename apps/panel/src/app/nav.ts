@@ -75,6 +75,8 @@ export const ECONOMY_TABS = [
   { tab: "predictions", label: "預測" },
   { tab: "room", label: "房間" },
   { tab: "market", label: "市集" },
+  { tab: "exchange", label: "交易所" },
+  { tab: "gifts", label: "禮物" },
 ] as const;
 
 export const INNER_TABS = [

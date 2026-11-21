@@ -11,6 +11,8 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
 import { fmtInt } from "@/lib/format";
 import { CardsArea } from "./cards/CardsArea";
+import { Exchange } from "./Exchange";
+import { GiftsReceived } from "./Gifts";
 import { KaraokeLink } from "./karaoke/link";
 import { LiveStage } from "./live/LiveStage";
 import { Market } from "./Market";
@@ -248,8 +250,10 @@ export function PublicSite({
           <MemberLists />
           <CardsArea />
           <Market />
+          <Exchange />
           <Predictions />
           <WalletMain />
+          <GiftsReceived />
           <Songs />
         </Page>
       </main>

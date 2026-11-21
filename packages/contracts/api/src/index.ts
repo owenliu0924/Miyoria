@@ -29,8 +29,10 @@ import { data } from "./data.js";
 import { directives } from "./directives.js";
 import { economy, peopleEconomy } from "./economy.js";
 import { evalRoutes } from "./eval.js";
+import { exchange, exchangeAdmin } from "./exchange.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
+import { gifts, giftsAdmin, giftsPublic } from "./gifts.js";
 import { githubLink } from "./github-link.js";
 import { self, world } from "./inner.js";
 import { karaoke, karaokeAdmin } from "./karaoke.js";
@@ -341,6 +343,43 @@ export {
   EvalNightlyStateSchema,
 } from "./eval.js";
 export {
+  type ExchangeAccount,
+  ExchangeAccountSchema,
+  type ExchangeAdmin,
+  ExchangeAdminSchema,
+  ExchangeAdminSellRequestSchema,
+  type ExchangeBoards,
+  ExchangeBoardsSchema,
+  ExchangeCancelRequestSchema,
+  type ExchangeCandles,
+  ExchangeCandlesSchema,
+  ExchangeLeverageRequestSchema,
+  type ExchangeLine,
+  ExchangeLineSchema,
+  type ExchangeList,
+  ExchangeListSchema,
+  ExchangeLookupRequestSchema,
+  type ExchangeMap,
+  ExchangeMapSchema,
+  type ExchangeMarket,
+  ExchangeMarketSchema,
+  type ExchangeOrder,
+  type ExchangeOrderRequest,
+  ExchangeOrderRequestSchema,
+  ExchangeOrderSchema,
+  type ExchangePortfolio,
+  ExchangePortfolioSchema,
+  type ExchangeQuote,
+  ExchangeQuoteSchema,
+  ExchangeSettleRequestSchema,
+  ExchangeSplitRequestSchema,
+  type ExchangeTicker,
+  ExchangeTickerRequestSchema,
+  ExchangeTickerSchema,
+  ExchangeVisibilityRequestSchema,
+  ExchangeWatchRequestSchema,
+} from "./exchange.js";
+export {
   type CauseChain,
   CauseChainSchema,
   type Delivery,
@@ -358,6 +397,38 @@ export {
   type IssuedFortune,
   IssuedFortuneSchema,
 } from "./fortune.js";
+export {
+  type AdminGiftItem,
+  AdminGiftSchema,
+  type AdminGifts,
+  AdminGiftsSchema,
+  type GiftAskResult,
+  GiftAskResultSchema,
+  type GiftConfirmResult,
+  GiftConfirmResultSchema,
+  GiftKindSchema,
+  type GiftOverride,
+  GiftOverrideSchema,
+  type GiftPicture,
+  GiftPictureSchema,
+  type GiftPinRequest,
+  GiftPinRequestSchema,
+  type GiftQuoteRequest,
+  GiftQuoteRequestSchema,
+  GiftQuoteSchema,
+  type GiftQuoteView,
+  GiftStatusSchema,
+  type GiftUnpinRequest,
+  GiftUnpinRequestSchema,
+  type GiftViewItem,
+  GiftViewSchema,
+  type MyGifts,
+  MyGiftsSchema,
+  type PublicGiftItem,
+  PublicGiftSchema,
+  type PublicGifts,
+  PublicGiftsSchema,
+} from "./gifts.js";
 export {
   type GithubLinkView,
   GithubLinkViewSchema,
@@ -1103,6 +1174,11 @@ export const contract = {
   fortune,
   market,
   marketAdmin,
+  exchange,
+  exchangeAdmin,
+  gifts,
+  giftsAdmin,
+  giftsPublic,
   karaoke,
   karaokeAdmin,
   karaokeRooms,

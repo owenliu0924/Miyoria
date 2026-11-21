@@ -12,6 +12,9 @@ import {
   HostGpuReadingSchema,
   HostLinkStateSchema,
   HostRemoteUpdateSchema,
+  HostRoutingClassSchema,
+  HostRoutingLatencySchema,
+  HostServiceRoutingSchema,
   HostServiceStatusSchema,
   HostUpgradeJobSchema,
 } from "../../host/src/index.js";
@@ -211,6 +214,189 @@ export const ClusterUpgradeCancelResultSchema = z
   .meta({ id: "ApiClusterUpgradeCancelResult" });
 export type ClusterUpgradeCancelResult = z.output<typeof ClusterUpgradeCancelResultSchema>;
 
+// ---- job dispatch (v5-hostd §15) -----------------------------------------------------------------
+
+/** What makes up an endpoint's score, in ms. */
+export const ClusterScorePartsSchema = z
+  .object({
+    wait_ms: z.number(),
+    run_ms: z.number(),
+    transfer_ms: z.number(),
+    penalty_ms: z.number(),
+    /** The penalties, in words. */
+    penalties: z.array(z.string()),
+    weight: z.number(),
+  })
+  .meta({ id: "ApiClusterScoreParts" });
+
+/** One endpoint of a capability: whether it takes new work, its score or why not. */
+export const ClusterEndpointRoutingSchema = z
+  .object({
+    host: z.string(),
+    service: z.string(),
+    via: z.enum(["direct", "link"]),
+    healthy: z.boolean(),
+    /** It failed a moment ago and rests. */
+    resting: z.boolean(),
+    /** It takes new work. */
+    eligible: z.boolean(),
+    /** Why not, in words. */
+    reason: z.string().optional(),
+    /** Seconds until a new unit would be back on Core (`job`); `null` for the other classes. */
+    score_s: z.number().nullable(),
+    parts: ClusterScorePartsSchema.optional(),
+    /** Its `[routing]` as its host reports it; `null` from an older hostd or a static entry. */
+    routing: HostServiceRoutingSchema.nullable(),
+    load: z
+      .object({
+        running: z.number(),
+        queued: z.number(),
+        age_ms: z.number(),
+        outside: z.string().optional(),
+      })
+      .nullable(),
+    /** Units Core sent that its host's report does not show yet. */
+    pending: z.number().int(),
+    /** Its host carries her voice now through a service this one yields to. */
+    speech: z.boolean(),
+    /** What Core measured there. */
+    estimate: z.object({
+      unit_s: z.number().nullable(),
+      rate_mb_s: z.number().nullable(),
+      units: z.number().int(),
+      transfers: z.number().int(),
+    }),
+  })
+  .meta({ id: "ApiClusterEndpointRouting" });
+
+/** Why the last units of a capability went where they went. */
+export const ClusterDispatchDecisionSchema = z
+  .object({
+    at: TimestampSchema,
+    host: z.string(),
+    service: z.string(),
+    what: z.string().optional(),
+    scores: z.array(
+      z.object({
+        host: z.string(),
+        service: z.string(),
+        score_s: z.number().nullable(),
+        reason: z.string().optional(),
+      }),
+    ),
+  })
+  .meta({ id: "ApiClusterDispatchDecision" });
+
+export const ClusterSpeechHostModeSchema = z
+  .enum(["never", "when_idle", "always"])
+  .meta({ id: "ApiClusterSpeechHostMode" });
+
+/** One capability's routing. */
+export const ClusterCapabilityRoutingSchema = z
+  .object({
+    capability: z.string(),
+    /** `null`: no host declares one; it is routed as before (first healthy in order). */
+    class: HostRoutingClassSchema.nullable(),
+    latency: HostRoutingLatencySchema.nullable(),
+    yields_to: z.array(z.string()),
+    /** The variant every instance must have. */
+    variant: z.string().nullable(),
+    speech_mode: ClusterSpeechHostModeSchema,
+    /** For `single`: the instance in use and the ones that are not. */
+    conflict: z.object({ used: z.string(), others: z.array(z.string()) }).nullable(),
+    /** Hosts disagree about the class (the strictest is used). */
+    class_conflict: z.array(z.string()).nullable(),
+    endpoints: z.array(ClusterEndpointRoutingSchema),
+    decisions: z.array(ClusterDispatchDecisionSchema),
+    sessions: z.array(
+      z.object({ key: z.string(), host: z.string(), service: z.string(), since: TimestampSchema }),
+    ),
+    /** The size of a unit's results Core reckons with, in MB. */
+    result_mb: z.number().nullable(),
+  })
+  .meta({ id: "ApiClusterCapabilityRouting" });
+
+export const ClusterRoutingControlKindSchema = z
+  .enum(["pin", "exclude", "weight", "drain"])
+  .meta({ id: "ApiClusterRoutingControlKind" });
+
+/** One of the owner's controls set from the panel. */
+export const ClusterRoutingControlSchema = z
+  .object({
+    kind: ClusterRoutingControlKindSchema,
+    /** `""` for a host's weight or drain. */
+    capability: z.string(),
+    host: z.string(),
+    value: z.number().nullable(),
+    by: z.string(),
+    at: TimestampSchema,
+  })
+  .meta({ id: "ApiClusterRoutingControl" });
+
+/** Job dispatch as the machines page shows it. */
+export const ClusterRoutingSchema = z
+  .object({
+    capabilities: z.array(ClusterCapabilityRoutingSchema),
+    hosts: z.array(
+      z.object({
+        host: z.string(),
+        /** It runs on Core's own machine; `null` when unknown. */
+        local: z.boolean().nullable(),
+        rtt_ms: z.number().nullable(),
+        /** Why it takes nothing new; `null` when it does. */
+        drained: z.string().nullable(),
+        weight: z.number(),
+      }),
+    ),
+    /** Where her voice is, as the speech-host rule sees it. */
+    activity: z.object({
+      in_voice: z.boolean(),
+      live: z.boolean(),
+      last_spoke_at: TimestampSchema.nullable(),
+      idle: z.boolean(),
+    }),
+    /** `[modules.cluster.routing]` as Core read it: what the panel cannot change. */
+    config: z.object({
+      allow_on_speech_host: ClusterSpeechHostModeSchema,
+      idle_minutes: z.number(),
+      weights: z.record(z.string(), z.number()),
+      drain: z.array(z.string()),
+      capabilities: z.record(
+        z.string(),
+        z.object({
+          allow_on_speech_host: ClusterSpeechHostModeSchema.optional(),
+          pin: z.string().optional(),
+          exclude: z.array(z.string()),
+          variant: z.string().optional(),
+        }),
+      ),
+    }),
+    /** The owner's controls from the panel. */
+    panel: z.array(ClusterRoutingControlSchema),
+  })
+  .meta({ id: "ApiClusterRouting" });
+export type ClusterRouting = z.output<typeof ClusterRoutingSchema>;
+
+/** Body of `POST /api/cluster/routing/controls`: set or take away one control. */
+export const ClusterRoutingControlRequestSchema = z
+  .object({
+    action: z.enum(["set", "clear"]),
+    kind: ClusterRoutingControlKindSchema,
+    host: z.string().min(1).max(64),
+    /** For `pin` and `exclude`. */
+    capability: z.string().min(1).max(64).optional(),
+    /** For `weight` (above 0). */
+    value: z.number().positive().max(100).optional(),
+  })
+  .meta({ id: "ApiClusterRoutingControlRequest" });
+export type ClusterRoutingControlRequest = z.input<typeof ClusterRoutingControlRequestSchema>;
+
+/**
+ * The node an account must hold to pin, exclude, weigh or drain from the panel: `owner.*`, like
+ * `owner.cluster.update` (the owner role has it; admin and moderator do not).
+ */
+export const CLUSTER_ROUTE_PERMISSION = "owner.cluster.route";
+
 /**
  * The node an account must hold to update hosts from the panel. An `owner.*` node: the owner role
  * has it through `*`, the admin role's `admin.*` does not cover it, and the owner may grant it to
@@ -298,6 +484,24 @@ export const cluster = {
     .route({ method: "POST", path: "/api/cluster/hosts/{name}/upgrade/cancel" })
     .input(z.object({ params: HostParams, body: z.object({}) }))
     .output(ClusterUpgradeCancelResultSchema),
+  /** Job dispatch: each capability's class, its endpoints' scores or why not, the decisions. */
+  routing: route
+    .meta({ audience: "admin", permission: null })
+    .route({ method: "GET", path: "/api/cluster/routing" })
+    .output(ClusterRoutingSchema),
+  /**
+   * Sets or takes away a pin, an exclusion, a weight or a drain (v5-hostd §15.6); each is in the
+   * audit log. `400` for a control without what it needs. Answers the routing as it is now.
+   */
+  routingControl: route
+    .meta({
+      audience: "admin",
+      permission: CLUSTER_ROUTE_PERMISSION,
+      refusal: "調整分派需要 owner.cluster.route 權限(預設只有擁有者有)",
+    })
+    .route({ method: "POST", path: "/api/cluster/routing/controls" })
+    .input(z.object({ body: ClusterRoutingControlRequestSchema }))
+    .output(ClusterRoutingSchema),
   /**
    * No session: the code is the credential. A code that is unknown, used or expired is always the
    * same `403`. At most 5 attempts a minute per address (`429`).

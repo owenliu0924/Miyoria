@@ -63,6 +63,7 @@ export {
   type EndpointQuery,
   type EndpointSource,
   type EndpointsOption,
+  type EndpointUnit,
   firstEndpoint,
 } from "./endpoints.js";
 export {

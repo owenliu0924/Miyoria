@@ -11,6 +11,7 @@ import {
 import { isApiError } from "@/api/http";
 import type { DecisionsQuery, E2eRecord, FactEventsQuery, LlmCallsQuery, LlmThinkingQuery, MemoryQuery, ModuleAction, PeopleQuery } from "@/api/types";
 import type { AddDirectiveRequest, AdjustPersonRequest, UpdatePersonRequest,ClusterInviteRequest, ArbiterVerdict, AssignRoleRequest, ChannelLevelsView, DataCategoryId, GameStartRequest, LotPlanRequest, ModuleInfo, QueueState, RemoveMappingRequest, RoleMapping, SaveSettingsRequest, SayRequest, SceneRolesState, SettleRequest, SongsState, StageState, StreamAction, TurnOutcomeKind, UpdateMemoryRequest, UpsertRoleRequest, WalletAdjustRequest } from "@miyoria/contracts/api";
+import type { ApiInputs } from "@miyoria/contracts/api";
 import type { ContextKey, Timestamp } from "@miyoria/contracts/wire";
 import { type EvalData, loadEvalData } from "@/lib/eval-data";
 import { factEventsInput } from "@/lib/fact-events";
@@ -27,6 +28,7 @@ export const queryKeys = {
   clusterHosts: ["cluster", "hosts"] as const,
   clusterEndpoints: ["cluster", "endpoints"] as const,
   clusterCheckout: ["cluster", "checkout"] as const,
+  clusterRouting: ["cluster", "routing"] as const,
   clusterInfo: (host: string) => ["cluster", "info", host] as const,
   decisionsAll: ["decisions"] as const,
   decisions: (q: DecisionsQuery) => ["decisions", q] as const,
@@ -101,6 +103,8 @@ export const queryKeys = {
 
 
 export type ClusterServiceAction = "start" | "stop" | "restart";
+/** Body of `POST /api/cluster/routing/controls` (not exported by name from the contracts). */
+export type ClusterRoutingControlBody = ApiInputs["cluster"]["routingControl"]["body"];
 
 /** Polls every `ms`, but stops once the route turned out not to exist or the token is bad. */
 const poll =
@@ -272,6 +276,17 @@ export function useClusterEndpoints(enabled = true) {
   });
 }
 
+/** Job dispatch (v5-hostd §15). An older Core answers 404, one without routing 503. */
+export function useClusterRouting() {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.clusterRouting,
+    queryFn: ({ signal }) => api.rpc.cluster.routing(undefined, { signal }),
+    refetchInterval: poll(5_000),
+    retry: clusterRetry,
+  });
+}
+
 /** What a connected host's daemon reports. `409` (not connected) is an error the part shows. */
 export function useClusterHostInfo(name: string, enabled: boolean) {
   const api = useApi();
@@ -308,6 +323,14 @@ export function useClusterMutations() {
     upgradeCancel: useMutation({
       mutationFn: (name: string) => api.rpc.cluster.upgradeCancel({ params: { name }, body: {} }),
       onSuccess: refresh,
+    }),
+    /** Answers the routing as it is now: it replaces the cached one at once. */
+    routingControl: useMutation({
+      mutationFn: (body: ClusterRoutingControlBody) => api.rpc.cluster.routingControl({ body }),
+      onSuccess: (routing) => {
+        qc.setQueryData(queryKeys.clusterRouting, routing);
+        refresh();
+      },
     }),
   };
 }

@@ -27,6 +27,12 @@ import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/ke
 import { type KeepsakeFortune, KeepsakesKey, newId, PicturesKey } from "@miyoria/types";
 import { registerV2, unregisterV2 } from "./commands-v2.js";
 import { STRANGER, WALLET_NODE } from "./economy.js";
+import {
+  askGift,
+  giftRoutes,
+  registerGiftCommands,
+  unregisterGiftCommands,
+} from "./gift-commands.js";
 import { mutedText, unlockLines } from "./notices.js";
 import { NO_RECEIVER } from "./transfer.js";
 import {
@@ -38,6 +44,13 @@ import {
   type Hunger,
   type WalletView,
 } from "./types.js";
+
+/**
+ * Under every transfer: coins are play points and may never be traded for money or goods.
+ * Discord draws a line that starts with `-# ` as small print.
+ */
+export const TRANSFER_SMALL_PRINT =
+  "魚幣只是遊戲裡的點數,沒有現金價值。禁止用真錢或任何現實物品買賣、交換魚幣;違反者可能被凍結錢包,衍生的糾紛或損失請自行負責。";
 
 const log = getLogger("economy.commands");
 
@@ -283,7 +296,8 @@ class Handler {
       const r = await economy.transfer(inv.invoker, to, amount, `discord:${newId()}`);
       const view = await economy.wallet(inv.invoker);
       return result(
-        `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。`,
+        `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。
+-# ${TRANSFER_SMALL_PRINT}`,
       );
     });
   }
@@ -374,6 +388,7 @@ class Handler {
 function unregister(registry: CommandRegistry): void {
   for (const path of PATHS) registry.unregister(path);
   unregisterV2(registry);
+  unregisterGiftCommands(registry);
 }
 
 function register(registry: CommandRegistry, handler: Handler): void {
@@ -424,17 +439,35 @@ function register(registry: CommandRegistry, handler: Handler): void {
     (inv) => handler.checkin(inv, inv.bool("fortune") === true),
   );
   registry.register(
-    commandSpec("me feed", "用魚幣餵她一碗飯", {
-      args: [argSpec("item", "要餵什麼", ArgKind.choice(FEED_ITEMS))],
+    commandSpec("me feed", "用魚幣餵她一碗飯，或自己取名送她一樣東西", {
+      args: [
+        argSpec("item", "要餵什麼（白飯、鋼盆、甜點）", ArgKind.choice(FEED_ITEMS), {
+          required: false,
+        }),
+        argSpec(
+          "thing",
+          "或自己寫要送她什麼，例如「一杯珍奶」（先報價，你確認了才扣）",
+          ArgKind.string,
+          {
+            required: false,
+          },
+        ),
+      ],
       permission: WALLET_NODE,
     }),
     (inv) => {
+      // A gift named in words (gift-commands.ts): a quote to confirm, or a fixed food fed at once.
+      const thing = inv.str("thing")?.trim() ?? "";
+      if (thing !== "")
+        return askGift(handler.services, inv, thing, (food) => handler.feed(inv, food));
       const item = inv.str("item");
       return isFeedItem(item)
         ? handler.feed(inv, item)
-        : Promise.resolve(notice("warn", "沒有這種食物"));
+        : Promise.resolve(notice("warn", "要餵什麼?選一樣,或在 thing 寫要送她的東西"));
     },
+    { components: giftRoutes(handler.services) },
   );
+  registerGiftCommands(registry, handler.services);
   registry.register(
     commandSpec("me give", "把魚幣轉給她認識的另一個人（另收手續費，會燒掉）", {
       args: [

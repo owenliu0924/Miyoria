@@ -483,7 +483,7 @@ export {
   type SegmentFlushOutcome,
 } from "./memory-layers.js";
 
-// ---- v2 contracts (docs/design/v2-architecture.md, docs/design/v2-implementation.md) ----------
+// ---- v2 contracts (docs/design/v2-architecture.md) ----------
 
 export {
   type ActivityFailure,
@@ -644,6 +644,19 @@ export {
   type TurnSilencer,
   TurnSilencerKey,
 } from "./emergency.js";
+export {
+  EXCHANGE_DISCLAIMER,
+  EXCHANGE_DISCLAIMER_LEVERAGE,
+  EXCHANGE_DISCLAIMER_REAL,
+  EXCHANGE_REASONS,
+  type ExchangeEntry,
+  type ExchangePerson,
+  type ExchangePost,
+  type ExchangeReason,
+  type ExchangeWallet,
+  ExchangeWalletKey,
+  exchangeSmallPrint,
+} from "./exchange.js";
 export { type GameTaskOutcome, parseGameOutcome } from "./game-outcome.js";
 export {
   assignHandle,
@@ -798,6 +811,18 @@ export {
   type AdminProfilePicture,
   type AuctionPictureData,
   type DexPictureData,
+  type ExchangeBankruptPicture,
+  type ExchangeBoardPicture,
+  type ExchangeCandlePoint,
+  type ExchangeColors,
+  type ExchangeMapPicture,
+  type ExchangeMapTile,
+  type ExchangeOverviewPicture,
+  type ExchangePortfolioPicture,
+  type ExchangeQuotePicture,
+  type ExchangeReceiptPicture,
+  type ExchangeTimeframe,
+  type GiftPictureData,
   type LotteryPictureData,
   type MemberPictureKind,
   type MemberPictureResult,

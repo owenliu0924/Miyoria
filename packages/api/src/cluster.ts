@@ -13,6 +13,10 @@
 //   asks each host to update itself to Core's commit, `POST /api/cluster/hosts/{name}/upgrade/cancel`
 //   cancels one that still waits (v5-hostd §14). Both need `owner.cluster.update` and are audited
 //   per host.
+// * `GET /api/cluster/routing`: job dispatch (v5-hostd §15), each capability's class, its endpoints'
+//   scores or why they take no new work, the last decisions; `POST /api/cluster/routing/controls`
+//   `{ action, kind, host, capability?, value? }` pins, excludes, weighs or drains, needs
+//   `owner.cluster.route` and is audited
 // * `POST /api/cluster/join` `{ code, name, platform?, version? }`: no session, the code is the
 //   credential; every bad code is the same 403 and an address gets 5 tries a minute
 //
@@ -420,6 +424,128 @@ async function upgradeCancel(
   return parsed.data;
 }
 
+// ---- job dispatch (v5-hostd §15) ---------------------------------------------------------
+
+type RoutingView = ApiOutputs["cluster"]["routing"];
+
+function routingOf(cluster: ClusterService) {
+  if (cluster.routing === undefined) {
+    throw ApiError.unavailable("the cluster module offers no routing");
+  }
+  return cluster.routing;
+}
+
+/** The snapshot as the panel reads it: times as timestamps, the config without what it does not show. */
+function routingView(cluster: ClusterService): RoutingView {
+  const snap = routingOf(cluster).view();
+  const config = snap.config;
+  return {
+    capabilities: snap.capabilities.map((c) => ({
+      capability: c.capability,
+      class: c.class,
+      latency: c.latency,
+      yields_to: c.yields_to,
+      variant: c.variant,
+      speech_mode: c.speech_mode,
+      conflict: c.conflict,
+      class_conflict: c.class_conflict,
+      endpoints: c.endpoints,
+      decisions: c.decisions.map(({ at, capability: _c, ...d }) => ({ ...d, at: toTimestamp(at) })),
+      sessions: c.sessions.map((x) => ({ ...x, since: toTimestamp(x.since) })),
+      result_mb: c.result_mb,
+    })),
+    hosts: snap.hosts,
+    activity: {
+      in_voice: snap.activity.in_voice,
+      live: snap.activity.live,
+      last_spoke_at:
+        snap.activity.last_spoke_at === null ? null : toTimestamp(snap.activity.last_spoke_at),
+      idle: snap.activity.idle,
+    },
+    config: {
+      allow_on_speech_host: config.allow_on_speech_host,
+      idle_minutes: config.idle_minutes,
+      weights: config.weights,
+      drain: config.drain,
+      capabilities: Object.fromEntries(
+        Object.entries(config.capabilities).map(([name, c]) => [
+          name,
+          {
+            ...(c.allow_on_speech_host !== undefined
+              ? { allow_on_speech_host: c.allow_on_speech_host }
+              : {}),
+            ...(c.pin !== undefined ? { pin: c.pin } : {}),
+            exclude: c.exclude,
+            ...(c.variant !== undefined ? { variant: c.variant } : {}),
+          },
+        ]),
+      ),
+    },
+    panel: snap.panel,
+  };
+}
+
+function routing(state: ApiState): RoutingView {
+  return routingView(clusterOf(state));
+}
+
+/** Sets or takes away one of the owner's controls; each is one audit entry. */
+async function routingControl(
+  state: ApiState,
+  c: ApiContext,
+  body: {
+    action: "set" | "clear";
+    kind: "pin" | "exclude" | "weight" | "drain";
+    host: string;
+    capability?: string | undefined;
+    value?: number | undefined;
+  },
+): Promise<RoutingView> {
+  const cluster = clusterOf(state);
+  const routes = routingOf(cluster);
+  const named = body.kind === "pin" || body.kind === "exclude";
+  const target = named ? `${body.capability ?? "-"}/${body.host}` : body.host;
+  const what = `cluster.routing.${body.action}.${body.kind}`;
+  const refuse = async (message: string): Promise<never> => {
+    await state.audit(c, what, target, toJson({ error: message }), false);
+    throw ApiError.badRequest(message);
+  };
+  if (named && body.capability === undefined) await refuse(`a ${body.kind} names a capability`);
+  if (body.action === "set" && body.kind === "weight" && body.value === undefined) {
+    await refuse("a weight needs a value");
+  }
+  if (body.action === "clear") {
+    const removed = routes.clear({
+      kind: body.kind,
+      host: body.host,
+      ...(named && body.capability !== undefined ? { capability: body.capability } : {}),
+    });
+    await state.audit(c, what, target, toJson({ removed }), true);
+    return routingView(cluster);
+  }
+  const by = actorOf(c);
+  try {
+    if (body.kind === "weight") {
+      routes.set({ kind: "weight", host: body.host, value: body.value as number }, by);
+    } else if (body.kind === "drain") {
+      routes.set({ kind: "drain", host: body.host }, by);
+    } else {
+      routes.set({ kind: body.kind, host: body.host, capability: body.capability as string }, by);
+    }
+  } catch (error) {
+    if (error instanceof ClusterError) await refuse(error.message);
+    throw ApiError.internal(error);
+  }
+  await state.audit(
+    c,
+    what,
+    target,
+    toJson(body.kind === "weight" ? { value: body.value } : {}),
+    true,
+  );
+  return routingView(cluster);
+}
+
 function endpoints(state: ApiState): ClusterEndpoints {
   const { registry } = clusterOf(state);
   return {
@@ -516,6 +642,10 @@ export const clusterRpc = {
   ),
   upgradeCancel: os.cluster.upgradeCancel.handler(({ input, context }) =>
     upgradeCancel(context.state, context.c, input.params.name),
+  ),
+  routing: os.cluster.routing.handler(({ context }) => routing(context.state)),
+  routingControl: os.cluster.routingControl.handler(({ input, context }) =>
+    routingControl(context.state, context.c, input.body),
   ),
   join: os.cluster.join.handler(({ input, context }) => join(context.state, context.c, input.body)),
 };
