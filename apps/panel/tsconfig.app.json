@@ -22,6 +22,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@miyoria/card-face/market": ["../../packages/card-face/src/market.ts"],
       "@miyoria/card-face": ["../../packages/card-face/src/index.tsx"],
       "@miyoria/types/bond": ["../../packages/types/src/bond.ts"],
       "@miyoria/contracts/wire/tiers": ["../../packages/contracts/wire/src/tiers.ts"],

@@ -1,7 +1,9 @@
 // 深海交易所 on the member page (docs/design/exchange.md), v1: paper trading of real Taiwan and US
 // stocks and the five local stocks with fish coins. The market's lists as tabs (新手推薦 · 這裡獨家
-// first), a search box with the same suggestions as Discord, sortable columns, the watch list, a
-// ticker's chart and the order ticket (coins by default, shares for the local stocks; 2× only
+// first), a search box with the same suggestions as Discord, sortable columns, the watch list, the
+// 熱力圖 tab (the server's holdings and the 熱門 lists as treemaps), a ticker's candle chart
+// (當日 / 日線 / 週線 / 月線, MA5/20/60, volume, their own cost line) and the order ticket (coins
+// by default, shares for the local stocks; 2× only
 // where allowed, with the honest warning), their own holdings with the line where a 2× position is
 // sold, the bankruptcy status, the rich list with the switch to stay off it, and the rules. Every
 // section ends with the exchange's small print. Everything is what `/api/member/exchange/*`
@@ -9,7 +11,7 @@
 // colour alone, and the colour follows the product's one convention (stated beside the table).
 
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useId, useMemo, useState } from "react";
+import { type FormEvent, lazy, type ReactNode, Suspense, useId, useMemo, useState } from "react";
 import type {
   ExchangeAccount,
   ExchangeLine,
@@ -20,7 +22,7 @@ import type {
 } from "@miyoria/contracts/api";
 import { isApiError, isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
-import { ChartBlock, ChartEmpty, TimeChart } from "@/components/charts/charts";
+import { ChartEmpty } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";
 import { OffLine } from "@/components/module-query";
 import { EmptyLine, ErrorLine, SkeletonRows } from "@/components/query-state";
@@ -36,6 +38,11 @@ import { notify } from "@/lib/notify";
 import { readStorage, writeStorage } from "@/lib/storage";
 import { newKey, WALLET } from "./spend";
 
+// The candle chart (lightweight-charts) and the heat map (d3-hierarchy) load only when someone
+// opens a ticker or the 熱力圖 tab: the page's own bundle does not carry either library.
+const CandleChart = lazy(() => import("./exchange/CandleChart"));
+const HeatMap = lazy(() => import("./exchange/HeatMap"));
+
 const ROOT = ["member", "exchange"] as const;
 const MARKET = [...ROOT, "market"] as const;
 const ACCOUNT = [...ROOT, "account"] as const;
@@ -43,7 +50,7 @@ const PORTFOLIO = [...ROOT, "portfolio"] as const;
 const BOARDS = [...ROOT, "boards"] as const;
 const POLL_MS = 60_000;
 const TAB_KEY = "miyoria.exchange.tab";
-const TABS = ["market", "mine", "boards", "rules"] as const;
+const TABS = ["market", "map", "mine", "boards", "rules"] as const;
 type Tab = (typeof TABS)[number];
 type Colors = ExchangeMarket["colors"];
 type ListKind = ExchangeMarket["default_list"];
@@ -252,20 +259,6 @@ function Search({ onPick }: { onPick: (code: string) => void }) {
   );
 }
 
-function TickerChart({ points, title, aside }: { points: { at: string; price: number }[]; title: string; aside?: ReactNode }) {
-  const times = points.map((p) => Date.parse(p.at));
-  const last = points.at(-1);
-  return (
-    <ChartBlock title={title} value={last ? last.price.toFixed(2) : "—"} aside={aside}>
-      {points.length < 2 ? (
-        <ChartEmpty height={168}>還沒有走勢</ChartEmpty>
-      ) : (
-        <TimeChart times={times} series={[{ key: "p", label: "價格", color: "var(--chart-1)", values: points.map((p) => p.price) }]} label={`${title}(價格)`} height={168} format={(v) => v.toFixed(2)} area />
-      )}
-    </ChartBlock>
-  );
-}
-
 function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: () => void }) {
   const api = useApi();
   const refresh = useRefresh();
@@ -295,7 +288,9 @@ function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: 
               {t.watching ? "取消觀察" : "加入觀察"}
             </Button>
           </div>
-          <TickerChart points={t.points} title={`${t.line.code} ${t.line.name}`} aside={<Move value={t.line.change} colors={m.colors} />} />
+          <Suspense fallback={<ChartEmpty height={288}>載入 K 線…</ChartEmpty>}>
+            <CandleChart code={t.line.code} title={`${t.line.code} ${t.line.name}`} colors={m.colors} open={t.line.open} move={<Move value={t.line.change} colors={m.colors} />} />
+          </Suspense>
           <dl className="flex flex-wrap gap-x-8 gap-y-3">
             <Fact label="價格">{nativePrice(t.line)}</Fact>
             {t.line.currency !== "COIN" && <Fact label="約魚幣一股">{coins(t.line.coin_price)}</Fact>}
@@ -316,10 +311,9 @@ function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: 
   );
 }
 
-function MarketTab({ m }: { m: ExchangeMarket }) {
+function MarketTab({ m, code, setCode }: { m: ExchangeMarket; code: string | null; setCode: (code: string | null) => void }) {
   const api = useApi();
   const [list, setList] = useState<ListKind>(m.default_list);
-  const [code, setCode] = useState<string | null>(null);
   const rows = useQuery({
     queryKey: [...ROOT, "list", list],
     queryFn: ({ signal }) => api.rpc.exchange.list({ params: { kind: list } }, { signal }),
@@ -363,6 +357,9 @@ function MarketTab({ m }: { m: ExchangeMarket }) {
     </div>
   );
 }
+
+/** A cap as the rules say it: `0` is none. */
+const capText = (n: number, unit = "") => (n > 0 ? `${fmtInt(n)}${unit}` : "不限");
 
 // ---- the order ticket ------------------------------------------------------------------------
 
@@ -525,7 +522,9 @@ function OrderTicket({ m, account, line }: { m: ExchangeMarket; account: Exchang
           <Segmented label="用魚幣或股數" value={unit} onChange={setUnit} options={[{ value: "coins", label: "魚幣金額" }, { value: "shares", label: "股數" }]} />
           <div className="grid gap-1">
             <label className="text-xs text-muted-foreground" htmlFor={`${id}-amount`}>
-              {unit === "coins" ? `花多少魚幣(含手續費,${m.rules.order_min} 到 ${m.rules.order_max})` : "買幾股(可以有小數)"}
+              {unit === "coins"
+                ? `花多少魚幣(含手續費,${m.rules.order_max > 0 ? `${m.rules.order_min} 到 ${m.rules.order_max}` : `至少 ${m.rules.order_min}`})`
+                : "買幾股(可以有小數)"}
             </label>
             <Input id={`${id}-amount`} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
           </div>
@@ -542,7 +541,7 @@ function OrderTicket({ m, account, line }: { m: ExchangeMarket; account: Exchang
       {side === "buy" && canLev && <Segmented label="倍數" value={lev} onChange={setLev} options={[{ value: "1", label: "1 倍" }, { value: "2", label: "2 倍" }]} />}
       {side === "buy" && lev === "2" && <p className="text-[13px] font-medium">2 倍可能賠掉保證金以外的錢,最壞會賠光錢包和其他持股。</p>}
       <p className="text-xs text-muted-foreground">
-        {`今天還能下 ${account.today.orders_left} 筆、買 ${fmtInt(account.today.buy_left)};可以投入 ${account.investable === null ? "—" : fmtInt(account.investable)} ${m.currency}`}
+        {`今天還能下 ${account.today.orders_left} 筆${account.today.buy_left === null ? "" : `、買 ${fmtInt(account.today.buy_left)}`};可以投入 ${account.investable === null ? "—" : fmtInt(account.investable)} ${m.currency}`}
       </p>
       <Button type="submit" className="justify-self-start" busy={ask.isPending} disabled={!m.enabled}>
         試算並確認
@@ -781,12 +780,12 @@ function RulesTab({ m }: { m: ExchangeMarket }) {
         <Fact label="委託">市價,以下一筆有效報價成交</Fact>
         <Fact label="手續費">{`每筆 ${fmtPct(r.fee, 1)},最少 ${r.fee_min},燒掉`}</Fact>
         <Fact label="買進後">{`${r.min_hold_minutes} 分鐘才能賣`}</Fact>
-        <Fact label="一筆">{`${r.order_min} 到 ${r.order_max}`}</Fact>
-        <Fact label="一天">{`${r.orders_per_day} 筆、買 ${fmtInt(r.buy_per_day)}`}</Fact>
-        <Fact label="持有上限">{`成本合計 ${fmtInt(r.limit_total)} 起`}</Fact>
+        <Fact label="一筆">{r.order_max > 0 ? `${r.order_min} 到 ${r.order_max}` : `至少 ${r.order_min}`}</Fact>
+        <Fact label="一天">{`${r.orders_per_day} 筆、買 ${capText(r.buy_per_day)}`}</Fact>
+        <Fact label="持有上限">{r.limit_total > 0 ? `成本合計 ${fmtInt(r.limit_total)} 起` : "不限"}</Fact>
         <Fact label="開戶">{`認識滿 ${r.account_min_days} 天、${r.account_min_tier}以上`}</Fact>
-        <Fact label="2 倍">{r.leverage ? `認識滿 ${r.leverage_min_days} 天、${r.leverage_min_tier}以上` : "沒有開放"}</Fact>
-        <Fact label="每天最多淨發出">{`${fmtInt(r.payout_cap_daily)},到了當天停止買進`}</Fact>
+        <Fact label="2 倍">{r.leverage ? `認識滿 ${r.leverage_min_days} 天、${r.leverage_min_tier}以上;保證金合計 ${capText(r.margin_cap)}` : "沒有開放"}</Fact>
+        <Fact label="每天最多淨發出">{r.payout_cap_daily > 0 ? `${fmtInt(r.payout_cap_daily)},到了當天停止買進` : "不限"}</Fact>
         <Fact label="破產冷靜期">{`${r.bankrupt_cooling_days} 天`}</Fact>
         <Fact label="報價最舊">{`${Math.round(r.quote_max_age_seconds / 60)} 分鐘`}</Fact>
         <Fact label="觀察清單">{`最多 ${r.watch_max} 檔`}</Fact>
@@ -804,15 +803,24 @@ function RulesTab({ m }: { m: ExchangeMarket }) {
 
 // ---- the block ---------------------------------------------------------------------------------
 
-/** 深海交易所: the market and its lists, their own book, the rich list, the rules. */
-export function Exchange() {
+/**
+ * 深海交易所: the market and its lists, the heat maps, their own book, the rich list, the rules.
+ * `initialCode` opens a ticker at once (the dev-only demo uses it).
+ */
+export function Exchange({ initialCode = null }: { initialCode?: string | null } = {}) {
   const market = useMarket();
   const stored = readStorage(TAB_KEY);
   const [tab, setTab] = useState<Tab>(TABS.includes(stored as Tab) ? (stored as Tab) : "market");
+  const [code, setCode] = useState<string | null>(initialCode);
   const pick = (v: string) => {
     if (!TABS.includes(v as Tab)) return;
     setTab(v as Tab);
     writeStorage(TAB_KEY, v);
+  };
+  /** A heat map's tile: its ticker on the market tab. */
+  const open = (c: string) => {
+    setCode(c);
+    pick("market");
   };
   if (market.isError && isNotProvided(market.error)) return null;
   const off = market.isError && isApiError(market.error) && market.error.kind === "unavailable";
@@ -831,13 +839,22 @@ export function Exchange() {
         <Tabs value={tab} onValueChange={pick} className="gap-4">
           <TabsList variant="inline" aria-label="深海交易所">
             <TabsTrigger value="market">市場</TabsTrigger>
+            <TabsTrigger value="map">熱力圖</TabsTrigger>
             <TabsTrigger value="mine">我的</TabsTrigger>
             <TabsTrigger value="boards">富人榜</TabsTrigger>
             <TabsTrigger value="rules">規則</TabsTrigger>
           </TabsList>
           {!market.data.enabled && <p className="text-[13px] text-muted-foreground">交易所還沒開放,下面是規則和目前的價格。</p>}
           <TabsContent value="market">
-            <MarketTab m={market.data} />
+            <MarketTab m={market.data} code={code} setCode={setCode} />
+          </TabsContent>
+          <TabsContent value="map">
+            {/* Mounted only while this tab is open: its map is polled only then. */}
+            {tab === "map" && (
+              <Suspense fallback={<SkeletonRows count={6} />}>
+                <HeatMap m={market.data} onPick={open} footer={<SmallPrint m={market.data} />} />
+              </Suspense>
+            )}
           </TabsContent>
           <TabsContent value="mine">
             <MineTab m={market.data} />

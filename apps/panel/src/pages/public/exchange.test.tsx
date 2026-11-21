@@ -252,6 +252,16 @@ const ADMIN: ExchangeAdmin = {
     bankrupt: [],
     quotes: [],
     books: { postings: 4, lines: 4, pending: 0 },
+    mint: {
+      windows: [
+        { days: 1, burned: 20, minted: 12, net: -8, share: -0.0002 },
+        { days: 7, burned: 900, minted: 4_000, net: 3_100, share: 0.062 },
+        { days: 30, burned: 2_000, minted: 6_000, net: 4_000, share: 0.08 },
+      ],
+      circulation: 50_000,
+      warn_share: 0.05,
+      warning: "過去 7 天交易所淨發出 3,100 魚幣,是現在所有錢包合計的 6.2%,超過提醒線 5.0%。",
+    },
   },
   tickers: [
     { code: "2330.TW", name: "示範半導體", market: "tw", exchange: "TAI", type: "EQUITY", status: "paused", reason: null, added_at: "2026-11-23T02:00:00.000Z", missing_days: 0, holders: 2 },
@@ -272,8 +282,15 @@ describe("經濟 / 交易所 for the owner", () => {
       return undefined;
     });
     renderRoute("/economy?tab=exchange");
-    expect(await screen.findByRole("alert")).toHaveTextContent("沒有讀到");
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.some((a) => a.textContent?.includes("沒有讀到"))).toBe(true);
     expect(screen.getByText("對得上")).toBeInTheDocument();
+    // What the exchange minted, with the warning past the line (nothing halted by it).
+    expect(alerts.some((a) => a.textContent?.includes("過去 7 天交易所淨發出 3,100 魚幣"))).toBe(true);
+    const mint = screen.getByRole("region", { name: "魚幣發出" });
+    expect(within(mint).getByText("淨發出 +3,100")).toBeInTheDocument();
+    expect(within(mint).getByText("占流通 6.2%")).toBeInTheDocument();
+    expect(within(mint).getByText(/流通中的魚幣\(所有錢包合計\):50,000/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "確認分割" }));
     const dialog = await screen.findByRole("alertdialog");
     await userEvent.type(within(dialog).getByLabelText(/每一股變成幾股/), "4");

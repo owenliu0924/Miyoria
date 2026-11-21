@@ -1,5 +1,7 @@
 // 經濟 / 交易所: the deep-sea exchange as the owner sees it (docs/design/exchange.md), v1. The
-// daily mint and burn report against the payout cap and whether the books balance, the provider's
+// daily mint and burn report against the payout cap (off by default) and whether the books
+// balance, the net minted over today, 7 and 30 days against the coins in wallets with a warning
+// past its line, the provider's
 // last problem and the refresh the budget allows, the tickers people added (block for buying,
 // unblock, remove one nobody holds; a split-like jump to confirm; a suspended ticker to settle at
 // its last price or at zero), who is bankrupt, and every open position with a sale by hand. Every
@@ -64,7 +66,7 @@ function Report({ v }: { v: ExchangeAdmin }) {
         <Fact label="交易所">{v.enabled ? "開" : "關(open = false)"}</Fact>
         <Fact label="今天燒掉">{fmtInt(r.today.burned)}</Fact>
         <Fact label="今天發出">{fmtInt(r.today.minted)}</Fact>
-        <Fact label="淨發出 / 上限">{`${fmtInt(r.today.net)} / ${fmtInt(r.cap_daily)}`}</Fact>
+        <Fact label="淨發出 / 上限">{`${fmtInt(r.today.net)} / ${r.cap_daily > 0 ? fmtInt(r.cap_daily) : "不限"}`}</Fact>
         <Fact label="買進">{r.today.buys_halted ? "今天停了(到上限)" : "照常"}</Fact>
         <Fact label="吸收的虧損">{fmtInt(r.today.written_off)}</Fact>
         <Fact label="帳">{balanced ? "對得上" : `對不上(錢包 ${r.books.postings}、交易所 ${r.books.lines})`}</Fact>
@@ -84,6 +86,44 @@ function Report({ v }: { v: ExchangeAdmin }) {
         </ul>
       )}
       {r.bankrupt.length > 0 && <p className="text-[13px]">{`破產冷靜期中:${r.bankrupt.map((b) => `${b.name}(到 ${fmtDateTime(b.until)})`).join("、")}`}</p>}
+    </Card>
+  );
+}
+
+const WINDOW: Record<number, string> = { 1: "今天", 7: "7 天", 30: "30 天" };
+const share = (x: number | null) => (x === null ? "—" : `${(Math.round(x * 1000) / 10).toFixed(1)}%`);
+const signedInt = (n: number) => (n > 0 ? `+${fmtInt(n)}` : fmtInt(n));
+
+/**
+ * 魚幣發出: with the caps off by default nothing bounds what the exchange mints, so the owner sees
+ * its net over today, 7 and 30 days against all coins in wallets, and a plain warning past the line
+ * (`mint_warn_share`). A warning only: nothing is halted by it.
+ */
+function Mint({ v }: { v: ExchangeAdmin }) {
+  const mint = v.report.mint;
+  return (
+    <Card aria-label="魚幣發出">
+      <CardHeader>
+        <CardTitle>魚幣發出</CardTitle>
+      </CardHeader>
+      {mint.warning && (
+        <p role="alert" className="text-[13px] text-primary">
+          {mint.warning}
+        </p>
+      )}
+      <ul className="divide-y divide-line-soft">
+        {mint.windows.map((w) => (
+          <li key={w.days} className="flex flex-wrap items-baseline gap-x-6 gap-y-1 py-(--row-y) text-sm tabular-nums">
+            <span className="w-14 shrink-0 text-muted-foreground">{WINDOW[w.days] ?? `${w.days} 天`}</span>
+            <span>{`淨發出 ${signedInt(w.net)}`}</span>
+            <span className="text-muted-foreground">{`發出 ${fmtInt(w.minted)}・燒掉 ${fmtInt(w.burned)}`}</span>
+            <span>{`占流通 ${share(w.share)}`}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        {`流通中的魚幣(所有錢包合計):${mint.circulation === null ? "經濟模組沒有提供" : fmtInt(mint.circulation)}。7 天淨發出超過 ${share(mint.warn_share)} 時這裡提醒(只是提醒)。上限預設不開:每天最多淨發出、一筆最多、一天最多買、持有上限、保證金上限,在 系統 / 交易所 填數字就會生效。`}
+      </p>
     </Card>
   );
 }
@@ -229,6 +269,7 @@ export function ExchangeTab() {
       {(v) => (
         <div className="grid gap-(--stage-gap)">
           <Report v={v} />
+          <Mint v={v} />
           <Tickers v={v} denied={denied} onDenied={() => setDenied(true)} />
         </div>
       )}

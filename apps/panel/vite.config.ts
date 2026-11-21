@@ -31,6 +31,10 @@ const config = defineConfig({
   resolve: {
     alias: {
       "@": fileURLToPath(new URL("./src", import.meta.url)),
+      // The exchange's chart and map arithmetic (moving averages, the up/down colours, the heat map's
+      // squarified layout with d3-hierarchy), shared with the pictures Discord gets so both agree.
+      // Imported only by the lazily loaded chart and map, so it stays out of the main bundle.
+      "@miyoria/card-face/market": fileURLToPath(new URL("../../packages/card-face/src/market.ts", import.meta.url)),
       // The card's drawing is shared with the Core (it renders the link preview); no build step in between.
       "@miyoria/card-face": fileURLToPath(new URL("../../packages/card-face/src/index.tsx", import.meta.url)),
       // What the card reads of the bond: the narrow entry with no imports, not all of the types.
