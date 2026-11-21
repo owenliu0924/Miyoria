@@ -49,6 +49,7 @@ import { persona } from "./persona.js";
 import { mindPlan } from "./plan.js";
 import { prompts } from "./prompts.js";
 import { publicView } from "./public.js";
+import { reports } from "./reports.js";
 import { roles } from "./roles.js";
 import { sandbox } from "./sandbox.js";
 import { moduleSettings, places } from "./settings.js";
@@ -445,18 +446,29 @@ export {
   KaraokeVoiceStateSchema,
 } from "./karaoke.js";
 export {
+  KARAOKE_CHEERS,
   KARAOKE_ROOM_CODE,
   type KaraokeAudioReply,
   KaraokeAudioReplySchema,
   type KaraokeBoardLine,
   KaraokeBoardLineSchema,
+  type KaraokeCheerEvent,
+  KaraokeCheerEventSchema,
+  type KaraokeCheerKind,
+  KaraokeCheerKindSchema,
+  type KaraokeCheerReply,
+  KaraokeCheerReplySchema,
   type KaraokeClockReply,
   KaraokeClockReplySchema,
   KaraokeClockSchema,
+  type KaraokeLiveEvent,
+  KaraokeLiveEventSchema,
   type KaraokePitch,
   KaraokePitchSchema,
   type KaraokeRoomAir,
   KaraokeRoomAirSchema,
+  type KaraokeRoomCheer,
+  KaraokeRoomCheerSchema,
   type KaraokeRoomEvent,
   KaraokeRoomEventSchema,
   type KaraokeRoomJoin,
@@ -855,6 +867,23 @@ export {
   PublicTodaySchema,
 } from "./public.js";
 export {
+  NODE_REPORTS,
+  type ReportApproveRequest,
+  ReportApproveRequestSchema,
+  type ReportCommentRequest,
+  ReportCommentRequestSchema,
+  type ReportDraftView,
+  ReportDraftViewSchema,
+  type ReportDuplicateRequest,
+  ReportDuplicateRequestSchema,
+  type ReportList,
+  ReportListSchema,
+  type ReportRejectRequest,
+  ReportRejectRequestSchema,
+  type ReportStatus,
+  ReportStatusSchema,
+} from "./reports.js";
+export {
   type AssignRoleRequest,
   AssignRoleRequestSchema,
   type AuthScope,
@@ -1068,6 +1097,7 @@ export const contract = {
   karaoke,
   karaokeAdmin,
   karaokeRooms,
+  reports,
   eval: evalRoutes,
 };
 

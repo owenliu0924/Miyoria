@@ -648,6 +648,10 @@ describe("the background video", () => {
     r.worker.finish(job, referenceOf(song, `k-${job}`), true);
     await r.service.tick(signal);
     await vi.waitFor(() => expect(r.worker.fetched).toContain(`k-${job}/video.mp4`));
+    // The fake worker counts a file as fetched before it has written it, and Core's upkeep leaves a
+    // video being fetched alone: under load an upkeep right after this skipped it (the flake).
+    // Wait for the fetch itself.
+    await r.service.filesSettled();
     return asked.song.id;
   }
 

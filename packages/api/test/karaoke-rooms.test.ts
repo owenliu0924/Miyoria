@@ -309,6 +309,22 @@ describe("karaoke rooms through the routes", () => {
     }
     await alice.stop();
     await bob.stop();
+    // Carol, watching, cheers Bobby (once: the second right after is too soon).
+    const bobby = (
+      await call<KaraokeRoomView>(r, CAROL, `/api/member/karaoke/rooms/${code}`)
+    ).body.members.find((m) => m.name === "Bobby")?.id;
+    const cheer = (kind: string) =>
+      call<{ wait_ms: number }>(
+        r,
+        CAROL,
+        `/api/member/karaoke/rooms/${code}/cheer`,
+        post({ member: bobby, kind }),
+      );
+    const cheered = await cheer("wow");
+    expect(cheered).toEqual({ status: 200, body: { wait_ms: 1_500 } });
+    expect((await cheer("nice")).status).toBe(429);
+    expect((await cheer("boo")).status).toBe(422);
+    await tick(r);
     await carol.stop();
     for (const singer of [alice, bob]) {
       const got = singer.events();
@@ -331,6 +347,15 @@ describe("karaoke rooms through the routes", () => {
     expect(JSON.stringify(boards.at(-1))).toMatch(/Alice/);
     expect(JSON.stringify(boards.at(-1))).toMatch(/Bobby/);
     expect(watched.some((e) => e.type === "trend")).toBe(false);
+    // The singers' own pitch, a few times a second, and the cheer.
+    const live = watched.filter((e) => e.type === "live");
+    expect(live.length).toBeGreaterThan(5);
+    expect(live.at(-1)?.data.lines).toHaveLength(2);
+    expect(watched.find((e) => e.type === "cheer")?.data).toMatchObject({
+      member: bobby,
+      kind: "wow",
+      by: { name: "Carol" },
+    });
     // Too much in one go is refused before it is read.
     const big = await r.hono.request(`/api/member/karaoke/rooms/${code}/audio?at=0&song_ms=0`, {
       method: "POST",

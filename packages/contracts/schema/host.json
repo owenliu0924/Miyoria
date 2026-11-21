@@ -2,6 +2,72 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "@miyoria/contracts/host",
   "$defs": {
+    "HostCheckout": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/HostCommit"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "upstream": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "behind": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ahead": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "fetched_at": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "read_at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "commit",
+        "branch",
+        "upstream",
+        "behind",
+        "ahead",
+        "dirty",
+        "fetched_at",
+        "read_at"
+      ]
+    },
     "HostClusterContext": {
       "type": "object",
       "properties": {
@@ -28,6 +94,10 @@
           }
         }
       }
+    },
+    "HostCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
     },
     "HostConfig": {
       "type": "object",
@@ -100,6 +170,19 @@
                 "worker",
                 "hostd"
               ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "update": {
+          "default": {
+            "allow_remote": true
+          },
+          "type": "object",
+          "properties": {
+            "allow_remote": {
+              "default": true,
+              "type": "boolean"
             }
           },
           "additionalProperties": false
@@ -1493,6 +1576,29 @@
         },
         "arbiter": {
           "$ref": "#/$defs/HostGpuArbiterStatus"
+        },
+        "checkout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCheckout"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remote_update": {
+          "$ref": "#/$defs/HostRemoteUpdate"
+        },
+        "upgrade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostUpgradeJob"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -1886,6 +1992,20 @@
       },
       "required": [
         "link"
+      ]
+    },
+    "HostRemoteUpdate": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed"
       ]
     },
     "HostReport": {
@@ -2653,6 +2773,246 @@
       },
       "required": [
         "services"
+      ]
+    },
+    "HostUpgrade": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/HostCommit"
+        },
+        "wait_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 21600
+        },
+        "by": {
+          "type": "string",
+          "maxLength": 200
+        }
+      },
+      "required": [
+        "commit"
+      ]
+    },
+    "HostUpgradeCancelResult": {
+      "type": "object",
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        },
+        "job": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostUpgradeJob"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cancelled",
+        "job"
+      ]
+    },
+    "HostUpgradeJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/HostCommit"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCommit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "waiting",
+            "running",
+            "done",
+            "failed",
+            "refused",
+            "cancelled"
+          ]
+        },
+        "step": {
+          "$ref": "#/$defs/HostUpgradeStepName"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostUpgradeStep"
+          }
+        },
+        "waiting_for": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "number"
+        },
+        "finished_at": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCommit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rolled_back": {
+          "type": "boolean"
+        },
+        "restarted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_restarted": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "reason"
+            ]
+          }
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "reason"
+            ]
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostUpgradeMissing"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "from",
+        "state",
+        "step",
+        "steps",
+        "started_at"
+      ]
+    },
+    "HostUpgradeMissing": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "model",
+            "manual"
+          ]
+        },
+        "what": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "service",
+        "kind",
+        "what"
+      ]
+    },
+    "HostUpgradeStep": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/HostUpgradeStepName"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "done",
+            "failed",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "step",
+        "state",
+        "at"
+      ]
+    },
+    "HostUpgradeStepName": {
+      "type": "string",
+      "enum": [
+        "check",
+        "fetch",
+        "wait",
+        "merge",
+        "install",
+        "sync",
+        "restart",
+        "verify",
+        "rollback"
       ]
     },
     "HostWelcome": {

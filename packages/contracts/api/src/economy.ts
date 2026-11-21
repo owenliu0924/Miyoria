@@ -36,6 +36,20 @@ export const EconomyHealthSchema = z
   .meta({ id: "ApiEconomyHealth" });
 export type EconomyHealth = z.output<typeof EconomyHealthSchema>;
 
+/**
+ * Who settled a prediction: `auto` (what it was bound to came out, or could not be told), `her`,
+ * `admin` (by hand) or `expired` (nobody could tell in time).
+ */
+export const PredictionSettledBySchema = z
+  .object({
+    by: z.enum(["auto", "her", "admin", "expired"]),
+    note: z.string(),
+    at: z.string(),
+    who: z.string().nullable(),
+  })
+  .meta({ id: "ApiPredictionSettledBy" });
+export type PredictionSettledBy = z.output<typeof PredictionSettledBySchema>;
+
 /** A prediction people can stake on. `my_bet` is always `null` here: this is not one person's view. */
 export const PredictionViewSchema = z
   .object({
@@ -58,6 +72,10 @@ export const PredictionViewSchema = z
     /** `closed`: betting ended and the result is not called yet. */
     status: z.enum(["open", "closed", "resolved", "cancelled"]),
     winner: z.string().nullable(),
+    /** How it is settled: by her, or by itself on the soup or game goal it is bound to. */
+    settles: z.object({ kind: z.enum(["her", "soup", "goal"]), label: z.string() }),
+    /** Who settled it and how; `null` while it is open. `who`: the operator, for the owner only. */
+    settled_by: PredictionSettledBySchema.nullable(),
     my_bet: z
       .object({
         option: z.string(),
@@ -69,6 +87,29 @@ export const PredictionViewSchema = z
   })
   .meta({ id: "ApiPredictionView" });
 export type PredictionView = z.output<typeof PredictionViewSchema>;
+
+/** What settling or calling off a prediction did. */
+export const PredictionSettledSchema = z
+  .object({
+    id: z.string(),
+    /** The winning option; `null` when every stake went back. */
+    winner: z.string().nullable(),
+    winners: z.number(),
+    pool: z.number(),
+    /** What went back to people. */
+    paid: z.number(),
+    /** The cut burned. */
+    rake: z.number(),
+    refunded: z.boolean(),
+  })
+  .meta({ id: "ApiPredictionSettled" });
+export type PredictionSettled = z.output<typeof PredictionSettledSchema>;
+
+/** Body of `POST /api/economy/predictions/{id}/resolve`: the winning option, by number from 1 or words. */
+export const PredictionResolveRequestSchema = z
+  .strictObject({ option: z.string().trim().min(1).max(24) })
+  .meta({ id: "ApiPredictionResolveRequest" });
+export type PredictionResolveRequest = z.input<typeof PredictionResolveRequestSchema>;
 
 /** One item of her room, with how far the audience got. */
 export const RoomItemSchema = z
@@ -86,15 +127,26 @@ export const RoomItemSchema = z
   .meta({ id: "ApiRoomItem" });
 export type RoomItem = z.output<typeof RoomItemSchema>;
 
-/** Today's three quests as one person sees them (empty for a stranger). */
+/**
+ * Today's three quests as one person sees them (empty for a stranger): one with her, one with
+ * other people, one she thought of for them from what she remembers.
+ */
 export const QuestsViewSchema = z
   .object({
     currency: z.string(),
     quests: z.array(
       z.object({
-        id: z.enum(["new_topic", "play_game", "listen_song"]),
+        id: z.enum(["new_topic", "together", "her_pick"]),
+        /** What to do; for `her_pick` her own words once she wrote today's. */
         label: z.string(),
+        /** How it gets done (who ticks it). */
+        hint: z.string(),
         done: z.boolean(),
+        /**
+         * `her_pick` only: `her` (from her memories of them), `fallback` (one of the plain ones),
+         * `null` while today's is not chosen yet (the person has not looked).
+         */
+        by: z.enum(["her", "fallback"]).nullable(),
       }),
     ),
     /** What each pays, and what finishing all three adds. */
@@ -117,6 +169,21 @@ export const economy = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/economy/predictions" })
     .output(z.object({ currency: z.string(), predictions: z.array(PredictionViewSchema) })),
+  /**
+   * Settles an open prediction by hand, the ones that settle by themselves too (`409`: it is not
+   * open any more). Needs `admin.economy.adjust`, like a hand on someone's coins.
+   */
+  resolvePrediction: route
+    .meta({ audience: "admin", permission: "admin.economy.adjust" })
+    .route({ method: "POST", path: "/api/economy/predictions/{id}/resolve" })
+    .input(z.object({ params: z.object({ id: z.string() }), body: PredictionResolveRequestSchema }))
+    .output(z.object({ currency: z.string(), settled: PredictionSettledSchema })),
+  /** Calls an open prediction off by hand: every stake goes back. */
+  cancelPrediction: route
+    .meta({ audience: "admin", permission: "admin.economy.adjust" })
+    .route({ method: "POST", path: "/api/economy/predictions/{id}/cancel" })
+    .input(z.object({ params: z.object({ id: z.string() }) }))
+    .output(z.object({ currency: z.string(), settled: PredictionSettledSchema })),
   /** Her room, every item with how far the audience got. */
   room: route
     .meta({ audience: "admin", permission: null })

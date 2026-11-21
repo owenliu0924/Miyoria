@@ -9,6 +9,10 @@
 // * `GET /api/cluster/hosts/{name}/info`: `host.info` over the host's link, service tokens left out
 // * `POST /api/cluster/hosts/{name}/services/{service}/{action}` `{ force? }`
 // * `GET /api/cluster/endpoints`: the registry's candidates, never a header
+// * `GET /api/cluster/checkout`: Core's own checkout; `POST /api/cluster/upgrade` `{ hosts, wait_s? }`
+//   asks each host to update itself to Core's commit, `POST /api/cluster/hosts/{name}/upgrade/cancel`
+//   cancels one that still waits (v5-hostd §14). Both need `owner.cluster.update` and are audited
+//   per host.
 // * `POST /api/cluster/join` `{ code, name, platform?, version? }`: no session, the code is the
 //   credential; every bad code is the same 403 and an address gets 5 tries a minute
 //
@@ -23,6 +27,7 @@ import {
   InviteError,
 } from "@miyoria/cluster";
 import {
+  type ApiOutputs,
   type ClusterCreatedHost,
   type ClusterEndpoints,
   type ClusterHostInfo,
@@ -37,6 +42,8 @@ import {
   HOST_LINK_PATH,
   HOST_METHOD,
   HostServiceControlResultSchema,
+  HostUpgradeCancelResultSchema,
+  HostUpgradeJobSchema,
 } from "@miyoria/contracts/host";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { toTimestamp } from "@miyoria/types";
@@ -76,7 +83,27 @@ function hostView(host: HostRecord, cluster: ClusterService): ClusterHostView {
     last_seen_at: host.last_seen_at,
     connected: link !== undefined,
     connected_since: link === undefined ? null : toTimestamp(link.since),
+    ...(link?.checkout !== undefined ? { checkout: link.checkout } : {}),
+    ...(link?.remoteUpdate !== undefined ? { remote_update: link.remoteUpdate } : {}),
+    ...(link?.upgrade !== undefined ? { upgrade: link.upgrade } : {}),
   };
+}
+
+/** `hostView` with how its commit stands to Core's, when both have a checkout. */
+async function hostViewWithRelation(
+  host: HostRecord,
+  cluster: ClusterService,
+): Promise<ClusterHostView> {
+  const view = hostView(host, cluster);
+  const commit = view.checkout?.commit;
+  if (commit === undefined || !cluster.checkout) return view;
+  try {
+    const relation = await cluster.checkout.relation(commit);
+    return { ...view, relation };
+  } catch (error) {
+    log.warn({ host: host.name, error: errorMessage(error) }, "cannot compare a host's commit");
+    return view;
+  }
 }
 
 function known(cluster: ClusterService, name: string): HostRecord {
@@ -117,9 +144,9 @@ function callError(error: unknown, name: string): ApiError {
 
 // ---- hosts ------------------------------------------------------------------------------
 
-function hosts(state: ApiState): ClusterHostView[] {
+function hosts(state: ApiState): Promise<ClusterHostView[]> {
   const cluster = clusterOf(state);
-  return cluster.hosts.list().map((h) => hostView(h, cluster));
+  return Promise.all(cluster.hosts.list().map((h) => hostViewWithRelation(h, cluster)));
 }
 
 async function invite(
@@ -268,6 +295,132 @@ async function serviceAction(
   return parsed.data;
 }
 
+// ---- remote updates (v5-hostd §14) -------------------------------------------------------
+
+type CoreCheckoutView = ApiOutputs["cluster"]["checkout"];
+type UpgradeAnswer = ApiOutputs["cluster"]["upgrade"];
+type UpgradeCancelAnswer = ApiOutputs["cluster"]["upgradeCancel"];
+
+async function coreCheckout(state: ApiState): Promise<CoreCheckoutView> {
+  const cluster = clusterOf(state);
+  return { checkout: cluster.checkout ? await cluster.checkout.read() : null };
+}
+
+/**
+ * Asks each named host to update itself to Core's `HEAD`. Core sends the commit and who asked,
+ * nothing else; the host decides with its own rules and answers with its job or its refusal.
+ * Hosts are asked one after another; each answer comes back at once (the job runs on there).
+ */
+async function upgrade(
+  state: ApiState,
+  c: ApiContext,
+  body: { hosts: string[]; wait_s?: number | undefined },
+): Promise<UpgradeAnswer> {
+  const cluster = clusterOf(state);
+  const core = cluster.checkout ? await cluster.checkout.read() : null;
+  if (core === null) {
+    throw ApiError.conflict("Core 不是從 git checkout 執行的,沒有可以指定的版本");
+  }
+  const by = actorOf(c);
+  const results: UpgradeAnswer["results"] = [];
+  for (const name of [...new Set(body.hosts)]) {
+    const refuse = async (error: string) => {
+      results.push({ host: name, ok: false, error });
+      await state.audit(
+        c,
+        "cluster.host.upgrade",
+        name,
+        toJson({ commit: core.commit, error }),
+        false,
+      );
+    };
+    const host = cluster.hosts.list().find((h) => h.name === name);
+    if (host === undefined) {
+      await refuse("沒有這台電腦");
+      continue;
+    }
+    if (host.status !== "approved") {
+      await refuse("這台還沒有核可");
+      continue;
+    }
+    const link = cluster.hosts.connected().find((h) => h.name === name);
+    if (link === undefined) {
+      await refuse("這台沒有連線");
+      continue;
+    }
+    if (link.remoteUpdate === undefined) {
+      await refuse("這台的 hostd 比較舊,版本不明,不能從面板更新");
+      continue;
+    }
+    if (!link.remoteUpdate.allowed) {
+      await refuse(link.remoteUpdate.reason ?? "這台不接受遠端更新");
+      continue;
+    }
+    let answer: unknown;
+    try {
+      answer = await cluster.hosts.call(name, HOST_METHOD.HostUpgrade, {
+        commit: core.commit,
+        by,
+        ...(body.wait_s !== undefined ? { wait_s: body.wait_s } : {}),
+      });
+    } catch (error) {
+      await refuse(callError(error, name).message);
+      continue;
+    }
+    const job = HostUpgradeJobSchema.safeParse(answer);
+    if (!job.success) {
+      await refuse("這台的回答看不懂");
+      continue;
+    }
+    results.push({ host: name, ok: true, job: job.data });
+    await state.audit(
+      c,
+      "cluster.host.upgrade",
+      name,
+      toJson({ commit: core.commit, from: job.data.from, wait_s: body.wait_s, job: job.data.id }),
+      true,
+    );
+  }
+  return { commit: core.commit, results };
+}
+
+async function upgradeCancel(
+  state: ApiState,
+  c: ApiContext,
+  name: string,
+): Promise<UpgradeCancelAnswer> {
+  const cluster = clusterOf(state);
+  connectedHost(cluster, name);
+  let answer: unknown;
+  try {
+    answer = await cluster.hosts.call(name, HOST_METHOD.HostUpgradeCancel, {});
+  } catch (error) {
+    const failure = callError(error, name);
+    await state.audit(
+      c,
+      "cluster.host.upgrade.cancel",
+      name,
+      toJson({ error: failure.message }),
+      false,
+    );
+    throw failure;
+  }
+  const parsed = HostUpgradeCancelResultSchema.safeParse(answer);
+  if (!parsed.success) {
+    throw ApiError.badGateway(
+      new Error(`host \`${name}\` answered the cancel with something unreadable`),
+    );
+  }
+  await state.audit(
+    c,
+    "cluster.host.upgrade.cancel",
+    name,
+    toJson({ cancelled: parsed.data.cancelled, job: parsed.data.job?.id ?? null }),
+    parsed.data.cancelled,
+  );
+  return parsed.data;
+}
+
 function endpoints(state: ApiState): ClusterEndpoints {
   const { registry } = clusterOf(state);
   return {
@@ -358,5 +511,12 @@ export const clusterRpc = {
     ),
   ),
   endpoints: os.cluster.endpoints.handler(({ context }) => endpoints(context.state)),
+  checkout: os.cluster.checkout.handler(({ context }) => coreCheckout(context.state)),
+  upgrade: os.cluster.upgrade.handler(({ input, context }) =>
+    upgrade(context.state, context.c, input.body),
+  ),
+  upgradeCancel: os.cluster.upgradeCancel.handler(({ input, context }) =>
+    upgradeCancel(context.state, context.c, input.params.name),
+  ),
   join: os.cluster.join.handler(({ input, context }) => join(context.state, context.c, input.body)),
 };

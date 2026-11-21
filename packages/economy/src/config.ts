@@ -254,6 +254,17 @@ export const EconomyConfigSchema = z
     quest_cap: coins.default(45),
     /** Days a topic may not repeat for the "talk about something new" quest. */
     quest_topic_days: z.number().int().positive().default(14),
+    /**
+     * The "with others" quest: how many people (her not counted) a game or a song heard to its end
+     * needs, them included. 2: at least one other person.
+     */
+    quest_together_min_people: z.number().int().min(2).default(2),
+    /**
+     * The quest she thinks of for each person from her memories of them: `false` gives everyone
+     * one of the plain ones instead (no model call). She gets `quest_pick_secs` to write it.
+     */
+    quest_pick_by_her: z.boolean().default(true),
+    quest_pick_secs: z.number().int().positive().max(60).default(20),
     // Achievements and titles (achievements.ts): a one-time reward by size, and the day's most.
     achievement_small: z.number().int().positive().default(10),
     achievement_big: z.number().int().positive().default(30),
@@ -266,6 +277,18 @@ export const EconomyConfigSchema = z
     prediction_max_minutes: z.number().int().positive().default(120),
     predictions_open: z.number().int().positive().default(3),
     prediction_expire_hours: z.number().int().positive().default(24),
+    /**
+     * The cut of the pool a prediction with winners burns (v5-play §4.2: 5% to 10%); nothing is
+     * taken when every stake goes back.
+     */
+    prediction_rake: z.number().min(0).max(0.1).default(0.05),
+    /**
+     * Predictions that settle by themselves (prediction-watch.ts): betting closes at most this many
+     * minutes after opening (the result may come at any moment), and one whose result has not come
+     * this many minutes after betting closed gives every stake back.
+     */
+    prediction_auto_close_minutes: z.number().int().positive().default(5),
+    prediction_auto_wait_minutes: z.number().int().positive().default(120),
     // Her room (room.ts): what the audience can fund together, and the most one person puts in one.
     room_items: z
       .array(RoomItemSchema)

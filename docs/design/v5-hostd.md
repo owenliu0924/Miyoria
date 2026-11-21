@@ -281,6 +281,9 @@ bind = "127.0.0.1"               # the address services listen on
 [gpu]
 reserve_mb = 2500                # left for OBS, VTube Studio and the desktop
 
+[update]
+allow_remote = true              # the default, also without this table; false: Core's owner may not update it (§14)
+
 [services.asr]                   # one table per installed service
 enabled = true
 python = "workers/.venv-asr-qwen"     # use this existing environment; hostd will not manage it
@@ -368,6 +371,8 @@ Methods hostd serves:
   `service.logs` (last N lines; with `follow`, lines arrive as `service.log` notifications until
   cancelled).
 - `service.install`, `service.remove`, `host.update` (H6).
+- `host.upgrade { commit, wait_s?, by? }`, `host.upgrade_cancel` (§14): Core only, to a host that
+  has not opted out.
 - `gpu.acquire`, `gpu.renew`, `gpu.release`, `gpu.busy`, `gpu.state` (H7).
 - `cluster.resolve`, `cluster.llm`, `cluster.fetch`: forwarded to Core over the link (H5, H8). hostd adds the name of the service that asked (`service`); a service cannot set it itself.
 
@@ -772,3 +777,70 @@ in the backlog as untested).
 - H5: join with a used, expired or wrong code; revoked key; a worker with and without a token
   (`workers/tests`).
 - H7: the decision table.
+
+## 14. Updating a host from the panel (2026-11-21)
+
+面板的「電腦」頁顯示每台的版本(分支、提交、和 Core 那台比是落後、相同、比較新還是分岔、有沒有沒提交的變更),擁有者勾選幾台按「更新」,那幾台自己快轉到 Core 那台的提交、裝套件、重啟有變動的服務,每一步回報到面板。The rest is the implementation.
+
+**On by default; a host opts out** (owner, 2026-11-21). `host.toml` `[update] allow_remote` is
+`true` by default, also when the table is not there, so no one writes anything to be updatable.
+**Connecting a worker host to a Core lets that Core's owner update the host's checkout** to commits
+of the branch the checkout tracks (fast-forward only, never with uncommitted changes, never a
+download). To refuse, write `[update]` and `allow_remote = false` in `host.toml` (a new
+`host.toml` from `miyoria init` ends with those two lines commented out). A host that opted out
+still reports its checkout; it refuses `host.upgrade` with the reason, and the panel shows that
+reason under the host. The file is read again at each `host.upgrade` and every minute for the
+report, so turning it on or off needs no restart. Core's own machine (a host whose `host.toml`
+enables `core`) always refuses: updating it restarts Core and rebuilds the panel under the request
+that asked for it, so it stays `miyoria update` by hand on that machine.
+
+**What Core sends.** `host.upgrade { commit, wait_s?, by? }`: a full 40-character commit, Core's own
+`HEAD` (read from Core's checkout with git, never fetched; `packages/cluster/src/checkout.ts`), how
+long the host may wait for her, and who asked. Never a command, a remote or a branch. Only Core may
+call it (the operator on the machine has `miyoria update`). It answers at once with the job; the
+job's steps travel in `host.report` (`upgrade`), so the panel watches them through the hosts list,
+which polls every 2 s while a job runs.
+
+**The host's sequence** (`packages/hostd/src/upgrade/upgrader.ts`), each step in the job:
+
+| Step | Does | Refuses or fails with nothing changed |
+|---|---|---|
+| check | not opted out, a git checkout at the catalog root (a `.git` right there), on a branch with `branch.<b>.remote` and `.merge`, no change to a tracked file (untracked files do not count; git itself refuses a merge that would overwrite one) | any of these; HEAD already the commit is `done` |
+| fetch | `git fetch --no-tags <that remote>` with `GIT_TERMINAL_PROMPT=0` | the commit is not there, not on the tracked upstream, older than HEAD, or HEAD has diverged |
+| wait | while she is busy: a GPU lease, a guard state (`singing`, `live`) of a service that guards it, Core cannot be asked, or a running service whose `/health` says `busy: true` or `queued > 0` (the song worker's). The job is `waiting` with the reason; it can be cancelled | still busy after `wait_s` (default 1800) |
+| merge | HEAD and the tree checked again, then `git merge --ff-only --no-edit <commit>`; HEAD must be the commit | HEAD moved or the tree changed while it waited |
+| install | `pnpm install --frozen-lockfile` when `pnpm-lock.yaml`, `pnpm-workspace.yaml` or a `package.json` changed; the Node services that will restart are stopped first (Windows keeps their native modules locked) | |
+| sync | `uv sync` of each managed Python environment that is stale now, each stopped first when it runs (`python = ...` environments are never touched) | |
+| restart | the stopped ones are started again; the running services whose code changed (their folder, a `workers/*.py`, and for Node services anything under `packages/` or `apps/`) restart one at a time once she is idle again | still busy at the deadline: they keep running the old code and are listed as not restarted |
+| verify | the restarted services must come back healthy (10 minutes); what the enabled services lack that an update never fetches (`install.files`, `install.models`, `install.manual`) is listed | |
+
+A failure in merge, install or sync goes back: `git reset --keep <from>`, only while HEAD is still
+the commit this job moved to (`--keep` refuses rather than touch a changed file, and the tree was
+clean), then `pnpm install` for the old lockfile, the environments synced again, the stopped
+services started. A service that does not come back after the restart is reported, not rolled
+back. Nothing in the sequence downloads a model, resets a tree it did not move, or discards a
+change.
+
+What a remote update does not do, and says in the job's `notes`: it does not rebuild the panel,
+the overlay, the SDK or the extensions (only `miyoria update` builds); and hostd itself keeps
+running the code it started with until `miyoria down` and `miyoria up` on that machine.
+
+**Core and the panel.** `GET /api/cluster/hosts` adds each connected host's `checkout`,
+`remote_update`, `upgrade` and `relation` (to Core's commit); `GET /api/cluster/checkout` is Core's
+own. `POST /api/cluster/upgrade { hosts, wait_s? }` and
+`POST /api/cluster/hosts/{name}/upgrade/cancel` need the node `owner.cluster.update`. It is an
+`owner.*` node, like `owner.data.manage`: the `owner` role (and every account in
+`[modules.commands] owners`) holds it through `*`, the `admin` role's `admin.*` does not cover it
+and `moderator` has nothing of it, so with updates on by default only the owner can start one. The
+owner may give it to someone by naming the node in a role of their own; the bearer token holds every
+node. Each host asked is one audit entry
+(`cluster.host.upgrade`, ok or not, with the reason). A finished job is logged by Core's cluster
+module when the report carrying it arrives.
+
+**Old and new.** Every new field of `host.report` and of the API's host view is optional, and the
+protocol version stays 1. An old hostd reports no `checkout` and no `remote_update`: the panel
+shows 「版本不明」 and offers no update, and Core never sends it `host.upgrade`. A new hostd's extra
+fields are dropped by an old Core's schema. `[update]` in `host.toml` is a table an old hostd does not
+know (its schema is strict), which is why the default needs no table. An old hostd takes no remote
+update anyway, so there is nothing to opt out of before it is updated; write `allow_remote = false`
+only on a machine whose hostd is new enough.

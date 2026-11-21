@@ -33,14 +33,17 @@ import {
   HOST_NOTIFICATION,
   HOST_PROTOCOL_VERSION,
   HOST_RELAY_PROTOCOL_ERROR,
+  type HostCheckout,
   type HostClusterContext,
   type HostHello,
   HostHelloSchema,
   type HostLinks,
+  type HostRemoteUpdate,
   type HostReport,
   HostReportSchema,
   HostResolveSchema,
   HostServiceEventSchema,
+  type HostUpgradeJob,
   type HostWelcome,
   RelaySocketSink,
 } from "@miyoria/contracts/host";
@@ -77,6 +80,12 @@ export interface HostConnection {
   readonly approved: boolean;
   /** Epoch ms. */
   readonly since: number;
+  /** What its last report says of its checkout; `undefined` from a daemon older than that. */
+  readonly checkout?: HostCheckout | null;
+  /** Whether it takes `host.upgrade`; `undefined` from an older daemon (it does not). */
+  readonly remoteUpdate?: HostRemoteUpdate;
+  /** Its running or last update. */
+  readonly upgrade?: HostUpgradeJob | null;
 }
 
 export interface ClusterLinkOptions {
@@ -169,13 +178,16 @@ export class ClusterLink {
   /** The hosts connected now, by name. */
   connected(): HostConnection[] {
     return [...this.#conns.values()]
-      .map(({ id, name, platform, version, approved, since }) => ({
+      .map(({ id, name, platform, version, approved, since, report }) => ({
         id,
         name,
         platform,
         version,
         approved,
         since,
+        ...(report?.checkout !== undefined ? { checkout: report.checkout } : {}),
+        ...(report?.remote_update !== undefined ? { remoteUpdate: report.remote_update } : {}),
+        ...(report?.upgrade !== undefined ? { upgrade: report.upgrade } : {}),
       }))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -560,6 +572,23 @@ export class ClusterLink {
     throw new RpcError(EXT_ERROR_CODE.MethodNotFound, `unknown method "${method}"`);
   }
 
+  /** Logs an update of the host that ended since its last report (v5-hostd §14). */
+  #upgradeEnded(conn: Conn, before: HostUpgradeJob | null, after: HostUpgradeJob | null): void {
+    if (after === null || after.finished_at === undefined) return;
+    if (before !== null && before.id === after.id && before.finished_at !== undefined) return;
+    const fields = {
+      host: conn.name,
+      job: after.id,
+      state: after.state,
+      from: after.from,
+      target: after.target,
+      commit: after.commit ?? null,
+      error: after.error ?? null,
+    };
+    if (after.state === "done") this.#o.log.info(fields, "a host finished its update");
+    else this.#o.log.warn(fields, "a host's update did not finish");
+  }
+
   #onNotification(conn: Conn, method: string, params: unknown): void {
     const o = this.#o;
     switch (method) {
@@ -570,6 +599,7 @@ export class ClusterLink {
           return;
         }
         if (this.#conns.get(conn.name) !== conn) return;
+        this.#upgradeEnded(conn, conn.report?.upgrade ?? null, parsed.data.upgrade ?? null);
         conn.report = parsed.data;
         o.registry.report(conn.name, parsed.data);
         this.#catchUpContext(conn);

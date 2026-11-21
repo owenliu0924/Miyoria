@@ -38,6 +38,7 @@ export {
   LINKS_CHANGED_REASON,
   type LinkHandle,
   readHostKey,
+  type UpgradeOptions,
 } from "./daemon.js";
 export {
   type InstallFile,
@@ -123,3 +124,29 @@ export {
 } from "./run-file.js";
 export { JSON_RPC } from "./server.js";
 export { DEFAULT_TIMING, type Timing } from "./service.js";
+export {
+  type ChangedByOptions,
+  needsPnpmInstall,
+  servicesChangedBy,
+  upgradeNotes,
+} from "./upgrade/changes.js";
+export {
+  changedFiles,
+  type GitOptions,
+  type GitResult,
+  git,
+  gitEnv,
+  hasCommit,
+  headOf,
+  isAncestor,
+  looksLikeCheckout,
+  readCheckout,
+  trackedChanges,
+  trackingOf,
+} from "./upgrade/git.js";
+export {
+  type UpgradeHost,
+  Upgrader,
+  type UpgraderOptions,
+  type UpgradeService,
+} from "./upgrade/upgrader.js";

@@ -1102,6 +1102,63 @@
         }
       ]
     },
+    "ApiBetRequest": {
+      "type": "object",
+      "properties": {
+        "prediction": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "option": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        },
+        "amount": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "prediction",
+        "option",
+        "amount"
+      ],
+      "additionalProperties": false
+    },
+    "ApiBetResult": {
+      "type": "object",
+      "properties": {
+        "prediction": {
+          "type": "string"
+        },
+        "question": {
+          "type": "string"
+        },
+        "option": {
+          "type": "string"
+        },
+        "amount": {
+          "type": "number"
+        },
+        "balance": {
+          "type": "number"
+        },
+        "duplicate": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prediction",
+        "question",
+        "option",
+        "amount",
+        "balance",
+        "duplicate"
+      ]
+    },
     "ApiBidRequest": {
       "type": "object",
       "properties": {
@@ -1926,6 +1983,24 @@
         "capabilities"
       ]
     },
+    "ApiClusterCoreCheckout": {
+      "type": "object",
+      "properties": {
+        "checkout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCheckout"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "checkout"
+      ]
+    },
     "ApiClusterCreateHostRequest": {
       "type": "object",
       "properties": {
@@ -2068,6 +2143,29 @@
         },
         "link": {
           "$ref": "#/$defs/HostLinkState"
+        },
+        "checkout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCheckout"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "remote_update": {
+          "$ref": "#/$defs/HostRemoteUpdate"
+        },
+        "upgrade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostUpgradeJob"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -2130,6 +2228,52 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "checkout": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCheckout"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "relation": {
+          "type": "object",
+          "properties": {
+            "relation": {
+              "type": "string",
+              "enum": [
+                "same",
+                "behind",
+                "ahead",
+                "diverged",
+                "unknown"
+              ]
+            },
+            "count": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "relation"
+          ]
+        },
+        "remote_update": {
+          "$ref": "#/$defs/HostRemoteUpdate"
+        },
+        "upgrade": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostUpgradeJob"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -2328,6 +2472,87 @@
         "since",
         "healthy",
         "restarts"
+      ]
+    },
+    "ApiClusterUpgradeCancelResult": {
+      "type": "object",
+      "properties": {
+        "cancelled": {
+          "type": "boolean"
+        },
+        "job": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostUpgradeJob"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cancelled",
+        "job"
+      ]
+    },
+    "ApiClusterUpgradeRequest": {
+      "type": "object",
+      "properties": {
+        "hosts": {
+          "minItems": 1,
+          "maxItems": 32,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "wait_s": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 21600
+        }
+      },
+      "required": [
+        "hosts"
+      ]
+    },
+    "ApiClusterUpgradeResult": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "ok": {
+                "type": "boolean"
+              },
+              "job": {
+                "$ref": "#/$defs/HostUpgradeJob"
+              },
+              "error": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "host",
+              "ok"
+            ]
+          }
+        }
+      },
+      "required": [
+        "commit",
+        "results"
       ]
     },
     "ApiCompiledBlock": {
@@ -5329,6 +5554,12 @@
               "type": "null"
             }
           ]
+        },
+        "cheers": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -5340,6 +5571,76 @@
         "source",
         "move",
         "pitch"
+      ]
+    },
+    "ApiKaraokeCheerEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "cheer"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "id": {
+          "type": "string"
+        },
+        "member": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "color": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "name",
+            "color"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiKaraokeCheerKind"
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "id",
+        "member",
+        "by",
+        "kind"
+      ]
+    },
+    "ApiKaraokeCheerKind": {
+      "type": "string",
+      "enum": [
+        "cheer",
+        "nice",
+        "wow",
+        "encore"
+      ]
+    },
+    "ApiKaraokeCheerReply": {
+      "type": "object",
+      "properties": {
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "wait_ms"
       ]
     },
     "ApiKaraokeClock": {
@@ -5593,6 +5894,61 @@
         "history",
         "results",
         "backing_url"
+      ]
+    },
+    "ApiKaraokeLiveEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "live"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "at_ms": {
+          "type": "number"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member": {
+                "type": "string"
+              },
+              "pitch": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "track": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "track"
+                ]
+              }
+            },
+            "required": [
+              "member",
+              "pitch"
+            ]
+          }
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "at_ms",
+        "lines"
       ]
     },
     "ApiKaraokeOverview": {
@@ -6180,6 +6536,24 @@
         "relay"
       ]
     },
+    "ApiKaraokeRoomCheer": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiKaraokeCheerKind"
+        }
+      },
+      "required": [
+        "member",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "ApiKaraokeRoomEvent": {
       "oneOf": [
         {
@@ -6268,6 +6642,12 @@
             "source",
             "total"
           ]
+        },
+        {
+          "$ref": "#/$defs/ApiKaraokeLiveEvent"
+        },
+        {
+          "$ref": "#/$defs/ApiKaraokeCheerEvent"
         }
       ]
     },
@@ -12573,6 +12953,90 @@
         }
       }
     },
+    "ApiPredictionResolveRequest": {
+      "type": "object",
+      "properties": {
+        "option": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 24
+        }
+      },
+      "required": [
+        "option"
+      ],
+      "additionalProperties": false
+    },
+    "ApiPredictionSettled": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "winner": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "winners": {
+          "type": "number"
+        },
+        "pool": {
+          "type": "number"
+        },
+        "paid": {
+          "type": "number"
+        },
+        "rake": {
+          "type": "number"
+        },
+        "refunded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "winner",
+        "winners",
+        "pool",
+        "paid",
+        "rake",
+        "refunded"
+      ]
+    },
+    "ApiPredictionSettledBy": {
+      "type": "object",
+      "properties": {
+        "by": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "her",
+            "admin",
+            "expired"
+          ]
+        },
+        "note": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "who": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "by",
+        "note",
+        "at",
+        "who"
+      ]
+    },
     "ApiPredictionView": {
       "type": "object",
       "properties": {
@@ -12632,6 +13096,36 @@
             "null"
           ]
         },
+        "settles": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "her",
+                "soup",
+                "goal"
+              ]
+            },
+            "label": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "label"
+          ]
+        },
+        "settled_by": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiPredictionSettledBy"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "my_bet": {
           "anyOf": [
             {
@@ -12677,6 +13171,8 @@
         "closes_at",
         "status",
         "winner",
+        "settles",
+        "settled_by",
         "my_bet"
       ]
     },
@@ -13352,21 +13848,40 @@
                 "type": "string",
                 "enum": [
                   "new_topic",
-                  "play_game",
-                  "listen_song"
+                  "together",
+                  "her_pick"
                 ]
               },
               "label": {
                 "type": "string"
               },
+              "hint": {
+                "type": "string"
+              },
               "done": {
                 "type": "boolean"
+              },
+              "by": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "her",
+                      "fallback"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "id",
               "label",
-              "done"
+              "hint",
+              "done",
+              "by"
             ]
           }
         },
@@ -13834,6 +14349,301 @@
         "platform",
         "guild",
         "platform_role"
+      ]
+    },
+    "ApiReportApproveRequest": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      }
+    },
+    "ApiReportCommentRequest": {
+      "type": "object",
+      "properties": {
+        "issue": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      },
+      "required": [
+        "issue"
+      ]
+    },
+    "ApiReportDraftView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ApiReportStatus"
+        },
+        "area": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "happened": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "steps": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "place": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "channel",
+                "dm",
+                "other"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "likely_duplicate": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "number",
+                "title",
+                "url"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issue_title": {
+          "type": "string"
+        },
+        "issue_body": {
+          "type": "string"
+        },
+        "comment_body": {
+          "type": "string"
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "number",
+                "url"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decided_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decided_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "close_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notified_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "area",
+        "title",
+        "happened",
+        "expected",
+        "steps",
+        "person_id",
+        "place",
+        "created_at",
+        "likely_duplicate",
+        "issue_title",
+        "issue_body",
+        "comment_body",
+        "issue",
+        "decided_by",
+        "decided_at",
+        "reason",
+        "last_error",
+        "closed_at",
+        "close_reason",
+        "notified_at"
+      ]
+    },
+    "ApiReportDuplicateRequest": {
+      "type": "object",
+      "properties": {
+        "issue": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "issue"
+      ]
+    },
+    "ApiReportList": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "auto_open": {
+          "type": "boolean"
+        },
+        "per_person_daily": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "global_daily": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "today": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "drafts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiReportDraftView"
+          }
+        }
+      },
+      "required": [
+        "repo",
+        "ready",
+        "auto_open",
+        "per_person_daily",
+        "global_daily",
+        "today",
+        "drafts"
+      ]
+    },
+    "ApiReportRejectRequest": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "reason"
+      ]
+    },
+    "ApiReportStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "opening",
+        "opened",
+        "commenting",
+        "commented",
+        "duplicate",
+        "rejected"
       ]
     },
     "ApiRevertSettingsRequest": {
@@ -18040,6 +18850,76 @@
         "rapport"
       ]
     },
+    "HostCheckout": {
+      "type": "object",
+      "properties": {
+        "commit": {
+          "$ref": "#/$defs/HostCommit"
+        },
+        "branch": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "upstream": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "behind": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ahead": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dirty": {
+          "type": "boolean"
+        },
+        "fetched_at": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "read_at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "commit",
+        "branch",
+        "upstream",
+        "behind",
+        "ahead",
+        "dirty",
+        "fetched_at",
+        "read_at"
+      ]
+    },
+    "HostCommit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
     "HostGpuPolicy": {
       "type": "string",
       "enum": [
@@ -18084,6 +18964,20 @@
         "stopped"
       ]
     },
+    "HostRemoteUpdate": {
+      "type": "object",
+      "properties": {
+        "allowed": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "allowed"
+      ]
+    },
     "HostServiceState": {
       "type": "string",
       "enum": [
@@ -18096,6 +18990,204 @@
         "external",
         "foreign",
         "disabled"
+      ]
+    },
+    "HostUpgradeJob": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/HostCommit"
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCommit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "waiting",
+            "running",
+            "done",
+            "failed",
+            "refused",
+            "cancelled"
+          ]
+        },
+        "step": {
+          "$ref": "#/$defs/HostUpgradeStepName"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostUpgradeStep"
+          }
+        },
+        "waiting_for": {
+          "type": "string"
+        },
+        "by": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "number"
+        },
+        "finished_at": {
+          "type": "number"
+        },
+        "error": {
+          "type": "string"
+        },
+        "commit": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/HostCommit"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rolled_back": {
+          "type": "boolean"
+        },
+        "restarted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "not_restarted": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "reason"
+            ]
+          }
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "service": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "service",
+              "reason"
+            ]
+          }
+        },
+        "missing": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostUpgradeMissing"
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "target",
+        "from",
+        "state",
+        "step",
+        "steps",
+        "started_at"
+      ]
+    },
+    "HostUpgradeMissing": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "file",
+            "model",
+            "manual"
+          ]
+        },
+        "what": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "service",
+        "kind",
+        "what"
+      ]
+    },
+    "HostUpgradeStep": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "$ref": "#/$defs/HostUpgradeStepName"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "done",
+            "failed",
+            "skipped"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "at": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "step",
+        "state",
+        "at"
+      ]
+    },
+    "HostUpgradeStepName": {
+      "type": "string",
+      "enum": [
+        "check",
+        "fetch",
+        "wait",
+        "merge",
+        "install",
+        "sync",
+        "restart",
+        "verify",
+        "rollback"
       ]
     },
     "WireAccountRef": {

@@ -4,6 +4,7 @@
 import { z } from "zod";
 import { HostGpuArbitrationSchema } from "./gpu.js";
 import { HostGpuPolicySchema, HostGuardStateSchema } from "./service.js";
+import { HostCheckoutSchema, HostRemoteUpdateSchema, HostUpgradeJobSchema } from "./upgrade.js";
 
 /** First message of the control link, host → Core. `host` is the id Core's `join` gave it. */
 export const HostHelloSchema = z
@@ -162,6 +163,12 @@ export const HostInfoSchema = z
     link: HostLinkStateSchema.optional(),
     /** GPU arbitration on this host; older daemons leave it out. */
     arbiter: HostGpuArbiterStatusSchema.optional(),
+    /** The git checkout it runs from; `null` when it is not one. Older daemons leave it out. */
+    checkout: HostCheckoutSchema.nullable().optional(),
+    /** Whether it takes `host.upgrade`. Older daemons leave it out: they never do. */
+    remote_update: HostRemoteUpdateSchema.optional(),
+    /** The running update, or the last one; `null` before the first. */
+    upgrade: HostUpgradeJobSchema.nullable().optional(),
   })
   .meta({ id: "HostInfo" });
 export type HostInfo = z.output<typeof HostInfoSchema>;

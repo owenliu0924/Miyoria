@@ -23,7 +23,6 @@ import {
 import { StoreKey } from "@miyoria/store";
 import {
   type Clock,
-  contextKeyString,
   EventLogKey,
   Events,
   HandleDirectoryKey,
@@ -38,6 +37,7 @@ import {
 import { karaokeCard } from "./card.js";
 import { registerCommands, roomNotice, unregisterCommands } from "./commands.js";
 import { commentContext, type KaraokeConfig, KaraokeConfigSchema } from "./config.js";
+import { VoicePresence } from "./presence.js";
 import { type RoomChannel, RoomDesk, type RoomNotice } from "./rooms.js";
 import { type KaraokeNote, KaraokeService } from "./service.js";
 import { karaokeTables } from "./store.js";
@@ -125,14 +125,13 @@ export class KaraokeModule implements Module {
     this.#running = service;
 
     // Rooms (step 4): only while she is in a voice channel. Where she is comes from the voice
-    // events; before any arrives (Core started while she was in one), the voice node is asked
-    // about the comment channel's server.
-    const voices = new Set<string>();
-    const inVoice = () => {
-      if (voices.size > 0) return true;
+    // events, one channel per server (`VoicePresence`); without one, the voice node is asked about
+    // the comment channel's server.
+    const presence = new VoicePresence(() => {
       const guild = commentContext(config.comment_channel)?.scope ?? null;
       return guild !== null && (ctx.services.get(VoicePlayerKey)?.channel(guild) ?? null) !== null;
-    };
+    });
+    const inVoice = () => presence.inVoice();
     const rooms = new RoomDesk({
       config,
       store: store.plugin(karaokeTables),
@@ -191,11 +190,16 @@ export class KaraokeModule implements Module {
       unregisterCommands,
     );
     this.#mount.attach(ctx);
-    const voice = ctx.subscribe([Events.VoiceJoined.type, Events.VoiceLeft.type]);
+    const voice = ctx.subscribe([
+      Events.VoiceJoined.type,
+      Events.VoiceLeft.type,
+      Events.VoiceParticipants.type,
+    ]);
     ctx.spawn("voice", async () => {
       for await (const env of voice) {
-        if (is(Events.VoiceJoined, env)) voices.add(contextKeyString(env.data.context));
-        else if (is(Events.VoiceLeft, env)) voices.delete(contextKeyString(env.data.context));
+        if (is(Events.VoiceJoined, env)) presence.joined(env.data.context);
+        else if (is(Events.VoiceParticipants, env)) presence.participants(env.data.context);
+        else if (is(Events.VoiceLeft, env)) presence.left(env.data.context);
       }
     });
     ctx.spawn("rooms", async (signal) => {

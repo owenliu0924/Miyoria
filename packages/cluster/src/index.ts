@@ -16,6 +16,15 @@ export {
   DEFAULT_CLUSTER_USES,
 } from "./calls.js";
 export {
+  type CheckoutSource,
+  type CommitRelation,
+  execGit,
+  findCheckoutRoot,
+  type GitCheckoutOptions,
+  type GitExec,
+  gitCheckout,
+} from "./checkout.js";
+export {
   type ClusterConfig,
   ClusterConfigSchema,
   DEFAULT_CLUSTER_BIND,

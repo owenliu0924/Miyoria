@@ -16,6 +16,7 @@ import {
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
+  Economy2Key,
   EconomyCardWallet,
   EconomyConfigSchema,
   EconomyKey,
@@ -739,8 +740,11 @@ describe("the route table", () => {
       "GET /api/member/market/lottery",
       "GET /api/member/market/tickets",
       "GET /api/member/me",
+      "GET /api/member/predictions",
+      "GET /api/member/quests",
       "GET /api/member/session",
       "GET /api/member/wallet",
+      "POST /api/member/bet",
       "POST /api/member/board",
       "POST /api/member/card",
       "POST /api/member/checkin",
@@ -750,6 +754,7 @@ describe("the route table", () => {
       "POST /api/member/frame",
       "POST /api/member/karaoke/rooms",
       "POST /api/member/karaoke/rooms/:code/audio",
+      "POST /api/member/karaoke/rooms/:code/cheer",
       "POST /api/member/karaoke/rooms/:code/clock",
       "POST /api/member/karaoke/rooms/:code/close",
       "POST /api/member/karaoke/rooms/:code/join",
@@ -2703,7 +2708,16 @@ describe("the wallet", () => {
       });
     const balanceOf = async (id: string) =>
       tables.economy.ledger.balance("p", await tables.wallet(discord(id)));
-    return { ...r, coins, economy: tables.economy, hunger, spend, fund, balanceOf };
+    return {
+      ...r,
+      coins,
+      economy: tables.economy,
+      economy2: economy.v2,
+      hunger,
+      spend,
+      fund,
+      balanceOf,
+    };
   }
 
   it("shows their own wallet, field by field", async () => {
@@ -2721,6 +2735,92 @@ describe("the wallet", () => {
       frames: { owned: [], selected: null },
       recent: [],
     });
+  });
+
+  it("shows their own quests, with the one she thought of from what they may read", async () => {
+    const r = await walletRig();
+    r.sup.services.provide("economy", Economy2Key, r.economy2);
+    const asked: string[] = [];
+    r.sup.services.provide("llm", LlmRouterKey, {
+      complete: async (_purpose: string, request: { messages: { content: string }[] }) => {
+        asked.push(request.messages[1]?.content ?? "");
+        return {
+          text: JSON.stringify({ quest: "「跟她說說吉他練得怎樣」" }),
+          finish_reason: "stop",
+          usage: null,
+        };
+      },
+    } as never);
+    const alice = await r.login("alice");
+    const res = await r.get("/api/member/quests", alice);
+    expect(res.status).toBe(200);
+    const body = res.body as { quests: { id: string; label: string; by: string | null }[] };
+    expect(body.quests.map((q) => q.id)).toEqual(["new_topic", "together", "her_pick"]);
+    expect(body.quests[2]).toMatchObject({ label: "跟她說說吉他練得怎樣", by: "her" });
+    // She thought from what the page shows Alice, and nobody else's memories.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("想學吉他");
+    expect(asked[0]).not.toContain("SECRET");
+    // The same all day: asked once.
+    await r.get("/api/member/quests", alice);
+    expect(asked).toHaveLength(1);
+    // Someone she does not know, or blocked, has no quests and nobody is asked.
+    for (const who of ["dave", "carol"]) {
+      const other = await r.get("/api/member/quests", await r.login(who));
+      expect(other.status).toBe(200);
+      expect((other.body as { quests: unknown[] }).quests).toEqual([]);
+    }
+    expect(asked).toHaveLength(1);
+  });
+
+  it("shows the predictions with their own stake, takes a stake once per key, never says which operator", async () => {
+    // Taking part pays nothing here: only the stake moves.
+    const r = await walletRig({ prediction_rake: 0, play_rewards: {} });
+    r.sup.services.provide("economy", Economy2Key, r.economy2);
+    const p = await r.economy2.openPrediction({
+      question: "她會唱完嗎",
+      options: ["會", "不會"],
+      minutes: 30,
+    });
+    await r.fund(ALICE, 100);
+    const alice = await r.login("alice");
+    const list = await r.get("/api/member/predictions", alice);
+    expect(list.status).toBe(200);
+    expect((list.body as { predictions: unknown[] }).predictions[0]).toMatchObject({
+      id: p.id,
+      status: "open",
+      settles: { kind: "her", label: "她公布結果" },
+      settled_by: null,
+      my_bet: null,
+    });
+    const body = { prediction: p.id, option: "1", amount: 20 };
+    const first = await r.spend("/api/member/bet", alice, body, "k1");
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      prediction: p.id,
+      question: "她會唱完嗎",
+      option: "會",
+      amount: 20,
+      balance: 80,
+      duplicate: false,
+    });
+    expect((await r.spend("/api/member/bet", alice, body, "k1")).body).toMatchObject({
+      duplicate: true,
+      balance: 80,
+    });
+    expect((await r.spend("/api/member/bet", alice, body, "k2")).status).toBe(409);
+    expect(await r.balanceOf(ALICE)).toBe(80);
+    const dave = await r.login("dave");
+    expect((await r.spend("/api/member/bet", dave, body, "k3")).status).toBe(403);
+    await r.economy2.resolvePredictionByAdmin(p.id, 1, "owner:999");
+    const after = (await r.get("/api/member/predictions", alice)).body as {
+      predictions: {
+        settled_by: { by: string; who: string | null };
+        my_bet: { outcome: string };
+      }[];
+    };
+    expect(after.predictions[0]?.settled_by).toMatchObject({ by: "admin", who: null });
+    expect(after.predictions[0]?.my_bet.outcome).toBe("won");
   });
 
   it("shows her bounties to everyone", async () => {

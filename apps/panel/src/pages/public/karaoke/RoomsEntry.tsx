@@ -5,6 +5,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { DoorOpen, LogIn, Users } from "lucide-react";
 import { type FormEvent, useId, useState } from "react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { KaraokeRooms, KaraokeRoomView } from "@miyoria/contracts/api";
 import { describeError } from "@/api/http";
 import { useApi } from "@/app/connection";
@@ -73,6 +74,15 @@ export function OpenRoomDialog({
   );
 }
 
+/**
+ * What to do about it: the page follows by itself, so the person only has to wait for her (or for
+ * karaoke to open). Core's sentence says why; this says that nothing needs reloading.
+ */
+export function unavailableHint(reason: string | null): string {
+  if (reason?.includes("語音")) return "她進語音頻道後,這裡一兩秒內就能按,不用重新整理";
+  return "可以開的時候,這裡會自己變成可以按";
+}
+
 /** The block on the song list. */
 export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
   const rooms = useRooms();
@@ -80,6 +90,7 @@ export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
   const [text, setText] = useState("");
   const [bad, setBad] = useState(false);
   const id = useId();
+  const whyId = useId();
   if (rooms.isError && isOff(rooms.error)) return null;
 
   const join = (e: FormEvent) => {
@@ -95,10 +106,25 @@ export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
         <CardTitle>一起唱</CardTitle>
         {rooms.data && !rooms.data.mine && (
           <CardAction>
-            <Button size="sm" onClick={() => setOpening(true)} disabled={!rooms.data.available}>
-              <DoorOpen aria-hidden />
-              開一間房
-            </Button>
+            {rooms.data.available ? (
+              <Button size="sm" onClick={() => setOpening(true)}>
+                <DoorOpen aria-hidden />
+                開一間房
+              </Button>
+            ) : (
+              // Disabled says why (a disabled button gets no pointer events: the tooltip is on its box).
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span tabIndex={0} className="inline-flex rounded-md">
+                    <Button size="sm" disabled aria-describedby={whyId}>
+                      <DoorOpen aria-hidden />
+                      開一間房
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>{rooms.data.reason ?? "現在不能開房"}</TooltipContent>
+              </Tooltip>
+            )}
           </CardAction>
         )}
       </CardHeader>
@@ -127,8 +153,10 @@ export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
                 </Fact>
                 <Fact label="一起唱">最多 {rooms.data.terms.max_singers} 人</Fact>
               </dl>
-              {!rooms.data.available && rooms.data.reason && (
-                <p className="text-[13px] text-muted-foreground">{rooms.data.reason}</p>
+              {!rooms.data.available && (
+                <p id={whyId} role="status" className="text-[13px] text-muted-foreground">
+                  {rooms.data.reason ?? "現在不能開房"}。{unavailableHint(rooms.data.reason)}
+                </p>
               )}
             </>
           )}

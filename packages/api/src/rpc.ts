@@ -84,8 +84,10 @@ import { partyRpc } from "./party.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
 import { planRpc } from "./plan.js";
+import { walletPlayRpc } from "./play-routes.js";
 import { outcomesRpc, promptsRpc } from "./prompts.js";
 import { limitMember, publicRpc } from "./public.js";
+import { reportsRpc } from "./reports.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route } from "./route.js";
 import { sandboxRpc } from "./sandbox.js";
@@ -123,7 +125,7 @@ export const router = os.router({
   member: { ...memberRpc, ...livePatRpc },
   cards: cardsRpc,
   cardsAdmin: cardsAdminRpc,
-  wallet: walletRpc,
+  wallet: { ...walletRpc, ...walletPlayRpc },
   agency: agencyRpc,
   fortune: fortuneRpc,
   market: marketRpc,
@@ -131,6 +133,7 @@ export const router = os.router({
   karaoke: karaokeRpc,
   karaokeAdmin: karaokeAdminRpc,
   karaokeRooms: karaokeRoomsRpc,
+  reports: reportsRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
   // The settings routes before `POST /api/modules/{id}/{action}` (see the contract).

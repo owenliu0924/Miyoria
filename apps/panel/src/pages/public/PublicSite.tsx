@@ -15,6 +15,7 @@ import { KaraokeLink } from "./karaoke/link";
 import { LiveStage } from "./live/LiveStage";
 import { Market } from "./Market";
 import { DAY_MS, localMidnight, MemberActions, MemberActivity, MemberLists, MemberProfile } from "./Member";
+import { Predictions } from "./Play";
 import { STATE, stateLabel, usePublicSongs, usePublicStatus } from "./status";
 import { WalletMain } from "./Wallet";
 
@@ -247,6 +248,7 @@ export function PublicSite({
           <MemberLists />
           <CardsArea />
           <Market />
+          <Predictions />
           <WalletMain />
           <Songs />
         </Page>

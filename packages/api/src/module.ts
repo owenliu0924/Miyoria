@@ -23,6 +23,7 @@
 import type { AddressInfo } from "node:net";
 import { isIPv4, isIPv6 } from "node:net";
 import { createAdaptorServer, type ServerType } from "@hono/node-server";
+import { QuestPickerKey } from "@miyoria/economy";
 import { BondRingImagesKey } from "@miyoria/heart/person";
 import { tokenize } from "@miyoria/memory/memory";
 import { CardFacesKey } from "@miyoria/play/cards";
@@ -44,6 +45,7 @@ import { PANEL_DIR_ENV, pickDir } from "./panel.js";
 import { memberPicture } from "./picture-data.js";
 import { backgroundPath, PictureRenderer, PictureService } from "./pictures.js";
 import { PublicConfigSchema, PublicSide, STATS_EVERY_MS } from "./public.js";
+import { QuestPickService } from "./quest-words.js";
 import { RingImages } from "./ring-image.js";
 import { createApp } from "./server.js";
 import { Sessions } from "./session.js";
@@ -264,6 +266,8 @@ export class ApiModule implements Module {
     ctx.provide(KeepsakesKey, new KeepsakeService(state));
     // Her words on a milestone card, which the cards module issues with no page open.
     ctx.provide(CardFacesKey, new CardFaceService(state));
+    // The daily quest she thinks of for each person, from what the member page shows them.
+    ctx.provide(QuestPickerKey, new QuestPickService(state));
     // The bond ring's picture for `/me profile` and `/admin person show`.
     ctx.provide(BondRingImagesKey, new RingImages());
     // Her picture messages: the templates drawn to PNG, kept in the artifact store.
