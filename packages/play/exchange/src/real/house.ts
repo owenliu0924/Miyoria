@@ -375,7 +375,8 @@ function count(state: HouseState, code: string, burned: number, minted: number):
   const t = state.today;
   t.burned += burned;
   t.minted += minted;
-  const b = (t.by[code] ??= { burned: 0, minted: 0 });
+  const b = t.by[code] ?? { burned: 0, minted: 0 };
+  t.by[code] = b;
   b.burned += burned;
   b.minted += minted;
 }

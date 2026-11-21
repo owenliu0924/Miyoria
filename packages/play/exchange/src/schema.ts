@@ -326,3 +326,160 @@ export const exchangeWords = sqliteTable(
   },
   (t) => [index("exchange_words_day_idx").on(t.day)],
 );
+
+// ---- real instruments (version 2, owner 2026-11-21): the house is the counterparty ------------
+
+/** One row: the house's state as JSON (today's and recent days' mint and burn, the payout queue, who is bankrupt, the automatic halt). */
+export const exchangeHouse = sqliteTable(
+  "exchange_house",
+  {
+    id: integer().primaryKey(),
+    state: text().notNull(),
+    updated_at: micros().notNull(),
+  },
+  (t) => [check("exchange_house_one", sql`${t.id} = 1`)],
+);
+
+/** The last accepted quote of each real instrument (what a restart starts from). */
+export const exchangeQuotes = sqliteTable("exchange_quotes", {
+  code: text().primaryKey(),
+  /** Coins per unit. */
+  price: real().notNull(),
+  at: micros().notNull(),
+  prev_close: real(),
+  /** Quotes refused since the last accepted one, and why the last was. */
+  refused: integer().notNull().default(0),
+  last_refusal: text(),
+  updated_at: micros().notNull(),
+});
+
+export const exchangeRealOrders = sqliteTable(
+  "exchange_real_orders",
+  {
+    id: text().primaryKey(),
+    person_id: text().notNull(),
+    platform: text().notNull(),
+    account_id: text().notNull(),
+    name: text().notNull(),
+    request_key: text().notNull(),
+    code: text().notNull(),
+    side: text().notNull(),
+    limit_price: real(),
+    coins: integer().notNull(),
+    margin: integer().notNull(),
+    exposure: integer().notNull(),
+    fee: integer().notNull(),
+    leverage: real().notNull(),
+    qty: integer().notNull(),
+    position_id: text(),
+    placed_at: micros().notNull(),
+    expires_at: micros().notNull(),
+    /** `charging`, `open`, `filled`, `cancelled`, `expired`, `void`. */
+    status: text().notNull(),
+    why: text(),
+    ended_at: micros(),
+  },
+  (t) => [
+    uniqueIndex("exchange_real_orders_key_idx").on(t.person_id, t.request_key),
+    index("exchange_real_orders_status_idx").on(t.status, t.code),
+    index("exchange_real_orders_person_idx").on(t.person_id, t.placed_at),
+    check(
+      "exchange_real_orders_status_check",
+      sql`${t.status} IN ('charging', 'open', 'filled', 'cancelled', 'expired', 'void')`,
+    ),
+    check(
+      "exchange_real_orders_amount_check",
+      sql`${t.coins} >= 0 AND ${t.margin} >= 0 AND ${t.fee} >= 0 AND ${t.qty} >= 0 AND ${t.leverage} >= 1`,
+    ),
+  ],
+);
+
+export const exchangeRealPositions = sqliteTable(
+  "exchange_real_positions",
+  {
+    id: text().primaryKey(),
+    person_id: text().notNull(),
+    code: text().notNull(),
+    leverage: real().notNull(),
+    /** Millionths of a unit. */
+    qty: integer().notNull(),
+    cost: integer().notNull(),
+    margin: integer().notNull(),
+    loan: integer().notNull(),
+    carry: integer().notNull().default(0),
+    opened_at: micros().notNull(),
+    warned_half: micros(),
+    warned_near: micros(),
+    /** `open`, `closed`, `liquidated`. */
+    status: text().notNull(),
+    closed_at: micros(),
+  },
+  (t) => [
+    index("exchange_real_positions_person_idx").on(t.person_id, t.status),
+    index("exchange_real_positions_status_idx").on(t.status, t.code),
+    check(
+      "exchange_real_positions_status_check",
+      sql`${t.status} IN ('open', 'closed', 'liquidated')`,
+    ),
+    check(
+      "exchange_real_positions_amount_check",
+      sql`${t.qty} >= 0 AND ${t.cost} >= 0 AND ${t.margin} >= 0 AND ${t.loan} >= 0 AND ${t.carry} >= 0`,
+    ),
+  ],
+);
+
+export const exchangeRealFills = sqliteTable(
+  "exchange_real_fills",
+  {
+    id: text().primaryKey(),
+    order_id: text(),
+    person_id: text().notNull(),
+    code: text().notNull(),
+    side: text().notNull(),
+    /** `order`, `liquidation`, `shortfall`, `bankruptcy`, `admin`. */
+    kind: text().notNull(),
+    position_id: text(),
+    leverage: real().notNull(),
+    qty: integer().notNull(),
+    price: real().notNull(),
+    gross: integer().notNull(),
+    fee: integer().notNull(),
+    tax: integer().notNull(),
+    carry: integer().notNull(),
+    paid: integer().notNull(),
+    queued: integer().notNull(),
+    shortfall: integer().notNull(),
+    by: text(),
+    created_at: micros().notNull(),
+  },
+  (t) => [
+    index("exchange_real_fills_person_idx").on(t.person_id, t.created_at),
+    index("exchange_real_fills_created_idx").on(t.created_at),
+    check(
+      "exchange_real_fills_paid_check",
+      sql`${t.paid} >= 0 AND ${t.queued} >= 0 AND ${t.shortfall} >= 0`,
+    ),
+  ],
+);
+
+/** The house's own record of every coin it moved (and every write-off), append-only. */
+export const exchangeHouseLines = sqliteTable(
+  "exchange_house_lines",
+  {
+    id: integer().primaryKey({ autoIncrement: true }),
+    day: integer().notNull(),
+    kind: text().notNull(),
+    person_id: text().notNull(),
+    code: text().notNull(),
+    amount: integer().notNull(),
+    ref: text().notNull(),
+    at: micros().notNull(),
+  },
+  (t) => [
+    index("exchange_house_lines_day_idx").on(t.day, t.kind),
+    check(
+      "exchange_house_lines_kind_check",
+      sql`${t.kind} IN ('burn', 'mint', 'fee', 'loss', 'refund', 'escrow', 'release', 'writeoff')`,
+    ),
+  ],
+);

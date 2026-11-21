@@ -37,6 +37,7 @@ import type {
   RoundStatus,
 } from "./engine/index.js";
 import { exchangeSchema } from "./migrations.js";
+import { RealStore } from "./real/store.js";
 import {
   exchangeAccounts,
   exchangeFills,
@@ -270,9 +271,12 @@ export function postingEntries(
 
 export class ExchangeStore {
   readonly #db: Db;
+  /** The real instruments' tables (the house as counterparty). */
+  readonly real: RealStore;
 
   constructor(db: Db) {
     this.#db = db;
+    this.real = new RealStore(db);
   }
 
   #write<T>(fn: () => T): T {
@@ -1104,8 +1108,10 @@ export class ExchangeStore {
         orm.delete(exchangeAccounts).where(eq(exchangeAccounts.person_id, absorb)).run();
         accounts = 1;
       }
+      const real = this.real.merge(keep, absorb);
       return {
         counts: {
+          ...real,
           exchange_orders: orders,
           exchange_positions: positions,
           exchange_fills: fills,

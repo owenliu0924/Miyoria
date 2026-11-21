@@ -221,8 +221,131 @@ CREATE INDEX \`exchange_vault_round_idx\` ON \`exchange_vault\` (\`round\`);
 CREATE INDEX \`exchange_words_day_idx\` ON \`exchange_words\` (\`day\`);
 `;
 
-/** The market's state, the book, the vault, the news, the accounts, the notices, her words. */
+/**
+ * Version 2 (owner 2026-11-21, real prices): the house's state, the last good quotes, the real
+ * orders, positions and fills, and the house's own lines. Written the way drizzle-kit generates new
+ * tables (`createSql` over these tables alone: `schema:sql` asks to confirm new tables of a plugin
+ * that has migrations); the drift test checks it.
+ */
+const REAL = `CREATE TABLE \`exchange_house\` (
+	\`id\` integer PRIMARY KEY,
+	\`state\` text NOT NULL,
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT "exchange_house_one" CHECK("id" = 1)
+) STRICT;
+
+CREATE TABLE \`exchange_house_lines\` (
+	\`id\` integer PRIMARY KEY AUTOINCREMENT,
+	\`day\` integer NOT NULL,
+	\`kind\` text NOT NULL,
+	\`person_id\` text NOT NULL,
+	\`code\` text NOT NULL,
+	\`amount\` integer NOT NULL,
+	\`ref\` text NOT NULL,
+	\`at\` integer NOT NULL,
+	CONSTRAINT "exchange_house_lines_kind_check" CHECK("kind" IN ('burn', 'mint', 'fee', 'loss', 'refund', 'escrow', 'release', 'writeoff'))
+) STRICT;
+
+CREATE TABLE \`exchange_quotes\` (
+	\`code\` text PRIMARY KEY,
+	\`price\` real NOT NULL,
+	\`at\` integer NOT NULL,
+	\`prev_close\` real,
+	\`refused\` integer DEFAULT 0 NOT NULL,
+	\`last_refusal\` text,
+	\`updated_at\` integer NOT NULL
+) STRICT;
+
+CREATE TABLE \`exchange_real_fills\` (
+	\`id\` text PRIMARY KEY,
+	\`order_id\` text,
+	\`person_id\` text NOT NULL,
+	\`code\` text NOT NULL,
+	\`side\` text NOT NULL,
+	\`kind\` text NOT NULL,
+	\`position_id\` text,
+	\`leverage\` real NOT NULL,
+	\`qty\` integer NOT NULL,
+	\`price\` real NOT NULL,
+	\`gross\` integer NOT NULL,
+	\`fee\` integer NOT NULL,
+	\`tax\` integer NOT NULL,
+	\`carry\` integer NOT NULL,
+	\`paid\` integer NOT NULL,
+	\`queued\` integer NOT NULL,
+	\`shortfall\` integer NOT NULL,
+	\`by\` text,
+	\`created_at\` integer NOT NULL,
+	CONSTRAINT "exchange_real_fills_paid_check" CHECK("paid" >= 0 AND "queued" >= 0 AND "shortfall" >= 0)
+) STRICT;
+
+CREATE TABLE \`exchange_real_orders\` (
+	\`id\` text PRIMARY KEY,
+	\`person_id\` text NOT NULL,
+	\`platform\` text NOT NULL,
+	\`account_id\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`request_key\` text NOT NULL,
+	\`code\` text NOT NULL,
+	\`side\` text NOT NULL,
+	\`limit_price\` real,
+	\`coins\` integer NOT NULL,
+	\`margin\` integer NOT NULL,
+	\`exposure\` integer NOT NULL,
+	\`fee\` integer NOT NULL,
+	\`leverage\` real NOT NULL,
+	\`qty\` integer NOT NULL,
+	\`position_id\` text,
+	\`placed_at\` integer NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`status\` text NOT NULL,
+	\`why\` text,
+	\`ended_at\` integer,
+	CONSTRAINT "exchange_real_orders_status_check" CHECK("status" IN ('charging', 'open', 'filled', 'cancelled', 'expired', 'void')),
+	CONSTRAINT "exchange_real_orders_amount_check" CHECK("coins" >= 0 AND "margin" >= 0 AND "fee" >= 0 AND "qty" >= 0 AND "leverage" >= 1)
+) STRICT;
+
+CREATE TABLE \`exchange_real_positions\` (
+	\`id\` text PRIMARY KEY,
+	\`person_id\` text NOT NULL,
+	\`code\` text NOT NULL,
+	\`leverage\` real NOT NULL,
+	\`qty\` integer NOT NULL,
+	\`cost\` integer NOT NULL,
+	\`margin\` integer NOT NULL,
+	\`loan\` integer NOT NULL,
+	\`carry\` integer DEFAULT 0 NOT NULL,
+	\`opened_at\` integer NOT NULL,
+	\`warned_half\` integer,
+	\`warned_near\` integer,
+	\`status\` text NOT NULL,
+	\`closed_at\` integer,
+	CONSTRAINT "exchange_real_positions_status_check" CHECK("status" IN ('open', 'closed', 'liquidated')),
+	CONSTRAINT "exchange_real_positions_amount_check" CHECK("qty" >= 0 AND "cost" >= 0 AND "margin" >= 0 AND "loan" >= 0 AND "carry" >= 0)
+) STRICT;
+
+CREATE INDEX \`exchange_house_lines_day_idx\` ON \`exchange_house_lines\` (\`day\`,\`kind\`);
+
+CREATE INDEX \`exchange_real_fills_person_idx\` ON \`exchange_real_fills\` (\`person_id\`,\`created_at\`);
+
+CREATE INDEX \`exchange_real_fills_created_idx\` ON \`exchange_real_fills\` (\`created_at\`);
+
+CREATE UNIQUE INDEX \`exchange_real_orders_key_idx\` ON \`exchange_real_orders\` (\`person_id\`,\`request_key\`);
+
+CREATE INDEX \`exchange_real_orders_status_idx\` ON \`exchange_real_orders\` (\`status\`,\`code\`);
+
+CREATE INDEX \`exchange_real_orders_person_idx\` ON \`exchange_real_orders\` (\`person_id\`,\`placed_at\`);
+
+CREATE INDEX \`exchange_real_positions_person_idx\` ON \`exchange_real_positions\` (\`person_id\`,\`status\`);
+
+CREATE INDEX \`exchange_real_positions_status_idx\` ON \`exchange_real_positions\` (\`status\`,\`code\`);
+`;
+
+/** The market's state, the book, the vault, the news, the accounts, the notices, her words; the real side. */
 export const exchangeSchema: PluginSchema = {
   plugin: "exchange",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "real", sql: REAL },
+  ],
 };

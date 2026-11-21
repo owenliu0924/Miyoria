@@ -9,6 +9,8 @@ import { BOND_LADDER } from "@miyoria/types";
 import { z } from "zod";
 import { DEFAULT_RULES, type Rules } from "./engine/guards.js";
 import { DEFAULT_PARAMS, type EngineParams } from "./engine/params.js";
+import type { HouseParams } from "./real/house.js";
+import { DEFAULT_SESSIONS, type MarketKind, type Session } from "./real/instruments.js";
 
 /** The bond tiers a requirement may name, lowest first. */
 const TIERS = BOND_LADDER.map((t) => t.label) as [string, ...string[]];
@@ -183,6 +185,112 @@ export const ExchangeConfigSchema = z
       setting({ kind: "coins", label: "每人保證金合計上限", group: "leverage" }),
     ),
 
+    // ---- real instruments (owner 2026-11-21): the house is the counterparty ----
+    /** The real instruments people may trade; none until the owner adds them (and a provider). */
+    instruments: z
+      .array(
+        z.object({
+          code: z.string().regex(/^[A-Z0-9]{2,10}$/),
+          name: z.string().min(1).max(40),
+          market: z.enum(["us", "tw", "crypto"]),
+          provider: z.string().min(1),
+          symbol: z.string().min(1).max(40),
+          vol: z.enum(["low", "mid", "high", "crypto"]).default("mid"),
+          coins_per_unit: z.number().positive().default(1),
+          enabled: z.boolean().default(true),
+        }),
+      )
+      .default([]),
+    /** Quote providers: each a JSON endpoint (no vendor is wired until the owner names one). */
+    providers: z
+      .array(
+        z.object({
+          id: z.string().min(1),
+          url: z.string().regex(/^https:\/\/[^/{}?#]+[/?]/, "https:// with a fixed host"),
+          separator: z.string().default(","),
+          price_path: z.string().min(1),
+          time_path: z.string().nullable().default(null),
+          time_unit: z.enum(["s", "ms", "iso"]).default("s"),
+          prev_close_path: z.string().nullable().default(null),
+          rate_per_minute: z.number().int().positive().default(30),
+          cache_seconds: z.number().int().min(0).default(30),
+          timeout_ms: z.number().int().min(500).max(30_000).default(5_000),
+          max_backoff_seconds: z.number().int().min(1).default(600),
+          api_key_env: z.string().nullable().default(null),
+          api_key_header: z.string().nullable().default(null),
+          api_key_param: z.string().nullable().default(null),
+        }),
+      )
+      .default([]),
+    /** Closed dates (`YYYY-MM-DD`, the market's own zone) of the US and Taiwan markets. */
+    holidays_us: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).default([]),
+    holidays_tw: z.array(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).default([]),
+    /** How often real quotes are asked for. */
+    quote_poll_seconds: z.number().int().min(10).max(600).default(60),
+    /** A quote older than this is not traded at. */
+    quote_max_age_seconds: z.number().int().min(10).max(3600).default(300),
+    /** A real holding can be sold this long after it was bought (in place of T+1). */
+    real_min_hold_minutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(1440)
+      .default(60)
+      .meta(
+        setting({
+          kind: "duration",
+          unit: "min",
+          label: "真實行情:買進後多久才能賣",
+          group: "real",
+        }),
+      ),
+    real_order_ttl_minutes: z.number().int().min(1).max(1440).default(30),
+    /** Net coins the house may pay out per local day, in all and per instrument. */
+    payout_cap_daily: coins(1500).meta(
+      setting({
+        kind: "coins",
+        label: "每天最多淨發出",
+        help: "賣出的錢超過時,超過的部分隔天早上第一個付,當天停止買進",
+        group: "real",
+      }),
+    ),
+    payout_cap_instrument: coins(500).meta(
+      setting({ kind: "coins", label: "每個標的每天最多淨發出", group: "real" }),
+    ),
+    /** Real buys stop when the net minted over `halt_window_days` passes `halt_net`. */
+    halt_window_days: z.number().int().min(1).max(60).default(7),
+    halt_net: coins(4000).meta(
+      setting({
+        kind: "coins",
+        label: "自動停止買進的門檻",
+        help: "最近幾天淨發出超過這麼多就自動停止買進(賣出照常)",
+        group: "real",
+      }),
+    ),
+    real_leverage: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "真實行情的槓桿",
+          help: "可能賠超過保證金;關掉時不能開新的槓桿部位",
+          group: "real",
+        }),
+      ),
+    leverage_max_low: z.number().min(1).max(2).default(2),
+    leverage_max_mid: z.number().min(1).max(2).default(2),
+    leverage_max_high: z.number().min(1).max(2).default(1.5),
+    leverage_max_crypto: z.number().min(1).max(2).default(1.5),
+    /** A bankrupt member waits this long before trading again. */
+    bankrupt_cooling_days: z
+      .number()
+      .int()
+      .min(0)
+      .max(90)
+      .default(7)
+      .meta(setting({ kind: "number", label: "破產後幾天不能交易", group: "real" })),
+
     // ---- the price process (no panel; run the simulation before changing) ----
     market_sigma: z.number().min(0).max(0.05).default(DEFAULT_PARAMS.market_sigma),
     sector_sigma: z.number().min(0).max(0.05).default(DEFAULT_PARAMS.sector_sigma),
@@ -205,6 +313,7 @@ export const ExchangeConfigSchema = z
       { id: "account", label: "開戶和委託" },
       { id: "limits", label: "持有上限" },
       { id: "leverage", label: "槓桿" },
+      { id: "real", label: "真實行情" },
     ]),
   );
 
@@ -281,5 +390,43 @@ export function rulesOf(c: ExchangeConfig, paused: boolean): Rules {
     leverage_min_days: c.leverage_min_days,
     leverage_min_tier: Math.max(0, tierIndex(c.leverage_min_tier)),
     leverage_margin_cap: c.leverage_margin_cap,
+  };
+}
+
+/** The house's numbers from the config. */
+export function houseParams(c: ExchangeConfig): HouseParams {
+  return {
+    fee_buy: c.fee_buy,
+    fee_sell: c.fee_sell,
+    tax_sell: c.tax_sell,
+    fee_min: c.fee_min,
+    cap_daily: c.payout_cap_daily,
+    cap_instrument: c.payout_cap_instrument,
+    halt_window_days: c.halt_window_days,
+    halt_net: c.halt_net,
+    leverage_max: c.real_leverage
+      ? {
+          low: c.leverage_max_low,
+          mid: c.leverage_max_mid,
+          high: c.leverage_max_high,
+          crypto: c.leverage_max_crypto,
+        }
+      : { low: 1, mid: 1, high: 1, crypto: 1 },
+    line: c.leverage_line,
+    warn_half: Math.max(c.leverage_warn_half, c.leverage_warn_near),
+    warn_near: Math.max(c.leverage_warn_near, c.leverage_line),
+    carry_daily: c.leverage_carry_daily,
+    min_hold_ms: c.real_min_hold_minutes * 60_000,
+    order_ttl_ms: c.real_order_ttl_minutes * 60_000,
+    cooling_ms: c.bankrupt_cooling_days * 86_400_000,
+  };
+}
+
+/** The sessions of each market, holidays from the config. */
+export function sessionsOf(c: ExchangeConfig): Record<MarketKind, Session> {
+  return {
+    us: { ...DEFAULT_SESSIONS.us, holidays: c.holidays_us },
+    tw: { ...DEFAULT_SESSIONS.tw, holidays: c.holidays_tw },
+    crypto: DEFAULT_SESSIONS.crypto,
   };
 }
