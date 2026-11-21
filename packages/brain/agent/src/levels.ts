@@ -179,6 +179,18 @@ export const RhythmConfigSchema = z.object({
   pace_ms_per_char: z.number().nonnegative().default(40),
   pace_min_ms: z.number().int().nonnegative().default(300),
   pace_max_ms: z.number().int().nonnegative().default(1800),
+  /**
+   * A line said to her that is only a plain thank-you or goodbye ("謝謝", "掰掰", "thanks",
+   * "おやすみ") may get just an emoji and no run (v5-architecture §9.5; `selfhost/courtesy.ts`).
+   * Never with a question, an attachment, a mention of someone else, a party game or a job of
+   * hers waiting there, or a run going in that place. The reaction counts toward
+   * `reactions_per_hour` too.
+   */
+  courtesy_react: z.boolean().default(true),
+  /** How often such a line gets only the reaction (the rest wake her as before). */
+  courtesy_chance: z.number().min(0).max(1).default(0.35),
+  /** Reaction-only answers per channel per hour, at most. */
+  courtesy_per_hour: z.number().int().nonnegative().default(3),
 });
 export type RhythmConfig = z.output<typeof RhythmConfigSchema>;
 
