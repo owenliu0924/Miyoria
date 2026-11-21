@@ -177,8 +177,8 @@ const BOARD: KaraokeRoomEvent = {
   round: 1,
   at_ms: 0,
   lines: [
-    { member: "a", name: "海苔", color: 1, rank: 1, total: 81.25, source: "voice", move: "up", pitch: { from: 0, track: toBase64(encodeTrack([60, 60, 61])) } },
-    { member: "c", name: "Akari", color: 3, rank: 2, total: 77, source: "estimate", move: "down", pitch: null },
+    { member: "a", name: "海苔", color: 1, rank: 1, total: 81.25, source: "voice", move: "up", pitch: { from: 0, track: toBase64(encodeTrack([60, 60, 61])) }, cheers: 0 },
+    { member: "c", name: "Akari", color: 3, rank: 2, total: 77, source: "estimate", move: "down", pitch: null, cheers: 0 },
   ],
 };
 
@@ -303,6 +303,32 @@ describe("一起唱: a singer's stage", () => {
     expect(container.querySelector("[data-board]")).toBeNull();
     expect(screen.queryByText("海苔")).toBeNull();
     expect(screen.queryByText("81.3")).toBeNull();
+    // A cheer for them shows; one for someone else would never reach them, and is not shown either.
+    emit({ type: "cheer", round: 1, id: "c1-1", member: "a", by: { name: "路過的人", color: 4 }, kind: "wow" });
+    expect(screen.queryByText("幫你喊")).toBeNull();
+    emit({ type: "cheer", round: 1, id: "c1-2", member: "me", by: { name: "路過的人", color: 4 }, kind: "encore" });
+    const note = await screen.findByText("幫你喊");
+    expect(note.parentElement).toHaveTextContent("路過的人幫你喊安可");
+    // A cheer is not a trend: the plate still says what the last trend said.
+    expect(screen.getByRole("status", { name: "下降中,預估" })).toBeInTheDocument();
+  });
+
+  it("sends its own pitch four times a second", async () => {
+    const view = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 2_000,
+      me: { id: "me", role: "singer", opener: true, singing: true, session: session() },
+    });
+    const { posts } = roomSite(view);
+    const { engine } = fakeEngine();
+    renderRoom(engine);
+    await screen.findByRole("region", { name: "唱 紙船" });
+    const pitch = () => posts.filter((p) => p.path.endsWith("/pitch")).length;
+    await waitFor(() => expect(pitch()).toBeGreaterThan(0), { timeout: 3_000 });
+    const from = pitch();
+    await new Promise((r) => setTimeout(r, 1_100));
+    expect(pitch() - from).toBeGreaterThanOrEqual(3);
   });
 });
 
@@ -448,6 +474,51 @@ describe("一起唱: a spectator's stage", () => {
     expect(within(stage).getByRole("button", { name: "聽伴奏" })).toHaveAttribute("aria-pressed", "false");
     expect(posts.some((p) => p.path === "/api/member/karaoke/songs/k1/sessions")).toBe(false);
     expect(posts.some((p) => p.path.endsWith("/result"))).toBe(false);
+  });
+
+  it("cheers a singer: whom, then a word; waits the time Core says; shows everyone's cheers", async () => {
+    const view = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 5_000,
+      me: { id: "b", role: "spectator", opener: false, singing: false, session: session() },
+    });
+    const { posts } = roomSite(view, (method, url) =>
+      method === "POST" && url.pathname === "/api/member/karaoke/rooms/KTV888/cheer" ? { body: { wait_ms: 60_000 } } : undefined,
+    );
+    const { engine } = fakeEngine();
+    renderRoom(engine);
+    const stage = await screen.findByRole("region", { name: "看 紙船" });
+    emit(BOARD);
+    const cheering = await within(stage).findByRole("group", { name: "幫唱的人加油" });
+    await userEvent.click(within(cheering).getByRole("radio", { name: "Akari" }));
+    await userEvent.click(within(cheering).getByRole("button", { name: "幫 Akari 喊太強了" }));
+    await waitFor(() =>
+      expect(posts.find((p) => p.path.endsWith("/cheer"))?.body).toEqual({ member: "c", kind: "wow" }),
+    );
+    // Core said to wait: the words are off, and say why.
+    await waitFor(() => expect(within(cheering).getByRole("button", { name: "幫 Akari 喊加油" })).toBeDisabled());
+    expect(within(cheering).getByRole("button", { name: "幫 Akari 喊加油" })).toHaveAccessibleDescription("等一下才能再加油");
+    // Everyone's cheers come back on the stream of the room and show for a while.
+    emit({ type: "cheer", round: 1, id: "c1-9", member: "a", by: { name: "Kai", color: 2 }, kind: "nice" });
+    const list = await within(stage).findByRole("list", { name: "大家的加油" });
+    expect(list).toHaveTextContent("Kai幫海苔好聽");
+  });
+
+  it("takes the singers' pitch from `live` between boards", async () => {
+    const view = room({
+      state: "singing",
+      round: 1,
+      start_at_ms: Date.now() - 5_000,
+      me: { id: "b", role: "spectator", opener: false, singing: false, session: session() },
+    });
+    roomSite(view);
+    const { engine } = fakeEngine();
+    renderRoom(engine);
+    await screen.findByRole("region", { name: "看 紙船" });
+    // A `live` before any board is not a trend and changes no ranking.
+    emit({ type: "live", round: 1, at_ms: 0, lines: [{ member: "a", pitch: { from: 0, track: toBase64(encodeTrack([60, 61])) } }] });
+    expect(screen.getByText("開始唱之後會出現")).toBeInTheDocument();
   });
 });
 
