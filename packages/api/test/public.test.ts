@@ -709,6 +709,7 @@ describe("the route table", () => {
       "GET /api/public/card-art/:file",
       "GET /api/public/card/:serial",
       "GET /api/public/cards/odds",
+      "GET /api/public/gifts",
       "GET /api/public/live",
       "GET /api/public/live/video/:file",
       "GET /api/public/songs",
@@ -741,6 +742,8 @@ describe("the route table", () => {
       "GET /api/member/exchange/portfolio",
       "GET /api/member/export",
       "GET /api/member/fortune",
+      "GET /api/member/gifts",
+      "GET /api/member/gifts/:id/picture",
       "GET /api/member/github",
       "GET /api/member/github/callback",
       "GET /api/member/github/link",
@@ -777,6 +780,9 @@ describe("the route table", () => {
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
+      "POST /api/member/gifts/:id/cancel",
+      "POST /api/member/gifts/:id/confirm",
+      "POST /api/member/gifts/quote",
       "POST /api/member/github/mention",
       "POST /api/member/github/unlink",
       "POST /api/member/karaoke/rooms",
@@ -814,7 +820,8 @@ describe("the route table", () => {
     // song is nobody's, and a karaoke session (and its files) that is not theirs is not found; a
     // room's code names a room, which anyone with the code may join or watch; a queue entry is one
     // of that room's, which only its adder, the opener or a panel admin may take out or move; an
-    // exchange company's code names one of the eight made-up companies.
+    // exchange company's code names one of the eight made-up companies; a gift id names a gift,
+    // and one that is not theirs is refused.
     const named = all.filter(
       (r) =>
         r.member &&
@@ -826,6 +833,7 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
           .replace(/^\/api\/member\/exchange\/company\/:code$/, "")
+          .replace(/^\/api\/member\/gifts\/:id\/(confirm|cancel|picture)$/, "")
           .includes(":"),
     );
     expect(named).toEqual([]);
