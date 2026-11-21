@@ -1,0 +1,1228 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>水族箱示意圖</title>
+<style>
+  /*
+   * Tokens copied from apps/panel/src/index.css and apps/panel/DESIGN.md (櫻花, the default look).
+   * The tank has no colour of its own: water, sand, rock and every fish are mixed from these.
+   */
+  :root {
+    color-scheme: dark;
+    --radius: .375rem;
+    --row-y: .5625rem;
+    --stage-gap: 2rem;
+
+    --background: #0b0d12;
+    --foreground: #f1f0f4;
+    --muted: rgba(255,255,255,.1);
+    --muted-foreground: #b3b1bc;
+    --control: rgba(255,255,255,.1);
+    --control-hover: rgba(255,255,255,.17);
+    --hover: rgba(255,255,255,.07);
+    --border: rgba(255,255,255,.11);
+    --line-strong: rgba(255,255,255,.2);
+    --line-soft: rgba(255,255,255,.06);
+
+    --primary: #f29dc4;
+    --primary-foreground: #1f1218;
+    --primary-hover: color-mix(in oklab, var(--primary) 72%, white);
+    --secondary: #7355e8;
+    --secondary-foreground: #fff;
+    --secondary-hover: color-mix(in oklab, var(--secondary) 86%, white);
+    --secondary-line: color-mix(in oklab, var(--secondary) 62%, white);
+
+    --chart-1: #d9609a;
+    --chart-2: #8a68ee;
+    --chart-3: #c9c8d1;
+    --chart-4: #b4427f;
+    --chart-5: #6b4ee0;
+    --chart-quiet: rgba(255,255,255,.22);
+    --chart-surface: #14151f;
+
+    --sheet: rgba(9,10,16,.105);
+    --sheet-fx: blur(7px) saturate(1.5) brightness(.68);
+    --dock: rgba(9,9,15,.31);
+    --dock-fx: blur(14px) saturate(1.4) brightness(.78);
+    --well: rgba(4,5,10,.29);
+    --float: rgba(15,15,21,.84);
+    --float-fx: blur(20px);
+
+    /* The default background where the owner's picture is missing: 暮色 (apps/panel/src/app/appearance.ts). */
+    --dusk: radial-gradient(90% 70% at 78% 8%, #8a6a86 0%, transparent 62%), radial-gradient(80% 80% at 12% 96%, #5c5f8e 0%, transparent 60%), linear-gradient(160deg, #3b4a66 0%, #2e3350 45%, #4a3350 100%);
+
+    /* The tank, mixed from the tokens above. */
+    --water-top: color-mix(in oklab, var(--secondary) 30%, var(--background));
+    --water-mid: color-mix(in oklab, var(--secondary) 13%, var(--background));
+    --water-deep: color-mix(in oklab, var(--secondary) 5%, var(--background));
+    --sand: color-mix(in oklab, var(--chart-3) 17%, var(--background));
+    --sand-lit: color-mix(in oklab, var(--chart-3) 27%, var(--background));
+    --rock: color-mix(in oklab, var(--chart-3) 30%, var(--background));
+    --rock-dark: color-mix(in oklab, var(--chart-3) 18%, var(--background));
+    --weed: color-mix(in oklab, var(--chart-5) 50%, var(--background));
+    --weed-lit: color-mix(in oklab, var(--secondary-line) 45%, var(--background));
+    --whale: color-mix(in oklab, var(--background) 80%, var(--secondary));
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--background); }
+  body {
+    margin: 0; color: var(--foreground); min-height: 100vh;
+    font: 14px/1.5 "Geist Variable", Geist, "PingFang TC", "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+  }
+  ::selection { background: color-mix(in oklab, var(--primary) 45%, transparent); }
+  button { font: inherit; color: inherit; }
+  .mono { font-family: "Geist Mono Variable", ui-monospace, "Cascadia Mono", Menlo, monospace; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .muted { color: var(--muted-foreground); }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+  .backdrop { position: fixed; inset: 0; background: var(--dusk); filter: brightness(.66); z-index: -1; }
+
+  /* ---- the mock's own controls (not part of the page) ---- */
+  .mockbar { border-bottom: 1px dashed var(--line-strong); background: rgba(4,5,10,.72); padding: 12px 28px 14px; display: grid; gap: 10px; }
+  .mockbar .lead { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; font-size: 12px; color: #cfcdd6; }
+  .mockbar .lead b { color: var(--foreground); font-size: 13px; font-weight: 600; }
+  .mockbar .row { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  .mockbar .label { font-size: 12px; color: #cfcdd6; margin-right: 6px; }
+  .tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 4px; font-size: 11px; font-weight: 500; background: var(--control); color: var(--foreground); white-space: nowrap; }
+  .tag.brand { color: var(--primary); }
+  .tag.line { background: transparent; box-shadow: inset 0 0 0 1px var(--primary); color: var(--primary); }
+  @media (max-width: 640px) { .mockbar { padding: 12px 16px 14px; } }
+
+  /* ---- primitives in the panel's look ---- */
+  .seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border-radius: 7px; background: var(--well); max-width: 100%; }
+  .seg button { height: 22px; padding: 0 10px; border: 0; border-radius: 5px; background: transparent; color: var(--muted-foreground); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .seg button:hover { color: var(--foreground); }
+  .seg button[aria-checked="true"] { background: var(--secondary); color: var(--secondary-foreground); text-shadow: none; }
+  .seg button:disabled { opacity: .45; cursor: default; }
+  .seg.md button { height: 28px; font-size: 13px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 12px; border: 0; border-radius: var(--radius); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; text-shadow: none; background: var(--control); transition: background-color .15s; }
+  .btn:hover { background: var(--control-hover); }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); }
+  .btn.primary:hover { background: var(--primary-hover); }
+  .btn.secondary { background: var(--secondary); color: var(--secondary-foreground); }
+  .btn.secondary:hover { background: var(--secondary-hover); }
+  .btn.ghost { background: transparent; }
+  .btn.ghost:hover { background: var(--hover); }
+  .btn.sm { height: 26px; padding: 0 10px; font-size: 12px; }
+  .btn.icon { width: 28px; height: 28px; padding: 0; }
+  .btn:disabled { opacity: .5; cursor: default; pointer-events: none; }
+  .btn svg { width: 14px; height: 14px; flex: none; }
+  .btn .p { font-weight: 400; opacity: .8; }
+
+  .switch { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: #cfcdd6; cursor: pointer; }
+  .switch button { width: 30px; height: 18px; border-radius: 9px; border: 0; background: var(--control-hover); position: relative; cursor: pointer; padding: 0; flex: none; }
+  .switch button::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--foreground); transition: transform .15s; }
+  .switch button[aria-checked="true"] { background: var(--primary); }
+  .switch button[aria-checked="true"]::after { transform: translateX(12px); background: var(--primary-foreground); }
+
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.neutral { background: rgba(222,220,228,.55); }
+  .dot.brand { background: var(--primary); }
+  .dot.success { background: rgba(241,240,244,.85); }
+  .dot.warning { background: transparent; box-shadow: inset 0 0 0 1.5px var(--primary); }
+
+  .meter { height: 4px; min-width: 48px; width: 100%; border-radius: 2px; background: var(--muted); overflow: hidden; }
+  .meter i { display: block; height: 100%; border-radius: 2px; background: var(--secondary-line); }
+
+  /* ---- the page ---- */
+  .dock { background: var(--dock); -webkit-backdrop-filter: var(--dock-fx); backdrop-filter: var(--dock-fx); text-shadow: 0 1px 2px rgba(0,0,0,.55); --muted-foreground: #cfcdd6; }
+  .sheet { background: var(--sheet); -webkit-backdrop-filter: var(--sheet-fx); backdrop-filter: var(--sheet-fx); text-shadow: 0 1px 2px rgba(0,0,0,.7); --muted-foreground: #dedce4; }
+  .float { border: 1px solid var(--line-strong); background: var(--float); -webkit-backdrop-filter: var(--float-fx); backdrop-filter: var(--float-fx); box-shadow: 0 12px 32px rgba(0,0,0,.45); text-shadow: none; --muted-foreground: #cfcdd6; }
+
+  header.top { position: sticky; top: 0; z-index: 30; min-height: 52px; display: flex; align-items: center; gap: 10px; padding: 8px 28px; border-bottom: 1px solid var(--border); }
+  header.top .mark { width: 20px; height: 20px; color: var(--primary); flex: none; }
+  header.top h1 { font-size: 15px; font-weight: 600; margin: 0; }
+  header.top .state { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted-foreground); min-width: 0; }
+  header.top .end { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: var(--muted); flex: none; }
+  header.top .who { font-size: 13px; }
+  @media (max-width: 640px) { header.top { padding: 8px 16px; } header.top .who { display: none; } }
+
+  .cols { display: flex; flex-direction: column; min-width: 0; }
+  @media (min-width: 1180px) { .cols.rail { display: grid; grid-template-columns: minmax(0,1fr) 19.5rem; } }
+  main.page { padding: 28px; display: grid; gap: var(--stage-gap); align-content: start; min-width: 0; min-height: calc(100vh - 52px); }
+  @media (max-width: 640px) { main.page { padding: 16px; } }
+  aside.rail { padding: 0 20px 28px; border-top: 1px solid var(--border); }
+  @media (min-width: 1180px) { aside.rail { border-top: 0; border-left: 1px solid var(--border); } }
+  @media (max-width: 640px) { aside.rail { padding: 0 16px 28px; } }
+  aside.rail > section { padding: 16px 0; border-bottom: 1px solid var(--border); }
+  aside.rail > section:last-child { border-bottom: 0; }
+
+  h2.title { font-size: 15px; font-weight: 600; margin: 0; }
+  h3.inner { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+  .block { display: grid; gap: 14px; min-width: 0; }
+  .block-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 32px; }
+  .block-head .act { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+  .why { font-size: 12px; color: var(--muted-foreground); margin: -6px 0 0; }
+
+  /* neighbours: existing blocks, folded in the mock */
+  .stub { opacity: .5; display: grid; gap: 10px; }
+  .stub .tabs { display: flex; gap: 2px; font-size: 13px; color: var(--muted-foreground); }
+  .stub .tabs span { padding: 0 10px 8px; }
+  .stub .tabs span:first-child { padding-left: 0; color: var(--foreground); font-weight: 500; box-shadow: inset 0 -2px 0 var(--primary); }
+  .stub .thumbs { display: flex; gap: 10px; }
+  .stub .thumbs i { width: 54px; aspect-ratio: 3/4; border-radius: 4px; background: var(--muted); }
+  .mocknote { font-size: 12px; color: #cfcdd6; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; text-shadow: none; }
+  .mocknote::before { content: "示意"; display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: 4px; border: 1px dashed var(--line-strong); font-size: 11px; }
+
+  .notice { display: flex; align-items: center; gap: 10px; font-size: 13px; flex-wrap: wrap; }
+  .notice.alert { color: var(--primary); }
+  .notice .btn { margin-left: auto; }
+
+  /* facts strip: label over value, spaced, no cell walls */
+  dl.facts { display: flex; flex-wrap: wrap; gap: 12px 32px; margin: 0; }
+  dl.facts > div { display: grid; gap: 2px; min-width: 0; }
+  dl.facts dt { font-size: 12px; color: var(--muted-foreground); }
+  dl.facts dd { margin: 0; font-size: 14px; font-weight: 500; white-space: nowrap; }
+  dl.facts .goal { min-width: 180px; }
+  dl.facts .goal dd { display: grid; gap: 5px; }
+  dl.facts .goal dd span { font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+
+  ul.rows { list-style: none; margin: 0; padding: 0; }
+  ul.rows li { border-top: 1px solid var(--line-soft); }
+  ul.rows li:first-child { border-top: 0; }
+  .fishrow { display: grid; grid-template-columns: 52px minmax(0,1fr) auto auto; gap: 14px; align-items: center; padding: var(--row-y) 0; }
+  .fishrow .thumb { width: 52px; height: 32px; display: grid; place-items: center; border-radius: 4px; background: var(--well); }
+  .fishrow .thumb svg { width: 44px; height: 27px; }
+  .fishrow .what { display: grid; gap: 1px; min-width: 0; }
+  .fishrow .what b { font-size: 14px; font-weight: 500; }
+  .fishrow .what span { font-size: 12px; color: var(--muted-foreground); }
+  .fishrow .st { display: flex; align-items: center; gap: 7px; font-size: 13px; white-space: nowrap; }
+  .fishrow .st.alert { color: var(--primary); }
+  .fishrow.gone { opacity: .62; }
+  .fishrow .open { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; display: contents; }
+  @media (max-width: 640px) {
+    .fishrow { grid-template-columns: 52px minmax(0,1fr) auto; }
+    .fishrow .st { grid-column: 2; grid-row: 2; font-size: 12px; margin-top: -8px; }
+    .fishrow .btn { grid-column: 3; grid-row: 1 / span 2; }
+  }
+  .logrow { display: grid; grid-template-columns: 64px minmax(0,1fr) auto; gap: 12px; align-items: baseline; padding: var(--row-y) 0; font-size: 14px; }
+  .logrow .t { font-size: 12px; color: var(--muted-foreground); }
+  .logrow .d { font-size: 13px; }
+  .empty { font-size: 14px; color: var(--muted-foreground); padding: 6px 0; }
+  .two { display: grid; gap: var(--stage-gap); }
+  @media (min-width: 1024px) { .two { grid-template-columns: minmax(0,1.2fr) minmax(0,1fr); } }
+
+  /* wallet in the rail, as in Wallet.tsx */
+  .bal { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .bal p { margin: 0; display: flex; align-items: baseline; gap: 6px; position: relative; }
+  .bal b { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  .spent { position: absolute; left: 100%; top: -4px; margin-left: 8px; font-size: 12px; font-weight: 500; color: var(--primary); }
+  .feeds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .feeds .btn { height: auto; flex-direction: column; gap: 2px; padding: 8px 4px; }
+  .feeds .btn span:last-child { font-size: 12px; font-weight: 400; color: var(--muted-foreground); }
+
+  /* ---- the tank ---- */
+  .tankwrap { position: relative; }
+  .tank { position: relative; overflow: hidden; border-radius: var(--radius); aspect-ratio: 16 / 7; background: var(--water-deep); isolation: isolate; text-shadow: none; }
+  .page-layout .tank { aspect-ratio: 21 / 8.4; }
+  @media (max-width: 640px) { .tank, .page-layout .tank { aspect-ratio: 4 / 3.4; } }
+  .tank .bg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .tank .ray { animation: ray 9s ease-in-out infinite alternate; }
+  .tank .ray:nth-of-type(2) { animation-duration: 13s; animation-delay: -4s; }
+  .tank .ray:nth-of-type(3) { animation-duration: 11s; animation-delay: -7s; }
+  @keyframes ray { from { opacity: .018; } to { opacity: .06; } }
+  .tank .dim { position: absolute; inset: 0; background: var(--background); opacity: 0; transition: opacity 1.6s ease; pointer-events: none; z-index: 6; }
+  .tank.low .dim { opacity: .42; }
+
+  .prop { position: absolute; bottom: 0; z-index: 2; }
+  .prop svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .sway { transform-box: fill-box; transform-origin: 50% 100%; animation: sway 6s ease-in-out infinite alternate; }
+  @keyframes sway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+  button.deco { border: 0; padding: 0; background: none; cursor: pointer; }
+  button.deco:focus-visible { outline-offset: -2px; }
+
+  .bubbles { position: absolute; bottom: 0; top: 0; width: 8px; z-index: 3; pointer-events: none; }
+  .bubbles i { position: absolute; left: 0; right: 0; top: 0; bottom: 0; animation: rise 7s linear infinite; }
+  .bubbles i::after { content: ""; position: absolute; left: 1px; top: 0; width: 5px; height: 5px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(241,240,244,.45); }
+  @keyframes rise { 0% { transform: translateY(92%); opacity: 0; } 12% { opacity: 1; } 85% { opacity: .8; } 100% { transform: translateY(4%); opacity: 0; } }
+
+  .whale { position: absolute; left: 0; top: 14%; width: 46%; z-index: 1; opacity: 0; pointer-events: none; }
+  .whale svg { display: block; width: 100%; height: auto; }
+  .whale.go { animation: whale 26s linear forwards; }
+  @keyframes whale { 0% { transform: translateX(-110%) translateY(0); opacity: 0; } 12% { opacity: .9; } 50% { transform: translateX(60%) translateY(6%); } 88% { opacity: .9; } 100% { transform: translateX(225%) translateY(0); opacity: 0; } }
+
+  .lane { position: absolute; left: 0; width: 100%; height: 0; z-index: 4; pointer-events: none; transform: translateX(var(--rest)); animation: swim var(--dur) ease-in-out var(--delay) infinite; }
+  @keyframes swim { 0% { transform: translateX(var(--a)); } 50% { transform: translateX(var(--b)); } 100% { transform: translateX(var(--a)); } }
+  .lane.enter { animation: enter 5s cubic-bezier(.2,.7,.3,1) both, swim var(--dur) ease-in-out 5s infinite; }
+  @keyframes enter { from { transform: translateX(104%); } to { transform: translateX(var(--a)); } }
+  .fish { display: block; position: absolute; left: 0; top: 0; width: max(var(--minpx), calc(var(--fw) * 1%)); transform: translateY(-50%); pointer-events: auto; border: 0; padding: 0; background: none; cursor: pointer; border-radius: 6px; }
+  .lane .bob { position: relative; animation: bob var(--bob) ease-in-out infinite alternate; }
+  @keyframes bob { from { transform: translateY(-3px); } to { transform: translateY(3px); } }
+  .lane .face { transform: scaleX(var(--d)); animation: face var(--dur) step-end var(--delay) infinite; }
+  @keyframes face { 0% { transform: scaleX(var(--d)); } 50% { transform: scaleX(calc(var(--d) * -1)); } }
+  .lane.enter .face { animation: face var(--dur) step-end 5s infinite; transform: scaleX(-1); }
+  .fish svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .fish .tail { transform-box: fill-box; transform-origin: 100% 50%; animation: tail 1.1s ease-in-out infinite alternate; }
+  @keyframes tail { from { transform: rotate(-9deg); } to { transform: rotate(9deg); } }
+  .lane.hungry .fish svg { opacity: .78; }
+  .lane.hold, .lane.hold * { animation-play-state: paused !important; }
+  .chip { position: absolute; left: 50%; bottom: 100%; transform: translate(-50%, -2px); font-size: 11px; line-height: 16px; padding: 0 5px; border-radius: 4px; white-space: nowrap; background: rgba(11,13,18,.72); color: var(--foreground); box-shadow: inset 0 0 0 1px var(--primary); pointer-events: none; }
+  .chip.quiet { box-shadow: inset 0 0 0 1px var(--line-strong); }
+
+  .tank-empty { position: absolute; inset: 0; display: grid; place-items: center; z-index: 5; font-size: 14px; color: var(--muted-foreground); }
+
+  .tip { position: absolute; z-index: 20; width: 236px; border-radius: 8px; padding: 10px 12px; font-size: 13px; display: none; }
+  .tip.on { display: block; }
+  .tip .n { font-weight: 600; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+  .tip .n .x { margin-left: auto; margin-right: -6px; }
+  .tip .k { color: var(--muted-foreground); font-size: 12px; margin-top: 1px; }
+  .tip dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 8px 0 0; font-size: 12px; }
+  .tip dt { color: var(--muted-foreground); }
+  .tip dd { margin: 0; display: flex; align-items: center; gap: 6px; }
+  .tip .acts { display: flex; gap: 6px; margin-top: 10px; }
+  .tip .acts .btn { flex: 1; }
+  .hint { font-size: 12px; color: var(--muted-foreground); margin: 6px 0 0; }
+
+  /* the reveal of a new fish */
+  .reveal { display: grid; grid-template-columns: 200px minmax(0,1fr); gap: 20px; align-items: center; }
+  .reveal .stage { background: var(--well); border-radius: var(--radius); aspect-ratio: 16/10; display: grid; place-items: center; }
+  .reveal .stage svg { width: 74%; height: auto; overflow: visible; }
+  .reveal .stage .grow { animation: grow 1.2s cubic-bezier(.2,.7,.3,1) both; }
+  @keyframes grow { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @media (max-width: 640px) { .reveal { grid-template-columns: 1fr; } }
+  blockquote.her { margin: 12px 0 0; padding: 2px 0 2px 12px; border-left: 2px solid color-mix(in oklab, var(--primary) 60%, transparent); font-size: 14px; max-width: 60ch; }
+
+  /* the stream's band */
+  .stream { position: relative; aspect-ratio: 16/9; border-radius: var(--radius); overflow: hidden; background: radial-gradient(70% 60% at 60% 35%, #23263a 0%, #12141d 70%); max-width: 960px; }
+  .stream .scene { position: absolute; inset: 0; display: grid; place-items: center; color: rgba(241,240,244,.38); font-size: 13px; }
+  .stream .tank { position: absolute; left: 0; right: 0; bottom: 0; height: 21%; aspect-ratio: auto !important; border-radius: 0; }
+  .stream .chip { opacity: 0; transition: opacity .5s; }
+  .stream .whale { width: 15%; top: 4%; }
+  .stream .named .chip { opacity: 1; }
+
+  /* ---- dialogs and toasts (siblings of the page, like the panel's portals) ---- */
+  .scrim { position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 50; display: grid; place-items: center; padding: 16px; animation: fade .18s ease-out; }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  .dialog { width: min(100%, 520px); max-height: calc(100vh - 32px); overflow: auto; border-radius: 10px; padding: 20px; display: grid; gap: 16px; animation: zoom .18s ease-out; }
+  .dialog.wide { width: min(100%, 680px); }
+  @keyframes zoom { from { transform: scale(.97); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .dialog .dh { display: flex; align-items: center; gap: 10px; }
+  .dialog .dh h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .dialog .dh .btn { margin-left: auto; }
+  .dialog .foot { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+  .choice { display: grid; gap: 6px; }
+  .choice button { display: grid; grid-template-columns: 64px minmax(0,1fr) auto; gap: 12px; align-items: center; text-align: left; padding: 8px 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--well); cursor: pointer; }
+  .choice button:hover { border-color: var(--line-strong); }
+  .choice button[aria-checked="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+  .choice button svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .choice b { font-weight: 500; display: block; }
+  .choice small { font-size: 12px; color: var(--muted-foreground); }
+  .choice .pr { font-size: 13px; white-space: nowrap; }
+  .choice .ck { width: 16px; height: 16px; border-radius: 50%; box-shadow: inset 0 0 0 1.5px var(--line-strong); display: inline-block; vertical-align: middle; margin-left: 8px; }
+  .choice button[aria-checked="true"] .ck { box-shadow: inset 0 0 0 5px var(--primary); }
+  .detail { display: grid; grid-template-columns: 220px minmax(0,1fr); gap: 20px; }
+  .detail .stage { background: var(--well); border-radius: var(--radius); aspect-ratio: 16/11; display: grid; place-items: center; }
+  .detail .stage svg { width: 76%; height: auto; overflow: visible; }
+  .detail .stage .bob2 { animation: bob 2.6s ease-in-out infinite alternate; }
+  @media (max-width: 640px) { .detail { grid-template-columns: 1fr; } }
+  .toasts { position: fixed; right: 16px; bottom: 16px; z-index: 60; display: grid; gap: 8px; width: min(340px, calc(100vw - 32px)); }
+  .toast { border-radius: 8px; padding: 10px 12px; font-size: 13px; display: flex; gap: 10px; align-items: center; animation: zoom .18s ease-out; }
+
+  /* ---- what the docs say, and what is open ---- */
+  .doc { padding: 40px 28px 64px; border-top: 2px solid var(--line-strong); background: rgba(9,10,16,.82); display: grid; gap: 28px; }
+  @media (max-width: 640px) { .doc { padding: 32px 16px 48px; } }
+  .doc h2 { font-size: 15px; font-weight: 600; margin: 0 0 10px; }
+  .doc .settled { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; font-size: 13px; max-width: 920px; }
+  .doc .settled li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; padding: 6px 0; border-top: 1px solid var(--line-soft); }
+  .doc .settled li span:last-child { color: var(--muted-foreground); font-size: 12px; white-space: nowrap; }
+  .oq { margin: 0; padding: 0; list-style: none; max-width: 920px; counter-reset: q; }
+  .oq > li { padding: 14px 0; border-top: 1px solid var(--border); display: grid; grid-template-columns: 28px minmax(0,1fr); gap: 4px 10px; counter-increment: q; }
+  .oq > li::before { content: counter(q); font-size: 12px; color: var(--muted-foreground); padding-top: 2px; }
+  .oq h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  .oq p { margin: 2px 0 0; font-size: 13px; color: var(--muted-foreground); }
+  .oq ol { grid-column: 2; margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+  .oq ol li { font-size: 13px; display: grid; grid-template-columns: 22px minmax(0,1fr) auto; gap: 8px; align-items: baseline; }
+  .oq ol li .o { color: var(--muted-foreground); }
+  .oq ol li.pick { color: var(--foreground); }
+  .oq ol li:not(.pick) { color: #cfcdd6; }
+
+  @media (max-width: 640px) {
+    .oq ol li { grid-template-columns: 22px minmax(0,1fr); }
+    .oq ol li .tag { grid-column: 2; justify-self: start; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .whale, .bubbles { display: none; }
+    .stream .chip { opacity: 1; }
+  }
+  .rm *, .rm *::before, .rm *::after { animation: none !important; transition: none !important; }
+  .rm .whale, .rm .bubbles { display: none; }
+  .rm .stream .named .chip, .rm .stream .chip.keep { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<div class="mockbar" role="region" aria-label="示意圖控制">
+  <div class="lead"><b>水族箱示意圖</b><span>上面這一條是示意圖自己的控制,不在頁面上。切換狀態看每一個畫面;魚可以滑過去、點、用 Tab 走到。人名都是編的。</span></div>
+  <div class="row"><span class="label">狀態</span><div class="seg" id="ctl-state" role="radiogroup" aria-label="狀態"></div></div>
+  <div class="row">
+    <span><span class="label">版面</span><span class="seg" id="ctl-layout" role="radiogroup" aria-label="版面"></span></span>
+    <span id="ctl-limit-wrap"><span class="label">哪一種上限</span><span class="seg" id="ctl-limit" role="radiogroup" aria-label="哪一種上限"></span></span>
+    <label class="switch"><button type="button" role="switch" id="ctl-low" aria-checked="false" aria-label="她心情低"></button>她心情低(水色暗一點)</label>
+    <label class="switch"><button type="button" role="switch" id="ctl-rm" aria-checked="false" aria-label="減少動態"></button>減少動態</label>
+    <button type="button" class="btn sm" id="ctl-whale">讓她的鯨魚游過</button>
+  </div>
+</div>
+
+<div id="app"></div>
+
+<section class="doc" aria-label="照文件畫的和還沒定的">
+  <div>
+    <h2>照文件畫的</h2>
+    <ul class="settled">
+      <li><span>直播畫面和網頁上有一個共用的水族箱,不是每人一缸</span><span>v5-play §4.6</span></li>
+      <li><span>買一條魚或一個擺設,草案 50 到 300,上面掛你的名字</span><span>v5-play §4.6</span></li>
+      <li><span>魚每週要飼料,草案 10;沒人餵就「游回深海」</span><span>v5-play §4.6</span></li>
+      <li><span>魚是程式畫的:十種輪廓 × 配色 × 花紋 × 大小,由購買時的種子決定,每條都不一樣</span><span>v5-play §4.6</span></li>
+      <li><span>滑到魚上顯示名字、哪天買的、被餵了幾次</span><span>v5-play §4.6</span></li>
+      <li><span>她的鯨魚剪影偶爾游過;她心情低的時候水色暗一點</span><span>v5-play §4.6</span></li>
+      <li><span>伺服器一起養到某個數量,解鎖一個新的佈景(取代沒人用的伺服器目標)</span><span>v5-play §4.2、§4.6</span></li>
+      <li><span>直播畫面:底部一條水帶,魚游過時偶爾浮出主人的名字</span><span>v5-play §4.6</span></li>
+      <li><span>每週拍賣的拍品可以是「替水族箱的一條魚取名」</span><span>v5-play §4.5</span></li>
+      <li><span>花錢買不到羈絆;不排名任何人</span><span>v5-play §4.1、DESIGN.md 公開頁</span></li>
+      <li><span>只用面板的兩個強調色和中性色;狀態用形狀和字,不只靠顏色</span><span>DESIGN.md Color</span></li>
+      <li><span>動工之前先給 owner 看示意圖</span><span>v5-play §4.6、§8、§11.1</span></li>
+    </ul>
+  </div>
+  <div>
+    <h2>還沒定的</h2>
+    <ol class="oq" id="oq"></ol>
+  </div>
+</section>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<div id="dialog-root"></div>
+
+<script>
+"use strict";
+// ---------------------------------------------------------------------------
+// helpers
+
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+function h(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const fmt = (n) => n.toLocaleString("en-US");
+const CUR = "魚幣";
+
+const ICON = {
+  plus: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg>',
+  x: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 19-7-7 7-7M19 12H5"/></svg>',
+  out: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m16 17 5-5-5-5M21 12H9M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/></svg>',
+};
+// The mark from docs/assets/logo/miyoria-mark.svg: a crescent whose tip curls into a whale's tail.
+const MARK = '<svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" d="M71.62 12.34 69.23 10.95 66.12 9.42 63.57 8.39 60.29 7.30 56.92 6.49 54.20 6.02 51.45 5.72 48.00 5.60 45.23 5.69 41.79 6.04 39.08 6.52 36.39 7.16 33.74 7.98 30.52 9.22 27.40 10.72 24.40 12.44 21.56 14.40 19.40 16.12 17.34 17.98 15.40 19.95 13.60 22.05 11.53 24.81 9.68 27.730 8.37 30.16 7.21 32.68 6.22 35.26 5.19 38.56 4.56 41.25 4.11 43.98 3.77 47.42 3.70 50.18 3.85 53.63 4.16 56.38 4.38 57.75 5.12 61.13 5.69 63.13 6.34 65.09 7.65 68.29 9.19 71.38 10.24 73.18 11.36 74.92 13.40 77.70 15.66 80.32 18.13 82.75 20.77 84.98 23.57 87.00 26.51 88.79 29.61 90.36 32.80 91.68 34.10 92.13 36.75 92.92 40.13 93.67 43.54 94.15 44.93 94.28 47.69 94.39 50.45 94.33 51.83 94.23 55.26 93.81 57.31 93.43 59.32 92.95 61.31 92.38 63.42 91.66 66.04 90.54 67.59 89.72 69.10 88.77 70.79 87.48 71.76 86.61 72.81 85.53 74.07 83.97 74.81 82.85 75.62 81.34 76.27 79.76 76.72 78.27 76.95 77.69 77.33 77.16 77.86 76.70 78.89 76.10 80.15 75.57 86.73 73.60 89.15 72.72 90.94 71.92 92.64 70.95 94.22 69.79 95.63 68.38 96.14 67.62 96.29 66.89 96.12 66.25 95.65 65.68 94.91 65.24 94.44 65.06 93.34 64.84 90.37 64.50 87.24 64.36 85.55 64.45 84.31 64.61 82.72 64.95 81.56 65.31 80.81 65.61 79.34 66.33 77.94 67.26 76.57 68.39 76.42 67.96 75.90 66.75 75.30 65.63 74.87 64.93 74.14 63.94 73.34 63.03 72.46 62.19 71.51 61.41 70.50 60.70 68.66 59.61 67.06 58.84 62.88 57.20 62.36 57.06 61.43 56.99 61.01 57.04 60.33 57.32 60.07 57.53 59.74 58.13 59.66 58.95 60.11 60.71 60.60 61.93 61.19 63.10 62.24 64.76 63.85 66.80 65.59 68.66 69.70 72.68 70.91 74.12 71.53 75.13 71.67 75.45 71.85 76.10 71.86 76.74 71.59 77.83 71.11 79.01 70.35 80.34 69.42 81.59 68.59 82.46 67.68 83.29 66.59 84.12 65.10 85.05 63.15 86.03 61.46 86.71 60.29 87.08 59.11 87.35 57.29 87.57 55.46 87.58 54.22 87.48 53.02 87.32 50.62 86.78 48.33 86.00 46.13 85.04 44.57 84.23 42.13 82.71 39.89 81.03 37.87 79.25 35.71 77.00 34.15 75.09 32.75 73.14 31.31 70.80 30.10 68.47 28.81 65.40 27.94 62.77 27.38 60.55 26.90 58.03 26.56 55.21 26.44 53.14 26.44 50.76 26.58 48.40 26.76 46.74 26.96 45.41 27.49 42.74 28.12 40.41 29.03 37.72 29.87 35.69 31.03 33.30 31.99 31.58 33.07 29.86 34.04 28.46 35.65 26.39 37.17 24.66 38.86 22.96 40.34 21.63 42.36 20.00 44.11 18.76 46.00 17.56 48.02 16.45 49.62 15.66 51.30 14.93 54.26 13.86 56.14 13.32 58.74 12.73 60.76 12.38 62.84 12.15 64.98 12.02 67.16 12.00 69.38 12.11 71.62 12.34Z"/></svg>';
+
+// ---------------------------------------------------------------------------
+// fish: ten outlines × palettes × patterns × three sizes, all from the seed (v5-play §4.6)
+
+const OUTLINES = [
+  { name: "圓仔魚", body: "M30 36C30 18 48 10 68 10C90 10 104 22 104 36C104 50 90 62 68 62C48 62 30 54 30 36Z", tail: "M34 36L8 16C14 30 14 42 8 56Z",
+    fins: ["M54 13C60 2 74 2 80 12Z", "M66 40C60 46 58 52 62 54C66 50 70 46 70 42Z"], eye: [90, 30, 3.4], mouth: "M103 39Q100 41 97 40" },
+  { name: "長條魚", body: "M20 36C32 26 60 24 86 26C102 27 112 32 114 36C112 40 102 45 86 46C60 48 32 46 20 36Z", tail: "M24 36L4 24L10 36L4 48Z",
+    fins: ["M56 25C62 17 72 17 78 26Z", "M58 47C62 53 70 53 74 46Z"], eye: [101, 33, 2.8] },
+  { name: "燈籠魚", body: "M36 38C36 20 52 12 70 12C90 12 102 24 102 40C102 54 88 62 70 62C52 62 36 54 36 38Z", tail: "M40 38L14 22L20 38L14 54Z",
+    fins: ["M60 15C64 6 74 6 78 13Z"], eye: [88, 30, 4.2], mouth: "M101 45L93 47L100 50", lure: true },
+  { name: "圓盤魚", body: "M30 36C40 12 58 4 74 6C92 8 104 24 106 36C104 48 92 64 74 66C58 68 40 60 30 36Z", tail: "M34 36L16 26L18 36L16 46Z",
+    fins: ["M62 7C58 1 48 0 42 4C50 7 55 10 58 14Z", "M62 65C58 71 48 72 42 68C50 65 55 62 58 58Z"], eye: [92, 30, 3.2] },
+  { name: "刺球魚", body: "M38 36A28 28 0 1 1 94 36A28 28 0 1 1 38 36Z", tail: "M40 36L22 26L24 36L22 46Z", fins: [], eye: [82, 28, 4.2], mouth: "M94 39Q91 42 88 40", spikes: true },
+  { name: "尖嘴魚", body: "M18 36C34 22 64 22 88 30L116 34L116 37L88 42C64 50 34 50 18 36Z", tail: "M22 36L4 20L10 36L4 52Z",
+    fins: ["M50 26L64 14L72 27Z", "M56 46L62 54L70 45Z"], eye: [84, 33, 2.8] },
+  { name: "飄帶魚", body: "M50 36C50 24 62 18 78 18C96 18 108 26 108 36C108 46 96 54 78 54C62 54 50 48 50 36Z", tail: "M54 36C40 20 22 12 2 18C16 26 22 32 20 36C22 40 16 48 2 56C22 60 40 52 54 36Z",
+    fins: ["M68 20C64 8 52 4 40 6C52 10 58 16 62 22Z", "M70 52C66 62 56 66 46 66C56 62 60 56 63 51Z"], eye: [96, 31, 3], tailSoft: true },
+  { name: "三角魚", body: "M26 36L80 10C100 14 112 28 112 36C112 44 100 58 80 62Z", tail: "M30 36L10 22L14 36L10 50Z",
+    fins: ["M70 40L60 52L76 47Z"], eye: [96, 31, 3] },
+  { name: "水母", body: "M30 42C30 16 46 6 66 6C86 6 102 16 102 42C94 38 86 44 78 40C72 44 62 44 56 40C48 44 38 38 30 42Z", tail: null, fins: [], eye: null, jelly: true },
+  { name: "鰻", body: "M6 40C20 30 34 30 48 38C62 46 76 44 90 36C100 31 110 30 116 34C116 40 108 42 98 42C84 46 72 52 56 48C40 44 30 40 18 44C12 46 8 44 6 40Z", tail: null,
+    fins: [], eye: [106, 35, 2.4], ridge: "M28 34C40 31 50 35 58 40C66 44 76 42 86 37" },
+];
+// Body and fins from the panel's own tokens only (DESIGN.md: two accents, everything else neutral).
+const PALETTES = [
+  { name: "櫻粉", body: "var(--primary)", fin: "var(--chart-4)", pat: "var(--chart-4)" },
+  { name: "玫紅", body: "var(--chart-1)", fin: "var(--primary)", pat: "var(--foreground)" },
+  { name: "淡紫", body: "var(--secondary-line)", fin: "var(--chart-5)", pat: "var(--chart-5)" },
+  { name: "紫羅蘭", body: "var(--chart-2)", fin: "var(--secondary-line)", pat: "var(--foreground)" },
+  { name: "深紫", body: "var(--secondary)", fin: "var(--chart-2)", pat: "var(--primary)" },
+  { name: "珍珠", body: "var(--chart-3)", fin: "var(--primary)", pat: "var(--chart-1)" },
+  { name: "月白", body: "var(--foreground)", fin: "var(--chart-3)", pat: "var(--chart-2)" },
+  { name: "莓果", body: "var(--chart-4)", fin: "var(--chart-1)", pat: "var(--primary)" },
+];
+const PATTERNS = ["素色", "條紋", "斑點", "雙色", "鱗片"];
+const SIZES = [
+  { name: "小", fw: 4.4, minpx: 26, price: 50 },
+  { name: "中", fw: 6.2, minpx: 34, price: 120 },
+  { name: "大", fw: 8.6, minpx: 44, price: 200 },
+];
+
+function fishSVG(f, uid) {
+  const o = OUTLINES[f.outline], p = PALETTES[f.pal];
+  const r = rng(parseInt(f.seed, 16) || 1);
+  let pat = "";
+  switch (f.pat) {
+    case 1: for (let i = 0; i < 3; i++) pat += `<rect x="${46 + i * 15 + r() * 4}" y="0" width="${4.5 + r() * 3}" height="72" style="fill:${p.pat}" opacity=".5"/>`; break;
+    case 2: for (let i = 0; i < 8; i++) pat += `<circle cx="${40 + r() * 62}" cy="${16 + r() * 40}" r="${1.8 + r() * 2.6}" style="fill:${p.pat}" opacity=".62"/>`; break;
+    case 3: pat = `<rect x="0" y="39" width="120" height="40" style="fill:var(--foreground)" opacity=".3"/>`; break;
+    case 4: for (let y = 18; y < 62; y += 7) for (let x = 40 + ((y / 7) % 2) * 3.5; x < 104; x += 7) pat += `<path d="M${x} ${y}q3.5 4 7 0" fill="none" style="stroke:${p.pat}" stroke-width="1" opacity=".42"/>`; break;
+  }
+  const line = 'stroke="rgba(11,13,18,.42)" stroke-width="1.2" stroke-linejoin="round"';
+  let s = `<svg viewBox="0 0 120 72" aria-hidden="true"><defs><clipPath id="c-${uid}"><path d="${o.body}"/></clipPath></defs>`;
+  if (o.tail) s += `<path class="tail" d="${o.tail}" style="fill:${p.fin}" opacity="${o.tailSoft ? 0.78 : 0.92}" ${line}/>`;
+  for (const fin of o.fins) s += `<path d="${fin}" style="fill:${p.fin}" opacity=".9" ${line}/>`;
+  if (o.jelly) {
+    for (let i = 0; i < 5; i++) { const x = 40 + i * 13; s += `<path class="tail" d="M${x} 42C${x - 3} 52 ${x + 4} 60 ${x} 70" fill="none" style="stroke:${p.fin}" stroke-width="2.2" stroke-linecap="round" opacity=".8"/>`; }
+  }
+  if (o.spikes) {
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2; if (Math.abs(Math.cos(a) + 1) < 0.35) continue;
+      const cx = 66, cy = 36, p1 = [cx + Math.cos(a - 0.1) * 27, cy + Math.sin(a - 0.1) * 27], p2 = [cx + Math.cos(a + 0.1) * 27, cy + Math.sin(a + 0.1) * 27], t = [cx + Math.cos(a) * 34, cy + Math.sin(a) * 34];
+      s += `<path d="M${p1[0].toFixed(1)} ${p1[1].toFixed(1)}L${t[0].toFixed(1)} ${t[1].toFixed(1)}L${p2[0].toFixed(1)} ${p2[1].toFixed(1)}Z" style="fill:${p.fin}" ${line}/>`;
+    }
+  }
+  s += `<path d="${o.body}" style="fill:${p.body}" ${o.jelly ? 'opacity=".86"' : ""}/>`;
+  s += `<g clip-path="url(#c-${uid})">${pat}</g>`;
+  s += `<path d="${o.body}" fill="none" ${line}/>`;
+  if (o.ridge) s += `<path d="${o.ridge}" fill="none" style="stroke:${p.fin}" stroke-width="2" stroke-linecap="round" opacity=".9"/>`;
+  if (o.lure) s += `<path d="M84 14C88 4 100 0 106 6" fill="none" style="stroke:${p.fin}" stroke-width="1.6" stroke-linecap="round"/><circle cx="106.5" cy="8.5" r="3.6" style="fill:var(--foreground)" ${line}/>`;
+  if (o.mouth) s += `<path d="${o.mouth}" fill="none" stroke="rgba(11,13,18,.6)" stroke-width="1.2" stroke-linecap="round"/>`;
+  if (o.eye) { const [x, y, er] = o.eye; s += `<circle cx="${x}" cy="${y}" r="${er}" fill="#0b0d12"/><circle cx="${x + er * 0.35}" cy="${y - er * 0.35}" r="${er * 0.32}" style="fill:var(--foreground)"/>`; }
+  if (o.jelly) s += `<path d="M44 20C48 14 56 11 62 11" fill="none" style="stroke:var(--foreground)" stroke-width="2" stroke-linecap="round" opacity=".45"/>`;
+  return s + "</svg>";
+}
+
+const kind = (f) => `${OUTLINES[f.outline].name} · ${SIZES[f.size].name} · ${PALETTES[f.pal].name}${f.pat ? " · " + PATTERNS[f.pat] : ""}`;
+
+// ---------------------------------------------------------------------------
+// decorations (擺設): bought with a name on them, no food (an open question)
+
+const DECOS = [
+  { id: "weed", name: "海草", price: 50, w: 5.2, minpx: 26 },
+  { id: "shell", name: "貝殼", price: 80, w: 4.6, minpx: 26 },
+  { id: "arch", name: "石拱", price: 150, w: 12, minpx: 60 },
+  { id: "coral", name: "珊瑚", price: 200, w: 8, minpx: 40 },
+  { id: "urn", name: "古甕", price: 300, w: 6.4, minpx: 32 },
+];
+function decoSVG(id) {
+  switch (id) {
+    case "weed": return `<svg viewBox="0 0 40 90" aria-hidden="true"><g class="sway"><path d="M12 90C6 70 18 56 10 36C6 26 12 14 16 6C20 18 14 28 18 40C24 58 16 72 20 90Z" style="fill:var(--weed-lit)"/><path d="M22 90C20 74 30 62 26 46C24 36 30 26 34 20C36 32 32 40 34 52C36 66 30 78 30 90Z" style="fill:var(--weed)"/></g></svg>`;
+    case "shell": return `<svg viewBox="0 0 40 26" aria-hidden="true"><path d="M4 24C2 12 10 2 20 2C30 2 38 12 36 24Z" style="fill:var(--chart-3)"/><path d="M20 4L20 24M20 4L11 24M20 4L29 24M20 4L6 22M20 4L34 22" stroke="rgba(11,13,18,.35)" stroke-width="1.2" fill="none"/><path d="M14 24H26L23 26H17Z" style="fill:var(--primary)" opacity=".8"/></svg>`;
+    case "arch": return `<svg viewBox="0 0 120 60" aria-hidden="true"><path d="M4 60C2 40 8 22 24 12C40 2 72 0 92 10C108 18 118 36 116 60H92C94 44 86 30 70 28C54 26 40 34 36 46C34 52 34 56 34 60Z" style="fill:var(--rock)"/><path d="M24 14C40 6 66 4 84 10" fill="none" style="stroke:var(--foreground)" stroke-width="2" opacity=".14"/><path d="M8 60C8 50 12 44 18 40" fill="none" style="stroke:var(--rock-dark)" stroke-width="3"/></svg>`;
+    case "coral": return `<svg viewBox="0 0 80 70" aria-hidden="true"><g style="fill:none;stroke:var(--chart-1)" stroke-width="6" stroke-linecap="round"><path d="M40 70V40M40 48L24 30M24 30V14M24 30L14 24M40 40L56 22M56 22V8M56 22L68 18M40 40V20"/></g><g style="fill:none;stroke:var(--chart-4)" stroke-width="4" stroke-linecap="round"><path d="M20 70C20 60 12 56 10 46M60 70C60 60 68 56 70 48"/></g></svg>`;
+    case "urn": return `<svg viewBox="0 0 50 64" aria-hidden="true"><path d="M17 4H33V10C40 14 46 22 46 34C46 48 38 60 25 62C12 60 4 48 4 34C4 22 10 14 17 10Z" style="fill:var(--rock)"/><path d="M8 30H42M7 40H43" stroke="rgba(11,13,18,.35)" stroke-width="2"/><path d="M12 34L18 30L24 34L30 30L36 34" fill="none" style="stroke:var(--secondary-line)" stroke-width="1.6" opacity=".8"/><path d="M14 4H36" style="stroke:var(--rock-dark)" stroke-width="3"/></svg>`;
+  }
+  return "";
+}
+
+// ---------------------------------------------------------------------------
+// the scenery (佈景): the default 沙地, and 珊瑚礁 unlocked by the server goal
+
+function sceneryHTML(kind, uid) {
+  const reef = kind === "reef";
+  let s = `<svg class="bg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+    <defs><linearGradient id="w-${uid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" style="stop-color:${reef ? "color-mix(in oklab, var(--secondary) 36%, var(--background))" : "var(--water-top)"}"/>
+      <stop offset=".55" style="stop-color:var(--water-mid)"/>
+      <stop offset="1" style="stop-color:var(--water-deep)"/></linearGradient></defs>
+    <rect width="100" height="100" fill="url(#w-${uid})"/>
+    <path d="M0 0H100V2.2C88 3.4 76 1.4 64 2.6C52 3.8 40 1.6 28 2.8C18 3.6 8 2 0 2.8Z" style="fill:var(--foreground)" opacity=".07"/>
+    <path class="ray" d="M16 0H25L44 100H26Z" style="fill:var(--foreground)" opacity=".045"/>
+    <path class="ray" d="M46 0H52L66 100H52Z" style="fill:var(--foreground)" opacity=".035"/>
+    <path class="ray" d="M72 0H81L92 100H78Z" style="fill:var(--foreground)" opacity=".04"/>
+    <path d="M0 84C14 81 26 86 40 84C56 82 70 87 84 84C90 83 96 82 100 83V100H0Z" style="fill:${reef ? "color-mix(in oklab, var(--chart-1) 12%, var(--sand))" : "var(--sand)"}"/>
+    <path d="M0 91C18 88 32 93 50 91C68 89 82 93 100 90V100H0Z" style="fill:var(--sand-lit)" opacity=".7"/>
+  </svg>`;
+  // Fixed props of the scenery itself (no owner): rocks and weeds.
+  const props = [
+    [2, 9, "rock"], [7, 5, "weed"], [30, 4.2, "weed"], [62, 7, "rock2"], [88, 5, "weed"], [93, 6, "rock"],
+  ];
+  if (reef) props.push([14, 9, "coral"], [46, 7, "coral"], [76, 10, "coral"], [56, 4.4, "weed"]);
+  for (const [left, w, k] of props) {
+    let art;
+    if (k === "rock") art = `<svg viewBox="0 0 60 30" aria-hidden="true"><path d="M2 30C2 16 14 6 30 6C46 6 58 16 58 30Z" style="fill:var(--rock-dark)"/><path d="M14 14C20 9 28 8 36 9" fill="none" style="stroke:var(--foreground)" stroke-width="1.6" opacity=".1"/></svg>`;
+    else if (k === "rock2") art = `<svg viewBox="0 0 60 24" aria-hidden="true"><path d="M0 24C4 12 16 4 28 6C40 2 54 10 60 24Z" style="fill:var(--rock-dark)"/></svg>`;
+    else art = decoSVG(k);
+    s += `<div class="prop" style="left:${left}%;width:${w}%;bottom:${k === "weed" ? 6 : 4}%">${art}</div>`;
+  }
+  return s;
+}
+
+// The whale: her silhouette, far back in the water (v5-play §4.6).
+const WHALE = `<svg viewBox="0 0 220 90" aria-hidden="true"><path d="M34 46C48 26 92 16 140 18C176 20 202 32 212 44C206 56 182 66 140 68C100 70 64 64 46 54C40 60 30 70 14 74C20 64 22 58 20 52C14 50 8 44 2 34C16 36 28 40 34 46Z" style="fill:var(--whale)"/><path d="M126 62C120 72 108 80 96 82C104 74 110 68 112 62Z" style="fill:var(--whale)"/><path d="M150 54C170 56 190 52 204 46" fill="none" style="stroke:var(--foreground)" stroke-width="1.4" opacity=".08"/></svg>`;
+
+// ---------------------------------------------------------------------------
+// the population: placeholder names only
+
+const OWNERS = ["小鹿", "阿哲", "墨魚丸", "Kiri", "南瓜", "海苔", "栗子", "Nori", "阿布", "柚子", "小滿", "雨天", "Toto", "白鷺", "豆花", "阿凱", "綿綿", "Rin", "麻糬", "鬆餅", "七七", "橘貓", "冬瓜", "晚風"];
+const ME = "汐汐";
+
+function place(f, r) {
+  const sz = SIZES[f.size];
+  const hungry = f.full <= 0;
+  f.y = hungry ? 64 + r() * 12 : 12 + r() * 62;
+  const span = 18 + r() * 46;
+  const lo = 1 + r() * (94 - sz.fw - span);
+  let a = lo, b = lo + span;
+  if (r() < 0.5) [a, b] = [b, a];
+  f.a = a; f.b = b; f.d = b > a ? 1 : -1;
+  f.dur = (30 + r() * 34 + f.size * 8) * (hungry ? 1.5 : 1);
+  f.delay = -r() * f.dur;
+  f.bob = 2.4 + r() * 2.4;
+  return f;
+}
+
+function population(n, seed) {
+  const r = rng(seed), out = [];
+  for (let i = 0; i < n; i++) {
+    const size = r() < 0.45 ? 0 : r() < 0.7 ? 1 : 2;
+    const f = { id: "p" + i, owner: OWNERS[(r() * OWNERS.length) | 0], outline: (r() * 10) | 0, pal: (r() * 8) | 0, pat: (r() * 5) | 0, size,
+      seed: ((r() * 0xffffff) | 0).toString(16).padStart(6, "0"), bought: `11/${1 + ((r() * 20) | 0)}`, fed: 1 + ((r() * 18) | 0), full: 1 + ((r() * 6) | 0), others: 0 };
+    out.push(place(f, r));
+  }
+  // One fish named at the weekly auction (v5-play §4.5): the name sits above the owner's.
+  out[5].name = "阿布丁"; out[5].owner = "豆花";
+  out[11].owner = "Kiri"; out[11].outline = 5; out[11].size = 1; out[11].pal = 2; out[11].pat = 2; out[11].bought = "11/09"; out[11].fed = 6; out[11].full = 3;
+  return out;
+}
+
+function mine(r, list) {
+  return list.map((m, i) => place({ id: "m" + i, owner: ME, others: 0, ...m }, r));
+}
+
+const MY_BASE = [
+  { outline: 2, size: 1, pal: 0, pat: 2, seed: "a3f90c", bought: "11/02", fed: 14, mine: 9, full: 5 },
+  { outline: 3, size: 2, pal: 2, pat: 1, seed: "5be217", bought: "11/10", fed: 6, mine: 4, full: 2 },
+  { outline: 1, size: 0, pal: 5, pat: 0, seed: "0d4471", bought: "11/19", fed: 1, mine: 1, full: 6 },
+];
+const MY_MORE = [
+  { outline: 9, size: 1, pal: 3, pat: 4, seed: "e81b3a", bought: "11/05", fed: 11, mine: 6, full: 4 },
+  { outline: 8, size: 0, pal: 6, pat: 3, seed: "77c0de", bought: "11/12", fed: 5, mine: 5, full: 3 },
+];
+const NEW_FISH = { outline: 6, size: 2, pal: 3, pat: 1, seed: "7c2e19", bought: "11/21", fed: 0, mine: 0, full: 7, isNew: true };
+
+const TANK_MAX = 60, MY_MAX = 5, FOOD = 10;
+
+const BASE_DECOS = [
+  { id: "d0", k: "arch", owner: "阿凱", left: 70, when: "11/04" },
+  { id: "d1", k: "coral", owner: "小滿", left: 22, when: "11/05" },
+  { id: "d2", k: "urn", owner: "Toto", left: 52, when: "11/08" },
+  { id: "d3", k: "shell", owner: "綿綿", left: 40, when: "11/11" },
+  { id: "d4", k: "weed", owner: "雨天", left: 12, when: "11/06" },
+  { id: "d5", k: "shell", owner: "七七", left: 84, when: "11/15" },
+  { id: "d6", k: "weed", owner: "白鷺", left: 59, when: "11/16" },
+  { id: "d7", k: "weed", owner: "麻糬", left: 36, when: "11/17" },
+  { id: "d8", k: "coral", owner: "南瓜", left: 90, when: "11/18" },
+];
+
+// ---------------------------------------------------------------------------
+// state
+
+const STATES = [
+  ["normal", "平常"], ["hover", "滑到一條魚"], ["detail", "你的一條魚"], ["buy", "買一條"], ["arrive", "新來的"],
+  ["hungry", "餓了和游回深海"], ["unlock", "解鎖佈景"], ["empty", "還沒有魚"], ["full", "滿了"], ["others", "別人看到的"], ["stream", "直播畫面"],
+];
+const S = { state: "normal", layout: "block", limit: "mine", low: false, rm: false };
+(function readHash() {
+  const q = new URLSearchParams(location.hash.slice(1));
+  if (STATES.some(([k]) => k === q.get("s"))) S.state = q.get("s");
+  if (q.get("layout") === "page") S.layout = "page";
+  if (q.get("limit") === "tank") S.limit = "tank";
+  S.low = q.get("low") === "1"; S.rm = q.get("rm") === "1";
+})();
+
+let cur = null; // the scene being shown
+
+function scene() {
+  const r = rng(77);
+  const st = S.state;
+  const sc = {
+    viewer: ME, wallet: 1284, spent: 0, scenery: "sand", goal: { have: 42, need: 50, next: "珊瑚礁" }, notice: null,
+    pinned: null, decos: BASE_DECOS.map((d) => ({ ...d })), gone: [], recent: [],
+  };
+  let others = population(39, 20261121);
+  let my = mine(r, MY_BASE);
+  sc.recent = [
+    ["21:04", "栗子 餵了你的燈籠魚", ""],
+    ["昨天", "你買了一條長條魚", "−50"],
+    ["11/18", "Kiri 餵了你的圓盤魚", ""],
+    ["11/14", "你的刺球魚游回深海了", ""],
+  ];
+  sc.gone = [{ ...place({ id: "g0", owner: ME, outline: 4, size: 0, pal: 7, pat: 0, seed: "41aa02", bought: "10/30", fed: 3, mine: 3, full: -9 }, r), goneOn: "11/14" }];
+
+  if (st === "hungry") {
+    my[1].full = -1; place(my[1], r);
+    sc.notice = { tone: "warning", text: "你的圓盤魚餓了,11/23 前沒人餵就會游回深海", fish: my[1] };
+  }
+  if (st === "unlock") {
+    others = population(47, 20261121);
+    sc.scenery = "reef"; sc.goal = { have: 50, need: 80, next: "月光" };
+    sc.notice = { tone: "brand", text: "大家一起養到 50 條魚,解鎖了新的佈景「珊瑚礁」" };
+  }
+  if (st === "empty") { my = []; sc.gone = []; sc.recent = []; sc.goal = { have: 39, need: 50, next: "珊瑚礁" }; }
+  if (st === "full") {
+    if (S.limit === "mine") { my = my.concat(mine(r, MY_MORE)); others = population(37, 20261121); }
+    else { others = population(57, 20261121); sc.scenery = "reef"; sc.goal = { have: 0, need: 80, next: "月光" }; }
+  }
+  if (st === "arrive") {
+    const n = place({ id: "new", owner: ME, others: 0, ...NEW_FISH }, r);
+    n.a = 62; n.b = 30; n.d = -1; n.y = 40;
+    const price = SIZES[n.size].price;
+    my = [n, ...my]; sc.newFish = n; sc.wallet = 1284 - price; sc.spent = price;
+    sc.recent.unshift(["剛剛", "你買了一條" + OUTLINES[n.outline].name, "−" + price]);
+  }
+  if (st === "others") {
+    sc.viewer = "栗子"; sc.wallet = 412;
+    // From 栗子's side, 汐汐's fish are someone else's.
+    const theirs = mine(r, [{ outline: 0, size: 0, pal: 6, pat: 3, seed: "c0ffee", bought: "11/16", fed: 4, mine: 4, full: 4 }]);
+    theirs[0].owner = "栗子"; theirs[0].id = "o0";
+    sc.gone = [];
+    sc.theirs = theirs;
+    sc.recent = [["21:04", "你餵了汐汐的燈籠魚", "−10"], ["11/16", "你買了一條圓仔魚", "−50"]];
+    sc.pinned = my[0].id;
+  }
+  if (st === "hover") sc.pinned = others[11].id;
+  sc.my = st === "others" ? sc.theirs : my;
+  sc.fish = st === "others" ? [...others, ...my, ...sc.theirs] : [...others, ...my];
+  sc.mineSet = new Set(sc.my.map((f) => f.id));
+  sc.goal.have = sc.fish.length;
+  return sc;
+}
+
+// ---------------------------------------------------------------------------
+// the tank
+
+function fullText(f) {
+  if (f.full > 0) return { tone: "success", text: `還飽 ${f.full} 天` };
+  return { tone: "warning", text: `餓了 · 再 ${3 + f.full} 天沒人餵就游回深海`, alert: true };
+}
+function ownerOf(f) { return cur.mineSet.has(f.id) ? "你" : f.owner; }
+function fishLabel(f) {
+  const st = fullText(f);
+  return `${f.name ? "「" + f.name + "」," : ""}${ownerOf(f)}的${OUTLINES[f.outline].name},${SIZES[f.size].name},${f.bought} 買的,被餵了 ${f.fed} 次,${st.text}`;
+}
+
+function laneHTML(f, uid, opts = {}) {
+  const sz = SIZES[f.size];
+  const isMine = cur.mineSet.has(f.id) && !opts.band;
+  const chip = opts.band ? `<span class="chip quiet">${esc(f.owner)}</span>` : f.isNew ? `<span class="chip">新來的</span>` : isMine ? `<span class="chip">你的</span>` : "";
+  const fw = opts.band ? sz.fw * 0.42 : sz.fw, minpx = opts.band ? Math.round(sz.minpx * 0.6) : sz.minpx;
+  const enter = f.isNew && !opts.band ? " enter" : "";
+  const style = `top:${f.y}%;--a:${f.a.toFixed(1)}%;--b:${f.b.toFixed(1)}%;--rest:${f.a.toFixed(1)}%;--d:${f.d};--dur:${f.dur.toFixed(1)}s;--delay:${f.delay.toFixed(1)}s;--bob:${f.bob.toFixed(1)}s;--fw:${fw};--minpx:${minpx}px`;
+  const tag = opts.band ? "span" : "button";
+  return `<div class="lane${f.full <= 0 ? " hungry" : ""}${enter}" data-id="${f.id}" style="${style}">
+    <${tag} ${tag === "button" ? 'type="button"' : ""} class="fish" data-id="${f.id}" ${opts.band ? 'aria-hidden="true"' : `aria-label="${esc(fishLabel(f))}"`}>
+      <div class="bob">${chip}<div class="face">${fishSVG(f, uid + f.id)}</div></div>
+    </${tag}></div>`;
+}
+
+function tankHTML(sc, uid, opts = {}) {
+  const lanes = sc.fish.map((f) => laneHTML(f, uid, opts)).join("");
+  const decos = opts.band ? "" : sc.decos.map((d) => {
+    const D = DECOS.find((x) => x.id === d.k);
+    return `<button type="button" class="prop deco" data-deco="${d.id}" style="left:${d.left}%;width:max(${D.minpx}px, ${D.w}%);bottom:${d.k === "weed" ? 5 : 3}%" aria-label="${esc(d.owner)}的${D.name},${d.when} 擺的">${decoSVG(d.k)}</button>`;
+  }).join("");
+  const bubbles = [8, 47, 81].map((x, i) => `<div class="bubbles" style="left:${x}%" aria-hidden="true">${[0, 1, 2].map((j) => `<i style="animation-delay:${-(i * 2.3 + j * 2.4)}s;animation-duration:${6 + i}s"></i>`).join("")}</div>`).join("");
+  return `<div class="tank${sc.scenery === "reef" ? " reef" : ""}${S.low ? " low" : ""}" role="group" aria-label="水族箱">
+    ${sceneryHTML(opts.band ? "sand" : sc.scenery, uid)}
+    <div class="whale" aria-hidden="true">${WHALE}</div>
+    ${decos}${bubbles}${lanes}
+    ${sc.fish.length === 0 ? '<div class="tank-empty">水族箱是空的</div>' : ""}
+    <div class="dim" aria-hidden="true"></div>
+  </div>`;
+}
+
+function tipHTML(f) {
+  const st = fullText(f);
+  const own = cur.mineSet.has(f.id) && S.state !== "others";
+  const name = f.name ? `「${esc(f.name)}」<span class="muted" style="font-weight:400">${esc(f.owner)} 的魚</span>` : own ? "你的魚" : `${esc(f.owner)} 的魚`;
+  return `<div class="n">${name}${cur.pinnedNow === f.id ? `<button type="button" class="btn ghost icon x" data-close aria-label="關掉">${ICON.x}</button>` : ""}</div>
+    <div class="k">${kind(f)}</div>
+    <dl><dt>買的</dt><dd>${f.bought}</dd><dt>被餵了</dt><dd>${f.fed} 次</dd><dt>現在</dt><dd><span class="dot ${st.tone}"></span>${st.text}</dd></dl>
+    <div class="acts">${f.full >= 14 ? `<button type="button" class="btn sm" disabled>飽到 14 天了</button>` : `<button type="button" class="btn sm secondary" data-feed="${f.id}">餵牠 <span class="p">${FOOD} ${CUR}</span></button>`}${own ? `<button type="button" class="btn sm" data-detail="${f.id}">詳情</button>` : ""}</div>`;
+}
+
+function decoTipHTML(d) {
+  const D = DECOS.find((x) => x.id === d.k);
+  return `<div class="n">${esc(d.owner)} 的${D.name}${cur.pinnedNow === d.id ? `<button type="button" class="btn ghost icon x" data-close aria-label="關掉">${ICON.x}</button>` : ""}</div><div class="k">擺設 · 不用飼料</div><dl><dt>擺的</dt><dd>${d.when}</dd></dl>`;
+}
+
+function mountTank(wrap) {
+  const tip = h(`<div class="tip float" role="dialog" aria-label="這條魚"></div>`);
+  wrap.appendChild(tip);
+  let shownFor = null;
+  const lanes = () => $$(".lane", wrap);
+  function show(el, id, isDeco) {
+    const item = isDeco ? cur.decos.find((d) => d.id === id) : cur.fish.find((f) => f.id === id);
+    if (!item || !el || !el.isConnected) return;
+    lanes().forEach((l) => l.classList.toggle("hold", l.dataset.id === id || l.dataset.id === cur.pinnedNow));
+    tip.innerHTML = isDeco ? decoTipHTML(item) : tipHTML(item);
+    tip.classList.add("on");
+    shownFor = id;
+    requestAnimationFrame(() => {
+      const wr = wrap.getBoundingClientRect(), fr = el.getBoundingClientRect(), tw = tip.offsetWidth, th = tip.offsetHeight;
+      let x = fr.left - wr.left + fr.width / 2 - tw / 2;
+      x = Math.max(6, Math.min(wr.width - tw - 6, x));
+      let y = fr.top - wr.top - th - 14;
+      if (y < 6) y = fr.bottom - wr.top + 14;
+      tip.style.left = x + "px"; tip.style.top = y + "px";
+    });
+  }
+  function hide(force) {
+    if (cur.pinnedNow && !force) { const el = $(`[data-id="${cur.pinnedNow}"].fish, [data-deco="${cur.pinnedNow}"]`, wrap); if (el) show(el, cur.pinnedNow, !!el.dataset.deco); return; }
+    cur.pinnedNow = null; shownFor = null;
+    tip.classList.remove("on");
+    lanes().forEach((l) => l.classList.remove("hold"));
+  }
+  wrap.addEventListener("pointerover", (e) => {
+    const el = e.target.closest(".fish, .deco"); if (!el || !wrap.contains(el)) return;
+    const id = el.dataset.id || el.dataset.deco;
+    if (cur.pinnedNow && cur.pinnedNow !== id) return;
+    show(el, id, !!el.dataset.deco);
+  });
+  wrap.addEventListener("pointerout", (e) => {
+    const el = e.target.closest(".fish, .deco"); if (!el) return;
+    if (e.relatedTarget && (el.contains(e.relatedTarget) || tip.contains(e.relatedTarget))) return;
+    if (!cur.pinnedNow) hide();
+  });
+  tip.addEventListener("pointerleave", () => { if (!cur.pinnedNow) hide(); });
+  wrap.addEventListener("focusin", (e) => {
+    const el = e.target.closest(".fish, .deco"); if (!el) return;
+    if (!cur.pinnedNow) show(el, el.dataset.id || el.dataset.deco, !!el.dataset.deco);
+  });
+  wrap.addEventListener("focusout", (e) => {
+    if (e.relatedTarget && wrap.contains(e.relatedTarget)) return;
+    if (!cur.pinnedNow) hide();
+  });
+  wrap.addEventListener("click", (e) => {
+    e.stopPropagation(); // the tank handles its own clicks; the tip's buttons are replaced as it re-renders
+    const close = e.target.closest("[data-close]"); if (close) { hide(true); return; }
+    const feed = e.target.closest("[data-feed]"); if (feed) { feedFish(feed.dataset.feed); return; }
+    const det = e.target.closest("[data-detail]"); if (det) { openDetail(det.dataset.detail); return; }
+    const el = e.target.closest(".fish, .deco"); if (!el) return;
+    const id = el.dataset.id || el.dataset.deco;
+    if (cur.pinnedNow === id) { hide(true); return; }
+    cur.pinnedNow = id; show(el, id, !!el.dataset.deco);
+    setTimeout(() => { const b = $("[data-feed], [data-close]", tip); if (b && e.detail === 0) b.focus(); }, 0);
+  });
+  wrap.addEventListener("keydown", (e) => { if (e.key === "Escape" && cur.pinnedNow) { const id = cur.pinnedNow; hide(true); $(`.fish[data-id="${id}"]`, wrap)?.focus(); } });
+  wrap.refreshTip = () => { if (shownFor) { const el = $(`.fish[data-id="${shownFor}"], [data-deco="${shownFor}"]`, wrap); if (el) show(el, shownFor, !!el.dataset.deco); } };
+  // A pinned fish in the mock's state: stop it where the tip is easy to read.
+  if (cur.pinned) {
+    const lane = $(`.lane[data-id="${cur.pinned}"]`, wrap);
+    if (lane) {
+      lane.style.animation = "none"; lane.style.transform = "translateX(38%)"; lane.style.top = "46%";
+      $(".face", lane).style.animation = "none";
+      cur.pinnedNow = cur.pinned;
+      requestAnimationFrame(() => requestAnimationFrame(() => show($(".fish", lane), cur.pinned, false)));
+      setTimeout(() => { if (cur.pinnedNow) show($(".fish", lane), cur.pinned, false); }, 400);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// the page
+
+function metaFacts(sc) {
+  const mineN = sc.my.length;
+  const g = sc.goal, frac = Math.min(1, g.have / g.need);
+  const tankLine = S.state === "full" && S.limit === "tank" ? `${sc.fish.length} / ${TANK_MAX} 條` : `${sc.fish.length} 條魚 · ${sc.decos.length} 個擺設`;
+  return `<dl class="facts" id="meta">
+    <div><dt>水族箱裡</dt><dd>${tankLine}</dd></div>
+    <div><dt>佈景</dt><dd>${sc.scenery === "reef" ? "珊瑚礁" : "沙地"}</dd></div>
+    <div class="goal"><dt>下一個佈景</dt><dd><div class="meter" role="meter" aria-label="下一個佈景" aria-valuemin="0" aria-valuemax="${g.need}" aria-valuenow="${g.have}"><i style="width:${frac * 100}%"></i></div><span>${g.have} / ${g.need} 條 · 「${g.next}」</span></dd></div>
+    <div><dt>你的魚</dt><dd>${mineN} / ${MY_MAX} 條</dd></div>
+    <div><dt>飼料</dt><dd>每條每週 ${FOOD} ${CUR}</dd></div>
+    ${S.low ? `<div><dt>水色</dt><dd>暗一點 · 她心情低</dd></div>` : ""}
+  </dl>`;
+}
+
+function myRowsHTML(sc) {
+  if (sc.my.length === 0 && sc.gone.length === 0) return `<p class="empty">你還沒有魚</p>`;
+  const rows = sc.my.map((f) => {
+    const st = fullText(f);
+    return `<li><div class="fishrow">
+      <span class="thumb">${fishSVG(f, "row" + f.id)}</span>
+      <span class="what"><b>${f.isNew ? '<span class="tag line" style="margin-right:6px">新來的</span>' : ""}${OUTLINES[f.outline].name}</b><span>${SIZES[f.size].name} · ${PALETTES[f.pal].name}${f.pat ? " · " + PATTERNS[f.pat] : ""} · ${f.bought} 買的 · 被餵了 ${f.fed} 次</span></span>
+      <span class="st${st.alert ? " alert" : ""}"><span class="dot ${st.tone}"></span>${st.text}</span>
+      ${f.full >= 14 ? `<button type="button" class="btn sm" disabled>飽到 14 天</button>` : `<button type="button" class="btn sm" data-feed="${f.id}" aria-label="餵${OUTLINES[f.outline].name},${FOOD} ${CUR}">餵 <span class="p">${FOOD}</span></button>`}
+    </div></li>`;
+  });
+  for (const f of sc.gone) rows.push(`<li><div class="fishrow gone">
+      <span class="thumb">${fishSVG(f, "gone" + f.id)}</span>
+      <span class="what"><b>${OUTLINES[f.outline].name}</b><span>${SIZES[f.size].name} · ${PALETTES[f.pal].name} · ${f.bought} 買的 · 被餵了 ${f.fed} 次</span></span>
+      <span class="st"><span class="dot neutral"></span>${f.goneOn} 游回深海了</span><span></span>
+    </div></li>`);
+  return `<ul class="rows">${rows.join("")}</ul>`;
+}
+
+function recentHTML(sc) {
+  if (sc.recent.length === 0) return `<p class="empty">還沒有紀錄</p>`;
+  return `<ul class="rows">${sc.recent.map(([t, d, v]) => `<li><div class="logrow"><span class="t">${t}</span><span class="d">${esc(d)}</span><span>${v}</span></div></li>`).join("")}</ul>`;
+}
+
+function buyState(sc) {
+  if (sc.viewer !== ME && S.state !== "others") return { ok: true };
+  if (S.state === "full" && S.limit === "mine") return { ok: false, why: `你已經有 ${MY_MAX} 條魚了,最多 ${MY_MAX} 條` };
+  if (S.state === "full" && S.limit === "tank") return { ok: false, why: `水族箱滿了(${TANK_MAX} / ${TANK_MAX} 條),有魚游回深海才會空出位子` };
+  return { ok: true };
+}
+
+function aquariumBlock(sc) {
+  const b = buyState(sc);
+  const page = S.layout === "page";
+  let reveal = "";
+  if (sc.newFish) {
+    const f = sc.newFish;
+    reveal = `<div class="reveal">
+      <div class="stage" aria-hidden="true"><div class="grow" style="width:100%;display:grid;place-items:center">${fishSVG(f, "reveal")}</div></div>
+      <div>
+        <h3 class="inner">你的新魚來了</h3>
+        <dl class="facts" style="margin-top:8px">
+          <div><dt>輪廓</dt><dd>${OUTLINES[f.outline].name}</dd></div><div><dt>大小</dt><dd>${SIZES[f.size].name}</dd></div>
+          <div><dt>配色</dt><dd>${PALETTES[f.pal].name}</dd></div><div><dt>花紋</dt><dd>${PATTERNS[f.pat]}</dd></div>
+          <div><dt>種子</dt><dd class="mono">${f.seed}</dd></div><div><dt>下次要餵</dt><dd>11/28 前</dd></div>
+        </dl>
+        <blockquote class="her">欸,那條長尾巴的是汐汐的吧?游得比我還慢。</blockquote>
+        <p class="mocknote" style="margin-top:8px">她的話是示意;她說不說、說什麼由她自己決定</p>
+      </div></div>`;
+  }
+  let notice = "";
+  if (sc.notice) {
+    const n = sc.notice;
+    notice = `<p class="notice${n.tone === "warning" ? " alert" : ""}" ${n.tone === "warning" ? 'role="alert"' : ""}><span class="dot ${n.tone}"></span>${esc(n.text)}${n.fish ? `<button type="button" class="btn sm secondary" data-feed="${n.fish.id}">餵牠 <span class="p">${FOOD} ${CUR}</span></button>` : ""}</p>`;
+  }
+  const head = `<div class="block-head"><h2 class="title">水族箱</h2>
+    <div class="act">
+      ${!page ? `<button type="button" class="btn" data-layout="page">看整個水族箱</button>` : ""}
+      <button type="button" class="btn" data-buy="deco">擺設</button>
+      <button type="button" class="btn primary" data-buy="fish" ${b.ok ? "" : `disabled aria-describedby="buy-why"`}>${ICON.plus}買一條魚</button>
+    </div></div>`;
+  const why = b.ok ? "" : `<p class="why" id="buy-why">${b.why}</p>`;
+  return `<section class="block${page ? " page-layout" : ""}" aria-label="水族箱" id="aq">
+    ${head}${why}${notice}${reveal}
+    <div class="tankwrap" id="tw">${tankHTML(sc, "t")}</div>
+    <p class="hint">滑到魚上看是誰的,點一下可以餵牠</p>
+    ${metaFacts(sc)}
+    <div class="${page ? "two" : "two"}">
+      <div><h3 class="inner">你的魚</h3><div id="myrows">${myRowsHTML(sc)}</div></div>
+      <div><h3 class="inner">最近</h3><div id="recent">${recentHTML(sc)}</div></div>
+    </div>
+  </section>`;
+}
+
+function railHTML(sc) {
+  return `<aside class="rail dock" aria-label="可以做的事">
+    <section aria-label="錢包"><h2 class="title" style="font-size:13px;margin-bottom:10px">錢包</h2>
+      <div style="display:grid;gap:12px">
+        <div class="bal"><p><b id="bal">${fmt(sc.wallet)}</b><span class="muted" style="font-size:13px">${CUR}</span>${sc.spent ? `<span class="spent">−${sc.spent}</span>` : ""}</p><span class="muted" style="font-size:12px">今天 +35</span></div>
+        <p class="muted" style="margin:0;font-size:13px">她現在:有點餓</p>
+        <button type="button" class="btn secondary" disabled>今天已簽到</button>
+        <div style="display:grid;gap:6px"><p class="muted" style="margin:0;font-size:12px">餵她</p>
+          <div class="feeds"><button type="button" class="btn"><span>一碗白飯</span><span>10</span></button><button type="button" class="btn"><span>鋼盆</span><span>30</span></button><button type="button" class="btn"><span>甜點</span><span>20</span></button></div></div>
+      </div>
+    </section>
+    <section class="stub" aria-hidden="true"><h2 class="title" style="font-size:13px">今天的任務</h2><p class="muted" style="margin:0;font-size:13px">……</p></section>
+    <section class="stub" aria-hidden="true"><h2 class="title" style="font-size:13px">她給你的卡</h2><p class="muted" style="margin:0;font-size:13px">……</p></section>
+  </aside>`;
+}
+
+function stubsBefore() {
+  return `<section class="stub" aria-hidden="true"><h2 class="title">卡冊</h2><div class="tabs"><span>我的卡</span><span>圖鑑</span><span>機率表</span><span>願望單</span></div><div class="thumbs"><i></i><i></i><i></i><i></i><i></i></div></section>
+  <p class="mocknote">上面的卡冊和下面的深海交易所是會員頁現有的區塊,示意圖裡收起來;水族箱放在它們之間</p>`;
+}
+function stubsAfter() {
+  return `<section class="stub" aria-hidden="true"><h2 class="title">深海交易所</h2><p class="muted" style="margin:0">……</p></section>`;
+}
+
+function headerHTML(sc) {
+  const page = S.layout === "page" && S.state !== "stream";
+  return `<header class="top dock">${MARK}<h1>Miyoria</h1>
+    <p class="state" style="margin:0"><span class="dot brand"></span><span>${S.low ? "在聊天,有點悶" : "在聊天"}</span></p>
+    <div class="end">
+      ${page ? `<button type="button" class="btn sm" data-layout="block">${ICON.back}我的頁面</button>` : ""}
+      <span class="avatar" aria-hidden="true">${[...sc.viewer][0]}</span><span class="who">${esc(sc.viewer)}</span>
+      <button type="button" class="btn ghost icon" aria-label="登出">${ICON.out}</button>
+    </div></header>`;
+}
+
+function render() {
+  closeDialog(true);
+  cur = scene();
+  cur.pinnedNow = null;
+  document.body.classList.toggle("rm", S.rm);
+  const app = $("#app");
+  const st = S.state;
+  if (st === "stream") {
+    app.innerHTML = `${headerHTML(cur)}<div class="cols"><main class="page sheet">
+      <p class="mocknote">這不是網頁,是直播畫面(OBS 的 overlay):底部一條水帶,魚游過時偶爾浮出主人的名字</p>
+      <div class="stream" aria-label="直播畫面示意">
+        <div class="scene">直播畫面</div>
+        ${tankHTML({ ...cur, fish: cur.fish.slice(0, 18).map((f) => ({ ...f, y: 40 + (f.y % 40) })) }, "s", { band: true })}
+      </div>
+      <p class="mocknote">名字約每 4 秒換一條;減少動態時只停在兩條上</p>
+    </main></div>`;
+    startNames();
+    mountWhale();
+    return;
+  }
+  stopNames();
+  const page = S.layout === "page";
+  const other = st === "others" ? `<p class="mocknote">這是栗子的頁面:汐汐的燈籠魚在別人的頁面上一樣看得到,掛著汐汐的名字;栗子也可以餵牠</p>` : "";
+  let extra = "";
+  if (st === "empty") {
+    const e = { ...cur, fish: [], decos: [] };
+    extra = `<p class="mocknote">整個水族箱都還沒有魚的時候(剛開的那一天)</p><div class="tankwrap" style="max-width:520px">${tankHTML(e, "e")}</div>`;
+  }
+  app.innerHTML = `${headerHTML(cur)}<div class="cols${page ? "" : " rail"}">
+    <main class="page sheet">
+      ${other}
+      ${page ? "" : stubsBefore()}
+      ${aquariumBlock(cur)}
+      ${extra}
+      ${page ? "" : stubsAfter()}
+    </main>
+    ${page ? "" : railHTML(cur)}
+  </div>`;
+  const tw = $("#tw");
+  mountTank(tw);
+  mountWhale();
+  if (st === "detail") openDetail(cur.my[0].id);
+  if (st === "buy") openBuy("fish");
+}
+
+$("#app").addEventListener("click", onPageClick);
+function onPageClick(e) {
+  const lay = e.target.closest("[data-layout]");
+  if (lay) { S.layout = lay.dataset.layout; syncControls(); render(); window.scrollTo(0, 0); return; }
+  const buy = e.target.closest("[data-buy]"); if (buy) { openBuy(buy.dataset.buy); return; }
+  const feed = e.target.closest("[data-feed]"); if (feed) { feedFish(feed.dataset.feed); return; }
+}
+
+function feedFish(id) {
+  const f = cur.fish.find((x) => x.id === id) || cur.my.find((x) => x.id === id);
+  if (!f) return;
+  f.full = Math.min(14, (f.full <= 0 ? 0 : f.full) + 7);
+  f.fed += 1;
+  cur.wallet -= FOOD;
+  const own = cur.mineSet.has(f.id) && S.state !== "others";
+  const who = own ? "你的" + OUTLINES[f.outline].name : `${f.owner} 的${OUTLINES[f.outline].name}`;
+  toast(`餵了${who},牠還能飽 ${f.full} 天`);
+  cur.recent.unshift(["剛剛", `你餵了${own ? "你的" + OUTLINES[f.outline].name : f.owner + " 的" + OUTLINES[f.outline].name}`, `−${FOOD}`]);
+  if (cur.notice && cur.notice.fish && cur.notice.fish.id === f.id) { cur.notice = null; $(".notice")?.remove(); }
+  const lane = $(`.lane[data-id="${f.id}"]`); if (lane) { lane.classList.toggle("hungry", f.full <= 0); $(".fish", lane).setAttribute("aria-label", fishLabel(f)); }
+  const rows = $("#myrows"); if (rows) rows.innerHTML = myRowsHTML(cur);
+  const rec = $("#recent"); if (rec) rec.innerHTML = recentHTML(cur);
+  const bal = $("#bal"); if (bal) bal.textContent = fmt(cur.wallet);
+  $("#tw")?.refreshTip?.();
+  const d = $("#detail-body"); if (d && d.dataset.id === f.id) d.innerHTML = detailBody(f);
+}
+
+// ---------------------------------------------------------------------------
+// overlays
+
+function toast(text) {
+  const t = h(`<div class="toast float" role="status"><span class="dot success"></span><span>${esc(text)}</span></div>`);
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), 3600);
+}
+
+let lastFocus = null;
+function openDialog(html, wide) {
+  closeDialog(true);
+  lastFocus = document.activeElement;
+  const scrim = h(`<div class="scrim"><div class="dialog float${wide ? " wide" : ""}" role="dialog" aria-modal="true">${html}</div></div>`);
+  scrim.addEventListener("click", (e) => { if (e.target === scrim || e.target.closest("[data-dclose]")) closeDialog(); });
+  scrim.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeDialog();
+    if (e.key === "Tab") {
+      const f = $$("button:not(:disabled), [tabindex='0']", scrim); if (!f.length) return;
+      if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+    }
+  });
+  $("#dialog-root").appendChild(scrim);
+  const dlg = $(".dialog", scrim);
+  dlg.setAttribute("aria-labelledby", "dlg-title");
+  setTimeout(() => ($("[data-autofocus]", scrim) || $("button", scrim))?.focus(), 0);
+  return scrim;
+}
+function closeDialog(silent) {
+  const r = $("#dialog-root"); if (!r.firstChild) return;
+  r.innerHTML = "";
+  if (!silent && lastFocus && document.contains(lastFocus)) lastFocus.focus();
+}
+
+function detailBody(f) {
+  const st = fullText(f);
+  const who = [["11/20", "栗子"], ["11/18", "你"], ["11/15", "Kiri"], ["11/12", "你"]].slice(0, Math.min(4, f.fed));
+  return `<div class="detail">
+      <div class="stage" aria-hidden="true"><div class="bob2" style="width:100%;display:grid;place-items:center">${fishSVG(f, "dlg")}</div></div>
+      <div style="display:grid;gap:14px;align-content:start">
+        <dl class="facts">
+          <div><dt>輪廓</dt><dd>${OUTLINES[f.outline].name}</dd></div><div><dt>大小</dt><dd>${SIZES[f.size].name}</dd></div>
+          <div><dt>配色</dt><dd>${PALETTES[f.pal].name}</dd></div><div><dt>花紋</dt><dd>${PATTERNS[f.pat]}</dd></div>
+          <div><dt>種子</dt><dd class="mono">${f.seed}</dd></div><div><dt>買的</dt><dd>${f.bought}</dd></div>
+          <div><dt>被餵了</dt><dd>${f.fed} 次(你 ${f.mine ?? 0} 次)</dd></div>
+          <div><dt>現在</dt><dd style="display:flex;align-items:center;gap:7px;${st.alert ? "color:var(--primary)" : ""}"><span class="dot ${st.tone}"></span>${st.text}</dd></div>
+        </dl>
+      </div></div>
+      <div><h3 class="inner">誰餵的</h3>${who.length ? `<ul class="rows">${who.map(([t, n]) => `<li><div class="logrow"><span class="t">${t}</span><span class="d">${n}</span><span class="muted" style="font-size:12px">+7 天</span></div></li>`).join("")}</ul>` : '<p class="empty">還沒有人餵過</p>'}</div>`;
+}
+function openDetail(id) {
+  const f = cur.my.find((x) => x.id === id) || cur.fish.find((x) => x.id === id);
+  if (!f) return;
+  openDialog(`<div class="dh"><h2 id="dlg-title">你的${OUTLINES[f.outline].name}</h2><button type="button" class="btn ghost icon" data-dclose aria-label="關掉">${ICON.x}</button></div>
+    <div id="detail-body" data-id="${f.id}" style="display:grid;gap:16px">${detailBody(f)}</div>
+    <div class="foot"><button type="button" class="btn" data-dclose>關掉</button><button type="button" class="btn primary" data-autofocus id="dfeed" ${f.full >= 14 ? "disabled" : ""}>餵牠 <span class="p">${FOOD} ${CUR}</span></button></div>`, true);
+  $("#dfeed").addEventListener("click", () => feedFish(f.id));
+}
+
+function openBuy(what) {
+  let tab = what, pick = tab === "fish" ? 1 : 2;
+  const silhouettes = SIZES.map((s, i) => fishSVG({ outline: 0, pal: 5, pat: 0, seed: "111111" }, "sz" + i));
+  function body() {
+    const list = tab === "fish"
+      ? SIZES.map((s, i) => `<button type="button" role="radio" aria-checked="${pick === i}" data-pick="${i}">
+          <span aria-hidden="true" style="display:grid;place-items:center"><span style="width:${40 + i * 12}%;display:block">${silhouettes[i]}</span></span>
+          <span><b>${s.name}</b><small>每週飼料 ${FOOD} ${CUR}</small></span><span class="pr">${s.price} ${CUR}<span class="ck" aria-hidden="true"></span></span></button>`).join("")
+      : DECOS.map((d, i) => `<button type="button" role="radio" aria-checked="${pick === i}" data-pick="${i}">
+          <span aria-hidden="true" style="display:grid;place-items:center;height:34px"><span style="width:${d.id === "arch" ? 60 : d.id === "weed" ? 22 : 36}px;display:block">${decoSVG(d.id).replace('class="sway"', "")}</span></span>
+          <span><b>${d.name}</b><small>不用飼料 · 擺在沙地上</small></span><span class="pr">${d.price} ${CUR}<span class="ck" aria-hidden="true"></span></span></button>`).join("");
+    const price = tab === "fish" ? SIZES[pick].price : DECOS[pick].price;
+    return `<div class="dh"><h2 id="dlg-title">${tab === "fish" ? "買一條魚" : "買一個擺設"}</h2><button type="button" class="btn ghost icon" data-dclose aria-label="關掉">${ICON.x}</button></div>
+      <div class="seg md" role="radiogroup" aria-label="買什麼"><button type="button" role="radio" aria-checked="${tab === "fish"}" data-tab="fish">魚</button><button type="button" role="radio" aria-checked="${tab === "deco"}" data-tab="deco">擺設</button></div>
+      <div class="choice" role="radiogroup" aria-label="${tab === "fish" ? "大小" : "擺設"}">${list}</div>
+      ${tab === "fish" ? `<p style="margin:0;font-size:13px" class="muted">長相由購買時的種子決定:輪廓、配色、花紋都是抽的,每條都不一樣,買了才看得到。魚掛著你的名字,大家都看得到。</p>` : `<p style="margin:0;font-size:13px" class="muted">擺設掛著你的名字,會一直在水族箱裡。</p>`}
+      <dl class="facts"><div><dt>你有</dt><dd>${fmt(cur.wallet)} ${CUR}</dd></div>${tab === "fish" ? `<div><dt>你的魚</dt><dd>${cur.my.length} / ${MY_MAX} 條</dd></div>` : ""}<div><dt>水族箱裡</dt><dd>${cur.fish.length} / ${TANK_MAX} 條</dd></div></dl>
+      <div class="foot"><button type="button" class="btn" data-dclose>取消</button><button type="button" class="btn primary" id="dobuy" data-autofocus>買 <span class="p">${price} ${CUR}</span></button></div>`;
+  }
+  const scrim = openDialog(body());
+  const dlg = $(".dialog", scrim);
+  dlg.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-tab]"); if (t) { tab = t.dataset.tab; pick = tab === "fish" ? 1 : 2; dlg.innerHTML = body(); $("[data-tab][aria-checked=true]", dlg).focus(); return; }
+    const p = e.target.closest("[data-pick]"); if (p) { pick = Number(p.dataset.pick); const f = p.dataset.pick; dlg.innerHTML = body(); $(`[data-pick="${f}"]`, dlg).focus(); return; }
+    if (e.target.closest("#dobuy")) {
+      closeDialog(true);
+      if (tab === "fish") { NEW_FISH.size = pick; S.state = "arrive"; syncControls(); render(); toast("你的魚來了"); }
+      else { toast(`擺好了:${DECOS[pick].name},掛著你的名字`); if (S.state === "buy") { S.state = "normal"; syncControls(); render(); } }
+    }
+  });
+  dlg.addEventListener("keydown", (e) => {
+    const p = e.target.closest("[data-pick]"); if (!p) return;
+    const n = tab === "fish" ? SIZES.length : DECOS.length;
+    if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); pick = (pick + 1) % n; dlg.innerHTML = body(); $(`[data-pick="${pick}"]`, dlg).focus(); }
+    if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); pick = (pick + n - 1) % n; dlg.innerHTML = body(); $(`[data-pick="${pick}"]`, dlg).focus(); }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// motion that needs a timer: the whale, and the names on the stream's band
+
+let whaleTimer = null;
+function mountWhale() {
+  clearInterval(whaleTimer);
+  const go = () => {
+    if (S.rm || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    for (const w of $$(".whale")) { w.classList.remove("go"); void w.offsetWidth; w.classList.add("go"); }
+  };
+  setTimeout(go, 1500);
+  whaleTimer = setInterval(go, 45000);
+}
+let nameTimer = null;
+function startNames() {
+  stopNames();
+  const lanes = $$(".stream .lane");
+  const still = S.rm || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (still) { [2, 9].forEach((i) => lanes[i]?.classList.add("named")); return; }
+  let i = 0;
+  const step = () => { lanes.forEach((l) => l.classList.remove("named")); lanes[(i = (i + 7) % lanes.length)]?.classList.add("named"); };
+  step(); nameTimer = setInterval(step, 4000);
+}
+function stopNames() { clearInterval(nameTimer); }
+
+// ---------------------------------------------------------------------------
+// the mock's controls
+
+function seg(el, options, value, onPick) {
+  el.innerHTML = options.map(([k, label]) => `<button type="button" role="radio" aria-checked="${k === value}" tabindex="${k === value ? 0 : -1}" data-k="${k}">${label}</button>`).join("");
+  el.onclick = (e) => { const b = e.target.closest("button"); if (b) onPick(b.dataset.k); };
+  el.onkeydown = (e) => {
+    const bs = $$("button", el), i = bs.indexOf(document.activeElement); if (i < 0) return;
+    let n = null;
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") n = (i + 1) % bs.length;
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") n = (i - 1 + bs.length) % bs.length;
+    if (n === null) return;
+    e.preventDefault(); onPick(bs[n].dataset.k); $$("button", el)[n].focus();
+  };
+}
+function syncControls() {
+  seg($("#ctl-state"), STATES, S.state, (k) => { S.state = k; syncControls(); render(); });
+  seg($("#ctl-layout"), [["block", "會員頁裡一塊"], ["page", "一整頁"]], S.layout, (k) => { S.layout = k; syncControls(); render(); });
+  seg($("#ctl-limit"), [["mine", `你的 ${MY_MAX} 條`], ["tank", `整缸 ${TANK_MAX} 條`]], S.limit, (k) => { S.limit = k; syncControls(); render(); });
+  $("#ctl-limit-wrap").style.display = S.state === "full" ? "" : "none";
+  $$("#ctl-layout button").forEach((b) => (b.disabled = S.state === "stream"));
+  $("#ctl-low").setAttribute("aria-checked", S.low);
+  $("#ctl-rm").setAttribute("aria-checked", S.rm);
+  history.replaceState(null, "", `#s=${S.state}${S.layout === "page" ? "&layout=page" : ""}${S.state === "full" && S.limit === "tank" ? "&limit=tank" : ""}${S.low ? "&low=1" : ""}${S.rm ? "&rm=1" : ""}`);
+}
+$("#ctl-low").addEventListener("click", () => { S.low = !S.low; syncControls(); $$(".tank").forEach((t) => t.classList.toggle("low", S.low)); $(".state span:last-child") && ($(".state span:last-child").textContent = S.low ? "在聊天,有點悶" : "在聊天"); if (S.state !== "stream") { const f = $("#meta"); if (f) f.outerHTML = metaFacts(cur); } });
+$("#ctl-rm").addEventListener("click", () => { S.rm = !S.rm; syncControls(); render(); });
+$("#ctl-whale").addEventListener("click", () => { for (const w of $$(".whale")) { w.classList.remove("go"); void w.offsetWidth; w.classList.add("go"); } });
+
+// ---------------------------------------------------------------------------
+// open questions (zh-TW): each with the options seen and the one the mock shows
+
+const OQ = [
+  ["會員頁上要不要也放一塊", "文件寫「網頁:一整頁的水族箱」,但公開站沒有導覽列,一整頁要有入口。",
+    [["只有一整頁,會員頁放一個「看整個水族箱」的入口", 0], ["會員頁裡一塊(卡冊和交易所之間),另有一整頁", 1], ["只有會員頁裡的一塊", 0]], "用「版面」切換兩種"],
+  ["長相能不能選", "文件寫由購買時的種子決定。",
+    [["全由種子決定,買了才看得到", 1], ["自己選輪廓,配色和花紋由種子", 0], ["先給三條看,挑一條", 0]]],
+  ["價錢怎麼分", "文件只有草案 50 到 300。",
+    [["依大小:小 50、中 120、大 200;擺設 50 到 300 各有價", 1], ["魚一律一個價,大小也是抽的", 0], ["依輪廓分稀有度,稀有的貴", 0]]],
+  ["誰能餵、一次餵多久", "文件寫「沒人餵就游回深海」和「被餵了幾次」,讀起來像誰都能餵。",
+    [["誰都能餵任何一條;一次 10,飽 7 天,最多疊到 14 天", 1], ["只有主人能餵", 0], ["主人一次預付好幾週", 0]]],
+  ["餓了多久會游回深海", "文件沒有寫寬限。",
+    [["7 天沒餵就走", 0], ["7 天沒餵先「餓了」,再 3 天沒人餵才走;主人在頁面上看到提醒", 1], ["餓了再給 7 天", 0]], "提醒要不要另外私訊主人也還沒定"],
+  ["游回深海之後", "",
+    [["從水族箱消失,主人的列表留一行紀錄", 1], ["可以付錢叫回來(同一條、同一個種子)", 0], ["什麼都不留", 0]], "主人能不能自己放走一條,示意圖沒畫"],
+  ["上限", "文件沒有寫。",
+    [["每人 5 條、整缸 60 條", 1], ["每人 3 條,整缸不限", 0], ["每人 10 條,整缸跟著佈景變大", 0]], "用「滿了」和「哪一種上限」看兩種"],
+  ["伺服器目標算什麼", "文件寫「一起養到某個數量,解鎖一個新的佈景」。",
+    [["同時在缸裡的魚:50 條解鎖「珊瑚礁」,解鎖了不收回,下一階 80 條", 1], ["累計買過的魚", 0], ["這一週大家餵的次數", 0]]],
+  ["擺設", "文件只寫「買一條魚或一個擺設」。",
+    [["不用飼料、一直在、自動排在沙地上、不算進目標", 1], ["也每週要一點維護費", 0], ["主人自己選放在左、中、右", 0]]],
+  ["名字給誰看", "文件寫「上面掛你的名字」。",
+    [["只給登入的會員;沒登入的人只看到魚", 1], ["所有看得到水族箱的人,包含沒登入的", 0], ["每人可以關,關了顯示「一位會員」", 0]], "沒登入的人看到的畫面示意圖沒畫"],
+  ["魚的名字", "每週拍賣的拍品之一是「替水族箱的一條魚取名」(v5-play §4.5)。",
+    [["平常只掛主人的名字;拍賣得標的那一條多一個名字", 1], ["主人自己取,過審查", 0], ["都不取名", 0]], "得標的人替哪一條取名(自己的、任何一條、她的鯨魚)也還沒定"],
+  ["能不能送或交易", "文件沒有寫。",
+    [["不能,像每日卡", 1], ["像生圖卡,可以送,收手續費", 0]]],
+  ["配色", "",
+    [["只用面板的兩個強調色和中性色調出來", 1], ["像卡片一樣,魚另外開一組海裡的顏色(等於第三個強調色,DESIGN.md 要開例外)", 0]]],
+  ["她怎麼知道", "文件寫「她看得到水族箱,會聊誰的魚」。",
+    [["每次買、餵、游回深海都進她的收件匣", 0], ["只在她看水族箱時看到現況", 0], ["只有新來的、游回深海和新佈景才告訴她", 1]], "示意圖只在「新來的」放一句示意的話"],
+  ["餵魚算不算交易所 RICE 的「被餵的份數」", "RICE(白飯食品)接的是她當天被餵的份數(exchange.md §2.1)。",
+    [["不算,RICE 只看餵她", 1], ["算", 0]]],
+  ["「深海」這個詞", "游回深海、深海交易所、深海卡框用的是同一個詞。",
+    [["照用,當成同一片海的設定", 1], ["魚改說「游走了」,深海留給交易所", 0]]],
+  ["她心情低時水色變暗", "文件寫水色暗一點;網頁上暗等於公開她的心情。",
+    [["網頁和直播畫面都暗", 1], ["只有直播畫面暗", 0]], "用「她心情低」切換"],
+  ["直播畫面的水帶", "文件寫底部一條水帶,名字偶爾浮出。",
+    [["一直在,名字約每 4 秒換一條", 1], ["只在有人買或餵的時候出現", 0], ["owner 在面板上開關", 0]]],
+];
+$("#oq").innerHTML = OQ.map(([q, note, opts, extra]) => `<li><div><h3>${q}</h3>${note ? `<p>${note}</p>` : ""}${extra ? `<p>${extra}</p>` : ""}</div>
+  <ol>${opts.map(([t, on], i) => `<li class="${on ? "pick" : ""}"><span class="o">${"ABC"[i]}</span><span>${t}</span>${on ? '<span class="tag brand">示意圖用的</span>' : "<span></span>"}</li>`).join("")}</ol></li>`).join("");
+
+syncControls();
+render();
+</script>
+</body>
+</html>
