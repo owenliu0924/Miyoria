@@ -1,5 +1,6 @@
 import {
   Activity,
+  Bug,
   CalendarClock,
   Clapperboard,
   Coins,
@@ -28,6 +29,7 @@ export type NavPath =
   | "/rules"
   | "/llm"
   | "/eval"
+  | "/reports"
   | "/system"
   | "/machines"
   | "/access"
@@ -133,6 +135,7 @@ export const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { to: "/machines", label: "電腦", icon: Monitor },
       { to: "/economy", label: "經濟", icon: Coins, tabs: [...ECONOMY_TABS] },
       { to: "/eval", label: "評測", icon: Target },
+      { to: "/reports", label: "回報", icon: Bug },
     ],
   },
   {
