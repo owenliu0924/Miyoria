@@ -1,6 +1,8 @@
 # V5 的玩:卡片、生圖、回收、派對遊戲
 
-> 2026-11-14 規劃,沒有實作。底子是 owner 的 [image-cards.md](image-cards.md)(生圖抽卡企劃)和 [cards.md](cards.md)(每日卡的立繪),加上這次唯讀查詢 `data/miyoria.db` 的帳本和行為紀錄。它是 [v5-architecture.md](v5-architecture.md) §9 的細節。標「草案」的數字都還沒定;§8 是 owner 2026-11-14 的決定和還沒定的事。
+> 狀態(2026-11-21):**階段 5 大部分已實作並上線**(PR #64、#67 起到 #93;做了什麼在 §10、§11)。**還沒做的**:深海交易所(§4.4,完整設計在 [exchange.md](exchange.md))和水族箱(§4.6,先給 owner 看示意圖);生圖卡的底層做好、旗標關著,等模型選定(§3)。其餘的收尾在 [backlog.md](backlog.md)。
+>
+> 2026-11-14 規劃,當時沒有實作。底子是 owner 的 [image-cards.md](image-cards.md)(生圖抽卡企劃)和 [cards.md](cards.md)(每日卡的立繪),加上這次唯讀查詢 `data/miyoria.db` 的帳本和行為紀錄。它是 [v5-architecture.md](v5-architecture.md) §9 的細節。標「草案」的數字都還沒定;§8 是 owner 2026-11-14 的決定和還沒定的事。
 
 ## 0. 結論
 
