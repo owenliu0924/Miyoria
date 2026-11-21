@@ -15,7 +15,12 @@ export {
   ExchangeConfigSchema,
   engineParams,
   exchangeConfig,
+  OTHER_SECTOR,
   rulesOf,
+  STARTERS_TW,
+  STARTERS_US,
+  type StarterEntry,
+  starterEntries,
   tierIndex,
 } from "./config.js";
 export * from "./engine/index.js";
@@ -23,10 +28,16 @@ export { HER_RULES, herNote } from "./her.js";
 export { exchangeSchema } from "./migrations.js";
 export { ExchangeKey, ExchangeModule, type ExchangeModuleOptions, TICK_MS } from "./module.js";
 export * from "./pictures.js";
+export * from "./real/candles.js";
 export {
   type Asker,
+  type CandleSet,
+  type ChartMarks,
   DISCLAIMER,
   LEVERAGE_WARNING,
+  type MintReport,
+  type MintWindow,
+  mintReportOf,
   NO_DIVIDENDS,
   NO_EXCHANGE_RULE,
   noticeText as realNoticeText,
@@ -53,6 +64,7 @@ export {
 export * from "./real/instruments.js";
 export * from "./real/lists.js";
 export * from "./real/local.js";
+export * from "./real/maps.js";
 export * from "./real/provider.js";
 export * from "./real/signals.js";
 export * from "./real/sources.js";

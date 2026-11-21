@@ -216,8 +216,8 @@ export class MarketLists {
       )
       .map(({ code, name }) => ({ code, name }));
     // Starter codes not validated yet, as typed.
-    const c = this.config();
-    for (const typed of [...c.starters_tw, ...c.starters_us]) {
+    const starterCodes = [...this.desk.starterConfig("tw"), ...this.desk.starterConfig("us")];
+    for (const { code: typed } of starterCodes) {
       if (ranked.length >= SUGGEST_MAX) break;
       const up = typed.toUpperCase();
       if (key !== "" && !up.startsWith(key)) continue;

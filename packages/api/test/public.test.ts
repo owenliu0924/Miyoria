@@ -738,7 +738,9 @@ describe("the route table", () => {
       "GET /api/member/exchange",
       "GET /api/member/exchange/account",
       "GET /api/member/exchange/boards",
+      "GET /api/member/exchange/candles/:code",
       "GET /api/member/exchange/list/:kind",
+      "GET /api/member/exchange/map/:kind",
       "GET /api/member/exchange/portfolio",
       "GET /api/member/exchange/suggest",
       "GET /api/member/exchange/ticker/:code",
@@ -835,7 +837,7 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/rooms\/:code(\/queue\/:entry)?/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
-          .replace(/^\/api\/member\/exchange\/(ticker\/:code|list\/:kind)$/, "")
+          .replace(/^\/api\/member\/exchange\/(ticker\/:code|candles\/:code|list\/:kind|map\/:kind)$/, "")
           .replace(/^\/api\/member\/gifts\/:id\/(confirm|cancel|picture)$/, "")
           .includes(":"),
     );

@@ -240,8 +240,10 @@ export interface AccountView {
   /** Why they cannot open one now (`null`: they can, or did). */
   cannot_open: string | null;
   leverage: { allowed: boolean; why: string | null; opted_in: boolean };
+  /** Holding caps by cost (`0`: none). */
   limits: { company: number; total: number; mult: number };
-  today: { orders: number; bought: number; orders_left: number; buy_left: number };
+  /** `buy_left` is `null` when there is no daily buy cap. */
+  today: { orders: number; bought: number; orders_left: number; buy_left: number | null };
   balance: number | null;
   /** What they may put in now (coins received by transfer recently held back). */
   investable: number | null;
@@ -1107,7 +1109,8 @@ export class ExchangeService {
         orders: counted.orders,
         bought: counted.bought,
         orders_left: Math.max(0, rules.orders_per_day - counted.orders),
-        buy_left: Math.max(0, rules.buy_per_day - counted.bought),
+        // `null`: no daily cap.
+        buy_left: rules.buy_per_day > 0 ? Math.max(0, rules.buy_per_day - counted.bought) : null,
       },
       balance,
       investable: balance === null ? null : Math.max(0, balance - transferred),
@@ -1562,7 +1565,7 @@ export class ExchangeService {
         book.positions
           .filter((p) => p.person === who.person && p.leverage > 1)
           .reduce((t, p) => t + p.margin, 0);
-      if (amount > capLeft)
+      if (rules.leverage_margin_cap > 0 && amount > capLeft)
         return refuse(409, "margin_cap", `槓桿的保證金合計最多 ${rules.leverage_margin_cap} 魚幣`);
       const balance = await wallet.balance(who.person);
       const transferred = await wallet.transferredIn(

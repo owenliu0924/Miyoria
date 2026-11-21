@@ -152,7 +152,10 @@ describe("the local stocks", () => {
   const MOST = plan("dessert");
   const CHEAPEST = plan("rice");
 
-  const config = exchangeConfig();
+  // The caps are off by default now (owner 2026-11-21); these runs use the stake the table in
+  // docs/design/exchange.md §9 was measured at, the old caps turned back on: 200 an order, 300 a
+  // day. The run without caps below shows what a bigger stake does.
+  const config = exchangeConfig({ order_max: 200, buy_per_day: 300 });
   const DAY_MS = 24 * HOUR;
   const day0 = Math.floor((NOON + 8 * HOUR) / DAY_MS);
 
@@ -165,11 +168,12 @@ describe("the local stocks", () => {
     return r ? { signal: r.signal } : null;
   };
 
-  /** Buying `coins` in orders of at most `order_max` and selling each lot: the net result. */
-  const flip = (coins: number, buyAt: number, sellAt: number) => {
+  /** Buying `coins` in orders of at most `orderMax` (0: one order) and selling each lot: the net result. */
+  const flip = (coins: number, buyAt: number, sellAt: number, orderMax = config.order_max) => {
     let net = -coins;
-    for (let left = coins; left > 0; left -= config.order_max) {
-      const lot = Math.min(left, config.order_max);
+    const most = orderMax > 0 ? orderMax : coins;
+    for (let left = coins; left > 0; left -= most) {
+      const lot = Math.min(left, most);
       const shares = (lot - feeOn(lot, config.fee, config.fee_min)) / buyAt;
       const gross = Math.floor(shares * sellAt);
       net += gross - feeOn(gross, config.fee, config.fee_min);
@@ -186,6 +190,7 @@ describe("the local stocks", () => {
     extra: { feeds: number; coins: number },
     pump: (d: number) => boolean,
     seed: string,
+    stake = { coins: config.buy_per_day, orderMax: config.order_max },
   ) => {
     const counts: number[] = [];
     let st: LocalState = { price: 100, at: NOON - 13 * HOUR, close: 100 };
@@ -205,7 +210,7 @@ describe("the local stocks", () => {
       if (!pumped) continue;
       // The next day's first tick carries today's count (priced again in the loop: it is pure).
       const open = nextPrice(seed, "RICE", NOON + (d + 1) * DAY_MS, st, signals, 100);
-      total += flip(config.buy_per_day, p23, open.price) - extra.coins;
+      total += flip(stake.coins, p23, open.price, stake.orderMax) - extra.coins;
       gaps += signalMove(signals("RICE", day0 + d));
       trades++;
     }
@@ -262,6 +267,27 @@ describe("the local stocks", () => {
       `free rider on big days (signal >= 0.5): ${rider.toFixed(2)} per trade over ${trades}`,
     );
     process.stdout.write(`feed-and-flip:\n  ${rows.join("\n  ")}\n`);
+  }, 60_000);
+
+  it("with the caps off, only a big stake could make the RICE pump pay: what it earns per coin is at most the gap less two fees", () => {
+    // No order cap, no daily cap (the defaults): one order of the whole stake. Before feeding, the
+    // trade earns at most the morning's gap less a round trip's fees on every coin; the feeding's
+    // cost is fixed, so the break-even stake is that cost over the per-coin edge.
+    const rows: string[] = [];
+    for (const [label, extra] of [
+      ["most", MOST],
+      ["cheapest", CHEAPEST],
+    ] as const) {
+      const stake = 10_000;
+      const r = feedAndFlip(extra, (d) => d % 7 === 0, "flip", { coins: stake, orderMax: 0 });
+      const perCoin = (r.mean + extra.coins) / stake;
+      expect(perCoin).toBeLessThan(SIGNAL_MAX - 2 * config.fee + 0.001);
+      const breakEven = perCoin > 0 ? Math.ceil(extra.coins / perCoin) : null;
+      rows.push(
+        `once a week/${label}, 10,000 staked: ${r.mean.toFixed(2)} per trade, before feeding ${(perCoin * 100).toFixed(3)}% a coin, mean gap ${(r.gap * 100).toFixed(2)}%, break-even stake ${breakEven === null ? "none" : breakEven.toLocaleString("en-US")}`,
+      );
+    }
+    process.stdout.write(`feed-and-flip without caps:\n  ${rows.join("\n  ")}\n`);
   }, 60_000);
 
   it("never let causing model errors pay: DPSK only falls, by less than a round trip's fees", () => {

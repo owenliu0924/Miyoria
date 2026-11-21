@@ -9,6 +9,7 @@ import { type CommandReply, pictureParts } from "@miyoria/commands";
 import {
   type ExchangeBankruptPicture,
   type ExchangeBoardPicture,
+  type ExchangeMapPicture,
   type ExchangeOverviewPicture,
   type ExchangePortfolioPicture,
   type ExchangeQuotePicture,
@@ -19,9 +20,12 @@ import {
   type PictureKind,
   type Pictures,
 } from "@miyoria/types";
-import type { RealLine, RealPortfolio } from "./real/desk.js";
+import type { Timeframe } from "./real/candles.js";
+import type { CandleSet, RealLine, RealPortfolio } from "./real/desk.js";
 import { QTY_REAL } from "./real/house.js";
+import { zonedParts } from "./real/instruments.js";
 import type { ListRow } from "./real/lists.js";
+import type { MapData } from "./real/maps.js";
 import type { BoardsView, ExchangeService } from "./service.js";
 
 /** Longest wait for a picture before the answer goes out with its text alone. */
@@ -41,11 +45,6 @@ const local = (iso: string | number, offsetMinutes: number) =>
   new Date(
     (typeof iso === "number" ? iso : Date.parse(iso)) + offsetMinutes * 60_000,
   ).toISOString();
-
-function shortDate(iso: string, offsetMinutes: number): string {
-  const d = new Date(Date.parse(iso) + offsetMinutes * 60_000);
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
-}
 
 /** `2026-11-23 10:05`, in the exchange's zone. */
 export function timeText(iso: string | number, offsetMinutes: number): string {
@@ -77,35 +76,36 @@ export function marketLine(l: RealLine): string {
   return `${where}${state}・${age}`;
 }
 
-/**
- * The chart's points: today's while the market is open and there are some (intraday), else the
- * last price of each day (daily).
- */
-export function chartPoints(
-  line: RealLine,
-  points: readonly { at: string; price: number }[],
-  now: number,
-  offsetMinutes: number,
-): { points: { at: string; price: number }[]; intraday: boolean } {
-  const today = local(now, offsetMinutes).slice(0, 10);
-  const todays = points.filter((p) => local(p.at, offsetMinutes).slice(0, 10) === today);
-  if (line.open && todays.length >= 2) return { points: todays, intraday: true };
-  const byDay = new Map<string, { at: string; price: number }>();
-  for (const p of points) byDay.set(local(p.at, offsetMinutes).slice(0, 10), p);
-  return { points: [...byDay.values()], intraday: false };
+/** A bar's time as the date axis writes it, in the market's zone: `10:05`, `11/20`, `2025/11`. */
+export function candleLabel(at: number, tf: Timeframe, zone: string): string {
+  const z = zonedParts(at, zone);
+  const [y, m, d] = z.date.split("-").map(Number) as [number, number, number];
+  if (tf === "intraday")
+    return `${String(Math.floor(z.minutes / 60)).padStart(2, "0")}:${String(z.minutes % 60).padStart(2, "0")}`;
+  if (tf === "monthly") return `${y}/${m}`;
+  return `${m}/${d}`;
 }
 
-export function quotePictureData(
-  service: ExchangeService,
-  h: { line: RealLine; points: { at: string; price: number }[] },
-  now: number,
-): ExchangeQuotePicture {
-  const l = h.line;
+/** What a candle chart covers, in words (`11/20`, `5/21 – 11/20`, `2016/12 – 2026/11`). */
+export function candleRange(set: Pick<CandleSet, "candles" | "tf" | "zone">): string | null {
+  const first = set.candles[0];
+  const last = set.candles.at(-1);
+  if (!first || !last) return null;
+  const tf = set.tf === "intraday" ? "daily" : set.tf;
+  if (set.tf === "intraday") return candleLabel(last.at, tf, set.zone);
+  return `${candleLabel(first.at, tf, set.zone)} – ${candleLabel(last.at, tf, set.zone)}`;
+}
+
+/** The timeframe a quote card opens on: the session in progress while there is one, else daily. */
+export function defaultTimeframe(line: RealLine): Timeframe {
+  return line.open ? "intraday" : "daily";
+}
+
+export function quotePictureData(service: ExchangeService, set: CandleSet): ExchangeQuotePicture {
+  const l = set.line;
   const offset = service.config.utc_offset_minutes;
-  const chart = chartPoints(l, h.points, now, offset);
-  const first = chart.points[0];
-  const last = chart.points.at(-1);
-  const price = l.price ?? last?.price ?? 0;
+  const last = set.candles.at(-1);
+  const price = l.price ?? last?.c ?? 0;
   const ref = l.change === null ? price : price / (1 + l.change);
   const isLocal = l.local !== null;
   const coin = l.currency === "COIN";
@@ -119,19 +119,46 @@ export function quotePictureData(
     ref: cents(ref),
     change: l.change ?? 0,
     limit: null,
-    series: chart.points.map((p) => cents(p.price)),
-    range:
-      first && last
-        ? chart.intraday
-          ? "今天"
-          : `${shortDate(first.at, offset)} – ${shortDate(last.at, offset)}`
-        : null,
+    timeframe: set.tf,
+    candles: set.candles.map((k) => ({
+      o: cents(k.o),
+      h: cents(k.h),
+      l: cents(k.l),
+      c: cents(k.c),
+      v: set.volume ? k.v : null,
+      label: candleLabel(k.at, set.tf, set.zone),
+    })),
+    range: candleRange(set),
+    // The local stock's line of what moved today's open (the card and the member page have it too).
+    today: l.local?.today ?? null,
     news: [],
     as_of: l.at === null ? "還沒有報價" : `${timeText(l.at, offset)} 的報價`,
     coin_line: coin || l.coin_price === null ? null : `約 ${coinText(l.coin_price)} 魚幣一股`,
-    market_line: marketLine(l),
+    market_line: `${marketLine(l)}${set.stale ? "・K 線暫時沒有更新" : ""}`,
     colors: service.config.colors,
     small_print: exchangeSmallPrint({ real: !isLocal }),
+  };
+}
+
+/** A heat map as its picture: tiles, the footnote, the convention, the small print. */
+export function mapPictureData(
+  service: ExchangeService,
+  map: MapData,
+  now: number,
+): ExchangeMapPicture {
+  return {
+    title: map.title,
+    tiles: map.tiles.map((t) => ({
+      code: t.code,
+      name: t.name,
+      sector: t.sector,
+      weight: t.weight,
+      change: t.change,
+    })),
+    footnote: map.footnote,
+    as_of: timeText(now, service.config.utc_offset_minutes),
+    colors: service.config.colors,
+    small_print: exchangeSmallPrint({ real: true }),
   };
 }
 

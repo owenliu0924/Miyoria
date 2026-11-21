@@ -18,7 +18,14 @@
 // Yahoo's terms describe the data as for personal use, and the endpoint can change or disappear
 // without notice. The generic `HttpJsonProvider` stays as the way to switch (docs/design/exchange.md).
 
+import { type Candle, parseYahooCandles, type Timeframe, YAHOO_SPAN } from "./candles.js";
 import type { QuoteProvider, RawQuote } from "./provider.js";
+
+/**
+ * The share of the day's request budget charts may use: the rest stays for quotes, so opening
+ * charts can never stop the prices of what people hold.
+ */
+export const CHART_SHARE = 0.25;
 
 export interface YahooConfig {
   /** The host; the only one ever called. */
@@ -134,6 +141,7 @@ export class YahooProvider implements QuoteProvider {
   readonly #fetch: Fetch;
   #day = "";
   #used = 0;
+  #charts = 0;
   #failures = 0;
   #notBefore = 0;
   /** The last thing that went wrong (the owner's panel shows it). */
@@ -165,25 +173,32 @@ export class YahooProvider implements QuoteProvider {
     return out;
   }
 
-  /** Everything the response says of each symbol (a lookup validates a new ticker with it). */
-  async describe(
-    symbols: readonly string[],
-    now: number,
-    signal?: AbortSignal,
-  ): Promise<Map<string, YahooQuote>> {
-    if (symbols.length === 0) return new Map();
+  /** Chart requests made today (they share the day's budget, at most `CHART_SHARE` of it). */
+  get chartsUsed(): number {
+    return this.#charts;
+  }
+
+  /** Starts a new day's count; throws while backing off or past the day's budget. */
+  #spend(now: number, chart: boolean): void {
     const day = new Date(now).toISOString().slice(0, 10);
     if (day !== this.#day) {
       this.#day = day;
       this.#used = 0;
+      this.#charts = 0;
     }
     if (now < this.#notBefore) throw new Error("yahoo: backing off");
     if (this.#used >= this.#c.daily_budget) {
       this.lastError = "今天的請求次數用完了";
       throw new Error("yahoo: the day's request budget is spent");
     }
+    if (chart && this.#charts >= Math.floor(this.#c.daily_budget * CHART_SHARE))
+      throw new Error("yahoo: the day's chart budget is spent");
     this.#used++;
-    const url = `https://${this.#c.host}/v7/finance/spark?symbols=${symbols.map(encodeURIComponent).join(",")}&range=1d&interval=5m`;
+    if (chart) this.#charts++;
+  }
+
+  /** One GET of `url`: the text, or a throw (429 and 5xx marked to back off). */
+  async #get(url: string, signal?: AbortSignal): Promise<string> {
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal?.addEventListener("abort", onAbort, { once: true });
@@ -197,24 +212,80 @@ export class YahooProvider implements QuoteProvider {
         credentials: "omit",
         signal: controller.signal,
       });
-      if (res.status === 429 || res.status >= 500) throw new Error(`yahoo: HTTP ${res.status}`);
+      if (res.status === 429 || res.status >= 500)
+        throw Object.assign(new Error(`yahoo: HTTP ${res.status}`), { backoff: true });
       if (!res.ok) throw new Error(`yahoo: HTTP ${res.status}`);
       const text = await res.text();
       if (text.length > MAX_BYTES) throw new Error("yahoo: the answer is too big");
-      const parsed = parseSpark(JSON.parse(text) as unknown);
-      const missing = symbols.filter((s) => !parsed.has(s));
-      this.#failures = 0;
-      this.lastError = missing.length > 0 ? `沒有讀到:${missing.join("、")}` : null;
-      return parsed;
+      return text;
     } catch (error) {
-      this.#failures++;
-      this.#notBefore =
-        now + Math.min(this.#c.max_backoff_seconds, 15 * 2 ** this.#failures) * 1000;
-      this.lastError = String(error instanceof Error ? error.message : error);
+      // A network failure or a timeout backs off like a 429.
+      if (error instanceof Error && !/^yahoo: /.test(error.message))
+        Object.assign(error, { backoff: true });
       throw error;
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
     }
+  }
+
+  #backOff(now: number): void {
+    this.#failures++;
+    this.#notBefore = now + Math.min(this.#c.max_backoff_seconds, 15 * 2 ** this.#failures) * 1000;
+  }
+
+  /** Everything the response says of each symbol (a lookup validates a new ticker with it). */
+  async describe(
+    symbols: readonly string[],
+    now: number,
+    signal?: AbortSignal,
+  ): Promise<Map<string, YahooQuote>> {
+    if (symbols.length === 0) return new Map();
+    this.#spend(now, false);
+    const url = `https://${this.#c.host}/v7/finance/spark?symbols=${symbols.map(encodeURIComponent).join(",")}&range=1d&interval=5m`;
+    try {
+      const parsed = parseSpark(JSON.parse(await this.#get(url, signal)) as unknown);
+      const missing = symbols.filter((s) => !parsed.has(s));
+      this.#failures = 0;
+      this.lastError = missing.length > 0 ? `沒有讀到:${missing.join("、")}` : null;
+      return parsed;
+    } catch (error) {
+      this.#backOff(now);
+      this.lastError = String(error instanceof Error ? error.message : error);
+      throw error;
+    }
+  }
+
+  /**
+   * One symbol's candles for a timeframe (the chart endpoint), oldest first. Asked only when
+   * someone opens a chart, never for the whole universe; within the day's budget and its backoff.
+   * A 429, a 5xx or no answer backs off every request; an answer that does not parse only fails.
+   */
+  async candles(
+    symbol: string,
+    tf: Timeframe,
+    now: number,
+    signal?: AbortSignal,
+  ): Promise<Candle[]> {
+    this.#spend(now, true);
+    const { range, interval } = YAHOO_SPAN[tf];
+    const url = `https://${this.#c.host}/v8/finance/chart/${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
+    let text: string;
+    try {
+      text = await this.#get(url, signal);
+    } catch (error) {
+      if ((error as { backoff?: boolean }).backoff) this.#backOff(now);
+      throw error;
+    }
+    this.#failures = 0;
+    let json: unknown;
+    try {
+      json = JSON.parse(text) as unknown;
+    } catch {
+      throw new Error("yahoo: the chart is not JSON");
+    }
+    const parsed = parseYahooCandles(json, tf);
+    if (parsed === null) throw new Error("yahoo: not a chart response");
+    return parsed.candles;
   }
 }

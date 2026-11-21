@@ -24,17 +24,34 @@ import {
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
-import { type ExchangeConfig, houseParams, sessionsOf } from "../config.js";
+import {
+  type ExchangeConfig,
+  houseParams,
+  OTHER_SECTOR,
+  type StarterEntry,
+  sessionsOf,
+  starterEntries,
+} from "../config.js";
 import { companyOf } from "../engine/companies.js";
 import {
   checkOpen,
   type GuardRefusal,
   limitsFor,
+  over,
   type Rules,
+  sizeRule,
   type Trader,
 } from "../engine/guards.js";
 import { feeOn } from "../engine/money.js";
 import type { ExchangeStore } from "../store.js";
+import {
+  type Candle,
+  CandleCache,
+  candlesFromPoints,
+  candleTtl,
+  SPAN_DAYS,
+  type Timeframe,
+} from "./candles.js";
 import {
   adminSellReal,
   buysHalted,
@@ -61,6 +78,7 @@ import {
 } from "./house.js";
 import {
   currencyOf,
+  fromCoins,
   isOpenAt,
   type MarketKind,
   type Rates,
@@ -76,6 +94,14 @@ import {
   type LocalSignalFeed,
 } from "./local.js";
 import {
+  type HeldValue,
+  holdingsMap,
+  LOCAL_SECTOR,
+  type MapData,
+  type MapKind,
+  starterMap,
+} from "./maps.js";
+import {
   QuoteGuard as Guard,
   JUMP_BY_MARKET,
   type Quote,
@@ -83,7 +109,49 @@ import {
   type QuoteProvider,
 } from "./provider.js";
 import type { InstrumentStatus, RealNoticeRecord, RealOrderRecord } from "./store.js";
-import type { YahooQuote } from "./yahoo.js";
+import { CHART_SHARE, type YahooQuote } from "./yahoo.js";
+
+/** A ticker's candles for one timeframe, and where they came from. */
+export interface CandleSet {
+  line: RealLine;
+  tf: Timeframe;
+  candles: Candle[];
+  /** The bars carry volume (Yahoo's); the local stocks and bars made from ticks do not. */
+  volume: boolean;
+  /** The market's zone: the bars' dates and times are read in it. */
+  zone: string;
+  /** `provider`: the chart endpoint; `ticks`: made from the quotes kept here. */
+  source: "provider" | "ticks";
+  /** The provider could not answer and these are older than their time to live. */
+  stale: boolean;
+}
+
+/** A member's own lines on a chart, in the ticker's own currency. */
+export interface ChartMarks {
+  /** What their shares cost on average (every lot, 1× and 2×). */
+  avg_cost: number | null;
+  /** Where each 2× position is sold by the rule. */
+  liquidation: number[];
+}
+
+/** The exchange's coins in and out over a window, and against the coins in wallets. */
+export interface MintWindow {
+  days: number;
+  burned: number;
+  minted: number;
+  net: number;
+  /** `net` over all coins in wallets (`null`: the economy cannot say). */
+  share: number | null;
+}
+
+export interface MintReport {
+  windows: MintWindow[];
+  /** All coins in wallets now (`null`: the economy cannot say). */
+  circulation: number | null;
+  warn_share: number;
+  /** A plain warning when the 7-day net is past `warn_share` of the coins in wallets. */
+  warning: string | null;
+}
 
 /** The base small print (the shared constant, `exchangeSmallPrint`). */
 export const DISCLAIMER = EXCHANGE_DISCLAIMER;
@@ -338,6 +406,8 @@ export class RealDesk {
   readonly #negative = new Map<string, { until: number; why: string }>();
   /** Lookups per person in the current hour. */
   readonly #lookups = new Map<string, { hour: number; n: number }>();
+  /** The provider's candles per (symbol, timeframe). */
+  readonly #candleCache = new CandleCache();
 
   constructor(deps: RealDeskDeps) {
     this.#d = deps;
@@ -435,7 +505,8 @@ export class RealDesk {
       (t, m) => t + Math.ceil(set.filter((i) => i.market === m).length / c.batch_size),
       0,
     );
-    const perMinute = c.yahoo.daily_budget / (11 * 60);
+    // Charts may take `CHART_SHARE` of the budget; the quotes keep the rest.
+    const perMinute = (c.yahoo.daily_budget * (1 - CHART_SHARE)) / (11 * 60);
     return Math.max(c.quote_poll_seconds, Math.ceil((batches / Math.max(perMinute, 0.001)) * 60));
   }
 
@@ -907,6 +978,148 @@ export class RealDesk {
     return { line, points };
   }
 
+  // ---- charts and maps ----------------------------------------------------------------------
+
+  /**
+   * A ticker's candles for `tf`. A real stock's come from its provider's chart endpoint when it has
+   * one (on demand, cached per symbol and timeframe, inside the provider's budget); when it cannot
+   * answer, the last ones it gave, else bars made from the quotes kept here. The local stocks' are
+   * made from their own hourly ticks, with no volume. Opening a chart counts as a view.
+   */
+  async candles(code: string, tf: Timeframe, viewed = true): Promise<CandleSet | null> {
+    const inst = this.#inst(code);
+    const line = this.view().instruments.find((i) => i.code === code);
+    if (!inst || !line) return null;
+    const now = this.#now();
+    if (viewed) this.#d.store.real.setInstrument(code, { last_viewed_at: now }, now);
+    const zone = this.sessions[inst.market].zone;
+    const set = (candles: Candle[], source: CandleSet["source"], stale: boolean): CandleSet => ({
+      line,
+      tf,
+      candles,
+      volume: source === "provider" && candles.some((c) => c.v !== null && c.v > 0),
+      zone,
+      source,
+      stale,
+    });
+    const fromTicks = (stale: boolean) => set(this.#tickCandles(inst, tf, now), "ticks", stale);
+    if (inst.market === "local") return fromTicks(false);
+    const provider = this.#provider(inst.provider) as
+      | (QuoteProvider & {
+          candles?: (symbol: string, tf: Timeframe, now: number) => Promise<Candle[]>;
+        })
+      | undefined;
+    if (!provider?.candles) return fromTicks(false);
+    const load = provider.candles.bind(provider);
+    const key = CandleCache.key(inst.symbol, tf);
+    const fresh = this.#candleCache.fresh(key, now);
+    if (fresh) return set(fresh, "provider", false);
+    const got = await this.#candleCache.once(key, async () => {
+      try {
+        const candles = await load(inst.symbol, tf, now);
+        this.#candleCache.set(key, candles, now, candleTtl(tf, line.open));
+        return candles;
+      } catch (error) {
+        this.#d.log.info(
+          { code, tf, err: String(error) },
+          "exchange: no candles from the provider",
+        );
+        return null;
+      }
+    });
+    if (got) return set(got, "provider", false);
+    const old = this.#candleCache.any(key);
+    return old ? set(old, "provider", true) : fromTicks(true);
+  }
+
+  #tickCandles(inst: RealInstrument, tf: Timeframe, now: number): Candle[] {
+    const points = this.#d.store.real.ticks(inst.code, now - (SPAN_DAYS[tf] + 2) * DAY_MS);
+    return candlesFromPoints(
+      points,
+      tf,
+      this.sessions[inst.market].zone,
+      inst.market === "local" ? 3_600_000 : TICK_EVERY_MS,
+    );
+  }
+
+  /** `person`'s own lines on `code`'s chart: their average cost and each 2× position's line. */
+  marks(person: PersonId, code: string): ChartMarks {
+    const inst = this.#inst(code);
+    if (!inst) return { avg_cost: null, liquidation: [] };
+    const mine = this.#book().positions.filter((p) => p.person === person && p.code === code);
+    const qty = mine.reduce((t, p) => t + p.qty, 0);
+    const cost = mine.reduce((t, p) => t + p.cost, 0);
+    const native = (coins: number) =>
+      Math.round(fromCoins(coins, inst.market, this.rates) * 10_000) / 10_000;
+    return {
+      avg_cost: qty > 0 ? native(cost / (qty / QTY_REAL)) : null,
+      liquidation: mine
+        .filter((p) => p.leverage > 1)
+        .map((p) => native(priceAtRatio(p, this.params.line))),
+    };
+  }
+
+  /**
+   * A heat map's tiles: what the server holds (counts and totals only, a ticker held by too few
+   * people merged into 其他), or a starter list with its configured sectors and weights. A 熱門 map
+   * counts as a view of its tickers, so their quotes are asked for in the usual batches while
+   * someone keeps the map open.
+   */
+  map(kind: MapKind, viewed = true): MapData {
+    const now = this.#now();
+    const lines = new Map(this.view().instruments.map((l) => [l.code, l]));
+    if (kind === "holdings") {
+      const held: HeldValue[] = this.#book().positions.flatMap((p) => {
+        const q = this.#lastKnown(p.code);
+        return q ? [{ person: p.person, code: p.code, value: worthOf(p, q.price) }] : [];
+      });
+      const sectors = new Map<string, string>();
+      for (const m of ["tw", "us"] as const)
+        for (const s of this.starterLines(m)) sectors.set(s.code, s.entry.sector);
+      return holdingsMap({
+        held,
+        lines,
+        sectorOf: (l) =>
+          l.market === "local" ? LOCAL_SECTOR : (sectors.get(l.code) ?? OTHER_SECTOR),
+        minHolders: this.#d.config.map_min_holders,
+      });
+    }
+    const entries = this.starterLines(kind).map((s) => ({
+      entry: s.entry,
+      line: lines.get(s.code) ?? null,
+    }));
+    if (viewed)
+      for (const { line } of entries) {
+        if (!line) continue;
+        const seen = this.#d.store.real.instrument(line.code)?.last_viewed_at ?? null;
+        if (seen === null || now - seen > 60_000)
+          this.#d.store.real.setInstrument(line.code, { last_viewed_at: now }, now);
+      }
+    return starterMap(kind, entries);
+  }
+
+  /**
+   * The exchange's coins in and out today, over 7 and over 30 local days, against all coins in
+   * wallets, with a plain warning when the 7-day net is past `mint_warn_share` of them (a warning
+   * only: nothing is halted by it).
+   */
+  async mintReport(): Promise<MintReport> {
+    const s = this.#d.store.real.state() ?? this.#book().state;
+    let circulation: number | null = null;
+    try {
+      const wallet = this.#d.wallet();
+      circulation = wallet?.circulation ? await wallet.circulation() : null;
+    } catch {
+      circulation = null;
+    }
+    return mintReportOf(
+      [...s.history, s.today],
+      this.#day(),
+      circulation,
+      this.#d.config.mint_warn_share,
+    );
+  }
+
   // ---- orders -------------------------------------------------------------------------------
 
   #holdingsCost(book: HouseBook, person: PersonId): { cost: number; margin: number } {
@@ -987,8 +1200,8 @@ export class RealDesk {
         const exposure = Math.ceil(req.shares * px - 1e-9);
         coins = exposure + feeOn(exposure, c.fee, c.fee_min);
       }
-      if (!Number.isSafeInteger(coins) || coins < c.order_min || coins > c.order_max)
-        return refuse(409, "size", `一筆買進是 ${c.order_min} 到 ${c.order_max} 魚幣`);
+      if (!Number.isSafeInteger(coins) || coins < c.order_min || over(coins, c.order_max))
+        return refuse(409, "size", sizeRule(c.order_min, c.order_max));
       const leverage = req.leverage === 2 ? 2 : 1;
       if (req.leverage !== undefined && req.leverage !== 1 && req.leverage !== 2)
         return refuse(409, "leverage", "槓桿只有 1 倍或 2 倍");
@@ -1014,7 +1227,7 @@ export class RealDesk {
           );
         if (!t.leverage_opt_in) return refuse(409, "leverage_opt_in", "要先看過並同意槓桿的風險");
       }
-      if (counted.bought + coins > c.buy_per_day)
+      if (over(counted.bought + coins, c.buy_per_day))
         return refuse(
           409,
           "daily",
@@ -1044,9 +1257,9 @@ export class RealDesk {
       }
       const held = this.#holdingsCost(book, asker.person);
       const cap = limitsFor(asker.rules, t).total;
-      if (held.cost + split.exposure > cap)
+      if (over(held.cost + split.exposure, cap))
         return refuse(409, "limit_total", `持有上限是成本 ${cap} 魚幣(槓桿照全部部位算)`);
-      if (leverage > 1 && held.margin + split.margin > c.leverage_margin_cap)
+      if (leverage > 1 && over(held.margin + split.margin, c.leverage_margin_cap))
         return refuse(409, "margin_cap", `槓桿的保證金合計最多 ${c.leverage_margin_cap} 魚幣`);
       const price = latest?.price ?? null;
       const qty = price ? Math.floor((split.exposure * QTY_REAL) / price) : 0;
@@ -1273,14 +1486,25 @@ export class RealDesk {
 
   /** The starter lists' codes, each as the provider's symbol once it validated (`null`: not yet or never). */
   starters(market: "tw" | "us"): string[] {
-    const codes = market === "tw" ? this.#d.config.starters_tw : this.#d.config.starters_us;
-    const out: string[] = [];
-    for (const typed of codes) {
-      const hit = candidates(typed).find((c) => {
+    return this.starterLines(market).map((s) => s.code);
+  }
+
+  /** A starter list's entries (code, sector, weight) as configured, in order. */
+  starterConfig(market: "tw" | "us"): StarterEntry[] {
+    return starterEntries(
+      market === "tw" ? this.#d.config.starters_tw : this.#d.config.starters_us,
+    );
+  }
+
+  /** The starter list's validated symbols, each with its configured entry. */
+  starterLines(market: "tw" | "us"): { code: string; entry: StarterEntry }[] {
+    const out: { code: string; entry: StarterEntry }[] = [];
+    for (const entry of this.starterConfig(market)) {
+      const hit = candidates(entry.code).find((c) => {
         const row = this.#d.store.real.instrument(c);
         return row !== null && row.status !== "removed" && row.market === market;
       });
-      if (hit) out.push(hit);
+      if (hit) out.push({ code: hit, entry });
     }
     return out;
   }
@@ -1290,8 +1514,7 @@ export class RealDesk {
     const now = this.#now();
     let asked = 0;
     for (const market of ["tw", "us"] as const) {
-      const codes = market === "tw" ? this.#d.config.starters_tw : this.#d.config.starters_us;
-      for (const typed of codes) {
+      for (const { code: typed } of this.starterConfig(market)) {
         if (asked >= max) return;
         const list = candidates(typed).filter((c) =>
           market === "tw" ? c.endsWith(".TW") || c.endsWith(".TWO") : !c.includes(".TW"),
@@ -1822,6 +2045,45 @@ export class RealDesk {
         .slice(0, 3),
     };
   }
+}
+
+/**
+ * The mint report from the house's days (`today` is the local day number): coins burned, minted
+ * and the net today, over 7 and over 30 days, each against `circulation` (all coins in wallets),
+ * and a plain warning when the 7-day net is past `warnShare` of it.
+ */
+export function mintReportOf(
+  days: readonly { day: number; burned: number; minted: number }[],
+  today: number,
+  circulation: number | null,
+  warnShare: number,
+): MintReport {
+  const byDay = new Map<number, { burned: number; minted: number }>();
+  for (const d of days) if (d.day <= today && d.day > today - 30) byDay.set(d.day, d);
+  const windows = [1, 7, 30].map((n): MintWindow => {
+    let burned = 0;
+    let minted = 0;
+    for (const [day, d] of byDay)
+      if (day > today - n) {
+        burned += d.burned;
+        minted += d.minted;
+      }
+    const net = minted - burned;
+    return {
+      days: n,
+      burned,
+      minted,
+      net,
+      share: circulation !== null && circulation > 0 ? net / circulation : null,
+    };
+  });
+  const week = windows[1] as MintWindow;
+  const pct = (x: number) => `${(Math.round(x * 1000) / 10).toFixed(1)}%`;
+  const warning =
+    week.share !== null && week.net > 0 && week.share > warnShare
+      ? `過去 7 天交易所淨發出 ${week.net.toLocaleString("en-US")} 魚幣,是現在所有錢包合計的 ${pct(week.share)},超過提醒線 ${pct(warnShare)}。沒有每天淨發出上限時,上漲的市場會讓魚幣變多;要限制,在 系統 / 交易所 設「每天最多淨發出」。`
+      : null;
+  return { windows, circulation, warn_share: warnShare, warning };
 }
 
 function orderLine(o: RealOrderRecord): RealOrderLine {

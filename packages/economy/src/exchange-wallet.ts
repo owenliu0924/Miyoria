@@ -104,4 +104,10 @@ export class EconomyExchangeWallet implements ExchangeWallet {
   async posted(person: PersonId, key: string): Promise<boolean> {
     return (await this.e.ledger().byKey(this.e.profile, person, key)) !== null;
   }
+
+  /** Every coin in the ledger: all rows summed, every wallet and her purse (one `GROUP BY`). */
+  async circulation(): Promise<number> {
+    const rows = await this.e.ledger().dailyTotals(this.e.profile, toTimestamp(0), 0);
+    return rows.reduce((t, r) => t + r.positive - r.negative, 0);
+  }
 }

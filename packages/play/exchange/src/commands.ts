@@ -6,9 +6,11 @@
 // - `/me market overview`: the overview picture and, only for the caller, a select of LISTS
 //   (新手推薦 · 這裡獨家 first and the default for someone with no positions, 大家都在買, 今天漲跌最多,
 //   熱門台股, 熱門美股, 我的持股, 我最近看過, 我的觀察) and a select of the list's tickers (25 a page,
-//   ◀ ▶ for more). Picking a ticker turns the message into its quote card with 買 / 賣 / 加入觀察 /
-//   回清單; 買 and 賣 open a modal (coins or shares; 1× or 2× where allowed), then the confirmation,
-//   then the message shows the order and the position.
+//   ◀ ▶ for more). Picking a ticker turns the message into its quote card (a candle chart) with
+//   買 / 賣 / 加入觀察 / 回清單 and a select of the chart's timeframe (當日 / 日線 / 週線 / 月線) that
+//   draws the picture again; 買 and 賣 open a modal (coins or shares; 1× or 2× where allowed), then
+//   the confirmation, then the message shows the order and the position. The list select also
+//   carries the three heat maps (伺服器持股圖, 熱門台股圖, 熱門美股圖), each drawn as a picture.
 // - `/me market quote code:` a ticker's quote card (the code has suggestions while typing).
 // - `/me market mine`: their own holdings, only to them, with 分享 buttons that post the holdings
 //   or the latest trade's receipt publicly with their name, only when pressed.
@@ -39,6 +41,8 @@ import {
   bankruptPictureData,
   boardPictureData,
   coinText,
+  defaultTimeframe,
+  mapPictureData,
   marketLine,
   overviewPictureData,
   portfolioPictureData,
@@ -47,9 +51,14 @@ import {
   sharesText,
   withPicture,
 } from "./pictures.js";
+import { isTimeframe, TIMEFRAME_WORD, TIMEFRAMES, type Timeframe } from "./real/candles.js";
 import type { RealLine } from "./real/desk.js";
 import { LIST_KINDS, LIST_LABEL, type ListKind, pageOf } from "./real/lists.js";
+import { isMapKind, MAP_KINDS, MAP_TITLE, type MapKind } from "./real/maps.js";
 import type { ExchangeService } from "./service.js";
+
+/** A map's option value in the list select (no new subcommand: the overview's list carries them). */
+const MAP_PREFIX = "map:";
 
 export const PATHS = [
   "me market overview",
@@ -70,6 +79,7 @@ export const LEVERAGE_CONFIRM =
 
 const R = {
   list: "xm:list",
+  tf: "xm:tf",
   pick: "xm:pick",
   page: "xm:page",
   back: "xm:back",
@@ -163,6 +173,51 @@ function privately(x: ExchangeService, reply: CommandReply): CommandReply {
 
 // ---- the overview: lists and tickers ---------------------------------------------------------
 
+/** The select of lists, with the three heat maps after them; `current` is shown chosen. */
+function listSelect(s: Stamp, current: ListKind | MapKind): CardBlock {
+  return {
+    type: "select",
+    select: {
+      id: cid(R.list, s),
+      placeholder: "選一個清單或熱力圖",
+      options: [
+        ...LIST_KINDS.map((k) => ({
+          label: LIST_LABEL[k],
+          value: k,
+          ...(k === "local" ? { description: "新手先看這裡" } : {}),
+          default: k === current,
+        })),
+        ...MAP_KINDS.map((k) => ({
+          label: `熱力圖:${MAP_TITLE[k]}`,
+          value: `${MAP_PREFIX}${k}`,
+          description:
+            k === "holdings" ? "大家持有多少(不顯示是誰),今天的漲跌" : "預設權重,今天的漲跌",
+          default: k === current,
+        })),
+      ],
+    },
+  };
+}
+
+/** A heat map as a card: its biggest tiles in words, the list select, and the map as a picture. */
+async function mapCard(
+  x: ExchangeService,
+  pictures: Pictures | null,
+  who: AccountRef,
+  kind: MapKind,
+): Promise<CommandReply> {
+  const s = stampFor(x, who);
+  const map = x.real.map(kind);
+  const top = [...map.tiles].sort((a, b) => b.weight - a.weight).slice(0, 6);
+  const lines = [
+    `${map.title}${map.tiles.length === 0 ? ":還沒有可以畫的股票" : `(${map.tiles.length} 格)`}`,
+    ...top.map((t) => `${t.code} ${t.name}・${t.sector} ${pct(t.change) || "—"}`),
+    map.footnote,
+  ];
+  const reply = privately(x, card("深海交易所", lines, { real: true }, [listSelect(s, kind)]));
+  return withPicture(pictures, "exchange_map", mapPictureData(x, map, x.nowMs()), reply);
+}
+
 async function overview(
   x: ExchangeService,
   pictures: Pictures | null,
@@ -189,21 +244,7 @@ async function overview(
     ...p.items.slice(0, 5).map(lineText),
     ...(p.items.length > 5 ? [`……還有 ${rows.length - 5} 檔,在下面選`] : []),
   ];
-  const blocks: CardBlock[] = [
-    {
-      type: "select",
-      select: {
-        id: cid(R.list, s),
-        placeholder: "選一個清單",
-        options: LIST_KINDS.map((k) => ({
-          label: LIST_LABEL[k],
-          value: k,
-          ...(k === "local" ? { description: "新手先看這裡" } : {}),
-          default: k === list,
-        })),
-      },
-    },
-  ];
+  const blocks: CardBlock[] = [listSelect(s, list)];
   if (p.items.length > 0)
     blocks.push({
       type: "select",
@@ -262,6 +303,8 @@ async function quoteCard(
   line: RealLine,
   back: ListKind,
   note: string | null,
+  /** The chart's timeframe (from the switch); none: the session in progress, else daily. */
+  chosen: Timeframe | null = null,
 ): Promise<CommandReply> {
   const person = await x.personOf(who);
   if (person !== null) x.real.noteView(person, line.code);
@@ -297,16 +340,31 @@ async function quoteCard(
     { id: cid(R.back, s, back), label: "回清單", style: "secondary" },
   ];
   const leverage = held.some((h) => h.leverage > 1);
+  // The chart: the chosen timeframe, or the session in progress (daily before it has two bars).
+  let set = await x.real.candles(line.code, chosen ?? defaultTimeframe(line));
+  if (chosen === null && set && set.tf === "intraday" && set.candles.length < 2)
+    set = await x.real.candles(line.code, "daily");
+  const tf = set?.tf ?? chosen ?? "daily";
+  const timeframes: CardBlock = {
+    type: "select",
+    select: {
+      id: cid(R.tf, s, line.code, back),
+      placeholder: "K 線:當日 / 日線 / 週線 / 月線",
+      options: TIMEFRAMES.map((k) => ({
+        label: `K 線:${TIMEFRAME_WORD[k]}`,
+        value: k,
+        default: k === tf,
+      })),
+    },
+  };
   const text = privately(
     x,
     card(`${line.code} ${line.name}`, lines, { real: line.local === null, leverage }, [
       { type: "buttons", buttons },
+      timeframes,
     ]),
   );
-  const history = x.real.history(line.code);
-  return history
-    ? withPicture(pictures, "exchange_quote", quotePictureData(x, history, x.nowMs()), text)
-    : text;
+  return set ? withPicture(pictures, "exchange_quote", quotePictureData(x, set), text) : text;
 }
 
 function lineOf(x: ExchangeService, code: string): RealLine | null {
@@ -523,11 +581,34 @@ export function registerCommands(
   const routes = [
     defineRoute({
       route: R.list,
-      handle: press(async (x, inv) =>
-        ComponentResult.update(
-          await overview(x, pictures(), inv.invoker, listOf(inv.values[0]), 0, false),
-        ),
-      ),
+      handle: press(async (x, inv) => {
+        const value = inv.values[0] ?? "";
+        const map = value.startsWith(MAP_PREFIX) ? value.slice(MAP_PREFIX.length) : null;
+        if (map !== null && isMapKind(map))
+          return ComponentResult.update(await mapCard(x, pictures(), inv.invoker, map));
+        return ComponentResult.update(
+          await overview(x, pictures(), inv.invoker, listOf(value), 0, false),
+        );
+      }),
+    }),
+    defineRoute({
+      route: R.tf,
+      handle: press(async (x, inv, [code, kind]) => {
+        const line = lineOf(x, code ?? "");
+        if (!line) return gone();
+        const tf = inv.values[0];
+        return ComponentResult.update(
+          await quoteCard(
+            x,
+            pictures(),
+            inv.invoker,
+            line,
+            listOf(kind),
+            null,
+            isTimeframe(tf) ? tf : null,
+          ),
+        );
+      }),
     }),
     defineRoute({
       route: R.page,

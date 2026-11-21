@@ -1,7 +1,8 @@
 // The deep-sea exchange's routes (docs/design/exchange.md), v1, over `ExchangeKey`:
 //
 // * Member (`exchange` group, a session, limited per account): the market, the browsing lists,
-//   suggestions while typing, a lookup, a ticker's page, the watch list, their account (open it,
+//   suggestions while typing, a lookup, a ticker's page, its candles in four timeframes (with the
+//   member's own cost and 2× lines), the heat maps, the watch list, their account (open it,
 //   take 2x's risks, hide from the rich list), a quote, a market order (with an
 //   `Idempotency-Key`), a cancel, their own portfolio, the rich list. The person is the
 //   session's; a refusal is its status and sentence, the same as in Discord. Nobody sees anybody
@@ -16,7 +17,9 @@ import type {
   ExchangeAccount,
   ExchangeAdmin,
   ExchangeBoards,
+  ExchangeCandles,
   ExchangeList,
+  ExchangeMap,
   ExchangeMarket,
   ExchangeOrder,
   ExchangePortfolio,
@@ -140,6 +143,30 @@ export const exchangeRpc = {
       };
     },
   ),
+  candles: os.exchange.candles.handler(
+    async ({ input, context: { state, c } }): Promise<ExchangeCandles> => {
+      const x = service(state);
+      const code = input.params.code.toUpperCase();
+      const set = await x.real.candles(code, input.query.tf);
+      if (!set) throw ApiError.notFound("沒有這個標的(先查詢代號)");
+      const person = await x.personOf(accountOf(c));
+      return {
+        code,
+        tf: set.tf,
+        zone: set.zone,
+        currency: set.line.currency,
+        candles: set.candles.map((k) => ({ t: k.at, o: k.o, h: k.h, l: k.l, c: k.c, v: k.v })),
+        volume: set.volume,
+        source: set.source,
+        stale: set.stale,
+        marks: person ? x.real.marks(person, code) : { avg_cost: null, liquidation: [] },
+      };
+    },
+  ),
+  map: os.exchange.map.handler(
+    async ({ input, context: { state } }): Promise<ExchangeMap> =>
+      service(state).real.map(input.params.kind),
+  ),
   watch: os.exchange.watch.handler(async ({ input, context: { state, c } }) => {
     const x = service(state);
     const r = x.lists.setWatch(await personOf(x, c), input.body.code.toUpperCase(), input.body.on);
@@ -217,6 +244,7 @@ export const exchangeAdminRpc = {
   view: os.exchangeAdmin.view.handler(async ({ context: { state } }): Promise<ExchangeAdmin> => {
     const x = service(state);
     const report = x.real.report();
+    const mint = await x.real.mintReport();
     const holders = x.real.holderCounts();
     const name = async (p: string) => (await x.nameOf(p)) ?? "某人";
     return {
@@ -236,6 +264,7 @@ export const exchangeAdminRpc = {
         ),
         quotes: report.quotes,
         books: report.books,
+        mint,
       },
       tickers: x.real.tickers().map((t) => ({ ...t, holders: holders.get(t.code) ?? 0 })),
       providers: x.real.providerStatus(),

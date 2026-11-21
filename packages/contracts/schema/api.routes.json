@@ -2936,6 +2936,36 @@
           }
         }
       },
+      "candles": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/exchange/candles/{code}"
+          }
+        }
+      },
+      "map": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/exchange/map/{kind}"
+          }
+        }
+      },
       "watch": {
         "~orpc": {
           "errorMap": {},

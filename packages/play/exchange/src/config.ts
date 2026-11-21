@@ -7,11 +7,14 @@
 // `local_enabled = false` with nothing reaching it; its numbers are at the end, without a place on
 // the panel.
 //
+// The caps on how much someone may buy or hold, and the house's daily payout cap, are off by
+// default (owner 2026-11-21: "otherwise it is unplayable"); a positive number turns each back on.
+//
 // ```toml
 // [modules.exchange]
 // open = true
 // colors = "tw"
-// starters_tw = ["2330", "0050"]
+// starters_tw = [{ code = "2330", sector = "半導體", weight = 300 }, "0050"]
 // ```
 
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
@@ -27,6 +30,88 @@ const TIERS = BOND_LADDER.map((t) => t.label) as [string, ...string[]];
 
 const ratio = (d: number, max = 1) => z.number().min(0).max(max).default(d);
 const coins = (d: number) => z.number().int().positive().default(d);
+/**
+ * A cap that is off by default (owner 2026-11-21: "otherwise it is unplayable"): `0` is no cap,
+ * any positive number turns it on at that many coins.
+ */
+const cap = () => z.number().int().min(0).default(0);
+
+/**
+ * One entry of a starter list (熱門台股 / 熱門美股): the code as people type it, its broad sector
+ * and its weight on the 熱門 heat map. Yahoo's keyless endpoint gives neither market cap nor
+ * sector, so both live here: static approximations by size, which the owner may edit. A plain code
+ * is sector 其他, weight 1.
+ */
+const starter = z.union([
+  z.string().min(1).max(16),
+  z.object({
+    code: z.string().min(1).max(16),
+    sector: z.string().min(1).max(12).default("其他"),
+    weight: z.number().positive().max(1_000_000).default(1),
+  }),
+]);
+export type StarterInput = z.input<typeof starter>;
+export interface StarterEntry {
+  code: string;
+  sector: string;
+  weight: number;
+}
+
+/** A starter list's entries, each with its sector and weight. */
+export function starterEntries(list: readonly (string | StarterEntry)[]): StarterEntry[] {
+  return list.map((e) =>
+    typeof e === "string" ? { code: e, sector: OTHER_SECTOR, weight: 1 } : e,
+  );
+}
+
+/** The sector of anything a starter list does not name. */
+export const OTHER_SECTOR = "其他";
+
+const S = (code: string, sector: string, weight: number): StarterEntry => ({
+  code,
+  sector,
+  weight,
+});
+
+/**
+ * The shipped starter lists, with sectors and weights roughly by size (market cap, or an ETF's
+ * assets; late 2025, rounded). They are static approximations, never live market caps.
+ */
+export const STARTERS_TW: readonly StarterEntry[] = [
+  S("2330", "半導體", 300),
+  S("2317", "科技", 30),
+  S("2454", "半導體", 23),
+  S("2308", "科技", 20),
+  S("2382", "科技", 11),
+  S("2412", "電信", 10),
+  S("2881", "金融", 12),
+  S("2882", "金融", 10),
+  S("2891", "金融", 9),
+  S("2303", "半導體", 6),
+  S("1301", "原物料", 3),
+  S("2002", "原物料", 3),
+  S("0050", "ETF", 6),
+  S("0056", "ETF", 4),
+  S("00878", "ETF", 4),
+  S("006208", "ETF", 2),
+];
+export const STARTERS_US: readonly StarterEntry[] = [
+  S("AAPL", "科技", 38),
+  S("MSFT", "科技", 38),
+  S("NVDA", "半導體", 45),
+  S("AMZN", "消費", 24),
+  S("GOOGL", "科技", 30),
+  S("META", "科技", 18),
+  S("TSLA", "消費", 14),
+  S("BRK-B", "金融", 10),
+  S("JPM", "金融", 8),
+  S("V", "金融", 7),
+  S("SPY", "ETF", 7),
+  S("QQQ", "ETF", 4),
+  S("VOO", "ETF", 7),
+  S("VTI", "ETF", 5),
+  S("DIA", "ETF", 1),
+];
 const tier = (d: string) => z.enum(TIERS).default(d);
 const date = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -183,8 +268,9 @@ export const ExchangeConfigSchema = z
     order_min: coins(DEFAULT_RULES.order_min).meta(
       setting({ kind: "coins", label: "一筆最少", group: "account" }),
     ),
-    order_max: coins(DEFAULT_RULES.order_max).meta(
-      setting({ kind: "coins", label: "一筆最多", group: "account" }),
+    /** The most one buy may be; `0` (the default): no maximum. */
+    order_max: cap().meta(
+      setting({ kind: "coins", label: "一筆最多", help: "0 = 不限", group: "account" }),
     ),
     orders_per_day: z
       .number()
@@ -192,9 +278,9 @@ export const ExchangeConfigSchema = z
       .positive()
       .default(DEFAULT_RULES.orders_per_day)
       .meta(setting({ kind: "number", label: "一天最多幾筆委託", group: "account" })),
-    /** The daily buy cap (coins bought a day, fee included). */
-    buy_per_day: coins(DEFAULT_RULES.buy_per_day).meta(
-      setting({ kind: "coins", label: "一天最多買多少", group: "account" }),
+    /** The daily buy cap (coins bought a day, fee included); `0` (the default): none. */
+    buy_per_day: cap().meta(
+      setting({ kind: "coins", label: "一天最多買多少", help: "0 = 不限", group: "account" }),
     ),
     /** Coins received by transfer this recently cannot be put in. */
     transfer_lock_hours: z
@@ -228,12 +314,12 @@ export const ExchangeConfigSchema = z
     ),
     fee_min: z.number().int().min(0).default(1),
 
-    // ---- the holding cap, by cost (one cap for everything held) ----
-    limit_total: coins(DEFAULT_RULES.limit_total).meta(
+    // ---- the holding cap, by cost (one cap for everything held); `0` (the default): none ----
+    limit_total: cap().meta(
       setting({
         kind: "coins",
         label: "持有上限",
-        help: "照成本算;槓桿照全部部位算;隨羈絆和認識的時間放寬",
+        help: "0 = 不限。照成本算;槓桿照全部部位算;隨羈絆和認識的時間放寬",
         group: "limits",
       }),
     ),
@@ -246,15 +332,34 @@ export const ExchangeConfigSchema = z
     limit_max_mult: z.number().min(1).max(10).default(DEFAULT_RULES.limit_max_mult),
 
     // ---- the house ----
-    /** Net coins the house may pay out per local day; reached: no new buys today, sales paid in full. */
-    payout_cap_daily: coins(1500).meta(
+    /**
+     * Net coins the house may pay out per local day; reached: no new buys today, sales paid in
+     * full. `0` (the default): no cap, so in a rising market the exchange adds coins to the economy
+     * without bound; the owner page reports it and warns past `mint_warn_share`.
+     */
+    payout_cap_daily: cap().meta(
       setting({
         kind: "coins",
         label: "每天最多淨發出",
-        help: "到了之後當天停止買進;賣出照常全額付",
+        help: "0 = 不限(漲的市場會讓魚幣變多)。設了之後,到了當天停止買進;賣出照常全額付",
         group: "market",
       }),
     ),
+    /**
+     * The owner page warns (never halts) when the exchange's net coins of the last 7 days are more
+     * than this share of all coins in wallets.
+     */
+    mint_warn_share: ratio(0.05).meta(
+      setting({
+        kind: "number",
+        step: 0.01,
+        label: "7 天淨發出超過流通量幾成時提醒",
+        help: "只是提醒,不會停止交易",
+        group: "market",
+      }),
+    ),
+    /** The 伺服器持股圖 merges a ticker held by fewer people than this into 其他. */
+    map_min_holders: z.number().int().min(1).max(20).default(2),
 
     // ---- leverage: 1x or 2x, cross margin ----
     leverage: z
@@ -284,8 +389,9 @@ export const ExchangeConfigSchema = z
     leverage_min_tier: tier("朋友").meta(
       setting({ kind: "select", label: "槓桿:羈絆至少", group: "leverage" }),
     ),
-    leverage_margin_cap: coins(DEFAULT_RULES.leverage_margin_cap).meta(
-      setting({ kind: "coins", label: "每人保證金合計上限", group: "leverage" }),
+    /** All of a member's 2x margin together at most; `0` (the default): no cap. */
+    leverage_margin_cap: cap().meta(
+      setting({ kind: "coins", label: "每人保證金合計上限", help: "0 = 不限", group: "leverage" }),
     ),
     /** A bankrupt member waits this long before trading again. */
     bankrupt_cooling_days: z
@@ -374,50 +480,20 @@ export const ExchangeConfigSchema = z
         }),
       ),
     /**
-     * The starter lists (熱門台股 / 熱門美股): codes as people type them. Each is validated through
-     * the provider like any ticker, a few per pass; one that fails is dropped silently.
+     * The starter lists (熱門台股 / 熱門美股): codes as people type them, each with its broad
+     * sector and its weight on the 熱門 heat map (`{ code, sector, weight }`; a plain code is
+     * sector 其他, weight 1). Each is validated through the provider like any ticker, a few per
+     * pass; one that fails is dropped silently. The weights are static approximations by size, not
+     * live market caps (the map says so).
      */
     starters_tw: z
-      .array(z.string().min(1).max(16))
+      .array(starter)
       .max(50)
-      .default([
-        "2330",
-        "2317",
-        "2454",
-        "2308",
-        "2382",
-        "2412",
-        "2881",
-        "2882",
-        "2891",
-        "2303",
-        "1301",
-        "2002",
-        "0050",
-        "0056",
-        "00878",
-        "006208",
-      ]),
+      .default(() => STARTERS_TW.map((e) => ({ ...e }))),
     starters_us: z
-      .array(z.string().min(1).max(16))
+      .array(starter)
       .max(50)
-      .default([
-        "AAPL",
-        "MSFT",
-        "NVDA",
-        "AMZN",
-        "GOOGL",
-        "META",
-        "TSLA",
-        "BRK-B",
-        "JPM",
-        "V",
-        "SPY",
-        "QQQ",
-        "VOO",
-        "VTI",
-        "DIA",
-      ]),
+      .default(() => STARTERS_US.map((e) => ({ ...e }))),
     /** A member's watch list holds at most this many tickers. */
     watch_max: z.number().int().min(1).max(50).default(20),
     /**
@@ -526,7 +602,8 @@ export function rulesOf(c: ExchangeConfig, paused: boolean): Rules {
     min_days: c.account_min_days,
     min_tier: Math.max(0, tierIndex(c.account_min_tier)),
     order_min: c.order_min,
-    order_max: Math.max(c.order_min, c.order_max),
+    // 0 stays 0: no maximum.
+    order_max: c.order_max === 0 ? 0 : Math.max(c.order_min, c.order_max),
     orders_per_day: c.orders_per_day,
     buy_per_day: c.buy_per_day,
     limit_company: c.limit_company,

@@ -86,7 +86,15 @@ export type GuardRefusal = { ok: false; code: string; message: string };
 
 const no = (code: string, message: string): GuardRefusal => ({ ok: false, code, message });
 
-/** The holding limits for someone, widened by tier and time known. */
+/** The one-buy size rule in words (`max` 0: only a minimum). */
+export function sizeRule(min: number, max: number): string {
+  return max > 0 ? `一筆買進是 ${min} 到 ${max} 魚幣` : `一筆買進至少 ${min} 魚幣`;
+}
+
+/** Whether `value` goes past `cap`; a cap of `0` is no cap (the config's default for most). */
+export const over = (value: number, cap: number): boolean => cap > 0 && value > cap;
+
+/** The holding limits for someone, widened by tier and time known (`0` stays `0`: no limit). */
 export function limitsFor(
   rules: Rules,
   trader: Pick<Trader, "tier" | "known_days">,
@@ -172,9 +180,9 @@ export function checkBuy(
   if (
     !Number.isSafeInteger(req.coins) ||
     req.coins < rules.order_min ||
-    req.coins > rules.order_max
+    over(req.coins, rules.order_max)
   ) {
-    return no("size", `一筆買進是 ${rules.order_min} 到 ${rules.order_max} 魚幣`);
+    return no("size", sizeRule(rules.order_min, rules.order_max));
   }
   if (req.limit !== null && !(Number.isSafeInteger(req.limit) && req.limit > 0))
     return no("limit", "限價要是正的價格");
@@ -190,7 +198,7 @@ export function checkBuy(
   }
   if (f.orders_today >= rules.orders_per_day)
     return no("orders", `一天最多 ${rules.orders_per_day} 筆委託`);
-  if (f.bought_today + req.coins > rules.buy_per_day) {
+  if (over(f.bought_today + req.coins, rules.buy_per_day)) {
     return no(
       "daily",
       `一天最多買 ${rules.buy_per_day} 魚幣(今天還能買 ${Math.max(0, rules.buy_per_day - f.bought_today)})`,
@@ -205,13 +213,13 @@ export function checkBuy(
   const split = splitBuy(req.coins, leverage, p);
   if (split === null) return no("size", "這筆太小了");
   const limits = limitsFor(rules, t);
-  if (f.company_cost + split.exposure > limits.company) {
+  if (over(f.company_cost + split.exposure, limits.company)) {
     return no("limit_company", `一家公司最多持有成本 ${limits.company} 魚幣(槓桿照全部部位算)`);
   }
-  if (f.total_cost + split.exposure > limits.total) {
+  if (over(f.total_cost + split.exposure, limits.total)) {
     return no("limit_total", `全部合計最多持有成本 ${limits.total} 魚幣(槓桿照全部部位算)`);
   }
-  if (leverage > 1 && f.margin + split.margin > rules.leverage_margin_cap) {
+  if (leverage > 1 && over(f.margin + split.margin, rules.leverage_margin_cap)) {
     return no("margin_cap", `槓桿的保證金合計最多 ${rules.leverage_margin_cap} 魚幣`);
   }
   const after = f.my_company_value + split.exposure;

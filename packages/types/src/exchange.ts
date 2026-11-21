@@ -79,6 +79,11 @@ export interface ExchangeWallet {
   ): Promise<ExchangePost>;
   /** Whether a row under `key` is in `person`'s wallet. */
   posted(person: PersonId, key: string): Promise<boolean>;
+  /**
+   * Every coin in every wallet together (her purse included): what the owner's page sets the
+   * exchange's net minting against. Absent when the economy cannot sum its ledger.
+   */
+  circulation?(): Promise<number>;
 }
 
 export const ExchangeWalletKey = serviceKey<ExchangeWallet>("ExchangeWallet");

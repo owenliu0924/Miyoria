@@ -7,9 +7,10 @@ import { Supervisor } from "@miyoria/runtime/kernel";
 import { SqliteStore, StoreKey } from "@miyoria/store";
 import { type EventLog, EventLogKey, type Observation, type ObserveOptions } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
+import { exchangeConfig } from "../src/config.js";
 import { ExchangeKey, ExchangeModule } from "../src/module.js";
-import { taipeiDay } from "../src/real/local.js";
-import type { CountSource } from "../src/real/signals.js";
+import { signalMove, taipeiDay } from "../src/real/local.js";
+import { type CountSource, LocalSignalBook } from "../src/real/signals.js";
 import { exchangeTables } from "../src/store.js";
 
 /** Monday 2026-11-23 12:30 Taipei. */
@@ -78,5 +79,89 @@ describe("module exchange, the local stocks' signals", () => {
     expect(view.instruments.find((i) => i.code === "DPSK")?.local?.today).toBe(
       "昨天沒有她的紀錄 → 今天開盤 +0.0%",
     );
+  });
+
+  it("looks for the sources at the first signal, not at start, and logs the missing ones once", async () => {
+    const store = await SqliteStore.open(":memory:", {
+      plugins: [heartTables, exchangeTables],
+      clock,
+    });
+    cleanup.push(() => store.close());
+    const lines: { obj: unknown; msg: string }[] = [];
+    const logger = {
+      fatal: () => undefined,
+      error: () => undefined,
+      warn: () => undefined,
+      info: (obj: unknown, msg?: string) => {
+        if (typeof msg === "string" && msg.includes("no source")) lines.push({ obj, msg });
+      },
+      debug: () => undefined,
+      trace: () => undefined,
+      child: () => logger,
+    };
+    // A source whose module is not there when the exchange starts, and comes up right after.
+    let songsUp = false;
+    const songs: CountSource = {
+      label: "songs",
+      missing: () => (songsUp ? null : "點歌券沒有開"),
+      count: async (day) => (day <= Y && day >= Y - 14 ? { value: 2, parts: { songs: 2 } } : null),
+    };
+    const sup = new Supervisor({ logger: logger as never });
+    cleanup.push(() => sup.stopAll());
+    sup.services.provide("app", StoreKey, store);
+    await sup.register(
+      new ExchangeModule({
+        clock,
+        tickMs: 3_600_000,
+        seed: "m",
+        sources: { RICE: feeds, WHLE: songs },
+      }),
+      null,
+      true,
+    );
+    const start = sup.startAll();
+    songsUp = true;
+    await start;
+    const service = sup.services.require(ExchangeKey);
+    const deadline = Date.now() + 2000;
+    while (lines.length === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+    for (let i = 0; i < 3; i++) await service.tick();
+    // One line, naming the three with no source; WHLE's came up in time and is not in it.
+    expect(lines).toHaveLength(1);
+    expect(
+      Object.keys((lines[0]?.obj as { missing: object } | undefined)?.missing ?? {}).sort(),
+    ).toEqual(["CUBE", "DPSK", "NAPS"]);
+    // The neutral path: no source, no signal, an open with nothing from her day.
+    const view = service.real.view();
+    expect(view.instruments.find((i) => i.code === "NAPS")?.local?.today).toBe(
+      "昨天沒有她的紀錄 → 今天開盤 +0.0%",
+    );
+    expect(view.instruments.find((i) => i.code === "WHLE")?.local?.today).toContain("唱完 2 首歌");
+  });
+});
+
+describe("the signal book", () => {
+  it("asks whether each source is there at its first computation and tells what is missing once", async () => {
+    let up = false;
+    const told: Record<string, string>[] = [];
+    const book = new LocalSignalBook({
+      sources: {
+        RICE: { ...feeds, missing: () => (up ? null : "錢包沒有開") },
+        DPSK: { ...feeds, missing: () => "模型路由沒有開" },
+      },
+      config: () => exchangeConfig(),
+      onMissing: (m) => told.push(m as Record<string, string>),
+    });
+    // Built before the economy came up: nothing is told yet.
+    expect(told).toEqual([]);
+    up = true;
+    await book.prepare([Y], NOW);
+    await book.prepare([Y], NOW + 60_000);
+    expect(told).toEqual([
+      { WHLE: "沒有來源", NAPS: "沒有來源", CUBE: "沒有來源", DPSK: "模型路由沒有開" },
+    ]);
+    expect(book.signal("RICE", Y)?.signal).toBeGreaterThan(0);
+    expect(book.signal("DPSK", Y)).toBeNull();
+    expect(signalMove(book.signal("DPSK", Y))).toBe(0);
   });
 });

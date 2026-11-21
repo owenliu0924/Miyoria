@@ -13,8 +13,10 @@
 // The local stocks' signals (`real/signals.ts`) are built here from the event log
 // (`real/sources.ts`): each company's module is looked up by a service key it provides (the
 // economy's wallet, the song tickets, the delivery ledger, the game's resume, the model router), so
-// nothing here imports another module. A source that is missing is a neutral open and one log line
-// at start. She hears her companies' opens as a quiet note of facts (escaped data, no names).
+// nothing here imports another module. Whether a source is there is asked when the first signal is
+// computed (the modules may start in any order), and again for each day; one that is missing is a
+// neutral open and one log line. She hears her companies' opens as a quiet note of facts (escaped
+// data, no names).
 
 import { CommandMount, ReplySinkKey } from "@miyoria/commands";
 import { heartTables, labelOf, PeopleDirectoryKey } from "@miyoria/heart/person";
@@ -48,7 +50,7 @@ import { card, registerCommands, unregisterCommands } from "./commands.js";
 import { type ExchangeConfig, ExchangeConfigSchema } from "./config.js";
 import { companyOf } from "./engine/companies.js";
 import { HER_RULES, herNote } from "./her.js";
-import { LOCAL_CODES, taipeiDay } from "./real/local.js";
+import { taipeiDay } from "./real/local.js";
 import { HttpJsonProvider, type QuoteProvider } from "./real/provider.js";
 import { LocalSignalBook, type LocalSources } from "./real/signals.js";
 import { DEFAULT_KEEPING, eventLogSources } from "./real/sources.js";
@@ -108,11 +110,17 @@ export class ExchangeModule implements Module {
     const tables = store.plugin(exchangeTables);
     const heart = store.plugin(heartTables).people;
     const clock = this.#options.clock ?? ctx.clock;
+    // The sources are looked up when the first signal is computed, not now: the modules they read
+    // (the economy, sing, the game, the model router) may start after this one.
     const book = new LocalSignalBook({
       sources: this.#options.sources ?? this.#sources(ctx, store, config),
       config: () => config,
+      onMissing: (missing) =>
+        ctx.log.info(
+          { missing },
+          "exchange: no source for some local stocks; their opens stay neutral",
+        ),
     });
-    this.#logMissing(ctx, book);
     let names: { at: number; map: Map<string, string> } | null = null;
     const traders: Traders = {
       about: async (account, person) => {
@@ -231,21 +239,6 @@ export class ExchangeModule implements Module {
     });
   }
 
-  /** One line at start naming the local stocks whose source is missing (their opens stay neutral). */
-  #logMissing(ctx: ModuleContext, book: LocalSignalBook): void {
-    const missing = Object.fromEntries(
-      LOCAL_CODES.flatMap((code) => {
-        const why = book.missing(code);
-        return why === null ? [] : [[code, why]];
-      }),
-    );
-    if (Object.keys(missing).length > 0)
-      ctx.log.info(
-        { missing },
-        "exchange: no source for some local stocks; their opens stay neutral",
-      );
-  }
-
   async card(): Promise<ModuleCard> {
     const running = this.#running;
     if (running === null) return { facts: [] };
@@ -255,7 +248,9 @@ export class ExchangeModule implements Module {
       facts: [
         { label: "狀態", value: !v.enabled ? "關" : v.house.buys_halted ? "今日停止買進" : "開" },
         { label: "今日淨支出", value: v.house.net_today, unit: v.currency },
-        { label: "上限", value: v.house.cap_daily, unit: v.currency },
+        v.house.cap_daily > 0
+          ? { label: "上限", value: v.house.cap_daily, unit: v.currency }
+          : { label: "上限", value: "不限" },
         { label: "股票", value: v.instruments.length },
         { label: "報價", value: stale.length === 0 ? "正常" : `停滯:${stale.join("、")}` },
       ],

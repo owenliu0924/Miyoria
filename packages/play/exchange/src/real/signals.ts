@@ -160,6 +160,11 @@ const KEEP_DAYS = 90;
 export interface SignalBookDeps {
   sources: LocalSources;
   config: () => ExchangeConfig;
+  /**
+   * Told once, at the first signal computation, which companies have no source then (their opens
+   * stay neutral). Not at start: the modules a source reads may start after this one.
+   */
+  onMissing?: (missing: Partial<Record<LocalCode, string>>) => void;
 }
 
 /**
@@ -174,12 +179,30 @@ export class LocalSignalBook implements LocalSignalFeed {
   /** What the simulator was given for a day, so the card says what the open really had. */
   readonly #applied = new Map<string, number>();
 
+  /** Whether the sources were looked at once (the first computation). */
+  #checked = false;
+
   constructor(deps: SignalBookDeps) {
     this.#d = deps;
   }
 
+  /** The companies whose source is missing now, with why. */
+  missingNow(): Partial<Record<LocalCode, string>> {
+    const out: Partial<Record<LocalCode, string>> = {};
+    for (const code of LOCAL_CODES) {
+      const why = this.missing(code);
+      if (why !== null) out[code] = why;
+    }
+    return out;
+  }
+
   /** Readies the signals of the completed Taipei days `days` for every company. */
   async prepare(days: readonly number[], now: number): Promise<void> {
+    if (!this.#checked) {
+      this.#checked = true;
+      const missing = this.missingNow();
+      if (Object.keys(missing).length > 0) this.#d.onMissing?.(missing);
+    }
     for (const day of days) {
       if (day >= taipeiDay(now)) continue;
       for (const code of LOCAL_CODES) {

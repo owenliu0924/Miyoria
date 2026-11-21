@@ -152,6 +152,83 @@ describe("/me market", () => {
     expect(r.service.real.portfolio("p-alice").holdings[0]?.code).toBe("RICE");
   });
 
+  it("draws a ticker's card as a candle chart and redraws it in each timeframe from its switch", async () => {
+    const r = await opened();
+    // An hourly tick from 12:00 to 15:00 the next day.
+    await r.runTo(local(1, 15, 30));
+    const pictures = new FakePictures();
+    const registry = registryWith(() => r.service, pictures);
+    const q = await registry.dispatch({
+      path: ["me", "market", "quote"],
+      args: { code: "RICE" },
+      ...who,
+    });
+    const tf = selects(q).find((s) => s.id.includes(":xm:tf:"));
+    expect(tf?.options.map((o) => [o.value, o.label])).toEqual([
+      ["intraday", "K 線:當日"],
+      ["daily", "K 線:日線"],
+      ["weekly", "K 線:週線"],
+      ["monthly", "K 線:月線"],
+    ]);
+    // The local market is open: the card opens on the session in progress.
+    expect(tf?.options.find((o) => o.default)?.value).toBe("intraday");
+    const first = pictures.drawn.at(-1)?.data as PictureDataMap["exchange_quote"];
+    expect(first.timeframe).toBe("intraday");
+    expect(first.candles.length).toBeGreaterThan(2);
+    expect(first.candles.every((k) => k.v === null)).toBe(true);
+    // The local stock's line of what moved it is on the picture too.
+    expect(first.today).toBe(
+      r.service.real.view().instruments.find((i) => i.code === "RICE")?.local?.today ?? null,
+    );
+    const weekly = replyOf(
+      await registry.dispatchComponent(press(tf?.id ?? "", { values: ["weekly"] })),
+    );
+    expect(weekly.text).toContain(EXCHANGE_DISCLAIMER);
+    const drawn = pictures.drawn.at(-1)?.data as PictureDataMap["exchange_quote"];
+    expect(pictures.drawn.at(-1)?.kind).toBe("exchange_quote");
+    expect(drawn.timeframe).toBe("weekly");
+    expect(
+      selects(weekly)
+        .find((s) => s.id.includes(":xm:tf:"))
+        ?.options.find((o) => o.default)?.value,
+    ).toBe("weekly");
+  });
+
+  it("offers the three heat maps in the list select and draws the chosen one, with the small print", async () => {
+    const r = await opened();
+    await r.service.real.place(ALICE, { side: "buy", code: "RICE", shares: 1 }, "a");
+    await r.service.real.place(BOB, { side: "buy", code: "RICE", shares: 1 }, "b");
+    await r.at(local(0, 13, 1));
+    const pictures = new FakePictures();
+    const registry = registryWith(() => r.service, pictures);
+    const o = await registry.dispatch({ path: ["me", "market", "overview"], args: {}, ...who });
+    const lists = selects(o)[0];
+    expect(lists?.options.slice(-3).map((x) => x.value)).toEqual([
+      "map:holdings",
+      "map:tw",
+      "map:us",
+    ]);
+    const map = replyOf(
+      await registry.dispatchComponent(press(lists?.id ?? "", { values: ["map:holdings"] })),
+    );
+    expect(map.text).toContain("伺服器持股圖");
+    expect(map.text).toContain("RICE");
+    expect(map.text).toContain(EXCHANGE_DISCLAIMER);
+    expect(map.text).not.toContain("Alice");
+    const drawn = pictures.drawn.at(-1);
+    expect(drawn?.kind).toBe("exchange_map");
+    expect(
+      (drawn?.data as PictureDataMap["exchange_map"] | undefined)?.tiles.map((t) => t.code),
+    ).toEqual(["RICE"]);
+    // The list select is still there to go back.
+    expect(selects(map)[0]?.options.find((x) => x.default)?.value).toBe("map:holdings");
+    const tw = replyOf(
+      await registry.dispatchComponent(press(lists?.id ?? "", { values: ["map:tw"] })),
+    );
+    expect(tw.text).toContain("熱門台股圖");
+    expect(tw.text).toContain("格子大小為預設權重,非即時市值");
+  });
+
   it("refuses someone else's press and an expired one, also after a restart", async () => {
     const r = await opened();
     let service = r.service;

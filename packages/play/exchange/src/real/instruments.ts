@@ -130,6 +130,13 @@ export interface Rates {
   twd_per_usd: number;
 }
 
+/** Coins as a price in the market's own currency (the inverse of `toCoins`). */
+export function fromCoins(coins: number, market: MarketKind, r: Rates): number {
+  if (market === "local") return coins;
+  const twd = coins * r.twd_per_coin;
+  return market === "tw" ? twd : twd / r.twd_per_usd;
+}
+
 /** A quoted price in coins: TWD ÷ twd_per_coin; USD × twd_per_usd ÷ twd_per_coin. */
 export function toCoins(price: number, market: MarketKind, r: Rates): number {
   if (market === "local") return price;

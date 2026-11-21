@@ -82,12 +82,15 @@ describe("the small print", () => {
                 .filter((x) => !x.disabled)
                 .map((x) => ({ custom_id: x.id, message_id: "m", ...who }))
             : b.type === "select"
-              ? b.select.options.slice(0, 2).map((o) => ({
-                  custom_id: b.select.id,
-                  values: [o.value],
-                  message_id: "m",
-                  ...who,
-                }))
+              ? b.select.options
+                  // The first two of every select, every heat map and the 月線 of the chart's.
+                  .filter((o, i) => i < 2 || o.value.startsWith("map:") || o.value === "monthly")
+                  .map((o) => ({
+                    custom_id: b.select.id,
+                    values: [o.value],
+                    message_id: "m",
+                    ...who,
+                  }))
               : [];
         for (const c of controls) {
           const key = `${c.custom_id}|${c.values?.[0] ?? ""}`;
@@ -129,6 +132,7 @@ describe("the small print", () => {
       "exchange_portfolio",
       "exchange_rich",
       "exchange_receipt",
+      "exchange_map",
     ])
       expect(kinds.has(k as PictureKind), k).toBe(true);
     for (const d of pictures.data)

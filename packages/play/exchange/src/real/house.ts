@@ -40,7 +40,7 @@ export interface HouseParams {
   /** The one fee on every buy and sale, burned (rounded up, at least `fee_min`). */
   fee: number;
   fee_min: number;
-  /** Net coins the house may pay out per local day, market-wide. */
+  /** Net coins the house may pay out per local day, market-wide; `0`: no cap (the default). */
   cap_daily: number;
   /** 1 or 2: the most leverage (1: none). */
   leverage_max: number;
@@ -58,7 +58,7 @@ export interface HouseParams {
 export const DEFAULT_HOUSE: HouseParams = {
   fee: 0.01,
   fee_min: 1,
-  cap_daily: 1500,
+  cap_daily: 0,
   leverage_max: 2,
   line: 0.2,
   warn_half: 0.5,
@@ -437,7 +437,7 @@ function haltBuys(book: HouseBook, out: HouseOutcome): void {
     endOrder(book, out, o, "cancelled", "cap");
 }
 
-/** Pays `amount` in full; reaching the day's cap stops new buys, never this payment. */
+/** Pays `amount` in full; reaching the day's cap (when there is one) stops new buys, never this payment. */
 function payOut(
   book: HouseBook,
   out: HouseOutcome,
@@ -451,7 +451,11 @@ function payOut(
   post(out, `exchange:mint:${ref}`, person, ref, [[HOUSE_REASON.mint, amount]]);
   line(out, "mint", person, code, amount, ref);
   count(book.state, code, 0, amount);
-  if (netToday(book.state) >= ctx.params.cap_daily && !book.state.today.buys_halted)
+  if (
+    ctx.params.cap_daily > 0 &&
+    netToday(book.state) >= ctx.params.cap_daily &&
+    !book.state.today.buys_halted
+  )
     haltBuys(book, out);
   return amount;
 }

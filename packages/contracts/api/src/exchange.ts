@@ -70,6 +70,7 @@ export const ExchangeMarketSchema = z
     lists: z.array(z.object({ kind: ListKind, label: z.string() })),
     /** The list they see first (their holdings when they have any, else the local stocks). */
     default_list: ListKind,
+    /** `order_max`, `buy_per_day`, `limit_total`, `margin_cap` and `payout_cap_daily`: `0` is no cap. */
     rules: z.object({
       fee: z.number(),
       fee_min: z.number().int(),
@@ -120,6 +121,72 @@ export const ExchangeTickerSchema = z
   .meta({ id: "ApiExchangeTicker" });
 export type ExchangeTicker = z.output<typeof ExchangeTickerSchema>;
 
+const Timeframe = z.enum(["intraday", "daily", "weekly", "monthly"]);
+const MapKind = z.enum(["holdings", "tw", "us"]);
+
+/**
+ * `GET /api/member/exchange/candles/{code}?tf=`: a ticker's candles for one timeframe (當日 in
+ * 5-minute bars, 日線 about six months, 週線 about two years, 月線 ten years), oldest first, in its
+ * own currency; and the member's own lines on it (their average cost, each 2× position's line).
+ * A real stock's come from the provider on demand and are cached; a local stock's from its own
+ * hourly ticks, with no volume.
+ */
+export const ExchangeCandlesSchema = z
+  .object({
+    code: z.string(),
+    tf: Timeframe,
+    /** The market's zone: the bars' times are read in it. */
+    zone: z.string(),
+    currency: z.enum(["TWD", "USD", "COIN"]),
+    candles: z.array(
+      z.object({
+        /** When the bar starts, epoch ms. */
+        t: z.number().int(),
+        o: z.number(),
+        h: z.number(),
+        l: z.number(),
+        c: z.number(),
+        v: z.number().nullable(),
+      }),
+    ),
+    /** The bars carry volume. */
+    volume: z.boolean(),
+    source: z.enum(["provider", "ticks"]),
+    /** The provider could not answer: these are older than usual. */
+    stale: z.boolean(),
+    marks: z.object({ avg_cost: z.number().nullable(), liquidation: z.array(z.number()) }),
+  })
+  .meta({ id: "ApiExchangeCandles" });
+export type ExchangeCandles = z.output<typeof ExchangeCandlesSchema>;
+
+/**
+ * `GET /api/member/exchange/map/{kind}`: a heat map's tiles (伺服器持股圖: coins the server holds,
+ * a ticker held by too few people merged into 其他, never who; 熱門台股圖 / 熱門美股圖: the starter
+ * lists with their configured sectors and weights). The panel lays them out.
+ */
+export const ExchangeMapSchema = z
+  .object({
+    kind: MapKind,
+    title: z.string(),
+    footnote: z.string(),
+    hidden: z.number().int(),
+    tiles: z.array(
+      z.object({
+        code: z.string(),
+        name: z.string(),
+        sector: z.string(),
+        weight: z.number(),
+        change: z.number().nullable(),
+        price: z.number().nullable(),
+        currency: z.enum(["TWD", "USD", "COIN"]).nullable(),
+        coin_price: z.number().nullable(),
+        basis: z.string(),
+      }),
+    ),
+  })
+  .meta({ id: "ApiExchangeMap" });
+export type ExchangeMap = z.output<typeof ExchangeMapSchema>;
+
 /** `GET /api/member/exchange/account`: who they are here, what they may do, today's counts. */
 export const ExchangeAccountSchema = z
   .object({
@@ -130,12 +197,14 @@ export const ExchangeAccountSchema = z
     opened_at: z.string().nullable(),
     cannot_open: z.string().nullable(),
     leverage: z.object({ allowed: z.boolean(), why: z.string().nullable(), opted_in: z.boolean() }),
+    /** Holding caps by cost (`0`: none). */
     limits: z.object({ company: z.number().int(), total: z.number().int(), mult: z.number() }),
     today: z.object({
       orders: z.number().int(),
       bought: z.number().int(),
       orders_left: z.number().int(),
-      buy_left: z.number().int(),
+      /** `null`: no daily buy cap. */
+      buy_left: z.number().int().nullable(),
     }),
     balance: z.number().nullable(),
     investable: z.number().nullable(),
@@ -312,6 +381,24 @@ export const ExchangeAdminSchema = z
         }),
       ),
       books: z.object({ postings: z.number(), lines: z.number(), pending: z.number() }),
+      /**
+       * The exchange's coins in and out today, over 7 and over 30 days, each against all coins in
+       * wallets (`circulation`), and a warning past `warn_share` over 7 days (nothing is halted).
+       */
+      mint: z.object({
+        windows: z.array(
+          z.object({
+            days: z.number().int(),
+            burned: z.number().int(),
+            minted: z.number().int(),
+            net: z.number().int(),
+            share: z.number().nullable(),
+          }),
+        ),
+        circulation: z.number().nullable(),
+        warn_share: z.number(),
+        warning: z.string().nullable(),
+      }),
     }),
     tickers: z.array(
       z.object({
@@ -399,6 +486,16 @@ export const exchange = {
     .route({ method: "GET", path: "/api/member/exchange/ticker/{code}" })
     .input(z.object({ params: Code }))
     .output(ExchangeTickerSchema),
+  /** Candles on demand (opening a chart counts as a view of the ticker). */
+  candles: member()
+    .route({ method: "GET", path: "/api/member/exchange/candles/{code}" })
+    .input(z.object({ params: Code, query: z.object({ tf: Timeframe.default("daily") }) }))
+    .output(ExchangeCandlesSchema),
+  /** A heat map's tiles; a 熱門 map counts as a view of its tickers while it is polled. */
+  map: member()
+    .route({ method: "GET", path: "/api/member/exchange/map/{kind}" })
+    .input(z.object({ params: z.object({ kind: MapKind }) }))
+    .output(ExchangeMapSchema),
   watch: member()
     .route({ method: "POST", path: "/api/member/exchange/watch" })
     .input(z.object({ body: ExchangeWatchRequestSchema }))

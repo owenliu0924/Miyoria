@@ -57,6 +57,9 @@ class Wallet implements ExchangeWallet {
   async posted(_person: PersonId, key: string) {
     return this.rows.some((r) => r.key === key);
   }
+  async circulation() {
+    return this.rows.reduce((t, r) => t + r.delta, 0);
+  }
 }
 
 const dbs: { close(): void }[] = [];
@@ -212,6 +215,55 @@ describe("the exchange's routes", () => {
     expect(
       (admin.tickers as { code: string; holders: number }[]).find((t) => t.code === "RICE"),
     ).toMatchObject({ holders: 1 });
+    // The mint report: today's burn of the buy, against the coins in wallets.
+    const mint = (
+      admin.report as {
+        mint: { windows: { days: number; burned: number }[]; circulation: number | null };
+      }
+    ).mint;
+    expect(mint.windows.map((w) => w.days)).toEqual([1, 7, 30]);
+    expect(mint.windows[0]?.burned).toBeGreaterThanOrEqual(100);
+    expect(mint.circulation).toBe(wallet.rows.reduce((t, r) => t + r.delta, 0));
+  });
+
+  it("answer a ticker's candles with the member's own lines, and the heat maps with no one in them", async () => {
+    const { service, clock } = exchange();
+    clock.at = NOON;
+    await service.tick();
+    const hono = app(service);
+    await hono.request("/api/member/exchange/account", { method: "POST" });
+    await hono.request(
+      "/api/member/exchange/order",
+      json({ side: "buy", code: "RICE", coins: 101 }, { "idempotency-key": "k" }),
+    );
+    clock.at = NOON + 31 * 60_000;
+    await service.tick();
+    clock.at = NOON + 2 * 3_600_000;
+    await service.tick();
+    const day = await body(await hono.request("/api/member/exchange/candles/RICE?tf=intraday"));
+    expect(day).toMatchObject({
+      code: "RICE",
+      tf: "intraday",
+      currency: "COIN",
+      volume: false,
+      source: "ticks",
+    });
+    const bars = day.candles as { t: number; o: number; c: number; v: number | null }[];
+    expect(bars.length).toBeGreaterThanOrEqual(2);
+    expect(bars.every((b) => b.v === null)).toBe(true);
+    // Their average cost on their own chart.
+    expect((day.marks as { avg_cost: number | null }).avg_cost).toBeGreaterThan(0);
+    // Daily by default; a bad timeframe is refused.
+    expect((await body(await hono.request("/api/member/exchange/candles/RICE"))).tf).toBe("daily");
+    expect((await hono.request("/api/member/exchange/candles/RICE?tf=hourly")).status).toBe(400);
+    expect((await hono.request("/api/member/exchange/candles/ZZZZ")).status).toBe(404);
+    // One person holds RICE: it is not drawn, and nothing names them.
+    const held = await body(await hono.request("/api/member/exchange/map/holdings"));
+    expect(held).toMatchObject({ kind: "holdings", title: "伺服器持股圖", tiles: [], hidden: 1 });
+    expect(JSON.stringify(held)).not.toContain("小魚乾");
+    const tw = await body(await hono.request("/api/member/exchange/map/tw"));
+    expect(tw).toMatchObject({ kind: "tw", footnote: "格子大小為預設權重,非即時市值" });
+    expect((await hono.request("/api/member/exchange/map/nope")).status).toBe(400);
   });
 
   it("bring a refusal back as its status and sentence", async () => {

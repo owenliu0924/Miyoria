@@ -171,6 +171,12 @@ export class FakeWallet implements ExchangeWallet {
     this.#check();
     return this.rows.some((r) => r.person === person && r.key === key);
   }
+
+  /** Every coin in every wallet. */
+  async circulation(): Promise<number> {
+    this.#check();
+    return this.rows.reduce((t, r) => t + r.delta, 0);
+  }
 }
 
 export interface Rig {

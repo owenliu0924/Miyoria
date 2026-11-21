@@ -66,6 +66,26 @@ describe("the exchange wallet", () => {
     expect(w.currency).toBe("魚幣");
   });
 
+  it("sums every coin in every wallet for the exchange's mint report", async () => {
+    const r = await rig();
+    const w = new EconomyExchangeWallet(r.economy);
+    const before = await w.circulation();
+    await fund(r, ALICE, 200);
+    await fund(r, BOB, 10);
+    expect(await w.circulation()).toBe(before + 210);
+    // A transfer moves coins between wallets (its fee is burned): the sum is still the wallets'.
+    await r.economy.transfer(ALICE, BOB, 50, "t1");
+    const both = async () => (await balance(r, ALICE)) + (await balance(r, BOB));
+    expect(await w.circulation()).toBe(before + (await both()));
+    // A burned exchange fee leaves it.
+    const alice = await w.member(ALICE);
+    if (!alice) throw new Error("no alice");
+    const was = await w.circulation();
+    await w.post(alice.person, [{ reason: R.fee, delta: -5, key: "exchange:fee:x" }], "x", true);
+    expect(await w.circulation()).toBe(was - 5);
+    expect(await w.circulation()).toBe(before + (await both()));
+  });
+
   it("sums what came in by transfer since a time", async () => {
     const r = await rig();
     await fund(r, ALICE, 200);
