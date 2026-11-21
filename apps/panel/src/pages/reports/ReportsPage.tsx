@@ -12,9 +12,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { fmtDateTime, fmtRelative } from "@/lib/format";
+import { notify } from "@/lib/notify";
 import { ApproveDialog, CommentDialog, DuplicateDialog, RejectDialog } from "./Dialogs";
 import { areaLabel, closeLabel, isPending, PLACE, STATUS } from "./labels";
-import { isOff, useReports } from "./queries";
+import { isOff, useReportMutations, useReports } from "./queries";
 
 /** The report module is off (or this Core has none). */
 function ReportsOff({ detail }: { detail: string }) {
@@ -23,7 +24,7 @@ function ReportsOff({ detail }: { detail: string }) {
       <h2 className="text-[17px] font-semibold tracking-[-0.01em]">回報模組沒有啟動</h2>
       <p className="text-[13px] text-muted-foreground">
         在 Core 的設定檔加上 <code className="font-mono text-foreground">[modules.report]</code>,寫上{" "}
-        <code className="font-mono text-foreground">enabled = true</code>、repo 和 token,再重新啟動 Core。
+        <code className="font-mono text-foreground">enabled = true</code>、repo 和 GitHub App 的設定(或 token),再重新啟動 Core。
       </p>
       <p className="text-xs text-muted-foreground">{detail}</p>
       <div>
@@ -44,7 +45,14 @@ function Summary({ data }: { data: ReportList }) {
         <dt className="text-muted-foreground">GitHub</dt>
         <dd className="inline-flex items-center gap-1.5">
           <Dot tone={data.ready ? "success" : "warning"} />
-          {data.ready ? <span className="font-mono">{data.repo}</span> : <span>沒有設定 token 或 repo:不能核准,她也看不到回報工具</span>}
+          {data.ready ? (
+            <>
+              <span className="font-mono">{data.repo}</span>
+              <span className="text-muted-foreground">{data.auth === "app" ? "以 GitHub App 開" : "以 token 開"}</span>
+            </>
+          ) : (
+            <span>沒有設定 GitHub App 或 token:不能核准,她也看不到回報工具</span>
+          )}
         </dd>
       </div>
       <div className="flex items-center gap-1.5">
@@ -56,6 +64,10 @@ function Summary({ data }: { data: ReportList }) {
       <div className="flex items-center gap-1.5">
         <dt className="text-muted-foreground">每人每天</dt>
         <dd className="tabular-nums">{data.per_person_daily}</dd>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <dt className="text-muted-foreground">成員連結 GitHub</dt>
+        <dd>{data.linking ? "開" : "關"}</dd>
       </div>
       <div className="flex items-center gap-1.5">
         <dt className="text-muted-foreground">自動開 issue</dt>
@@ -110,12 +122,56 @@ function Meta({ draft, now }: { draft: ReportDraftView; now: number }) {
   );
 }
 
+const MENTION_WHY: Record<ReportDraftView["mention"]["why"], string> = {
+  on: "會",
+  anonymous: "不會:不知道回報的人是誰",
+  not_linked: "不會:回報的人沒有連結 GitHub",
+  member_off: "不會:回報的人關掉了標記",
+  owner_off: "不會:你拿掉了這份的標記",
+};
+
+/**
+ * Whether the issue's last line will name the reporter, from their own GitHub link; the owner
+ * may take it off this draft (or put it back).
+ */
+function MentionLine({ draft, waiting }: { draft: ReportDraftView; waiting: boolean }) {
+  const { mention } = useReportMutations();
+  const m = draft.mention;
+  if (m.why === "anonymous" || m.why === "not_linked") return null;
+  const toggle = (on: boolean) =>
+    mention.mutate(
+      { id: draft.id, on },
+      {
+        onSuccess: () => notify.ok(on ? "核准時會標記回報的人" : "這份不標記回報的人"),
+        onError: (e) => notify.error(e, "改不了標記"),
+      },
+    );
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px]">
+      <span className="text-muted-foreground">標記回報的人</span>
+      <span>
+        {m.will_add ? <>會在最後一行寫 <span className="font-mono">@{m.login}</span>(核准時再向 GitHub 確認一次)</> : MENTION_WHY[m.why]}
+      </span>
+      {m.why === "on" && (
+        <Button writes size="sm" variant="outline" disabled={waiting} busy={mention.isPending} onClick={() => toggle(false)}>
+          這份不標記
+        </Button>
+      )}
+      {m.why === "owner_off" && (
+        <Button writes size="sm" variant="outline" disabled={waiting} busy={mention.isPending} onClick={() => toggle(true)}>
+          改回標記
+        </Button>
+      )}
+    </div>
+  );
+}
+
 type Opened = "approve" | "comment" | "duplicate" | "reject" | null;
 
 function DraftRow({ draft, ready, now }: { draft: ReportDraftView; ready: boolean; now: number }) {
   const [open, setOpen] = useState<Opened>(null);
   const waiting = draft.status !== "draft";
-  const why = !ready ? "沒有設定 GitHub token 或 repo" : undefined;
+  const why = !ready ? "沒有設定 GitHub App 或 token" : undefined;
   return (
     <li data-report={draft.id} className="grid gap-2.5 border-b border-line-soft py-3.5 last:border-0">
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
@@ -154,6 +210,7 @@ function DraftRow({ draft, ready, now }: { draft: ReportDraftView; ready: boolea
         </p>
       )}
       <Fields draft={draft} />
+      <MentionLine draft={draft} waiting={waiting} />
       {draft.last_error && (
         <p role="alert" className="text-[13px] text-primary">
           {draft.last_error}

@@ -40,6 +40,10 @@ export function useReportMutations() {
       mutationFn: ({ id, issue }: { id: string; issue: number }) => api.rpc.reports.duplicate({ params: { id }, body: { issue } }),
       onSuccess: refresh,
     }),
+    mention: useMutation({
+      mutationFn: ({ id, on }: { id: string; on: boolean }) => api.rpc.reports.mention({ params: { id }, body: { on } }),
+      onSuccess: refresh,
+    }),
     reject: useMutation({
       mutationFn: ({ id, reason }: { id: string; reason: string }) => api.rpc.reports.reject({ params: { id }, body: { reason } }),
       onSuccess: refresh,

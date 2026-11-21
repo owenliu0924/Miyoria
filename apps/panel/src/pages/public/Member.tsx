@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { AFFINITY, FAMILIARITY, TRUST } from "./card";
 import { CardSection } from "./CardSection";
 import { Transfer } from "./Extras";
+import { GitHubLinkCard } from "./GitHubLink";
 import { useAuction } from "./Market";
 import { QuestsCard } from "./Play";
 import { WalletCard } from "./Wallet";
@@ -387,6 +388,7 @@ export function MemberActions() {
       <CardSection />
       <Transfer />
       {me.data?.can_request_song && <RequestSong />}
+      <GitHubLinkCard />
       <YourData />
     </>
   );
