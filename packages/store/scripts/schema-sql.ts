@@ -18,6 +18,8 @@ import { authSchema } from "../../auth/src/migrations.js";
 import * as authTables from "../../auth/src/schema.js";
 import { directiveSchema } from "../../brain/directive/src/migrations.js";
 import * as directiveTables from "../../brain/directive/src/schema.js";
+import { reportSchema } from "../../brain/report/src/migrations.js";
+import * as reportTables from "../../brain/report/src/schema.js";
 import { initiativeSchema } from "../../brain/selfhost/src/initiative-migrations.js";
 import * as initiativeTables from "../../brain/selfhost/src/initiative-schema.js";
 import { clusterSchema } from "../../cluster/src/migrations.js";
@@ -115,6 +117,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   market: { tables: marketTables, schema: marketSchema },
   memory: { tables: memoryTables, schema: memorySchema, handWritten: MEMORY_SEARCH_SQL },
   notes: { tables: notesTables, schema: notesSchema },
+  report: { tables: reportTables, schema: reportSchema },
   transcript: { tables: transcriptTables, schema: transcriptSchema },
 };
 
