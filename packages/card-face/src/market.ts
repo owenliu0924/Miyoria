@@ -230,14 +230,16 @@ export type TileLines = (typeof TILE_LINES)[number];
 
 /**
  * A rough width in px of `text` at `size` px, for the panel's choice of what a tile writes (the
- * picture measures its own font): a CJK or full-width character is an em, a capital or a digit
+ * picture measures its own font): a CJK or full-width character, an arrow or a math sign is an em,
+ * a capital or a digit
  * about 0.62 em, other Latin about 0.52 em, a space 0.3 em; bold about 6% wider.
  */
 export function approxTextWidth(text: string, size: number, bold = false): number {
   let em = 0;
   for (const ch of text) {
     const c = ch.codePointAt(0) ?? 0;
-    if (c >= 0x2e80 || (c >= 0xff00 && c <= 0xffef)) em += 1;
+    // CJK, full-width, and the arrows, math signs and shapes (▲ ▼ −) a move is written with.
+    if (c >= 0x2e80 || (c >= 0xff00 && c <= 0xffef) || (c >= 0x2190 && c <= 0x25ff)) em += 1;
     else if (c === 0x20) em += 0.3;
     else if ((c >= 0x41 && c <= 0x5a) || (c >= 0x30 && c <= 0x39) || c === 0x25) em += 0.62;
     else em += 0.52;

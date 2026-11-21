@@ -373,6 +373,9 @@ export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
 /** A Taiwan code without its board (`2330.TW` → `2330`): the tiles have little room. */
 export const shortCode = (code: string): string => code.replace(/\.TWO?$/, "");
 
+/** A tile at least this wide may ellipsize a long name above its code. */
+const NAME_CUT_MIN = 90;
+
 /**
  * What a tile of `w` × `h` writes and at what sizes: the first of `TILE_LINES` that fits whole
  * (the name over its code and the move, the name and the move, the code and the move, the code),
@@ -391,7 +394,9 @@ function tileText(name: string, code: string, move: string, w: number, h: number
         const big = i === 0;
         const px = big ? size : small;
         const text = part === "name" ? name : part === "code" ? code : move;
-        if (textWidth(text, px, big ? 700 : 400) > w - 6) ok = false;
+        // A long name may be ellipsized when its code is written under it (the panel does the same).
+        const cut = part === "name" && (lines as readonly string[]).includes("code") && w >= NAME_CUT_MIN;
+        if (!cut && textWidth(text, px, big ? 700 : 400) > w - 6) ok = false;
         height += px + (i > 0 ? 3 : 0);
       });
       if (ok && height + 6 <= h) return { lines, size, small };
