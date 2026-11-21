@@ -45,6 +45,13 @@ import {
   type WalletView,
 } from "./types.js";
 
+/**
+ * Under every transfer: coins are play points and may never be traded for money or goods.
+ * Discord draws a line that starts with `-# ` as small print.
+ */
+export const TRANSFER_SMALL_PRINT =
+  "魚幣只是遊戲裡的點數,沒有現金價值。禁止用真錢或任何現實物品買賣、交換魚幣;違反者可能被凍結錢包,衍生的糾紛或損失請自行負責。";
+
 const log = getLogger("economy.commands");
 
 export const PATHS = [
@@ -289,7 +296,8 @@ class Handler {
       const r = await economy.transfer(inv.invoker, to, amount, `discord:${newId()}`);
       const view = await economy.wallet(inv.invoker);
       return result(
-        `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。`,
+        `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。
+-# ${TRANSFER_SMALL_PRINT}`,
       );
     });
   }
