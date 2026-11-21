@@ -3124,6 +3124,83 @@
         }
       }
     },
+    "reports": {
+      "list": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.reports.review",
+            "refusal": "reviewing problem reports needs `admin.reports.review`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/reports"
+          }
+        }
+      },
+      "approve": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.reports.review",
+            "refusal": "reviewing problem reports needs `admin.reports.review`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/reports/{id}/approve"
+          }
+        }
+      },
+      "comment": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.reports.review",
+            "refusal": "reviewing problem reports needs `admin.reports.review`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/reports/{id}/comment"
+          }
+        }
+      },
+      "duplicate": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.reports.review",
+            "refusal": "reviewing problem reports needs `admin.reports.review`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/reports/{id}/duplicate"
+          }
+        }
+      },
+      "reject": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.reports.review",
+            "refusal": "reviewing problem reports needs `admin.reports.review`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/reports/{id}/reject"
+          }
+        }
+      }
+    },
     "eval": {
       "live": {
         "~orpc": {

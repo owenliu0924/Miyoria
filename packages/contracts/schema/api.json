@@ -14178,6 +14178,301 @@
         "platform_role"
       ]
     },
+    "ApiReportApproveRequest": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "maxLength": 256
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      }
+    },
+    "ApiReportCommentRequest": {
+      "type": "object",
+      "properties": {
+        "issue": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 20000
+        }
+      },
+      "required": [
+        "issue"
+      ]
+    },
+    "ApiReportDraftView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/ApiReportStatus"
+        },
+        "area": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "happened": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "steps": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "place": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "channel",
+                "dm",
+                "other"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "likely_duplicate": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "title": {
+                  "type": "string"
+                },
+                "url": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "number",
+                "title",
+                "url"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "issue_title": {
+          "type": "string"
+        },
+        "issue_body": {
+          "type": "string"
+        },
+        "comment_body": {
+          "type": "string"
+        },
+        "issue": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "url": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "number",
+                "url"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "decided_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "decided_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "closed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "close_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "notified_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "status",
+        "area",
+        "title",
+        "happened",
+        "expected",
+        "steps",
+        "person_id",
+        "place",
+        "created_at",
+        "likely_duplicate",
+        "issue_title",
+        "issue_body",
+        "comment_body",
+        "issue",
+        "decided_by",
+        "decided_at",
+        "reason",
+        "last_error",
+        "closed_at",
+        "close_reason",
+        "notified_at"
+      ]
+    },
+    "ApiReportDuplicateRequest": {
+      "type": "object",
+      "properties": {
+        "issue": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "issue"
+      ]
+    },
+    "ApiReportList": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "auto_open": {
+          "type": "boolean"
+        },
+        "per_person_daily": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "global_daily": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "today": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "drafts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiReportDraftView"
+          }
+        }
+      },
+      "required": [
+        "repo",
+        "ready",
+        "auto_open",
+        "per_person_daily",
+        "global_daily",
+        "today",
+        "drafts"
+      ]
+    },
+    "ApiReportRejectRequest": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "reason"
+      ]
+    },
+    "ApiReportStatus": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "opening",
+        "opened",
+        "commenting",
+        "commented",
+        "duplicate",
+        "rejected"
+      ]
+    },
     "ApiRevertSettingsRequest": {
       "type": "object",
       "properties": {

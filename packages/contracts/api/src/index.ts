@@ -49,6 +49,7 @@ import { persona } from "./persona.js";
 import { mindPlan } from "./plan.js";
 import { prompts } from "./prompts.js";
 import { publicView } from "./public.js";
+import { reports } from "./reports.js";
 import { roles } from "./roles.js";
 import { sandbox } from "./sandbox.js";
 import { moduleSettings, places } from "./settings.js";
@@ -866,6 +867,23 @@ export {
   PublicTodaySchema,
 } from "./public.js";
 export {
+  NODE_REPORTS,
+  type ReportApproveRequest,
+  ReportApproveRequestSchema,
+  type ReportCommentRequest,
+  ReportCommentRequestSchema,
+  type ReportDraftView,
+  ReportDraftViewSchema,
+  type ReportDuplicateRequest,
+  ReportDuplicateRequestSchema,
+  type ReportList,
+  ReportListSchema,
+  type ReportRejectRequest,
+  ReportRejectRequestSchema,
+  type ReportStatus,
+  ReportStatusSchema,
+} from "./reports.js";
+export {
   type AssignRoleRequest,
   AssignRoleRequestSchema,
   type AuthScope,
@@ -1079,6 +1097,7 @@ export const contract = {
   karaoke,
   karaokeAdmin,
   karaokeRooms,
+  reports,
   eval: evalRoutes,
 };
 
