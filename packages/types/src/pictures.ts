@@ -209,33 +209,45 @@ export interface GiftPictureData {
 
 // ---- the deep-sea exchange (docs/design/exchange.md §7), filled by `@miyoria/play/exchange` ----
 
-/** One company's quote: its price, the day's move and the last two weeks as a line. */
+/**
+ * Which colour means up (owner 2026-11-21: one convention for the whole product, a config choice):
+ * `tw` red up and green down (the default: the community is Taiwanese), `us` green up and red down.
+ * Every chart states it in a legend, and a move is never colour alone (signs and arrows too).
+ */
+export type ExchangeColors = "tw" | "us";
+
+/** One ticker's quote: its price in its currency and in coins, the move, its line. */
 export interface ExchangeQuotePicture {
   code: string;
   name: string;
-  /** The sector's word (`AI`, `民生`, ...). */
+  /** The market's word (`台股`, `美股`, `這裡獨家`). */
   sector: string;
   blurb: string;
+  /** The price's own currency word (`TWD`, `USD`, `魚幣`). */
   currency: string;
-  /** Prices are in cents (10000 = 100.00). */
+  /** Prices are in cents (10000 = 100.00), in the ticker's own currency. */
   price: number;
   ref: number;
   /** From the reference, as a fraction. */
   change: number;
   limit: "up" | "down" | null;
-  /** Held rounds' prices, oldest first. */
+  /** Prices over the chart's span, oldest first. */
   series: number[];
   /** What `series` covers (`11/8 – 11/21`); `null`: nothing yet. */
   range: string | null;
-  /** The newest news about it, newest first (her headline or the plain one). */
   news: { headline: string; direction: "up" | "down" }[];
-  /** `YYYY-MM-DD HH:00` of the last round. */
+  /** The quote's time (`2026-11-23 10:05 的報價`). */
   as_of: string;
+  /** The price in coins (`約 2,000 魚幣一股`); `null` when it is already in coins. */
+  coin_line: string | null;
+  /** `開盤中` / `休市`, and how old the quote is (`延遲約 3 分鐘`). */
+  market_line: string;
+  colors: ExchangeColors;
   /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
   small_print: string;
 }
 
-/** A member's own holdings: only ever drawn for them. */
+/** A member's own holdings: only ever drawn for them (or shared by them, with their name). */
 export interface ExchangePortfolioPicture {
   name: string;
   currency: string;
@@ -252,39 +264,58 @@ export interface ExchangePortfolioPicture {
     line_price: number;
   }[];
   as_of: string;
+  colors: ExchangeColors;
   /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
   small_print: string;
 }
 
-/** The day's market: the index, every company's move, the totals, her closing line. */
-export interface ExchangeDayPicture {
-  date: string;
+/** The market at a glance: the five local stocks with their lines, what the server holds most, the sessions. */
+export interface ExchangeOverviewPicture {
+  /** The five local stocks (新手推薦 · 這裡獨家), prices in cents of coins. */
+  local: { code: string; name: string; price: number; change: number; series: number[] }[];
+  /** The tickers most held in the server: counts of holders only, never who. */
+  popular: { code: string; name: string; holders: number; change: number | null }[];
+  /** Each market: open or not and its hours (`台股 09:00–13:30 開盤中`). */
+  markets: { label: string; open: boolean; hours: string }[];
+  as_of: string;
+  colors: ExchangeColors;
+  small_print: string;
+}
+
+/** A trade's receipt: bought or sold what, at what price. Its owner may share it. */
+export interface ExchangeReceiptPicture {
+  name: string;
+  side: "buy" | "sell";
+  code: string;
+  ticker: string;
+  /** Shares as drawn (`0.0500`). */
+  shares: string;
+  /** The fill price in its own currency, as drawn (`TWD 2,000.00`). */
+  price: string;
+  /** Coins paid (a buy, fee included) or received (a sale, after the fee). */
+  coins: number;
+  fee: number;
   currency: string;
-  fish: number;
-  fish_ref: number;
-  level: number | null;
-  vault: number;
-  volume: number;
-  burned: number;
-  halted: boolean;
-  companies: {
-    code: string;
-    name: string;
-    price: number;
-    change: number;
-    limit: "up" | "down" | null;
-  }[];
-  /** The index through the day's held rounds. */
-  series: number[];
-  her: string | null;
-  /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
+  leverage: number;
+  at: string;
   small_print: string;
 }
 
-/** The rich list or the week's volume table (people who hide are not on it). */
+/** The bankruptcy notice: everything closed, the cooling-off, nothing owed. */
+export interface ExchangeBankruptPicture {
+  name: string;
+  currency: string;
+  /** Coins the house wrote off (never owed by them). */
+  written_off: number;
+  since: string;
+  until: string;
+  small_print: string;
+}
+
+/** The rich list (people who hide are not on it). */
 export interface ExchangeBoardPicture {
   currency: string;
-  /** The Monday the week started (the volume table); `null` for the rich list. */
+  /** Kept for the board's layout; `null` for the rich list. */
   week_start: string | null;
   rows: { rank: number; name: string; value: number; extra: string | null }[];
   /** The viewer's own place, when the picture is for someone (`null`: off the table or hidden). */
@@ -304,9 +335,10 @@ export interface PictureDataMap {
   auction: AuctionPictureData;
   exchange_quote: ExchangeQuotePicture;
   exchange_portfolio: ExchangePortfolioPicture;
-  exchange_day: ExchangeDayPicture;
+  exchange_overview: ExchangeOverviewPicture;
   exchange_rich: ExchangeBoardPicture;
-  exchange_volume: ExchangeBoardPicture;
+  exchange_receipt: ExchangeReceiptPicture;
+  exchange_bankrupt: ExchangeBankruptPicture;
   gift: GiftPictureData;
 }
 

@@ -389,13 +389,18 @@ export class RealDesk {
 
   /**
    * What the pass asks quotes for (owner 2026-11-21: polling scales with what is in use): tickers with
-   * an open position, a waiting order, or viewed in the last `view_minutes`.
+   * an open position, a waiting order, viewed in the last `view_minutes`, or on the watch list of
+   * someone active in the last `watch_active_days` while the ticker's market is open.
    */
   pollSet(): RealInstrument[] {
     const book = this.#book();
     const now = this.#now();
     const used = new Set([...book.positions.map((p) => p.code), ...book.orders.map((o) => o.code)]);
     const viewed = this.#d.config.view_minutes * 60_000;
+    // Watched tickers of people active lately, only while their market is open.
+    const watched = this.#d.store.real.watchedByActive(
+      now - this.#d.config.watch_active_days * DAY_MS,
+    );
     return this.instruments().filter((i) => {
       if (i.market === "local") return this.#d.config.local_stocks;
       const st = this.#status(i.code);
@@ -403,6 +408,7 @@ export class RealDesk {
       const row = this.#d.store.real.instrument(i.code);
       return (
         used.has(i.code) ||
+        (watched.has(i.code) && isOpenAt(this.sessions[i.market], now)) ||
         (row?.last_viewed_at !== null &&
           row?.last_viewed_at !== undefined &&
           now - row.last_viewed_at < viewed)
@@ -609,6 +615,8 @@ export class RealDesk {
       }
       await this.#poll();
     });
+    // Outside the turn: a starter's first quote takes a turn of its own.
+    if (this.#d.config.open) await this.#discoverStarters();
     await this.postLosses();
   }
 
@@ -872,10 +880,13 @@ export class RealDesk {
   history(
     code: string,
     days = 14,
+    /** Counts as a view (keeps the ticker polled for a while); an overview's sparkline does not. */
+    viewed = true,
   ): { line: RealLine; points: { at: Timestamp; price: number }[] } | null {
     const line = this.view().instruments.find((i) => i.code === code);
     if (!line) return null;
-    this.#d.store.real.setInstrument(code, { last_viewed_at: this.#now() }, this.#now());
+    if (viewed)
+      this.#d.store.real.setInstrument(code, { last_viewed_at: this.#now() }, this.#now());
     const points = this.#d.store.real
       .ticks(code, this.#now() - days * DAY_MS)
       .map((t) => ({ at: toTimestamp(t.at), price: t.price }));
@@ -1177,8 +1188,21 @@ export class RealDesk {
     if (n >= this.#d.config.lookups_per_hour)
       return refuse(429, "lookups", "查詢太頻繁了,晚一點再查新的代號");
     this.#lookups.set(asker.person, { hour, n: n + 1 });
+    return this.#discover(list, asker.person);
+  }
+
+  /**
+   * Validates the first of `list` the provider knows and stores it (`by`: who asked; `null` for
+   * the starter lists). A code that does not validate is remembered for a while.
+   */
+  async #discover(
+    list: readonly string[],
+    by: PersonId | null,
+  ): Promise<{ ok: true; instrument: RealLine } | Refusal> {
+    const now = this.#now();
     let why = "找不到這個代號";
     for (const code of list) {
+      if ((this.#negative.get(code)?.until ?? 0) > now) continue;
       const market: MarketKind = code.endsWith(".TW") || code.endsWith(".TWO") ? "tw" : "us";
       const provider = this.#d.providers.get(
         market === "tw" ? this.#d.config.provider_tw : this.#d.config.provider_us,
@@ -1215,11 +1239,11 @@ export class RealDesk {
           provider: provider.id,
           status: this.#d.config.blocked.includes(code) ? "blocked" : "active",
           added_at: now,
-          added_by: asker.person,
+          added_by: by,
         },
         now,
       );
-      this.#d.store.real.setInstrument(code, { last_viewed_at: now }, now);
+      if (by !== null) this.#d.store.real.setInstrument(code, { last_viewed_at: now }, now);
       // Its price now, if it is in session: the same checks as every quote.
       const inst = this.#inst(code);
       if (inst && q.regular) {
@@ -1231,6 +1255,52 @@ export class RealDesk {
       if (line) return { ok: true, instrument: line };
     }
     return refuse(404, "unknown", why);
+  }
+
+  /** The starter lists' codes, each as the provider's symbol once it validated (`null`: not yet or never). */
+  starters(market: "tw" | "us"): string[] {
+    const codes = market === "tw" ? this.#d.config.starters_tw : this.#d.config.starters_us;
+    const out: string[] = [];
+    for (const typed of codes) {
+      const hit = candidates(typed).find((c) => {
+        const row = this.#d.store.real.instrument(c);
+        return row !== null && row.status !== "removed" && row.market === market;
+      });
+      if (hit) out.push(hit);
+    }
+    return out;
+  }
+
+  /** Validates a few starter codes not yet known (the pass calls it; failures drop silently). */
+  async #discoverStarters(max = 3): Promise<void> {
+    const now = this.#now();
+    let asked = 0;
+    for (const market of ["tw", "us"] as const) {
+      const codes = market === "tw" ? this.#d.config.starters_tw : this.#d.config.starters_us;
+      for (const typed of codes) {
+        if (asked >= max) return;
+        const list = candidates(typed).filter((c) =>
+          market === "tw" ? c.endsWith(".TW") || c.endsWith(".TWO") : !c.includes(".TW"),
+        );
+        if (list.length === 0) continue;
+        if (list.some((c) => this.#d.store.real.instrument(c) !== null)) continue;
+        if (list.every((c) => (this.#negative.get(c)?.until ?? 0) > now)) continue;
+        asked++;
+        const r = await this.#discover(list, null);
+        // A starter that fails is left out of its list for good (until the config changes).
+        if (!r.ok)
+          for (const c of list)
+            this.#negative.set(c, { until: Number.MAX_SAFE_INTEGER, why: r.message });
+      }
+    }
+  }
+
+  /** A member opened a ticker: 我最近看過 (the newest 20), and they count as active. */
+  noteView(person: PersonId, code: string): void {
+    const now = this.#now();
+    this.#d.store.real.mark(person, "view", code, now);
+    this.#d.store.real.trimMarks(person, "view", 20);
+    this.#d.store.real.setInstrument(code, { last_viewed_at: now }, now);
   }
 
   /** Why a provider's answer is not a ticker people may trade; `null` when it is. */
@@ -1595,6 +1665,17 @@ export class RealDesk {
       .filter((o) => o.person === person && o.side === "buy")
       .reduce((t, o) => t + o.coins, 0);
     return { held, escrow, codes: [...codes] };
+  }
+
+  /** How many people hold each ticker (counts only, never who). */
+  holderCounts(): Map<string, number> {
+    const by = new Map<string, Set<PersonId>>();
+    for (const p of this.#book().positions) {
+      const set = by.get(p.code) ?? new Set<PersonId>();
+      set.add(p.person);
+      by.set(p.code, set);
+    }
+    return new Map([...by].map(([code, set]) => [code, set.size]));
   }
 
   /** The tickers people added, for the owner's page. */

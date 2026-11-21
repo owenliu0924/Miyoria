@@ -16,6 +16,7 @@ import {
   exchangeHouse,
   exchangeHouseLines,
   exchangeInstruments,
+  exchangeMarks,
   exchangeNotices,
   exchangePostings,
   exchangeQuotes,
@@ -783,6 +784,20 @@ export class RealStore {
           .where(eq(exchangeRealFills.person_id, absorb))
           .run().changes,
       );
+      // Marks: the kept person's win where both have one.
+      for (const m of orm
+        .select()
+        .from(exchangeMarks)
+        .where(eq(exchangeMarks.person_id, absorb))
+        .all())
+        orm
+          .insert(exchangeMarks)
+          .values({ ...m, person_id: keep })
+          .onConflictDoNothing()
+          .run();
+      const marks = Number(
+        orm.delete(exchangeMarks).where(eq(exchangeMarks.person_id, absorb)).run().changes,
+      );
       // Bankruptcy follows the person kept: the longer cooling-off wins.
       const state = this.state();
       if (state) {
@@ -800,10 +815,117 @@ export class RealStore {
         exchange_real_orders: orders,
         exchange_real_positions: positions,
         exchange_real_fills: fills,
+        exchange_marks: marks,
       };
     });
   }
+
+  // ---- a member's marks: the watch list and what they viewed --------------------------------
+
+  /** Sets (or refreshes) a mark. */
+  mark(person: PersonId, kind: MarkKind, code: string, at: number): void {
+    this.#write(() =>
+      this.#db.orm
+        .insert(exchangeMarks)
+        .values({ person_id: person, kind, code, at: toTimestamp(at) })
+        .onConflictDoUpdate({
+          target: [exchangeMarks.person_id, exchangeMarks.kind, exchangeMarks.code],
+          set: { at: toTimestamp(at) },
+        })
+        .run(),
+    );
+  }
+
+  /** Removes a mark; whether there was one. */
+  unmark(person: PersonId, kind: MarkKind, code: string): boolean {
+    return this.#write(
+      () =>
+        Number(
+          this.#db.orm
+            .delete(exchangeMarks)
+            .where(
+              and(
+                eq(exchangeMarks.person_id, person),
+                eq(exchangeMarks.kind, kind),
+                eq(exchangeMarks.code, code),
+              ),
+            )
+            .run().changes,
+        ) > 0,
+    );
+  }
+
+  /** A person's marks of a kind, newest first. */
+  marks(person: PersonId, kind: MarkKind, limit = 50): { code: string; at: number }[] {
+    return this.#db.orm
+      .select({ code: exchangeMarks.code, at: exchangeMarks.at })
+      .from(exchangeMarks)
+      .where(and(eq(exchangeMarks.person_id, person), eq(exchangeMarks.kind, kind)))
+      .orderBy(desc(exchangeMarks.at))
+      .limit(limit)
+      .all()
+      .map((m) => ({ code: m.code, at: Date.parse(m.at) }));
+  }
+
+  /** Keeps a person's newest `keep` marks of a kind and drops the rest. */
+  trimMarks(person: PersonId, kind: MarkKind, keep: number): void {
+    const old = this.marks(person, kind, 1000).slice(keep);
+    if (old.length === 0) return;
+    this.#write(() =>
+      this.#db.orm
+        .delete(exchangeMarks)
+        .where(
+          and(
+            eq(exchangeMarks.person_id, person),
+            eq(exchangeMarks.kind, kind),
+            inArray(
+              exchangeMarks.code,
+              old.map((m) => m.code),
+            ),
+          ),
+        )
+        .run(),
+    );
+  }
+
+  /**
+   * The codes on the watch lists of people who viewed anything since `activeSince` (a forgotten
+   * watch list is not polled).
+   */
+  watchedByActive(activeSince: number): Set<string> {
+    const active = new Set(
+      this.#db.orm
+        .selectDistinct({ person: exchangeMarks.person_id })
+        .from(exchangeMarks)
+        .where(and(eq(exchangeMarks.kind, "view"), gte(exchangeMarks.at, toTimestamp(activeSince))))
+        .all()
+        .map((r) => r.person),
+    );
+    if (active.size === 0) return new Set();
+    return new Set(
+      this.#db.orm
+        .select({ code: exchangeMarks.code })
+        .from(exchangeMarks)
+        .where(and(eq(exchangeMarks.kind, "watch"), inArray(exchangeMarks.person_id, [...active])))
+        .all()
+        .map((r) => r.code),
+    );
+  }
+
+  /** Codes viewed by anyone since `since` (today's movers look only at these and what is held). */
+  viewedSince(since: number): Set<string> {
+    return new Set(
+      this.#db.orm
+        .selectDistinct({ code: exchangeMarks.code })
+        .from(exchangeMarks)
+        .where(and(eq(exchangeMarks.kind, "view"), gte(exchangeMarks.at, toTimestamp(since))))
+        .all()
+        .map((r) => r.code),
+    );
+  }
 }
+
+export type MarkKind = "watch" | "view";
 
 function strip(o: RealOrderRecord): RealOrder {
   return {

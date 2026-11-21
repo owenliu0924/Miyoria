@@ -1,14 +1,18 @@
-// The exchange's picture messages (v1): a ticker's quote with its line, a member's own holdings
-// (only ever drawn for them), and the rich list, as templates of `PicturesKey`. Each carries the
-// exchange's small print at the bottom. A picture goes above the text card with its one-line
-// summary as the alt text; the text card is all there is when the renderer is absent, slow or
-// answers `null`. Drawing never decides anything.
+// The exchange's picture messages (v1), as templates of `PicturesKey`: the market overview, a
+// ticker's quote with its line, a member's own holdings (only ever drawn for them, or shared by
+// them), the rich list, a trade receipt and the bankruptcy notice. Each carries the exchange's
+// small print at the bottom and the product's one up/down colour convention (`colors`). A picture
+// goes above the text card with its one-line summary as the alt text; the text card is all there
+// is when the renderer is absent, slow or answers `null`. Drawing never decides anything.
 
 import { type CommandReply, pictureParts } from "@miyoria/commands";
 import {
+  type ExchangeBankruptPicture,
   type ExchangeBoardPicture,
+  type ExchangeOverviewPicture,
   type ExchangePortfolioPicture,
   type ExchangeQuotePicture,
+  type ExchangeReceiptPicture,
   exchangeSmallPrint,
   type PictureDataMap,
   type PictureFile,
@@ -17,30 +21,36 @@ import {
 } from "@miyoria/types";
 import type { RealLine, RealPortfolio } from "./real/desk.js";
 import { QTY_REAL } from "./real/house.js";
+import type { ListRow } from "./real/lists.js";
 import type { BoardsView, ExchangeService } from "./service.js";
 
 /** Longest wait for a picture before the answer goes out with its text alone. */
 export const PICTURE_TIMEOUT_MS = 8_000;
 
-const MARKET_WORD: Readonly<Record<string, string>> = {
+export const MARKET_WORD: Readonly<Record<string, string>> = {
   tw: "台股",
   us: "美股",
-  local: "這裡獨家",
+  local: "獨家",
   crypto: "加密",
 };
 
 /** Cents of a price, as the templates draw them (two decimals). */
 const cents = (x: number) => Math.round(x * 100);
 
+const local = (iso: string | number, offsetMinutes: number) =>
+  new Date(
+    (typeof iso === "number" ? iso : Date.parse(iso)) + offsetMinutes * 60_000,
+  ).toISOString();
+
 function shortDate(iso: string, offsetMinutes: number): string {
   const d = new Date(Date.parse(iso) + offsetMinutes * 60_000);
   return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
-function quoteTime(iso: string | null, offsetMinutes: number): string {
-  if (iso === null) return "還沒有報價";
-  const d = new Date(Date.parse(iso) + offsetMinutes * 60_000).toISOString();
-  return `${d.slice(0, 10)} ${d.slice(11, 16)} 的報價`;
+/** `2026-11-23 10:05`, in the exchange's zone. */
+export function timeText(iso: string | number, offsetMinutes: number): string {
+  const d = local(iso, offsetMinutes);
+  return `${d.slice(0, 10)} ${d.slice(11, 16)}`;
 }
 
 /** A share count as drawn: whole shares plainly, a fraction to four places. */
@@ -49,33 +59,79 @@ export function sharesText(qty: number): string {
   return Number.isInteger(shares) ? String(shares) : shares.toFixed(4);
 }
 
+/** Coins as drawn: `2,045` (two decimals below 100). */
+export function coinText(x: number): string {
+  return x >= 100 ? Math.round(x).toLocaleString("en-US") : (Math.round(x * 100) / 100).toString();
+}
+
+/** `台股開盤中・報價約 3 分鐘前` (the source states no delay; the quote's own time is what we know). */
+export function marketLine(l: RealLine): string {
+  const where = MARKET_WORD[l.market] ?? l.market;
+  const state = l.open ? "開盤中" : "休市";
+  const age =
+    l.age_minutes === null
+      ? "還沒有報價"
+      : l.age_minutes <= 1
+        ? "報價是最新的"
+        : `報價約 ${l.age_minutes} 分鐘前${l.stale ? "(太舊,暫停成交)" : ""}`;
+  return `${where}${state}・${age}`;
+}
+
+/**
+ * The chart's points: today's while the market is open and there are some (intraday), else the
+ * last price of each day (daily).
+ */
+export function chartPoints(
+  line: RealLine,
+  points: readonly { at: string; price: number }[],
+  now: number,
+  offsetMinutes: number,
+): { points: { at: string; price: number }[]; intraday: boolean } {
+  const today = local(now, offsetMinutes).slice(0, 10);
+  const todays = points.filter((p) => local(p.at, offsetMinutes).slice(0, 10) === today);
+  if (line.open && todays.length >= 2) return { points: todays, intraday: true };
+  const byDay = new Map<string, { at: string; price: number }>();
+  for (const p of points) byDay.set(local(p.at, offsetMinutes).slice(0, 10), p);
+  return { points: [...byDay.values()], intraday: false };
+}
+
 export function quotePictureData(
   service: ExchangeService,
   h: { line: RealLine; points: { at: string; price: number }[] },
+  now: number,
 ): ExchangeQuotePicture {
   const l = h.line;
   const offset = service.config.utc_offset_minutes;
-  const first = h.points[0];
-  const last = h.points.at(-1);
+  const chart = chartPoints(l, h.points, now, offset);
+  const first = chart.points[0];
+  const last = chart.points.at(-1);
   const price = l.price ?? last?.price ?? 0;
   const ref = l.change === null ? price : price / (1 + l.change);
-  const local = l.local !== null;
+  const isLocal = l.local !== null;
   const coin = l.currency === "COIN";
   return {
     code: l.code,
     name: l.name,
     sector: MARKET_WORD[l.market] ?? l.market,
-    blurb: local ? (l.local?.what_moves ?? "") : `約 ${l.coin_price ?? "—"} 魚幣一股・${l.source}`,
+    blurb: isLocal ? (l.local?.what_moves ?? "") : l.source,
     currency: coin ? "魚幣" : l.currency,
     price: cents(price),
     ref: cents(ref),
     change: l.change ?? 0,
     limit: null,
-    series: h.points.map((p) => cents(p.price)),
-    range: first && last ? `${shortDate(first.at, offset)} – ${shortDate(last.at, offset)}` : null,
+    series: chart.points.map((p) => cents(p.price)),
+    range:
+      first && last
+        ? chart.intraday
+          ? "今天"
+          : `${shortDate(first.at, offset)} – ${shortDate(last.at, offset)}`
+        : null,
     news: [],
-    as_of: quoteTime(l.at, offset),
-    small_print: exchangeSmallPrint({ real: !local }),
+    as_of: l.at === null ? "還沒有報價" : `${timeText(l.at, offset)} 的報價`,
+    coin_line: coin || l.coin_price === null ? null : `約 ${coinText(l.coin_price)} 魚幣一股`,
+    market_line: marketLine(l),
+    colors: service.config.colors,
+    small_print: exchangeSmallPrint({ real: !isLocal }),
   };
 }
 
@@ -110,7 +166,56 @@ export function portfolioPictureData(
         line_price: cents(h.line_price ?? 0),
       })),
     as_of: p.bankrupt ? "破產冷靜期中" : "以最新報價計算",
+    colors: service.config.colors,
     small_print: exchangeSmallPrint({ real: true, leverage }),
+  };
+}
+
+export function overviewPictureData(
+  service: ExchangeService,
+  now: number,
+): ExchangeOverviewPicture {
+  const offset = service.config.utc_offset_minutes;
+  const localRows = service.lists.rows("local", null);
+  const popular = service.lists.rows("popular", null).slice(0, 6);
+  const view = service.real.view();
+  const hours = (m: "tw" | "us" | "local") => {
+    const s = service.real.sessions[m];
+    return `${s.open}–${s.close}`;
+  };
+  return {
+    local: localRows.map((r) => {
+      const h = service.real.history(r.code, 2, false);
+      return {
+        code: r.code,
+        name: r.name,
+        price: cents(r.price ?? 0),
+        change: r.change ?? 0,
+        series: (h?.points ?? []).map((p) => cents(p.price)),
+      };
+    }),
+    popular: popular.map((r: ListRow) => ({
+      code: r.code,
+      name: r.name,
+      holders: r.holders ?? 0,
+      change: r.change,
+    })),
+    markets: [
+      {
+        label: "台股",
+        open: view.sessions.find((s) => s.market === "tw")?.open ?? false,
+        hours: hours("tw"),
+      },
+      {
+        label: "美股",
+        open: view.sessions.find((s) => s.market === "us")?.open ?? false,
+        hours: hours("us"),
+      },
+      { label: "獨家", open: localRows.some((r) => r.open), hours: hours("local") },
+    ],
+    as_of: timeText(now, offset),
+    colors: service.config.colors,
+    small_print: exchangeSmallPrint({ real: true }),
   };
 }
 
@@ -126,6 +231,52 @@ export function boardPictureData(b: BoardsView): ExchangeBoardPicture {
     })),
     me: b.me === null ? null : { rank: b.me.rich, hidden: b.me.hidden },
     small_print: exchangeSmallPrint({ real: true }),
+  };
+}
+
+/** A fill as its receipt. */
+export function receiptPictureData(
+  service: ExchangeService,
+  name: string,
+  fill: RealPortfolio["fills"][number],
+): ExchangeReceiptPicture {
+  const line = service.real.view().instruments.find((i) => i.code === fill.code);
+  const currency = line?.currency ?? "COIN";
+  // The fill's price is in coins a share; its own currency's price is shown when the rate allows.
+  const native =
+    line && line.price !== null && line.coin_price
+      ? (fill.price * line.price) / line.coin_price
+      : fill.price;
+  return {
+    name,
+    side: fill.side === "sell" ? "sell" : "buy",
+    code: fill.code,
+    ticker: line?.name ?? fill.code,
+    shares: sharesText(fill.qty),
+    price:
+      currency === "COIN" ? `${coinText(fill.price)} 魚幣` : `${currency} ${native.toFixed(2)}`,
+    coins: fill.side === "sell" ? fill.paid : fill.gross + fill.fee,
+    fee: fill.fee,
+    currency: service.currency,
+    leverage: fill.leverage,
+    at: timeText(fill.at, service.config.utc_offset_minutes),
+    small_print: exchangeSmallPrint({ real: line?.local === null, leverage: fill.leverage > 1 }),
+  };
+}
+
+export function bankruptPictureData(
+  service: ExchangeService,
+  name: string,
+  b: NonNullable<RealPortfolio["bankrupt"]>,
+): ExchangeBankruptPicture {
+  const offset = service.config.utc_offset_minutes;
+  return {
+    name,
+    currency: service.currency,
+    written_off: b.written_off,
+    since: timeText(b.since, offset).slice(0, 10),
+    until: timeText(b.until, offset).slice(0, 10),
+    small_print: exchangeSmallPrint({ real: true, leverage: true }),
   };
 }
 

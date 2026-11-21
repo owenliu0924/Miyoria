@@ -267,6 +267,15 @@ CREATE TABLE \`exchange_instruments\` (
 	CONSTRAINT "exchange_instruments_market_check" CHECK("market" IN ('tw', 'us', 'crypto', 'local'))
 ) STRICT;
 
+CREATE TABLE \`exchange_marks\` (
+	\`person_id\` text NOT NULL,
+	\`kind\` text NOT NULL,
+	\`code\` text NOT NULL,
+	\`at\` integer NOT NULL,
+	CONSTRAINT \`exchange_marks_pk\` PRIMARY KEY(\`person_id\`, \`kind\`, \`code\`),
+	CONSTRAINT "exchange_marks_kind_check" CHECK("kind" IN ('watch', 'view'))
+) STRICT;
+
 CREATE TABLE \`exchange_quote_ticks\` (
 	\`code\` text NOT NULL,
 	\`at\` integer NOT NULL,
@@ -354,6 +363,8 @@ CREATE TABLE \`exchange_real_positions\` (
 CREATE INDEX \`exchange_house_lines_day_idx\` ON \`exchange_house_lines\` (\`day\`,\`kind\`);
 
 CREATE INDEX \`exchange_instruments_status_idx\` ON \`exchange_instruments\` (\`status\`);
+
+CREATE INDEX \`exchange_marks_kind_idx\` ON \`exchange_marks\` (\`kind\`,\`at\`);
 
 CREATE INDEX \`exchange_real_fills_person_idx\` ON \`exchange_real_fills\` (\`person_id\`,\`created_at\`);
 

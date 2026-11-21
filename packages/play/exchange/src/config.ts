@@ -1,10 +1,18 @@
 // `[modules.exchange]` (docs/design/exchange.md, owner 2026-11-21): v1 is paper trading of real
-// Taiwan and US stocks with fish coins. The market is off until the owner turns `open` on, and it
-// trades nothing until the owner lists instruments and a provider for them.
+// Taiwan and US stocks (quoted by Yahoo Finance) and five local stocks tied to her, with fish
+// coins. The market is off until the owner turns `open` on. Tickers are an open universe: the
+// first lookup validates one through the provider and stores it.
 //
-// The local market (five made-up companies, the closed vault, rounds, news) stays in the package
-// behind `local_enabled = false` with nothing reaching it; its numbers are at the end, without a
-// place on the panel.
+// The old local market (the closed vault, rounds, news) stays in the package behind
+// `local_enabled = false` with nothing reaching it; its numbers are at the end, without a place on
+// the panel.
+//
+// ```toml
+// [modules.exchange]
+// open = true
+// colors = "tw"
+// starters_tw = ["2330", "0050"]
+// ```
 
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
 import { BOND_LADDER } from "@miyoria/types";
@@ -22,18 +30,6 @@ const coins = (d: number) => z.number().int().positive().default(d);
 const tier = (d: string) => z.enum(TIERS).default(d);
 const date = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
-/**
- * ```toml
- * [modules.exchange]
- * open = true
- * [[modules.exchange.instruments]]
- * code = "2330"
- * name = "台積電"
- * market = "tw"
- * provider = "my-provider"
- * symbol = "2330"
- * ```
- */
 /** A local stock's anchor price in coins. */
 const localAnchor = (d: number) => z.number().min(10).max(1000).default(d);
 
@@ -312,6 +308,76 @@ export const ExchangeConfigSchema = z
         DPSK: localAnchor(94),
       })
       .default({ RICE: 100, WHLE: 108, NAPS: 88, CUBE: 116, DPSK: 94 }),
+
+    /** Which colour means up on every chart (one for the whole product), stated in a legend. */
+    colors: z
+      .enum(["tw", "us"])
+      .default("tw")
+      .meta(
+        setting({
+          kind: "select",
+          label: "漲跌顏色",
+          labels: { tw: "紅漲綠跌", us: "綠漲紅跌" },
+          help: "tw:紅漲綠跌(台股習慣,預設);us:綠漲紅跌(美股習慣)。每張圖都會標示",
+          group: "market",
+        }),
+      ),
+    /**
+     * The starter lists (熱門台股 / 熱門美股): codes as people type them. Each is validated through
+     * the provider like any ticker, a few per pass; one that fails is dropped silently.
+     */
+    starters_tw: z
+      .array(z.string().min(1).max(16))
+      .max(50)
+      .default([
+        "2330",
+        "2317",
+        "2454",
+        "2308",
+        "2382",
+        "2412",
+        "2881",
+        "2882",
+        "2891",
+        "2303",
+        "1301",
+        "2002",
+        "0050",
+        "0056",
+        "00878",
+        "006208",
+      ]),
+    starters_us: z
+      .array(z.string().min(1).max(16))
+      .max(50)
+      .default([
+        "AAPL",
+        "MSFT",
+        "NVDA",
+        "AMZN",
+        "GOOGL",
+        "META",
+        "TSLA",
+        "BRK-B",
+        "JPM",
+        "V",
+        "SPY",
+        "QQQ",
+        "VOO",
+        "VTI",
+        "DIA",
+      ]),
+    /** A member's watch list holds at most this many tickers. */
+    watch_max: z.number().int().min(1).max(50).default(20),
+    /**
+     * Watched tickers count as in use for polling only while their market is open and the member
+     * used the exchange within this many days (a forgotten watch list spends nothing).
+     */
+    watch_active_days: z.number().int().min(1).max(30).default(3),
+    /** Ticker suggestions while typing: per person per minute (answers are cached). */
+    suggest_per_minute: z.number().int().min(1).max(600).default(60),
+    /** How long the market's Discord controls work before they ask to be reopened. */
+    component_minutes: z.number().int().min(1).max(60).default(15),
 
     // ---- the old local market (closed vault, rounds): off, no panel ----
     local_enabled: z.boolean().default(false),

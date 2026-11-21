@@ -528,3 +528,22 @@ export const exchangeInstruments = sqliteTable(
     check("exchange_instruments_market_check", sql`${t.market} IN ('tw', 'us', 'crypto', 'local')`),
   ],
 );
+
+/**
+ * A member's marks on tickers: `watch` (their watch list, capped), `view` (what they opened
+ * recently, for 我最近看過 and for whether they are still around). Never shown to anyone else.
+ */
+export const exchangeMarks = sqliteTable(
+  "exchange_marks",
+  {
+    person_id: text().notNull(),
+    kind: text().notNull(),
+    code: text().notNull(),
+    at: micros().notNull(),
+  },
+  (t) => [
+    primaryKey({ name: "exchange_marks_pk", columns: [t.person_id, t.kind, t.code] }),
+    index("exchange_marks_kind_idx").on(t.kind, t.at),
+    check("exchange_marks_kind_check", sql`${t.kind} IN ('watch', 'view')`),
+  ],
+);

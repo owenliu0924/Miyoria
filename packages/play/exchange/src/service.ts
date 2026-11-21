@@ -65,6 +65,8 @@ import {
   weekOf,
 } from "./engine/index.js";
 import { type Asker, RealDesk } from "./real/desk.js";
+import { MarketLists } from "./real/lists.js";
+import type { LocalSignals } from "./real/local.js";
 import type { QuoteProvider } from "./real/provider.js";
 import {
   type AccountRecord,
@@ -114,6 +116,8 @@ export interface ExchangeDeps {
   seed?: string;
   /** The quote providers by id (v1: real stocks). */
   providers?: ReadonlyMap<string, QuoteProvider>;
+  /** Yesterday's counts of her real things for the local stocks (none wired yet: they walk alone). */
+  signals?: LocalSignals;
 }
 
 export type Refusal = { ok: false; status: number; code: string; message: string };
@@ -407,6 +411,8 @@ export class ExchangeService {
   readonly params: EngineParams;
   /** v1: real Taiwan and US stocks, the house as the counterparty. */
   readonly real: RealDesk;
+  /** Browsing: the lists, the watch list, suggestions while typing. */
+  readonly lists: MarketLists;
 
   constructor(deps: ExchangeDeps) {
     this.#d = deps;
@@ -419,7 +425,9 @@ export class ExchangeService {
       now: deps.now,
       log: deps.log,
       ask: (account) => this.#ask(account),
+      ...(deps.signals ? { signals: deps.signals } : {}),
     });
+    this.lists = new MarketLists(this.real, deps.store, () => deps.config, deps.now);
   }
 
   /** Who is asking, for the real desk: their person, trader facts and the rules. */
@@ -462,6 +470,11 @@ export class ExchangeService {
 
   get currency(): string {
     return this.#d.wallet()?.currency ?? CURRENCY;
+  }
+
+  /** The service's clock (epoch ms). */
+  nowMs(): number {
+    return this.#d.now();
   }
 
   #now(): number {
