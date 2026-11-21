@@ -4912,247 +4912,349 @@
         "enabled": {
           "type": "boolean"
         },
-        "paused": {
-          "type": "boolean"
-        },
-        "paused_by": {
-          "type": [
-            "string",
-            "null"
+        "rates": {
+          "type": "object",
+          "properties": {
+            "twd_per_coin": {
+              "type": "number"
+            },
+            "twd_per_usd": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "twd_per_coin",
+            "twd_per_usd"
           ]
         },
-        "vault": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "vault_rows": {
-          "anyOf": [
-            {
+        "report": {
+          "type": "object",
+          "properties": {
+            "today": {
+              "type": "object",
+              "properties": {
+                "day": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "date": {
+                  "type": "string"
+                },
+                "burned": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "minted": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "net": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "written_off": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "buys_halted": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "day",
+                "date",
+                "burned",
+                "minted",
+                "net",
+                "written_off",
+                "buys_halted"
+              ]
+            },
+            "days": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "day": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "burned": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "minted": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "net": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "written_off": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "day",
+                  "date",
+                  "burned",
+                  "minted",
+                  "net",
+                  "written_off"
+                ]
+              }
+            },
+            "cap_daily": {
               "type": "integer",
               "minimum": -9007199254740991,
               "maximum": 9007199254740991
             },
-            {
-              "type": "null"
+            "bankrupt": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": "string"
+                  },
+                  "until": {
+                    "type": "string"
+                  },
+                  "written_off": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "name",
+                  "since",
+                  "until",
+                  "written_off"
+                ]
+              }
+            },
+            "quotes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "price": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "refused": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "last_refusal": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "price",
+                  "at",
+                  "refused",
+                  "last_refusal"
+                ]
+              }
+            },
+            "books": {
+              "type": "object",
+              "properties": {
+                "postings": {
+                  "type": "number"
+                },
+                "lines": {
+                  "type": "number"
+                },
+                "pending": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "postings",
+                "lines",
+                "pending"
+              ]
             }
+          },
+          "required": [
+            "today",
+            "days",
+            "cap_daily",
+            "bankrupt",
+            "quotes",
+            "books"
           ]
         },
-        "burned": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "burned_week": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "obligations": {
-          "type": "number"
-        },
-        "level": {
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "fish": {
-          "type": "number"
-        },
-        "owed": {
+        "tickers": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
-              "person": {
+              "code": {
                 "type": "string"
               },
               "name": {
-                "type": [
-                  "string",
-                  "null"
-                ]
+                "type": "string"
               },
-              "gross": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "person",
-              "name",
-              "gross"
-            ]
-          }
-        },
-        "pending_postings": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "accounts": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "positions": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "open_orders": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "rounds": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "round": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+              "market": {
+                "type": "string"
               },
-              "at": {
+              "exchange": {
+                "type": "string"
+              },
+              "type": {
                 "type": "string"
               },
               "status": {
                 "type": "string"
               },
-              "fish": {
-                "type": "number"
-              },
-              "level": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
-              "vault": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "burned": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "volume": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "round",
-              "at",
-              "status",
-              "fish",
-              "level",
-              "vault",
-              "burned",
-              "volume"
-            ]
-          }
-        },
-        "holders": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "person": {
-                "type": "string"
-              },
-              "name": {
+              "reason": {
                 "type": [
                   "string",
                   "null"
                 ]
               },
-              "positions": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "code": {
-                      "type": "string"
-                    },
-                    "leverage": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "qty": {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    "value": {
-                      "type": "number"
-                    },
-                    "equity": {
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "code",
-                    "leverage",
-                    "qty",
-                    "value",
-                    "equity"
-                  ]
-                }
+              "added_at": {
+                "type": "string"
+              },
+              "missing_days": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "holders": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
               }
             },
             "required": [
-              "person",
+              "code",
               "name",
-              "positions"
+              "market",
+              "exchange",
+              "type",
+              "status",
+              "reason",
+              "added_at",
+              "missing_days",
+              "holders"
             ]
           }
         },
-        "params": {
-          "type": "object",
-          "propertyNames": {
-            "type": "string"
-          },
-          "additionalProperties": {
-            "type": [
-              "number",
-              "boolean",
-              "string"
+        "providers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "last_error"
+            ]
+          }
+        },
+        "refresh_seconds": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "positions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "code": {
+                "type": "string"
+              },
+              "leverage": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "qty": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "code",
+              "leverage",
+              "qty",
+              "value"
             ]
           }
         }
       },
       "required": [
         "enabled",
-        "paused",
-        "paused_by",
-        "vault",
-        "vault_rows",
-        "burned",
-        "burned_week",
-        "obligations",
-        "level",
-        "fish",
-        "owed",
-        "pending_postings",
-        "accounts",
-        "positions",
-        "open_orders",
-        "rounds",
-        "holders",
-        "params"
+        "rates",
+        "report",
+        "tickers",
+        "providers",
+        "refresh_seconds",
+        "positions"
       ]
     },
     "ApiExchangeAdminSellRequest": {
@@ -5162,10 +5264,6 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 40
-        },
-        "note": {
-          "type": "string",
-          "maxLength": 200
         }
       },
       "required": [
@@ -5237,42 +5335,6 @@
             ]
           }
         },
-        "volume": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "rank": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "name": {
-                "type": "string"
-              },
-              "volume": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "trades": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "me": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "rank",
-              "name",
-              "volume",
-              "trades",
-              "me"
-            ]
-          }
-        },
         "me": {
           "anyOf": [
             {
@@ -5290,25 +5352,12 @@
                     }
                   ]
                 },
-                "volume": {
-                  "anyOf": [
-                    {
-                      "type": "integer",
-                      "minimum": -9007199254740991,
-                      "maximum": 9007199254740991
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
                 "hidden": {
                   "type": "boolean"
                 }
               },
               "required": [
                 "rich",
-                "volume",
                 "hidden"
               ]
             },
@@ -5316,17 +5365,12 @@
               "type": "null"
             }
           ]
-        },
-        "week_start": {
-          "type": "string"
         }
       },
       "required": [
         "currency",
         "rich",
-        "volume",
-        "me",
-        "week_start"
+        "me"
       ]
     },
     "ApiExchangeCancelRequest": {
@@ -5343,178 +5387,6 @@
       ],
       "additionalProperties": false
     },
-    "ApiExchangeCompany": {
-      "type": "object",
-      "properties": {
-        "code": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "sector": {
-          "type": "string"
-        },
-        "blurb": {
-          "type": "string"
-        },
-        "price": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "ref": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "change": {
-          "type": "number"
-        },
-        "limit": {
-          "anyOf": [
-            {
-              "type": "string",
-              "enum": [
-                "up",
-                "down"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "spark": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          }
-        }
-      },
-      "required": [
-        "code",
-        "name",
-        "sector",
-        "blurb",
-        "price",
-        "ref",
-        "change",
-        "limit",
-        "spark"
-      ]
-    },
-    "ApiExchangeCompanyPage": {
-      "type": "object",
-      "properties": {
-        "company": {
-          "$ref": "#/$defs/ApiExchangeCompany"
-        },
-        "history": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "round": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "at": {
-                "type": "string"
-              },
-              "price": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "round",
-              "at",
-              "price"
-            ]
-          }
-        },
-        "closes": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "day": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "date": {
-                "type": "string"
-              },
-              "price": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              }
-            },
-            "required": [
-              "day",
-              "date",
-              "price"
-            ]
-          }
-        },
-        "news": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiExchangeNews"
-          }
-        },
-        "mine": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "qty": {
-                  "type": "integer",
-                  "minimum": -9007199254740991,
-                  "maximum": 9007199254740991
-                },
-                "cost": {
-                  "type": "integer",
-                  "minimum": -9007199254740991,
-                  "maximum": 9007199254740991
-                },
-                "value": {
-                  "type": "number"
-                },
-                "leveraged": {
-                  "type": "integer",
-                  "minimum": -9007199254740991,
-                  "maximum": 9007199254740991
-                }
-              },
-              "required": [
-                "qty",
-                "cost",
-                "value",
-                "leveraged"
-              ]
-            },
-            {
-              "type": "null"
-            }
-          ]
-        }
-      },
-      "required": [
-        "company",
-        "history",
-        "closes",
-        "news",
-        "mine"
-      ]
-    },
     "ApiExchangeLeverageRequest": {
       "type": "object",
       "properties": {
@@ -5527,130 +5399,287 @@
       ],
       "additionalProperties": false
     },
-    "ApiExchangeLeveraged": {
+    "ApiExchangeLine": {
       "type": "object",
       "properties": {
-        "id": {
-          "type": "string"
-        },
         "code": {
           "type": "string"
         },
         "name": {
           "type": "string"
         },
-        "qty": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "leverage": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "exposure": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "margin": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "loan": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "carry": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "market": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us",
+            "crypto",
+            "local"
+          ]
         },
         "price": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+          "type": [
+            "number",
+            "null"
+          ]
         },
-        "value": {
-          "type": "number"
+        "currency": {
+          "type": "string",
+          "enum": [
+            "TWD",
+            "USD",
+            "COIN"
+          ]
         },
-        "equity": {
-          "type": "number"
+        "local": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "what_moves": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "what_moves"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "ratio": {
-          "type": "number"
+        "coin_price": {
+          "type": [
+            "number",
+            "null"
+          ]
         },
-        "line_price": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "age_minutes": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "warn_half_price": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "source": {
+          "type": "string"
         },
-        "warn_near_price": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "change": {
+          "type": [
+            "number",
+            "null"
+          ]
         },
-        "opened_day": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ]
         },
-        "can_close": {
+        "open": {
           "type": "boolean"
         },
-        "at_risk": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "stale": {
+          "type": "boolean"
+        },
+        "quotes": {
+          "type": "string",
+          "enum": [
+            "intraday",
+            "close"
+          ]
         }
       },
       "required": [
-        "id",
         "code",
         "name",
-        "qty",
-        "leverage",
-        "exposure",
-        "margin",
-        "loan",
-        "carry",
+        "market",
         "price",
-        "value",
-        "equity",
-        "ratio",
-        "line_price",
-        "warn_half_price",
-        "warn_near_price",
-        "opened_day",
-        "can_close",
-        "at_risk"
+        "currency",
+        "local",
+        "coin_price",
+        "age_minutes",
+        "source",
+        "change",
+        "at",
+        "open",
+        "stale",
+        "quotes"
       ]
     },
-    "ApiExchangeMarginRequest": {
+    "ApiExchangeList": {
       "type": "object",
       "properties": {
-        "position": {
+        "kind": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 40
+          "enum": [
+            "local",
+            "popular",
+            "movers",
+            "tw",
+            "us",
+            "mine",
+            "recent",
+            "watch"
+          ]
         },
-        "coins": {
-          "type": "integer",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991
+        "label": {
+          "type": "string"
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "market": {
+                "type": "string",
+                "enum": [
+                  "tw",
+                  "us",
+                  "crypto",
+                  "local"
+                ]
+              },
+              "price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "currency": {
+                "type": "string",
+                "enum": [
+                  "TWD",
+                  "USD",
+                  "COIN"
+                ]
+              },
+              "local": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "what_moves": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "what_moves"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "coin_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "age_minutes": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "source": {
+                "type": "string"
+              },
+              "change": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "at": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "open": {
+                "type": "boolean"
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "quotes": {
+                "type": "string",
+                "enum": [
+                  "intraday",
+                  "close"
+                ]
+              },
+              "holders": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "market",
+              "price",
+              "currency",
+              "local",
+              "coin_price",
+              "age_minutes",
+              "source",
+              "change",
+              "at",
+              "open",
+              "stale",
+              "quotes",
+              "holders"
+            ]
+          }
         }
       },
       "required": [
-        "position",
-        "coins"
+        "kind",
+        "label",
+        "rows"
+      ]
+    },
+    "ApiExchangeLookupRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20
+        }
+      },
+      "required": [
+        "code"
       ],
       "additionalProperties": false
     },
@@ -5660,250 +5689,288 @@
         "enabled": {
           "type": "boolean"
         },
-        "paused": {
-          "type": "boolean"
-        },
-        "halted": {
-          "type": "boolean"
-        },
         "currency": {
           "type": "string"
         },
-        "last_round": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "round": {
-                  "type": "integer",
-                  "minimum": -9007199254740991,
-                  "maximum": 9007199254740991
-                },
-                "at": {
-                  "type": "string"
-                },
-                "status": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "round",
-                "at",
-                "status"
-              ]
+        "colors": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us"
+          ]
+        },
+        "rates": {
+          "type": "object",
+          "properties": {
+            "twd_per_coin": {
+              "type": "number"
             },
-            {
-              "type": "null"
+            "twd_per_usd": {
+              "type": "number"
             }
+          },
+          "required": [
+            "twd_per_coin",
+            "twd_per_usd"
           ]
         },
-        "next_round_at": {
-          "type": [
-            "string",
-            "null"
+        "house": {
+          "type": "object",
+          "properties": {
+            "buys_halted": {
+              "type": "boolean"
+            },
+            "net_today": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "cap_daily": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "buys_halted",
+            "net_today",
+            "cap_daily"
           ]
         },
-        "fish": {
-          "type": "number"
-        },
-        "fish_ref": {
-          "type": "number"
-        },
-        "level": {
-          "type": [
-            "number",
-            "null"
-          ]
-        },
-        "vault": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "obligations": {
-          "type": "number"
-        },
-        "burned_week": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "companies": {
+        "sessions": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ApiExchangeCompany"
+            "type": "object",
+            "properties": {
+              "market": {
+                "type": "string",
+                "enum": [
+                  "tw",
+                  "us",
+                  "crypto",
+                  "local"
+                ]
+              },
+              "open": {
+                "type": "boolean"
+              },
+              "hours": {
+                "type": "string"
+              },
+              "zone": {
+                "type": "string"
+              },
+              "stale": {
+                "type": "boolean"
+              },
+              "notice": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "market",
+              "open",
+              "hours",
+              "zone",
+              "stale",
+              "notice"
+            ]
           }
         },
-        "news": {
+        "lists": {
           "type": "array",
           "items": {
-            "$ref": "#/$defs/ApiExchangeNews"
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "local",
+                  "popular",
+                  "movers",
+                  "tw",
+                  "us",
+                  "mine",
+                  "recent",
+                  "watch"
+                ]
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "label"
+            ]
           }
+        },
+        "default_list": {
+          "type": "string",
+          "enum": [
+            "local",
+            "popular",
+            "movers",
+            "tw",
+            "us",
+            "mine",
+            "recent",
+            "watch"
+          ]
         },
         "rules": {
-          "$ref": "#/$defs/ApiExchangeRules"
-        },
-        "her": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "text": {
-                  "type": "string"
-                },
-                "kind": {
-                  "type": "string"
-                },
-                "at": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "text",
-                "kind",
-                "at"
-              ]
+          "type": "object",
+          "properties": {
+            "fee": {
+              "type": "number"
             },
-            {
-              "type": "null"
+            "fee_min": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "order_min": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "order_max": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "orders_per_day": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "buy_per_day": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "limit_total": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "min_hold_minutes": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "leverage": {
+              "type": "boolean"
+            },
+            "leverage_line": {
+              "type": "number"
+            },
+            "leverage_min_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "leverage_min_tier": {
+              "type": "string"
+            },
+            "margin_cap": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "account_min_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "account_min_tier": {
+              "type": "string"
+            },
+            "bankrupt_cooling_days": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "quote_max_age_seconds": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "payout_cap_daily": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "watch_max": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
             }
+          },
+          "required": [
+            "fee",
+            "fee_min",
+            "order_min",
+            "order_max",
+            "orders_per_day",
+            "buy_per_day",
+            "limit_total",
+            "min_hold_minutes",
+            "leverage",
+            "leverage_line",
+            "leverage_min_days",
+            "leverage_min_tier",
+            "margin_cap",
+            "account_min_days",
+            "account_min_tier",
+            "bankrupt_cooling_days",
+            "quote_max_age_seconds",
+            "payout_cap_daily",
+            "watch_max"
           ]
         },
-        "rating": {
-          "anyOf": [
-            {
-              "type": "object",
-              "properties": {
-                "day": {
-                  "type": "integer",
-                  "minimum": -9007199254740991,
-                  "maximum": 9007199254740991
-                },
-                "items": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "properties": {
-                      "code": {
-                        "type": "string"
-                      },
-                      "rating": {
-                        "type": "string"
-                      },
-                      "reason": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "code",
-                      "rating",
-                      "reason"
-                    ]
-                  }
-                },
-                "at": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "day",
-                "items",
-                "at"
-              ]
+        "small_print": {
+          "type": "object",
+          "properties": {
+            "base": {
+              "type": "string"
             },
-            {
-              "type": "null"
+            "real": {
+              "type": "string"
+            },
+            "leverage": {
+              "type": "string"
             }
+          },
+          "required": [
+            "base",
+            "real",
+            "leverage"
           ]
+        },
+        "no_dividends": {
+          "type": "string"
+        },
+        "no_exchange": {
+          "type": "string"
         }
       },
       "required": [
         "enabled",
-        "paused",
-        "halted",
         "currency",
-        "last_round",
-        "next_round_at",
-        "fish",
-        "fish_ref",
-        "level",
-        "vault",
-        "obligations",
-        "burned_week",
-        "companies",
-        "news",
+        "colors",
+        "rates",
+        "house",
+        "sessions",
+        "lists",
+        "default_list",
         "rules",
-        "her",
-        "rating"
-      ]
-    },
-    "ApiExchangeNews": {
-      "type": "object",
-      "properties": {
-        "id": {
-          "type": "string"
-        },
-        "company": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "event",
-            "earnings"
-          ]
-        },
-        "direction": {
-          "type": "string",
-          "enum": [
-            "up",
-            "down"
-          ]
-        },
-        "size": {
-          "type": "string",
-          "enum": [
-            "small",
-            "medium",
-            "large"
-          ]
-        },
-        "headline": {
-          "type": "string"
-        },
-        "body": {
-          "type": "string"
-        },
-        "by": {
-          "type": "string",
-          "enum": [
-            "her",
-            "plain"
-          ]
-        },
-        "round": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "at": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "company",
-        "kind",
-        "direction",
-        "size",
-        "headline",
-        "body",
-        "by",
-        "round",
-        "at"
+        "small_print",
+        "no_dividends",
+        "no_exchange"
       ]
     },
     "ApiExchangeOrder": {
@@ -5920,25 +5987,6 @@
           "enum": [
             "buy",
             "sell"
-          ]
-        },
-        "kind": {
-          "type": "string",
-          "enum": [
-            "market",
-            "limit"
-          ]
-        },
-        "limit": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
           ]
         },
         "coins": {
@@ -5979,8 +6027,6 @@
         "id",
         "code",
         "side",
-        "kind",
-        "limit",
         "coins",
         "qty",
         "leverage",
@@ -6000,9 +6046,11 @@
             "sell"
           ]
         },
-        "company": {
+        "code": {
           "type": "string",
-          "pattern": "^[A-Z]{4}$"
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
         },
         "coins": {
           "type": "integer",
@@ -6011,78 +6059,65 @@
         },
         "shares": {
           "type": "number",
-          "exclusiveMinimum": 0
+          "exclusiveMinimum": 0,
+          "maximum": 1000000000
         },
         "all": {
           "type": "boolean"
         },
-        "limit": {
+        "leverage": {
           "anyOf": [
             {
               "type": "number",
-              "exclusiveMinimum": 0
+              "const": 1
             },
             {
-              "type": "null"
+              "type": "number",
+              "const": 2
             }
           ]
         },
-        "days": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 20
-        },
-        "leverage": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 2
-        },
         "position": {
           "type": "string",
+          "minLength": 1,
           "maxLength": 40
         }
       },
       "required": [
         "side",
-        "company"
-      ],
-      "additionalProperties": false
-    },
-    "ApiExchangePauseRequest": {
-      "type": "object",
-      "properties": {
-        "paused": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "paused"
+        "code"
       ],
       "additionalProperties": false
     },
     "ApiExchangePortfolio": {
       "type": "object",
       "properties": {
-        "account": {
-          "$ref": "#/$defs/ApiExchangeAccount"
+        "balance": {
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "holdings": {
           "type": "array",
           "items": {
             "type": "object",
             "properties": {
+              "id": {
+                "type": "string"
+              },
               "code": {
                 "type": "string"
               },
               "name": {
                 "type": "string"
               },
-              "qty": {
+              "leverage": {
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
-              "sellable": {
+              "qty": {
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
@@ -6092,30 +6127,84 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
-              "value": {
-                "type": "number"
-              },
-              "price": {
+              "margin": {
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
+              },
+              "loan": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "equity": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "ratio": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "line_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "warn_half_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "warn_near_price": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "opened_at": {
+                "type": "string"
+              },
+              "can_sell": {
+                "type": "boolean"
               }
             },
             "required": [
+              "id",
               "code",
               "name",
+              "leverage",
               "qty",
-              "sellable",
               "cost",
+              "margin",
+              "loan",
+              "price",
               "value",
-              "price"
+              "equity",
+              "ratio",
+              "line_price",
+              "warn_half_price",
+              "warn_near_price",
+              "opened_at",
+              "can_sell"
             ]
-          }
-        },
-        "leveraged": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/ApiExchangeLeveraged"
           }
         },
         "orders": {
@@ -6136,11 +6225,7 @@
                 "type": "string"
               },
               "side": {
-                "type": "string",
-                "enum": [
-                  "buy",
-                  "sell"
-                ]
+                "type": "string"
               },
               "kind": {
                 "type": "string"
@@ -6151,9 +6236,7 @@
                 "maximum": 9007199254740991
               },
               "price": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+                "type": "number"
               },
               "gross": {
                 "type": "integer",
@@ -6165,17 +6248,12 @@
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
               },
-              "tax": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
-              "carry": {
-                "type": "integer",
-                "minimum": -9007199254740991,
-                "maximum": 9007199254740991
-              },
               "paid": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "shortfall": {
                 "type": "integer",
                 "minimum": -9007199254740991,
                 "maximum": 9007199254740991
@@ -6198,9 +6276,8 @@
               "price",
               "gross",
               "fee",
-              "tax",
-              "carry",
               "paid",
+              "shortfall",
               "leverage",
               "at"
             ]
@@ -6232,6 +6309,34 @@
             ]
           }
         },
+        "bankrupt": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "since": {
+                  "type": "string"
+                },
+                "until": {
+                  "type": "string"
+                },
+                "written_off": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": [
+                "since",
+                "until",
+                "written_off"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "totals": {
           "type": "object",
           "properties": {
@@ -6242,28 +6347,21 @@
             },
             "value": {
               "type": "number"
-            },
-            "worth": {
-              "type": [
-                "number",
-                "null"
-              ]
             }
           },
           "required": [
             "cost",
-            "value",
-            "worth"
+            "value"
           ]
         }
       },
       "required": [
-        "account",
+        "balance",
         "holdings",
-        "leveraged",
         "orders",
         "fills",
         "notices",
+        "bankrupt",
         "totals"
       ]
     },
@@ -6281,9 +6379,13 @@
           "type": "string"
         },
         "price": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "open": {
+          "type": "boolean"
         },
         "coins": {
           "type": "integer",
@@ -6320,72 +6422,32 @@
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
-        "tax": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
         "net": {
           "type": "integer",
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
-        "max_loss": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "line_price": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "warn_half_price": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "warn_near_price": {
-          "anyOf": [
-            {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            {
-              "type": "null"
-            }
+          "type": [
+            "number",
+            "null"
           ]
         },
         "sentence": {
           "type": "string"
+        },
+        "warning": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "side",
         "code",
         "price",
+        "open",
         "coins",
         "margin",
         "exposure",
@@ -6393,169 +6455,113 @@
         "qty",
         "leverage",
         "gross",
-        "tax",
         "net",
-        "max_loss",
         "line_price",
-        "warn_half_price",
-        "warn_near_price",
-        "sentence"
+        "sentence",
+        "warning"
       ]
     },
-    "ApiExchangeRules": {
+    "ApiExchangeSettleRequest": {
       "type": "object",
       "properties": {
-        "rounds_per_day": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
         },
-        "first_hour": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "daily_limit": {
-          "type": "number"
-        },
-        "round_limit": {
-          "type": "number"
-        },
-        "breaker": {
-          "type": "number"
-        },
-        "fee_buy": {
-          "type": "number"
-        },
-        "fee_sell": {
-          "type": "number"
-        },
-        "tax_sell": {
-          "type": "number"
-        },
-        "fee_min": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "order_min": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "order_max": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "orders_per_day": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "buy_per_day": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "limit_company": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "limit_total": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "concentration": {
-          "type": "number"
-        },
-        "transfer_lock_hours": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "account_min_days": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
-        },
-        "account_min_tier": {
-          "type": "string"
-        },
-        "leverage": {
-          "type": "object",
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "max": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "line": {
-              "type": "number"
-            },
-            "warn_half": {
-              "type": "number"
-            },
-            "warn_near": {
-              "type": "number"
-            },
-            "carry_daily": {
-              "type": "number"
-            },
-            "min_days": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            },
-            "min_tier": {
-              "type": "string"
-            },
-            "margin_cap": {
-              "type": "integer",
-              "minimum": -9007199254740991,
-              "maximum": 9007199254740991
-            }
-          },
-          "required": [
-            "enabled",
-            "max",
-            "line",
-            "warn_half",
-            "warn_near",
-            "carry_daily",
-            "min_days",
-            "min_tier",
-            "margin_cap"
+        "at": {
+          "type": "string",
+          "enum": [
+            "last",
+            "zero"
           ]
         }
       },
       "required": [
-        "rounds_per_day",
-        "first_hour",
-        "daily_limit",
-        "round_limit",
-        "breaker",
-        "fee_buy",
-        "fee_sell",
-        "tax_sell",
-        "fee_min",
-        "order_min",
-        "order_max",
-        "orders_per_day",
-        "buy_per_day",
-        "limit_company",
-        "limit_total",
-        "concentration",
-        "transfer_lock_hours",
-        "account_min_days",
-        "account_min_tier",
-        "leverage"
+        "code",
+        "at"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeSplitRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "ratio": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1000
+        }
+      },
+      "required": [
+        "code",
+        "ratio"
+      ],
+      "additionalProperties": false
+    },
+    "ApiExchangeTicker": {
+      "type": "object",
+      "properties": {
+        "line": {
+          "$ref": "#/$defs/ApiExchangeLine"
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "at": {
+                "type": "string"
+              },
+              "price": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "at",
+              "price"
+            ]
+          }
+        },
+        "watching": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "line",
+        "points",
+        "watching"
       ]
+    },
+    "ApiExchangeTickerRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "block",
+            "unblock",
+            "remove"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "action"
+      ],
+      "additionalProperties": false
     },
     "ApiExchangeVisibilityRequest": {
       "type": "object",
@@ -6567,6 +6573,25 @@
           "type": "boolean"
         }
       },
+      "additionalProperties": false
+    },
+    "ApiExchangeWatchRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "code",
+        "on"
+      ],
       "additionalProperties": false
     },
     "ApiExtensionInfo": {

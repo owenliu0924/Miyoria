@@ -27,6 +27,7 @@ export {
   type Asker,
   DISCLAIMER,
   LEVERAGE_WARNING,
+  NO_DIVIDENDS,
   NO_EXCHANGE_RULE,
   noticeText as realNoticeText,
   RealDesk,

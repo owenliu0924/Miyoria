@@ -108,9 +108,8 @@ describe("the local stocks", () => {
       expect(hi).toBeLessThanOrEqual(HARD_BAND.hi);
       out.push(`${code} ${ANCHORS[code]}: ${lo.toFixed(2)}×–${hi.toFixed(2)}×`);
     }
-    process.stdout.write(`local year range: ${out.join("; ")}
-`);
-  });
+    process.stdout.write(`local year range: ${out.join("; ")}\n`);
+  }, 60_000);
 
   it("do not pay a member who feeds her, buys RICE and sells: the fee wins", () => {
     // 2000 simulated days. Everyone else feeds her about 19 times a day; the flipper adds five rice

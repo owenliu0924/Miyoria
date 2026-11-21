@@ -578,70 +578,86 @@ dirs = ["extensions"]
 # lottery_time = "20:00"
 # lottery_min_buyers = 3      # 至少幾個不同的人買才開獎
 
-# 深海交易所(docs/design/exchange.md):八家模擬的公司,價格由程式用秘密的種子算,一天 12 盤
-# (12:00 到 23:00,她的時間);金庫是封閉的,不印錢;手續費、交易稅和槓桿的利息全部燒掉。她是主播:
-# 新聞的種類和大小由程式抽,她只寫字;她看不到任何人的持股,也不替人做買賣建議。
-# 會員頁的「深海交易所」和 /me market(行情、個股、持股、富人榜、交易量)。預設不開。
+# 深海交易所(docs/design/exchange.md):用魚幣模擬買賣真實的台股、美股(報價來自 Yahoo Finance,非官方、
+# 可能延遲或停掉),和五檔這裡獨家、跟她的生活有關的股票(新手推薦,一股約 100 魚幣,不開放槓桿)。
+# 交易所是對手方:買進的魚幣燒掉,賣出時重新發出;一筆 1% 手續費燒掉;每天淨發出有上限。
+# 魚幣是遊戲點數,沒有現金價值,永遠不能換成真錢或現實中的物品。匯率固定:魚幣對台幣用
+# [modules.economy] twd_per_coin(預設 1 魚幣 = NT$1),美元對台幣用這裡的 twd_per_usd。
+# /me market overview(清單、報價圖、買賣)、/me market quote、/me market mine、/me market rich,和會員頁。預設不開。
 # [modules.exchange]
-# open = false                # 交易所開關:關著時不撮合也不能下單;關掉時掛著的委託全部退回,持股留著
-# utc_offset_minutes = 480    # 「今天」和盤的時間從哪個時區算
-# channel = ""                # 開盤、收盤的講評和每天的行情圖貼在哪;留空 = 不貼
-# commentary = true           # 她的開盤、收盤一句和每週五的評等(沒有模型時用固定的句子)
-# purpose = "exchange"        # 她寫新聞和講評用的模型([llm.purposes];沒設 = 聊天那一組)
-# round_grace_minutes = 10    # 一盤晚了超過這麼久才處理到(停機)就跳過,等它的市價單退回
-# # ---- 開戶和委託
+# open = false                # 交易所開關:關著時不成交也不能下單;關掉時掛著的委託全部退回,持股留著
+# utc_offset_minutes = 480    # 「今天」從哪個時區算(每日上限、每日報表)
+# colors = "tw"               # 漲跌顏色:"tw" 紅漲綠跌(預設)、"us" 綠漲紅跌;每張圖都會標示
+# local_stocks = true         # 新手推薦的五檔獨家股票(價格由程式模擬,每天 12:00–23:00 每小時一筆)
+# twd_per_usd = 30            # 一美元等於幾台幣(固定;改了所有美股持股的市值一起變,股數不變)
+# # ---- 報價(預設兩個市場都用 Yahoo Finance)
+# provider_tw = "yahoo"
+# provider_us = "yahoo"
+# quotes_tw = "intraday"      # "intraday" 盤中報價,或 "close" 只用收盤價(委託在下一個收盤成交)
+# quotes_us = "intraday"
+# quote_poll_seconds = 60     # 多久問一次報價(只問有人持有、掛單、剛看過、或活躍的人觀察中的股票)
+# quote_max_age_seconds = 300 # 報價最久多舊還能成交;更舊就不成交、也不自動賣出
+# close_grace_minutes = 180
+# holidays_tw = []            # 休市日(那個市場自己的日期),例如 ["2026-12-25"]
+# holidays_us = []
+# batch_size = 20             # 一次請求最多幾檔
+# view_minutes = 5            # 看過的股票之後多久繼續更新報價
+# suspend_after_days = 3      # 有人持有的股票連續幾個交易日沒有報價就暫停,等 owner 結算
+# # ---- 哪些股票可以交易(誰查過的代號,第一次會向報價來源確認)
+# allowed_exchanges_tw = ["TAI", "TWO"]
+# allowed_exchanges_us = ["NMS", "NGM", "NCM", "NYQ", "ASE", "PCX", "BTS"]
+# allowed_types = ["EQUITY", "ETF"]
+# blocked = []                # 不能買進的代號(還能賣)
+# allow_only = []             # 非空時只有這些代號能交易
+# lookups_per_hour = 20       # 每人每小時最多查幾個新代號
+# negative_cache_minutes = 60 # 查不到的代號多久內不再問
+# starters_tw = ["2330", "2317", "2454", "2308", "2382", "2412", "2881", "2882", "2891", "2303", "1301", "2002", "0050", "0056", "00878", "006208"]
+# starters_us = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "BRK-B", "JPM", "V", "SPY", "QQQ", "VOO", "VTI", "DIA"]
+# watch_max = 20              # 觀察清單最多幾檔
+# watch_active_days = 3       # 觀察中的股票只有在那個人這幾天用過交易所、而且開盤時才更新報價
+# suggest_per_minute = 60     # 打字時的建議,每人每分鐘最多幾次(有快取,不會每打一個字就問報價來源)
+# component_minutes = 15      # Discord 上的按鈕和選單多久後過期
+# # ---- 開戶和委託(都是市價單,以下一筆有效報價成交)
 # account_min_days = 7        # 她認識你滿幾天才能開戶
 # account_min_tier = "認識"   # 羈絆至少到哪一級
 # order_min = 10              # 一筆買進最少(含手續費)
 # order_max = 200             # 一筆買進最多
 # orders_per_day = 20         # 一天最多幾筆委託(買賣合計)
 # buy_per_day = 300           # 一天最多買多少魚幣
-# limit_days_max = 5          # 限價單最多放幾個交易日
 # transfer_lock_hours = 24    # 別人轉給你的魚幣要過多久才能投入
-# # ---- 持有上限(照成本算,槓桿照全部部位算)
-# limit_company = 200         # 每家公司
-# limit_total = 600           # 全部合計
-# limit_bond_step = 0.25      # 羈絆每比開戶門檻高一級,上限多 25%
-# limit_age_step = 0.1        # 每認識 limit_age_days 天,上限多 10%
-# limit_age_days = 30
-# limit_max_mult = 2          # 最多放寬到兩倍
-# concentration = 0.25        # 一個人最多持有一家公司流通市值的 25%
-# concentration_floor = 800   # 流通市值不到這麼多時,照這麼多算(市場還小時擋一個人買光)
-# # ---- 手續費和稅:全部燒掉,無條件進位,最少 1 魚幣
-# fee_buy = 0.015
-# fee_sell = 0.015
-# tax_sell = 0.03
+# min_hold_minutes = 10       # 買進後多久才能賣
+# fee = 0.01                  # 每筆手續費,無條件進位,燒掉
 # fee_min = 1
-# # ---- 價格的限制
-# daily_limit = 0.1           # 單日漲跌幅(對昨天收盤)
-# round_limit = 0.05          # 每一盤最多動多少(讓槓桿的警告一定比強制賣出早)
-# breaker = 0.07              # 大盤一天跌這麼多就熔斷,當天不再撮合
-# vault_burn_level = 1.5      # 每週日金庫超過持股市值這麼多倍的部分燒掉
-# # ---- 槓桿(最多 2 倍,每個部位的保證金分開算;最多賠掉保證金,不會欠錢)
-# leverage = true             # false = 不能開新的槓桿部位,已經開的照規則跑到賣掉
-# leverage_max = 2
+# # ---- 持有上限(照成本算,2 倍照全部部位算;隨羈絆和認識的時間放寬)
+# limit_total = 600
+# limit_bond_step = 0.25
+# limit_age_step = 0.1
+# limit_age_days = 30
+# limit_max_mult = 2
+# # ---- 交易所的錢
+# payout_cap_daily = 1500     # 每天最多淨發出;到了當天停止買進,賣出照常全額付
+# # ---- 2 倍(交叉保證金:賠超過保證金時先扣錢包、再賣其他持股;最壞賠光,不會欠錢,破產有冷靜期)
+# leverage = true             # false = 不能開新的 2 倍部位
 # leverage_line = 0.2         # 保證金剩這麼多就依規則自動賣出
-# leverage_warn_half = 0.5    # 剩一半時先通知一次
-# leverage_warn_near = 0.35   # 接近自動賣出時再通知一次
-# leverage_carry_daily = 0.002   # 每個有交易的日子,借的那一半收這麼多利息(從保證金扣,燒掉)
-# leverage_min_days = 30      # 槓桿:她認識你滿幾天
-# leverage_min_tier = "朋友"  # 槓桿:羈絆至少到哪一級
-# leverage_margin_cap = 150   # 一個人所有槓桿部位的保證金合計最多
-# # ---- 價格怎麼動(離線模擬照這些數字過關;要改先重跑 exchange/test/sim-report.ts)
-# market_sigma = 0.0028
-# sector_sigma = 0.0014
-# reversion = 0.04
-# fundamental_sigma = 0.006
-# level_pull = 0.0025         # 水位(金庫 ÷ 持股市值)把大盤拉回 1 的力道
-# level_floor = 500
-# impact = 0.01
-# impact_decay = 0.7
-# mood_drift = 0.00015
-# mood_switch = 0.07
-# event_rate = 0.0119
-# event_min = 0.01
-# event_max = 0.04
-# earnings_sigma = 0.025
+# leverage_warn_half = 0.5
+# leverage_warn_near = 0.35
+# leverage_carry_daily = 0
+# leverage_min_coin_price = 50   # 一股至少幾魚幣、有前一天收盤價的股票才能 2 倍
+# leverage_min_days = 30      # 2 倍:她認識你滿幾天
+# leverage_min_tier = "朋友"  # 2 倍:羈絆至少到哪一級
+# leverage_margin_cap = 150   # 一個人所有 2 倍部位的保證金合計最多
+# bankrupt_cooling_days = 7   # 破產後幾天不能買進
+# # [modules.exchange.local_anchors]   # 五檔獨家股票的起始價和長期會回到的價位(魚幣)
+# # RICE = 100
+# # WHLE = 108
+# # NAPS = 88
+# # CUBE = 116
+# # DPSK = 94
+# # [modules.exchange.yahoo]
+# # host = "query1.finance.yahoo.com"
+# # daily_budget = 3000       # 一天最多幾次請求,用完就停到隔天、報價標為停滯
+# # timeout_ms = 8000
+# # max_backoff_seconds = 1800
 
 # 唱 K 第一步(docs/design/karaoke.md「做了什麼(第一步)」):會員頁一個人唱。貼連結或打歌名,
 # 唱歌 worker 做伴唱軌和參考旋律;在自己的瀏覽器唱、算音高,唱完 Core 用同一份評分重算,

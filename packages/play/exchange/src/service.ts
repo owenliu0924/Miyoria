@@ -472,6 +472,11 @@ export class ExchangeService {
     return this.#d.wallet()?.currency ?? CURRENCY;
   }
 
+  /** Records the owner's hand on the market in the audit log. */
+  audit(action: string, target: string, detail: Record<string, unknown>, by: string): void {
+    this.#d.audit?.(action, target, detail, by);
+  }
+
   /** The service's clock (epoch ms). */
   nowMs(): number {
     return this.#d.now();

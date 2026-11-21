@@ -1,9 +1,12 @@
-// The deep-sea exchange (docs/design/exchange.md): the market as a member sees it (the eight
-// companies, the index, the vault and the level, the news, the rules), a company's page, their
-// account, a quote before an order, their orders and portfolio (only ever their own), the boards
-// (people who hide are left out), and the owner's side: the state, the pause, a sale with an
-// audit line. Prices are in cents (10000 = 100.00) and holdings in thousandths of a share, as the
-// exchange keeps them. Without the `exchange` module these are a `503` that names it.
+// The deep-sea exchange (docs/design/exchange.md), v1: paper trading of real Taiwan and US stocks
+// (quoted by Yahoo Finance) and five local stocks tied to her, with fish coins and the house as
+// the counterparty. The member's side: the market (sessions, fixed rates, rules, the small print),
+// the browsing lists, suggestions while typing, a ticker's page, the watch list, their account, a
+// quote before an order, the order, a cancel, their own portfolio, the rich list. The owner's
+// side: the daily mint and burn report, the quotes and the provider, the tickers people added
+// (block, unblock, remove), a split to confirm, a suspended ticker to settle, a sale by hand.
+// Prices are in the ticker's own currency with the coin price beside them; shares are in
+// millionths. Without the `exchange` module these are a `503` that names it.
 
 import { z } from "zod";
 import { IdempotencyHeaders, route } from "./route.js";
@@ -11,127 +14,110 @@ import { IdempotencyHeaders, route } from "./route.js";
 /** The node of the owner's hand on the exchange (the same as on someone's coins). */
 const NODE_EXCHANGE = "admin.economy.adjust";
 
-const Limit = z.enum(["up", "down"]).nullable();
-const Direction = z.enum(["up", "down"]);
-const Size = z.enum(["small", "medium", "large"]);
+const Market = z.enum(["tw", "us", "crypto", "local"]);
+const ListKind = z.enum(["local", "popular", "movers", "tw", "us", "mine", "recent", "watch"]);
+const TickerCode = z
+  .string()
+  .min(1)
+  .max(20)
+  .regex(/^[A-Za-z0-9.\-^=]+$/);
 
-export const ExchangeCompanySchema = z
+/** One ticker's line: its price in its own currency and in coins, the move, the quote's age. */
+export const ExchangeLineSchema = z
   .object({
     code: z.string(),
     name: z.string(),
-    sector: z.string(),
-    blurb: z.string(),
-    price: z.number().int(),
-    ref: z.number().int(),
-    change: z.number(),
-    limit: Limit,
-    spark: z.array(z.number().int()),
+    market: Market,
+    price: z.number().nullable(),
+    currency: z.enum(["TWD", "USD", "COIN"]),
+    local: z.object({ what_moves: z.string() }).nullable(),
+    coin_price: z.number().nullable(),
+    age_minutes: z.number().int().nullable(),
+    source: z.string(),
+    change: z.number().nullable(),
+    at: z.string().nullable(),
+    open: z.boolean(),
+    stale: z.boolean(),
+    quotes: z.enum(["intraday", "close"]),
   })
-  .meta({ id: "ApiExchangeCompany" });
-export type ExchangeCompany = z.output<typeof ExchangeCompanySchema>;
+  .meta({ id: "ApiExchangeLine" });
+export type ExchangeLine = z.output<typeof ExchangeLineSchema>;
 
-export const ExchangeNewsSchema = z
-  .object({
-    id: z.string(),
-    company: z.string().nullable(),
-    kind: z.enum(["event", "earnings"]),
-    direction: Direction,
-    size: Size,
-    headline: z.string(),
-    body: z.string(),
-    /** `her`: she worded it; `plain`: the program's words. */
-    by: z.enum(["her", "plain"]),
-    round: z.number().int(),
-    at: z.string(),
-  })
-  .meta({ id: "ApiExchangeNews" });
-export type ExchangeNews = z.output<typeof ExchangeNewsSchema>;
-
-export const ExchangeRulesSchema = z
-  .object({
-    rounds_per_day: z.number().int(),
-    first_hour: z.number().int(),
-    daily_limit: z.number(),
-    round_limit: z.number(),
-    breaker: z.number(),
-    fee_buy: z.number(),
-    fee_sell: z.number(),
-    tax_sell: z.number(),
-    fee_min: z.number().int(),
-    order_min: z.number().int(),
-    order_max: z.number().int(),
-    orders_per_day: z.number().int(),
-    buy_per_day: z.number().int(),
-    limit_company: z.number().int(),
-    limit_total: z.number().int(),
-    concentration: z.number(),
-    transfer_lock_hours: z.number().int(),
-    account_min_days: z.number().int(),
-    account_min_tier: z.string(),
-    leverage: z.object({
-      enabled: z.boolean(),
-      max: z.number().int(),
-      line: z.number(),
-      warn_half: z.number(),
-      warn_near: z.number(),
-      carry_daily: z.number(),
-      min_days: z.number().int(),
-      min_tier: z.string(),
-      margin_cap: z.number().int(),
-    }),
-  })
-  .meta({ id: "ApiExchangeRules" });
-
-const RatingItem = z.object({ code: z.string(), rating: z.string(), reason: z.string() });
-
-/** `GET /api/member/exchange`. */
+/** `GET /api/member/exchange`: the market as a member sees it. */
 export const ExchangeMarketSchema = z
   .object({
     enabled: z.boolean(),
-    paused: z.boolean(),
-    halted: z.boolean(),
     currency: z.string(),
-    last_round: z
-      .object({ round: z.number().int(), at: z.string(), status: z.string() })
-      .nullable(),
-    next_round_at: z.string().nullable(),
-    fish: z.number(),
-    fish_ref: z.number(),
-    level: z.number().nullable(),
-    vault: z.number().int(),
-    obligations: z.number(),
-    burned_week: z.number().int(),
-    companies: z.array(ExchangeCompanySchema),
-    news: z.array(ExchangeNewsSchema),
-    rules: ExchangeRulesSchema,
-    her: z.object({ text: z.string(), kind: z.string(), at: z.string() }).nullable(),
-    rating: z
-      .object({ day: z.number().int(), items: z.array(RatingItem), at: z.string() })
-      .nullable(),
+    /** `tw`: red up, green down; `us`: green up, red down. */
+    colors: z.enum(["tw", "us"]),
+    rates: z.object({ twd_per_coin: z.number(), twd_per_usd: z.number() }),
+    house: z.object({
+      buys_halted: z.boolean(),
+      net_today: z.number().int(),
+      cap_daily: z.number().int(),
+    }),
+    sessions: z.array(
+      z.object({
+        market: Market,
+        open: z.boolean(),
+        hours: z.string(),
+        zone: z.string(),
+        stale: z.boolean(),
+        notice: z.string().nullable(),
+      }),
+    ),
+    lists: z.array(z.object({ kind: ListKind, label: z.string() })),
+    /** The list they see first (their holdings when they have any, else the local stocks). */
+    default_list: ListKind,
+    rules: z.object({
+      fee: z.number(),
+      fee_min: z.number().int(),
+      order_min: z.number().int(),
+      order_max: z.number().int(),
+      orders_per_day: z.number().int(),
+      buy_per_day: z.number().int(),
+      limit_total: z.number().int(),
+      min_hold_minutes: z.number().int(),
+      leverage: z.boolean(),
+      leverage_line: z.number(),
+      leverage_min_days: z.number().int(),
+      leverage_min_tier: z.string(),
+      margin_cap: z.number().int(),
+      account_min_days: z.number().int(),
+      account_min_tier: z.string(),
+      bankrupt_cooling_days: z.number().int(),
+      quote_max_age_seconds: z.number().int(),
+      payout_cap_daily: z.number().int(),
+      watch_max: z.number().int(),
+    }),
+    /** The small print: the base line, the real-stock line, the leverage line. */
+    small_print: z.object({ base: z.string(), real: z.string(), leverage: z.string() }),
+    /** The rules page's lines: no dividends; coins are never exchanged for money or goods. */
+    no_dividends: z.string(),
+    no_exchange: z.string(),
   })
   .meta({ id: "ApiExchangeMarket" });
 export type ExchangeMarket = z.output<typeof ExchangeMarketSchema>;
 
-/** `GET /api/member/exchange/company/{code}`. */
-export const ExchangeCompanyPageSchema = z
+/** `GET /api/member/exchange/list/{kind}`: a list's rows (大家都在買: counts of holders only). */
+export const ExchangeListSchema = z
   .object({
-    company: ExchangeCompanySchema,
-    history: z.array(
-      z.object({ round: z.number().int(), at: z.string(), price: z.number().int() }),
-    ),
-    closes: z.array(z.object({ day: z.number().int(), date: z.string(), price: z.number().int() })),
-    news: z.array(ExchangeNewsSchema),
-    mine: z
-      .object({
-        qty: z.number().int(),
-        cost: z.number().int(),
-        value: z.number(),
-        leveraged: z.number().int(),
-      })
-      .nullable(),
+    kind: ListKind,
+    label: z.string(),
+    rows: z.array(ExchangeLineSchema.extend({ holders: z.number().int().nullable() })),
   })
-  .meta({ id: "ApiExchangeCompanyPage" });
-export type ExchangeCompanyPage = z.output<typeof ExchangeCompanyPageSchema>;
+  .meta({ id: "ApiExchangeList" });
+export type ExchangeList = z.output<typeof ExchangeListSchema>;
+
+/** `GET /api/member/exchange/ticker/{code}`: the line, its chart, whether they watch and hold it. */
+export const ExchangeTickerSchema = z
+  .object({
+    line: ExchangeLineSchema,
+    points: z.array(z.object({ at: z.string(), price: z.number() })),
+    watching: z.boolean(),
+  })
+  .meta({ id: "ApiExchangeTicker" });
+export type ExchangeTicker = z.output<typeof ExchangeTickerSchema>;
 
 /** `GET /api/member/exchange/account`: who they are here, what they may do, today's counts. */
 export const ExchangeAccountSchema = z
@@ -158,27 +144,27 @@ export const ExchangeAccountSchema = z
   .meta({ id: "ApiExchangeAccount" });
 export type ExchangeAccount = z.output<typeof ExchangeAccountSchema>;
 
-/** An order as a member asks for it; prices in coins with two decimals, shares with three. */
+/** A market order: a buy in coins (or shares, 1x), a sale in shares, all of it, or one position. */
 export const ExchangeOrderRequestSchema = z
   .strictObject({
     side: z.enum(["buy", "sell"]),
-    company: z.string().regex(/^[A-Z]{4}$/),
+    code: TickerCode,
     coins: z.number().int().positive().optional(),
-    shares: z.number().positive().optional(),
+    shares: z.number().positive().max(1e9).optional(),
     all: z.boolean().optional(),
-    limit: z.number().positive().nullable().optional(),
-    days: z.number().int().min(1).max(20).optional(),
-    leverage: z.number().int().min(1).max(2).optional(),
-    position: z.string().max(40).optional(),
+    leverage: z.union([z.literal(1), z.literal(2)]).optional(),
+    position: z.string().min(1).max(40).optional(),
   })
   .meta({ id: "ApiExchangeOrderRequest" });
-export type ExchangeOrderRequest = z.input<typeof ExchangeOrderRequestSchema>;
+export type ExchangeOrderRequest = z.output<typeof ExchangeOrderRequestSchema>;
 
+/** What an order would do, for the confirmation. */
 export const ExchangeQuoteSchema = z
   .object({
     side: z.enum(["buy", "sell"]),
     code: z.string(),
-    price: z.number().int(),
+    price: z.number().nullable(),
+    open: z.boolean(),
     coins: z.number().int(),
     margin: z.number().int(),
     exposure: z.number().int(),
@@ -186,13 +172,10 @@ export const ExchangeQuoteSchema = z
     qty: z.number().int(),
     leverage: z.number().int(),
     gross: z.number().int(),
-    tax: z.number().int(),
     net: z.number().int(),
-    max_loss: z.number().int().nullable(),
-    line_price: z.number().int().nullable(),
-    warn_half_price: z.number().int().nullable(),
-    warn_near_price: z.number().int().nullable(),
+    line_price: z.number().nullable(),
     sentence: z.string(),
+    warning: z.string().nullable(),
   })
   .meta({ id: "ApiExchangeQuote" });
 export type ExchangeQuote = z.output<typeof ExchangeQuoteSchema>;
@@ -202,8 +185,6 @@ export const ExchangeOrderSchema = z
     id: z.string(),
     code: z.string(),
     side: z.enum(["buy", "sell"]),
-    kind: z.enum(["market", "limit"]),
-    limit: z.number().int().nullable(),
     coins: z.number().int(),
     qty: z.number().int(),
     leverage: z.number().int(),
@@ -215,61 +196,44 @@ export const ExchangeOrderSchema = z
   .meta({ id: "ApiExchangeOrder" });
 export type ExchangeOrder = z.output<typeof ExchangeOrderSchema>;
 
-export const ExchangeLeveragedSchema = z
-  .object({
-    id: z.string(),
-    code: z.string(),
-    name: z.string(),
-    qty: z.number().int(),
-    leverage: z.number().int(),
-    exposure: z.number().int(),
-    margin: z.number().int(),
-    loan: z.number().int(),
-    carry: z.number().int(),
-    price: z.number().int(),
-    value: z.number(),
-    equity: z.number(),
-    ratio: z.number(),
-    line_price: z.number().int(),
-    warn_half_price: z.number().int(),
-    warn_near_price: z.number().int(),
-    opened_day: z.number().int(),
-    can_close: z.boolean(),
-    at_risk: z.number().int(),
-  })
-  .meta({ id: "ApiExchangeLeveraged" });
-export type ExchangeLeveraged = z.output<typeof ExchangeLeveragedSchema>;
-
 /** `GET /api/member/exchange/portfolio`: only ever the member's own. */
 export const ExchangePortfolioSchema = z
   .object({
-    account: ExchangeAccountSchema,
+    balance: z.number().nullable(),
     holdings: z.array(
       z.object({
+        id: z.string(),
         code: z.string(),
         name: z.string(),
+        leverage: z.number().int(),
         qty: z.number().int(),
-        sellable: z.number().int(),
         cost: z.number().int(),
-        value: z.number(),
-        price: z.number().int(),
+        margin: z.number().int(),
+        loan: z.number().int(),
+        price: z.number().nullable(),
+        value: z.number().nullable(),
+        equity: z.number().nullable(),
+        ratio: z.number().nullable(),
+        line_price: z.number().nullable(),
+        warn_half_price: z.number().nullable(),
+        warn_near_price: z.number().nullable(),
+        opened_at: z.string(),
+        can_sell: z.boolean(),
       }),
     ),
-    leveraged: z.array(ExchangeLeveragedSchema),
     orders: z.array(ExchangeOrderSchema),
     fills: z.array(
       z.object({
         id: z.string(),
         code: z.string(),
-        side: z.enum(["buy", "sell"]),
+        side: z.string(),
         kind: z.string(),
         qty: z.number().int(),
-        price: z.number().int(),
+        price: z.number(),
         gross: z.number().int(),
         fee: z.number().int(),
-        tax: z.number().int(),
-        carry: z.number().int(),
         paid: z.number().int(),
+        shortfall: z.number().int(),
         leverage: z.number().int(),
         at: z.string(),
       }),
@@ -277,12 +241,15 @@ export const ExchangePortfolioSchema = z
     notices: z.array(
       z.object({ id: z.string(), kind: z.string(), text: z.string(), at: z.string() }),
     ),
-    totals: z.object({ cost: z.number().int(), value: z.number(), worth: z.number().nullable() }),
+    bankrupt: z
+      .object({ since: z.string(), until: z.string(), written_off: z.number().int() })
+      .nullable(),
+    totals: z.object({ cost: z.number().int(), value: z.number() }),
   })
   .meta({ id: "ApiExchangePortfolio" });
 export type ExchangePortfolio = z.output<typeof ExchangePortfolioSchema>;
 
-/** `GET /api/member/exchange/boards`. */
+/** `GET /api/member/exchange/boards`: the rich list (people who hide are left out). */
 export const ExchangeBoardsSchema = z
   .object({
     currency: z.string(),
@@ -295,26 +262,86 @@ export const ExchangeBoardsSchema = z
         me: z.boolean(),
       }),
     ),
-    volume: z.array(
-      z.object({
-        rank: z.number().int(),
-        name: z.string(),
-        volume: z.number().int(),
-        trades: z.number().int(),
-        me: z.boolean(),
-      }),
-    ),
-    me: z
-      .object({
-        rich: z.number().int().nullable(),
-        volume: z.number().int().nullable(),
-        hidden: z.boolean(),
-      })
-      .nullable(),
-    week_start: z.string(),
+    me: z.object({ rich: z.number().int().nullable(), hidden: z.boolean() }).nullable(),
   })
   .meta({ id: "ApiExchangeBoards" });
 export type ExchangeBoards = z.output<typeof ExchangeBoardsSchema>;
+
+/** `GET /api/exchange`: the owner's page. */
+export const ExchangeAdminSchema = z
+  .object({
+    enabled: z.boolean(),
+    rates: z.object({ twd_per_coin: z.number(), twd_per_usd: z.number() }),
+    report: z.object({
+      today: z.object({
+        day: z.number().int(),
+        date: z.string(),
+        burned: z.number().int(),
+        minted: z.number().int(),
+        net: z.number().int(),
+        written_off: z.number().int(),
+        buys_halted: z.boolean(),
+      }),
+      days: z.array(
+        z.object({
+          day: z.number().int(),
+          date: z.string(),
+          burned: z.number().int(),
+          minted: z.number().int(),
+          net: z.number().int(),
+          written_off: z.number().int(),
+        }),
+      ),
+      cap_daily: z.number().int(),
+      bankrupt: z.array(
+        z.object({
+          name: z.string(),
+          since: z.string(),
+          until: z.string(),
+          written_off: z.number().int(),
+        }),
+      ),
+      quotes: z.array(
+        z.object({
+          code: z.string(),
+          price: z.number().nullable(),
+          at: z.string().nullable(),
+          refused: z.number().int(),
+          last_refusal: z.string().nullable(),
+        }),
+      ),
+      books: z.object({ postings: z.number(), lines: z.number(), pending: z.number() }),
+    }),
+    tickers: z.array(
+      z.object({
+        code: z.string(),
+        name: z.string(),
+        market: z.string(),
+        exchange: z.string(),
+        type: z.string(),
+        status: z.string(),
+        reason: z.string().nullable(),
+        added_at: z.string(),
+        missing_days: z.number().int(),
+        holders: z.number().int(),
+      }),
+    ),
+    providers: z.array(z.object({ id: z.string(), last_error: z.string().nullable() })),
+    /** Seconds between refreshes the request budget allows now. */
+    refresh_seconds: z.number().int(),
+    positions: z.array(
+      z.object({
+        id: z.string(),
+        name: z.string(),
+        code: z.string(),
+        leverage: z.number().int(),
+        qty: z.number().int(),
+        value: z.number().nullable(),
+      }),
+    ),
+  })
+  .meta({ id: "ApiExchangeAdmin" });
+export type ExchangeAdmin = z.output<typeof ExchangeAdminSchema>;
 
 export const ExchangeLeverageRequestSchema = z
   .strictObject({ accept: z.boolean() })
@@ -325,82 +352,56 @@ export const ExchangeVisibilityRequestSchema = z
 export const ExchangeCancelRequestSchema = z
   .strictObject({ order: z.string().min(1).max(40) })
   .meta({ id: "ApiExchangeCancelRequest" });
-export const ExchangeMarginRequestSchema = z
-  .strictObject({ position: z.string().min(1).max(40), coins: z.number().int().positive() })
-  .meta({ id: "ApiExchangeMarginRequest" });
-
-/** `GET /api/exchange`: the owner's look (no hidden value, no seed). */
-export const ExchangeAdminSchema = z
-  .object({
-    enabled: z.boolean(),
-    paused: z.boolean(),
-    paused_by: z.string().nullable(),
-    vault: z.number().int(),
-    vault_rows: z.number().int().nullable(),
-    burned: z.number().int(),
-    burned_week: z.number().int(),
-    obligations: z.number(),
-    level: z.number().nullable(),
-    fish: z.number(),
-    owed: z.array(
-      z.object({ person: z.string(), name: z.string().nullable(), gross: z.number().int() }),
-    ),
-    pending_postings: z.number().int(),
-    accounts: z.number().int(),
-    positions: z.number().int(),
-    open_orders: z.number().int(),
-    rounds: z.array(
-      z.object({
-        round: z.number().int(),
-        at: z.string(),
-        status: z.string(),
-        fish: z.number(),
-        level: z.number().nullable(),
-        vault: z.number().int(),
-        burned: z.number().int(),
-        volume: z.number().int(),
-      }),
-    ),
-    holders: z.array(
-      z.object({
-        person: z.string(),
-        name: z.string().nullable(),
-        positions: z.array(
-          z.object({
-            id: z.string(),
-            code: z.string(),
-            leverage: z.number().int(),
-            qty: z.number().int(),
-            value: z.number(),
-            equity: z.number(),
-          }),
-        ),
-      }),
-    ),
-    params: z.record(z.string(), z.union([z.number(), z.boolean(), z.string()])),
-  })
-  .meta({ id: "ApiExchangeAdmin" });
-export type ExchangeAdmin = z.output<typeof ExchangeAdminSchema>;
-
-export const ExchangePauseRequestSchema = z
-  .strictObject({ paused: z.boolean() })
-  .meta({ id: "ApiExchangePauseRequest" });
+export const ExchangeLookupRequestSchema = z
+  .strictObject({ code: z.string().min(1).max(20) })
+  .meta({ id: "ApiExchangeLookupRequest" });
+export const ExchangeWatchRequestSchema = z
+  .strictObject({ code: TickerCode, on: z.boolean() })
+  .meta({ id: "ApiExchangeWatchRequest" });
+export const ExchangeTickerRequestSchema = z
+  .strictObject({ code: TickerCode, action: z.enum(["block", "unblock", "remove"]) })
+  .meta({ id: "ApiExchangeTickerRequest" });
+export const ExchangeSplitRequestSchema = z
+  .strictObject({ code: TickerCode, ratio: z.number().positive().max(1000) })
+  .meta({ id: "ApiExchangeSplitRequest" });
+export const ExchangeSettleRequestSchema = z
+  .strictObject({ code: TickerCode, at: z.enum(["last", "zero"]) })
+  .meta({ id: "ApiExchangeSettleRequest" });
 export const ExchangeAdminSellRequestSchema = z
-  .strictObject({ position: z.string().min(1).max(40), note: z.string().max(200).optional() })
+  .strictObject({ position: z.string().min(1).max(40) })
   .meta({ id: "ApiExchangeAdminSellRequest" });
 
 const member = () => route.meta({ audience: "member", permission: null, limited: true });
-const Code = z.object({ code: z.string().regex(/^[A-Z]{4}$/) });
+const owner = () => route.meta({ audience: "admin", permission: NODE_EXCHANGE });
+const Code = z.object({ code: TickerCode });
 
 /** The member's side: needs a session (by cookie), limited per account. */
 export const exchange = {
   market: member()
     .route({ method: "GET", path: "/api/member/exchange" })
     .output(ExchangeMarketSchema),
-  company: member()
-    .route({ method: "GET", path: "/api/member/exchange/company/{code}" })
+  list: member()
+    .route({ method: "GET", path: "/api/member/exchange/list/{kind}" })
+    .input(z.object({ params: z.object({ kind: ListKind }) }))
+    .output(ExchangeListSchema),
+  /** Suggestions while typing: tickers already known and the starter lists; no provider call. */
+  suggest: member()
+    .route({ method: "GET", path: "/api/member/exchange/suggest" })
+    .input(z.object({ query: z.object({ q: z.string().max(24).default("") }) }))
+    .output(z.object({ items: z.array(z.object({ code: z.string(), name: z.string() })) })),
+  /** Looks a code up (validated through the provider the first time; limited per person). */
+  lookup: member()
+    .route({ method: "POST", path: "/api/member/exchange/lookup" })
+    .input(z.object({ body: ExchangeLookupRequestSchema }))
+    .output(z.object({ instrument: ExchangeLineSchema })),
+  ticker: member()
+    .route({ method: "GET", path: "/api/member/exchange/ticker/{code}" })
     .input(z.object({ params: Code }))
-    .output(ExchangeCompanyPageSchema),
+    .output(ExchangeTickerSchema),
+  watch: member()
+    .route({ method: "POST", path: "/api/member/exchange/watch" })
+    .input(z.object({ body: ExchangeWatchRequestSchema }))
+    .output(z.object({ watching: z.boolean(), count: z.number().int() })),
   account: member()
     .route({ method: "GET", path: "/api/member/exchange/account" })
     .output(ExchangeAccountSchema),
@@ -408,7 +409,7 @@ export const exchange = {
   open: member()
     .route({ method: "POST", path: "/api/member/exchange/account" })
     .output(ExchangeAccountSchema),
-  /** The one-time opt-in to leverage, after its risks were shown. */
+  /** The one-time opt-in to 2x, after its risks were shown in full. */
   leverage: member()
     .route({ method: "POST", path: "/api/member/exchange/leverage" })
     .input(z.object({ body: ExchangeLeverageRequestSchema }))
@@ -422,7 +423,7 @@ export const exchange = {
     .route({ method: "POST", path: "/api/member/exchange/quote" })
     .input(z.object({ body: ExchangeOrderRequestSchema }))
     .output(ExchangeQuoteSchema),
-  /** Places an order; the same `Idempotency-Key` is the same order. */
+  /** Places a market order; the same `Idempotency-Key` is the same order. */
   order: member()
     .route({ method: "POST", path: "/api/member/exchange/order" })
     .input(z.object({ headers: IdempotencyHeaders, body: ExchangeOrderRequestSchema }))
@@ -431,11 +432,6 @@ export const exchange = {
     .route({ method: "POST", path: "/api/member/exchange/cancel" })
     .input(z.object({ body: ExchangeCancelRequestSchema }))
     .output(z.object({ refunded: z.number().int() })),
-  /** Adds margin to a leveraged position; the same `Idempotency-Key` adds it once. */
-  margin: member()
-    .route({ method: "POST", path: "/api/member/exchange/margin" })
-    .input(z.object({ headers: IdempotencyHeaders, body: ExchangeMarginRequestSchema }))
-    .output(z.object({ added: z.number().int(), position: ExchangeLeveragedSchema.nullable() })),
   portfolio: member()
     .route({ method: "GET", path: "/api/member/exchange/portfolio" })
     .output(ExchangePortfolioSchema),
@@ -450,15 +446,23 @@ export const exchangeAdmin = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/exchange" })
     .output(ExchangeAdminSchema),
-  /** Pauses (open orders go back) or resumes the market. */
-  pause: route
-    .meta({ audience: "admin", permission: NODE_EXCHANGE })
-    .route({ method: "POST", path: "/api/exchange/pause" })
-    .input(z.object({ body: ExchangePauseRequestSchema }))
-    .output(z.object({ paused: z.boolean(), refunded: z.number().int() })),
-  /** Sells one position now at the last price, no fee; recorded in the audit log. */
-  sell: route
-    .meta({ audience: "admin", permission: NODE_EXCHANGE })
+  /** Blocks a ticker (sell only), unblocks it, or removes one nobody holds; audited. */
+  ticker: owner()
+    .route({ method: "POST", path: "/api/exchange/ticker" })
+    .input(z.object({ body: ExchangeTickerRequestSchema }))
+    .output(z.object({ ok: z.boolean() })),
+  /** Confirms a split-like jump: every holding's shares times `ratio`; audited. */
+  split: owner()
+    .route({ method: "POST", path: "/api/exchange/split" })
+    .input(z.object({ body: ExchangeSplitRequestSchema }))
+    .output(z.object({ positions: z.number().int() })),
+  /** Settles a suspended ticker at its last price or at zero; audited. */
+  settle: owner()
+    .route({ method: "POST", path: "/api/exchange/settle" })
+    .input(z.object({ body: ExchangeSettleRequestSchema }))
+    .output(z.object({ paid: z.number().int() })),
+  /** Sells one position now at its latest price, no fee; audited. */
+  sell: owner()
     .route({ method: "POST", path: "/api/exchange/sell" })
     .input(z.object({ body: ExchangeAdminSellRequestSchema }))
     .output(z.object({ paid: z.number().int() })),

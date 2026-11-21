@@ -2876,7 +2876,7 @@
           }
         }
       },
-      "company": {
+      "list": {
         "~orpc": {
           "errorMap": {},
           "meta": {
@@ -2887,7 +2887,67 @@
           "route": {
             "inputStructure": "detailed",
             "method": "GET",
-            "path": "/api/member/exchange/company/{code}"
+            "path": "/api/member/exchange/list/{kind}"
+          }
+        }
+      },
+      "suggest": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/exchange/suggest"
+          }
+        }
+      },
+      "lookup": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/exchange/lookup"
+          }
+        }
+      },
+      "ticker": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/exchange/ticker/{code}"
+          }
+        }
+      },
+      "watch": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/exchange/watch"
           }
         }
       },
@@ -2996,21 +3056,6 @@
           }
         }
       },
-      "margin": {
-        "~orpc": {
-          "errorMap": {},
-          "meta": {
-            "audience": "member",
-            "permission": null,
-            "limited": true
-          },
-          "route": {
-            "inputStructure": "detailed",
-            "method": "POST",
-            "path": "/api/member/exchange/margin"
-          }
-        }
-      },
       "portfolio": {
         "~orpc": {
           "errorMap": {},
@@ -3057,7 +3102,7 @@
           }
         }
       },
-      "pause": {
+      "ticker": {
         "~orpc": {
           "errorMap": {},
           "meta": {
@@ -3067,7 +3112,35 @@
           "route": {
             "inputStructure": "detailed",
             "method": "POST",
-            "path": "/api/exchange/pause"
+            "path": "/api/exchange/ticker"
+          }
+        }
+      },
+      "split": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/exchange/split"
+          }
+        }
+      },
+      "settle": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/exchange/settle"
           }
         }
       },

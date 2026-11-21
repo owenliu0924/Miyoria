@@ -1,13 +1,14 @@
-// The deep-sea exchange's routes (docs/design/exchange.md), over `ExchangeKey`:
+// The deep-sea exchange's routes (docs/design/exchange.md), v1, over `ExchangeKey`:
 //
-// * Member (`exchange` group, a session, limited per account): the market, a company, their
-//   account (open it, take leverage's risks, hide from the boards), a quote, an order (with an
-//   `Idempotency-Key`), a cancel, margin (with an `Idempotency-Key`), their portfolio, the boards.
-//   The person is the session's; a refusal is its status and sentence, the same as in Discord.
-//   Nobody sees anybody else's holdings or orders here, except on the boards of someone who chose
-//   to show what they hold.
-// * Admin (`exchangeAdmin`): `GET /api/exchange`; `POST /api/exchange/pause` and
-//   `POST /api/exchange/sell` need `admin.economy.adjust`, like a hand on someone's coins.
+// * Member (`exchange` group, a session, limited per account): the market, the browsing lists,
+//   suggestions while typing, a lookup, a ticker's page, the watch list, their account (open it,
+//   take 2x's risks, hide from the rich list), a quote, a market order (with an
+//   `Idempotency-Key`), a cancel, their own portfolio, the rich list. The person is the
+//   session's; a refusal is its status and sentence, the same as in Discord. Nobody sees anybody
+//   else's holdings or orders here (大家都在買 is counts only).
+// * Admin (`exchangeAdmin`): `GET /api/exchange`; blocking or removing a ticker, confirming a
+//   split, settling a suspended ticker and a sale by hand need `admin.economy.adjust` and are
+//   written to the audit log.
 //
 // Without the `exchange` module every route is a `503` that names it.
 
@@ -15,19 +16,30 @@ import type {
   ExchangeAccount,
   ExchangeAdmin,
   ExchangeBoards,
-  ExchangeCompanyPage,
+  ExchangeList,
   ExchangeMarket,
   ExchangeOrder,
   ExchangePortfolio,
   ExchangeQuote,
+  ExchangeTicker,
 } from "@miyoria/contracts/api";
 import {
   ExchangeKey,
   type ExchangeService,
-  type OrderRequest,
+  LIST_KINDS,
+  LIST_LABEL,
+  NO_DIVIDENDS,
+  NO_EXCHANGE_RULE,
+  type RealOrderRequest,
   type Refusal,
 } from "@miyoria/play/exchange";
-import type { AccountRef } from "@miyoria/types";
+import {
+  type AccountRef,
+  accountRefString,
+  EXCHANGE_DISCLAIMER,
+  EXCHANGE_DISCLAIMER_LEVERAGE,
+  EXCHANGE_DISCLAIMER_REAL,
+} from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { SessionRecord } from "./session.js";
@@ -46,24 +58,20 @@ function refused(r: Refusal): never {
   throw new ApiError(r.status, r.message);
 }
 
-/** The request as the service takes it (absent fields left out). */
+/** The request as the desk takes it (absent fields left out). */
 function orderOf(body: {
   side: "buy" | "sell";
-  company: string;
+  code: string;
   coins?: number | undefined;
   shares?: number | undefined;
   all?: boolean | undefined;
-  limit?: number | null | undefined;
-  days?: number | undefined;
   leverage?: number | undefined;
   position?: string | undefined;
-}): OrderRequest {
-  const out: OrderRequest = { side: body.side, company: body.company };
+}): RealOrderRequest {
+  const out: RealOrderRequest = { side: body.side, code: body.code.toUpperCase() };
   if (body.coins !== undefined) out.coins = body.coins;
   if (body.shares !== undefined) out.shares = body.shares;
   if (body.all !== undefined) out.all = body.all;
-  if (body.limit !== undefined) out.limit = body.limit;
-  if (body.days !== undefined) out.days = body.days;
   if (body.leverage !== undefined) out.leverage = body.leverage;
   if (body.position !== undefined) out.position = body.position;
   return out;
@@ -71,17 +79,73 @@ function orderOf(body: {
 
 const STRANGER = "她還不認識你,先和她說說話吧";
 
+async function personOf(x: ExchangeService, c: ApiContext): Promise<string> {
+  const person = await x.personOf(accountOf(c));
+  if (!person) throw new ApiError(403, STRANGER);
+  return person;
+}
+
 export const exchangeRpc = {
-  market: os.exchange.market.handler(
-    async ({ context: { state } }): Promise<ExchangeMarket> => service(state).market(),
-  ),
-  company: os.exchange.company.handler(
-    async ({ input, context: { state, c } }): Promise<ExchangeCompanyPage> => {
-      const page = await service(state).company(input.params.code, accountOf(c));
-      if (!page) throw ApiError.notFound("沒有這家公司");
-      return page;
+  market: os.exchange.market.handler(async ({ context: { state, c } }): Promise<ExchangeMarket> => {
+    const x = service(state);
+    const v = x.real.view();
+    const person = await x.personOf(accountOf(c));
+    return {
+      enabled: v.enabled,
+      currency: v.currency,
+      colors: x.config.colors,
+      rates: v.rates,
+      house: v.house,
+      sessions: v.sessions,
+      lists: LIST_KINDS.map((kind) => ({ kind, label: LIST_LABEL[kind] })),
+      default_list: x.lists.defaultList(person),
+      rules: { ...v.rules, watch_max: x.config.watch_max },
+      small_print: {
+        base: EXCHANGE_DISCLAIMER,
+        real: EXCHANGE_DISCLAIMER_REAL,
+        leverage: EXCHANGE_DISCLAIMER_LEVERAGE,
+      },
+      no_dividends: NO_DIVIDENDS,
+      no_exchange: NO_EXCHANGE_RULE,
+    };
+  }),
+  list: os.exchange.list.handler(
+    async ({ input, context: { state, c } }): Promise<ExchangeList> => {
+      const x = service(state);
+      const kind = input.params.kind;
+      const person = await x.personOf(accountOf(c));
+      return { kind, label: LIST_LABEL[kind], rows: x.lists.rows(kind, person) };
     },
   ),
+  suggest: os.exchange.suggest.handler(async ({ input, context: { state, c } }) => ({
+    items: service(state).lists.suggest(accountRefString(accountOf(c)), input.query.q),
+  })),
+  lookup: os.exchange.lookup.handler(async ({ input, context: { state, c } }) => {
+    const r = await service(state).real.lookup(accountOf(c), input.body.code);
+    if (!r.ok) refused(r);
+    return { instrument: r.instrument };
+  }),
+  ticker: os.exchange.ticker.handler(
+    async ({ input, context: { state, c } }): Promise<ExchangeTicker> => {
+      const x = service(state);
+      const code = input.params.code.toUpperCase();
+      const h = x.real.history(code);
+      if (!h) throw ApiError.notFound("沒有這個標的(先查詢代號)");
+      const person = await x.personOf(accountOf(c));
+      if (person) x.real.noteView(person, code);
+      return {
+        line: h.line,
+        points: h.points,
+        watching: person ? x.lists.watching(person, code) : false,
+      };
+    },
+  ),
+  watch: os.exchange.watch.handler(async ({ input, context: { state, c } }) => {
+    const x = service(state);
+    const r = x.lists.setWatch(await personOf(x, c), input.body.code.toUpperCase(), input.body.on);
+    if (!r.ok) throw new ApiError(409, r.message);
+    return { watching: r.watching, count: r.count };
+  }),
   account: os.exchange.account.handler(
     async ({ context: { state, c } }): Promise<ExchangeAccount> => {
       const view = await service(state).accountView(accountOf(c));
@@ -113,7 +177,7 @@ export const exchangeRpc = {
   ),
   quote: os.exchange.quote.handler(
     async ({ input, context: { state, c } }): Promise<ExchangeQuote> => {
-      const r = await service(state).quote(accountOf(c), orderOf(input.body));
+      const r = await service(state).real.quote(accountOf(c), orderOf(input.body));
       if (!r.ok) refused(r);
       return r.quote;
     },
@@ -121,54 +185,99 @@ export const exchangeRpc = {
   order: os.exchange.order.handler(
     async ({ input, context: { state, c } }): Promise<ExchangeOrder> => {
       const key = `web:${keyOf(input.headers["idempotency-key"])}`;
-      const r = await service(state).place(accountOf(c), orderOf(input.body), key);
+      const r = await service(state).real.place(accountOf(c), orderOf(input.body), key);
       if (!r.ok) refused(r);
       return r.order;
     },
   ),
   cancel: os.exchange.cancel.handler(async ({ input, context: { state, c } }) => {
-    const r = await service(state).cancel(accountOf(c), input.body.order);
+    const r = await service(state).real.cancel(accountOf(c), input.body.order);
     if (!r.ok) refused(r);
     return { refunded: r.refunded };
   }),
-  margin: os.exchange.margin.handler(async ({ input, context: { state, c } }) => {
-    const key = `web:${keyOf(input.headers["idempotency-key"])}`;
-    const r = await service(state).addMargin(
-      accountOf(c),
-      input.body.position,
-      input.body.coins,
-      key,
-    );
-    if (!r.ok) refused(r);
-    return { added: r.added, position: r.position };
-  }),
   portfolio: os.exchange.portfolio.handler(
     async ({ context: { state, c } }): Promise<ExchangePortfolio> => {
-      const view = await service(state).portfolio(accountOf(c));
-      if (!view) throw new ApiError(403, STRANGER);
-      return view;
+      const x = service(state);
+      const person = await personOf(x, c);
+      const view = await x.accountView(accountOf(c));
+      return { ...x.real.portfolio(person), balance: view?.balance ?? null };
     },
   ),
-  boards: os.exchange.boards.handler(
-    async ({ context: { state, c } }): Promise<ExchangeBoards> =>
-      service(state).boards(accountOf(c)),
-  ),
+  boards: os.exchange.boards.handler(async ({ context: { state, c } }): Promise<ExchangeBoards> => {
+    const b = await service(state).boards(accountOf(c));
+    return {
+      currency: b.currency,
+      rich: b.rich,
+      me: b.me === null ? null : { rich: b.me.rich, hidden: b.me.hidden },
+    };
+  }),
 };
 
 export const exchangeAdminRpc = {
-  view: os.exchangeAdmin.view.handler(
-    async ({ context: { state } }): Promise<ExchangeAdmin> => service(state).adminView(),
-  ),
-  pause: os.exchangeAdmin.pause.handler(async ({ input, context: { state, c } }) =>
-    service(state).setPaused(input.body.paused, actorOf(c)),
-  ),
-  sell: os.exchangeAdmin.sell.handler(async ({ input, context: { state, c } }) => {
-    const r = await service(state).adminSell(
-      input.body.position,
-      actorOf(c),
-      input.body.note?.trim() || null,
-    );
+  view: os.exchangeAdmin.view.handler(async ({ context: { state } }): Promise<ExchangeAdmin> => {
+    const x = service(state);
+    const report = x.real.report();
+    const holders = x.real.holderCounts();
+    const name = async (p: string) => (await x.nameOf(p)) ?? "某人";
+    return {
+      enabled: x.config.open,
+      rates: x.real.rates,
+      report: {
+        today: report.today,
+        days: report.days,
+        cap_daily: report.cap_daily,
+        bankrupt: await Promise.all(
+          report.bankrupt.map(async (b) => ({
+            name: await name(b.person),
+            since: b.since,
+            until: b.until,
+            written_off: b.written_off,
+          })),
+        ),
+        quotes: report.quotes,
+        books: report.books,
+      },
+      tickers: x.real.tickers().map((t) => ({ ...t, holders: holders.get(t.code) ?? 0 })),
+      providers: x.real.providerStatus(),
+      refresh_seconds: x.real.effectiveInterval(),
+      positions: await Promise.all(
+        x.real.allPositions().map(async (p) => ({
+          id: p.id,
+          name: await name(p.person),
+          code: p.code,
+          leverage: p.leverage,
+          qty: p.qty,
+          value: p.value,
+        })),
+      ),
+    };
+  }),
+  ticker: os.exchangeAdmin.ticker.handler(async ({ input, context: { state, c } }) => {
+    const x = service(state);
+    const r = x.real.setTicker(input.body.code.toUpperCase(), input.body.action);
     if (!r.ok) refused(r);
+    x.audit("exchange.ticker", input.body.code, { action: input.body.action }, actorOf(c));
+    return { ok: true };
+  }),
+  split: os.exchangeAdmin.split.handler(async ({ input, context: { state, c } }) => {
+    const x = service(state);
+    const r = x.real.confirmSplit(input.body.code.toUpperCase(), input.body.ratio);
+    if (!r.ok) refused(r);
+    x.audit("exchange.split", input.body.code, { ratio: input.body.ratio }, actorOf(c));
+    return { positions: r.positions };
+  }),
+  settle: os.exchangeAdmin.settle.handler(async ({ input, context: { state, c } }) => {
+    const x = service(state);
+    const r = await x.real.settle(input.body.code.toUpperCase(), input.body.at, actorOf(c));
+    if (!r.ok) refused(r);
+    x.audit("exchange.settle", input.body.code, { at: input.body.at, paid: r.paid }, actorOf(c));
+    return { paid: r.paid };
+  }),
+  sell: os.exchangeAdmin.sell.handler(async ({ input, context: { state, c } }) => {
+    const x = service(state);
+    const r = await x.real.adminSell(input.body.position, actorOf(c));
+    if (!r.ok) refused(r);
+    x.audit("exchange.sell", input.body.position, { paid: r.paid }, actorOf(c));
     return { paid: r.paid };
   }),
 };

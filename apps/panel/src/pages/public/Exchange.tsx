@@ -1,19 +1,19 @@
-// 深海交易所 on the member page (docs/design/exchange.md): the market, a company with its line and
-// its news, the order ticket with a confirmation in plain numbers, their own holdings (leveraged
-// positions with the line where they are sold drawn on the chart), and the boards with the switch
-// to stay off them. Everything is what `/api/member/exchange/*` answers; a refusal is the Core's
-// own sentence. A Core without the routes leaves the block out; the module stopped is one line.
-// Moves always carry their sign (+1.2% / −0.8%) and 漲停 / 跌停 in words, never colour alone.
+// 深海交易所 on the member page (docs/design/exchange.md), v1: paper trading of real Taiwan and US
+// stocks and the five local stocks with fish coins. The market's lists as tabs (新手推薦 · 這裡獨家
+// first), a search box with the same suggestions as Discord, sortable columns, the watch list, a
+// ticker's chart and the order ticket (coins by default, shares for the local stocks; 2× only
+// where allowed, with the honest warning), their own holdings with the line where a 2× position is
+// sold, the bankruptcy status, the rich list with the switch to stay off it, and the rules. Every
+// section ends with the exchange's small print. Everything is what `/api/member/exchange/*`
+// answers; a refusal is the Core's own sentence. Moves always carry an arrow and a sign, never
+// colour alone, and the colour follows the product's one convention (stated beside the table).
 
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useMemo, useState } from "react";
 import type {
   ExchangeAccount,
-  ExchangeBoards,
-  ExchangeCompany,
-  ExchangeLeveraged,
+  ExchangeLine,
   ExchangeMarket,
-  ExchangeNews,
   ExchangeOrderRequest,
   ExchangePortfolio,
   ExchangeQuote,
@@ -24,7 +24,6 @@ import { ChartBlock, ChartEmpty, TimeChart } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";
 import { OffLine } from "@/components/module-query";
 import { EmptyLine, ErrorLine, SkeletonRows } from "@/components/query-state";
-import { Meter } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -44,25 +43,36 @@ const PORTFOLIO = [...ROOT, "portfolio"] as const;
 const BOARDS = [...ROOT, "boards"] as const;
 const POLL_MS = 60_000;
 const TAB_KEY = "miyoria.exchange.tab";
-const TABS = ["market", "company", "order", "mine", "boards"] as const;
+const TABS = ["market", "mine", "boards", "rules"] as const;
 type Tab = (typeof TABS)[number];
+type Colors = ExchangeMarket["colors"];
+type ListKind = ExchangeMarket["default_list"];
 
 const retry = (n: number, e: Error) => !isNotProvided(e) && !(isApiError(e) && e.kind === "unavailable") && n < 2;
 const poll = (q: { state: { error: unknown } }) => (q.state.error ? false : POLL_MS);
 
-/** Cents as `123.45`. */
-export const price = (cents: number) => (cents / 100).toFixed(2);
-/** Thousandths of a share as `1.234`. */
-export const shares = (qty: number) => (qty / 1000).toFixed(3);
-/** A change with its sign: `+1.2%`, `−0.8%`. */
-export function change(x: number): string {
+/** Millionths of a share as drawn: whole shares plainly, else four places. */
+export const shares = (qty: number) => {
+  const s = qty / 1_000_000;
+  return Number.isInteger(s) ? String(s) : s.toFixed(4);
+};
+/** A change with its arrow and sign: `▲ +1.2%`, `▼ −0.8%`. */
+export function change(x: number | null): string {
+  if (x === null) return "—";
   const v = Math.round(x * 1000) / 10;
-  if (v > 0) return `+${v.toFixed(1)}%`;
-  if (v < 0) return `−${Math.abs(v).toFixed(1)}%`;
+  if (v > 0) return `▲ +${v.toFixed(1)}%`;
+  if (v < 0) return `▼ −${Math.abs(v).toFixed(1)}%`;
   return "0.0%";
 }
-const limitWord = (l: "up" | "down" | null) => (l === "up" ? "漲停" : l === "down" ? "跌停" : null);
-const moveClass = (x: number) => (x > 0 ? "text-primary" : x < 0 ? "text-[var(--secondary-line)]" : "text-muted-foreground");
+/** The market's red and green (the same as the pictures). */
+const RED = "#ef5f5f";
+const GREEN = "#3fc48a";
+export const upColor = (c: Colors) => (c === "us" ? GREEN : RED);
+export const downColor = (c: Colors) => (c === "us" ? RED : GREEN);
+const conventionWord = (c: Colors) => (c === "us" ? "綠漲紅跌(美股習慣)" : "紅漲綠跌(台股習慣)");
+const coins = (x: number | null) => (x === null ? "—" : x >= 100 ? fmtInt(Math.round(x)) : String(Math.round(x * 100) / 100));
+const nativePrice = (l: ExchangeLine) =>
+  l.price === null ? "—" : l.currency === "COIN" ? `${coins(l.price)} 魚幣` : `${l.currency} ${l.price.toFixed(2)}`;
 
 function useMarket() {
   const api = useApi();
@@ -75,19 +85,6 @@ function useAccount() {
 function usePortfolio() {
   const api = useApi();
   return useQuery({ queryKey: PORTFOLIO, queryFn: ({ signal }) => api.rpc.exchange.portfolio(undefined, { signal }), refetchInterval: poll, retry });
-}
-function useBoards() {
-  const api = useApi();
-  return useQuery({ queryKey: BOARDS, queryFn: ({ signal }) => api.rpc.exchange.boards(undefined, { signal }), refetchInterval: poll, retry });
-}
-function useCompany(code: string) {
-  const api = useApi();
-  return useQuery({
-    queryKey: [...ROOT, "company", code],
-    queryFn: ({ signal }) => api.rpc.exchange.company({ params: { code } }, { signal }),
-    refetchInterval: poll,
-    retry,
-  });
 }
 
 /** After anything that moves coins or holdings: everything here, and the wallet. */
@@ -114,12 +111,11 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Move({ value, limit }: { value: number; limit?: "up" | "down" | null }) {
-  const word = limit === undefined ? null : limitWord(limit);
+function Move({ value, colors }: { value: number | null; colors: Colors }) {
+  const color = value === null || value === 0 ? undefined : value > 0 ? upColor(colors) : downColor(colors);
   return (
-    <span className={`tabular-nums font-medium ${moveClass(value)}`}>
+    <span className="tabular-nums font-medium" style={color ? { color } : undefined}>
       {change(value)}
-      {word && <span className="ml-1 text-xs">{word}</span>}
     </span>
   );
 }
@@ -136,159 +132,238 @@ function Part({ title, aside, children }: { title: string; aside?: ReactNode; ch
   );
 }
 
-// ---- 行情 --------------------------------------------------------------------------------------
-
-function NewsList({ news, max = 8 }: { news: ExchangeNews[]; max?: number }) {
-  if (news.length === 0) return <EmptyLine>最近沒有消息</EmptyLine>;
+/** The small print at the end of every section. */
+export function SmallPrint({ m, real = true, leverage = false }: { m: ExchangeMarket; real?: boolean; leverage?: boolean }) {
   return (
-    <ul className="divide-y divide-line-soft">
-      {news.slice(0, max).map((n) => (
-        <li key={n.id} className="grid gap-0.5 py-(--row-y)">
-          <p className="flex items-baseline gap-2 text-sm">
-            <span className={`shrink-0 text-xs font-medium ${n.direction === "up" ? "text-primary" : "text-[var(--secondary-line)]"}`}>
-              {n.direction === "up" ? "利多" : "利空"}
-            </span>
-            <span className="min-w-0 flex-1 font-medium">{n.headline}</span>
-            <span className="shrink-0 font-mono text-xs text-muted-foreground">{fmtDateTime(n.at)}</span>
-          </p>
-          <p className="text-[13px] text-muted-foreground">{n.body}</p>
-        </li>
-      ))}
-    </ul>
+    <p className="border-t border-line-soft pt-2 text-xs text-muted-foreground">
+      {m.small_print.base}
+      {real && m.small_print.real}
+      {leverage && m.small_print.leverage}
+    </p>
   );
 }
 
-function Companies({ companies, onPick }: { companies: ExchangeCompany[]; onPick: (code: string) => void }) {
+// ---- 市場: lists, search, a ticker -----------------------------------------------------------
+
+type SortKey = "code" | "price" | "coin" | "change";
+
+function ListTable({ rows, colors, onPick, holders }: { rows: (ExchangeLine & { holders: number | null })[]; colors: Colors; onPick: (code: string) => void; holders: boolean }) {
+  const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: "code", desc: false });
+  const sorted = useMemo(() => {
+    const v = (r: ExchangeLine) =>
+      sort.key === "code" ? r.code : sort.key === "price" ? (r.price ?? -1) : sort.key === "coin" ? (r.coin_price ?? -1) : Math.abs(r.change ?? 0);
+    return [...rows].sort((a, b) => {
+      const x = v(a);
+      const y = v(b);
+      const c = typeof x === "string" ? x.localeCompare(String(y)) : x - (y as number);
+      return sort.desc ? -c : c;
+    });
+  }, [rows, sort]);
+  const head = (key: SortKey, label: string, className = "") => (
+    <th scope="col" className={`py-1 font-normal ${className}`} aria-sort={sort.key === key ? (sort.desc ? "descending" : "ascending") : "none"}>
+      <button type="button" className="hover:text-foreground" onClick={() => setSort((s) => ({ key, desc: s.key === key ? !s.desc : key !== "code" }))}>
+        {label}
+        {sort.key === key ? (sort.desc ? " ↓" : " ↑") : ""}
+      </button>
+    </th>
+  );
+  if (rows.length === 0) return <EmptyLine>這個清單還沒有東西</EmptyLine>;
   return (
-    <ul className="divide-y divide-line-soft">
-      {companies.map((c) => (
-        <li key={c.code}>
-          <button type="button" onClick={() => onPick(c.code)} className="flex w-full items-baseline gap-3 py-(--row-y) text-left hover:bg-hover">
-            <span className="w-12 shrink-0 font-mono text-[13px] font-medium">{c.code}</span>
-            <span className="min-w-0 flex-1 truncate text-sm">{c.name}</span>
-            <span className="shrink-0 text-sm tabular-nums">{price(c.price)}</span>
-            <span className="w-24 shrink-0 text-right text-[13px]">
-              <Move value={c.change} limit={c.limit} />
-            </span>
-          </button>
-        </li>
-      ))}
-    </ul>
+    <table className="w-full text-sm">
+      <thead className="text-left text-xs text-muted-foreground">
+        <tr>
+          {head("code", "代號")}
+          <th scope="col" className="py-1 font-normal">名稱</th>
+          {head("price", "價格", "text-right")}
+          {head("coin", "魚幣一股", "text-right")}
+          {head("change", "漲跌", "text-right")}
+          {holders && <th scope="col" className="py-1 text-right font-normal">持有人數</th>}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-line-soft">
+        {sorted.map((r) => (
+          <tr key={r.code} className="hover:bg-hover">
+            <td className="py-(--row-y)">
+              <button type="button" className="font-mono text-[13px] font-medium underline-offset-2 hover:underline" onClick={() => onPick(r.code)}>
+                {r.code}
+              </button>
+            </td>
+            <td className="max-w-40 truncate py-(--row-y)">{r.name}</td>
+            <td className="py-(--row-y) text-right tabular-nums">{nativePrice(r)}</td>
+            <td className="py-(--row-y) text-right tabular-nums">{r.currency === "COIN" ? "—" : coins(r.coin_price)}</td>
+            <td className="py-(--row-y) text-right">
+              <Move value={r.change} colors={colors} />
+            </td>
+            {holders && <td className="py-(--row-y) text-right tabular-nums">{r.holders ?? 0}</td>}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
-function RulesFacts({ m }: { m: ExchangeMarket }) {
-  const r = m.rules;
+function Search({ onPick }: { onPick: (code: string) => void }) {
+  const api = useApi();
+  const [q, setQ] = useState("");
+  const id = useId();
+  const typed = q.trim().slice(0, 24);
+  const suggest = useQuery({
+    queryKey: [...ROOT, "suggest", typed.toUpperCase()],
+    queryFn: ({ signal }) => api.rpc.exchange.suggest({ query: { q: typed } }, { signal }),
+    enabled: typed.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  });
+  const lookup = useMutation({
+    mutationFn: (code: string) => api.rpc.exchange.lookup({ body: { code } }),
+    onSuccess: (r) => {
+      setQ("");
+      onPick(r.instrument.code);
+    },
+    onError: (e) => notify.error(e),
+  });
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    if (typed) lookup.mutate(typed);
+  };
   return (
-    <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
-      <Fact label="開盤">{`${r.first_hour}:00–${r.first_hour + r.rounds_per_day - 1}:00 每小時一盤`}</Fact>
-      <Fact label="單日漲跌">±{fmtPct(r.daily_limit)}</Fact>
-      <Fact label="每盤最多動">±{fmtPct(r.round_limit)}</Fact>
-      <Fact label="熔斷">大盤 −{fmtPct(r.breaker)}</Fact>
-      <Fact label="手續費">{`買賣各 ${fmtPct(r.fee_buy, 1)}`}</Fact>
-      <Fact label="交易稅">{`賣出 ${fmtPct(r.tax_sell)}`}</Fact>
-      <Fact label="一筆">{`${r.order_min} 到 ${r.order_max}`}</Fact>
-      <Fact label="一天">{`${r.orders_per_day} 筆、買 ${r.buy_per_day}`}</Fact>
-      <Fact label="持有上限">{`每家 ${r.limit_company}、合計 ${r.limit_total} 起`}</Fact>
-      <Fact label="開戶">{`認識滿 ${r.account_min_days} 天、${r.account_min_tier}以上`}</Fact>
-      <Fact label="槓桿">{r.leverage.enabled ? `最多 ${r.leverage.max} 倍` : "沒有開放"}</Fact>
-      <Fact label="燒掉">手續費、稅、利息全部燒掉</Fact>
-    </dl>
-  );
-}
-
-function MarketTab({ m, onPick }: { m: ExchangeMarket; onPick: (code: string) => void }) {
-  const delta = m.fish_ref > 0 ? m.fish / m.fish_ref - 1 : 0;
-  const status = !m.enabled ? "還沒開放" : m.paused ? "暫停中" : m.halted ? "今天熔斷,不再撮合" : "開盤中";
-  return (
-    <div className="grid gap-8">
-      <dl className="flex flex-wrap gap-x-8 gap-y-3">
-        <Fact label="魚市指數 FISH">
-          {m.fish.toFixed(0)} <Move value={delta} />
-        </Fact>
-        <Fact label="狀態">{status}</Fact>
-        <Fact label="下一盤">{m.next_round_at ? fmtDateTime(m.next_round_at) : "—"}</Fact>
-        <Fact label="金庫">{`${fmtInt(m.vault)} ${m.currency}`}</Fact>
-        <Fact label="水位(金庫 ÷ 持股市值)">{m.level === null ? "—" : m.level.toFixed(2)}</Fact>
-        <Fact label="本週燒掉">{`${fmtInt(m.burned_week)} ${m.currency}`}</Fact>
-      </dl>
-      {m.her && <blockquote className="max-w-prose border-l-2 border-primary/60 pl-3 text-sm">{m.her.text}</blockquote>}
-      <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-x-(--stage-gap)">
-        <Part title="八家公司" aside="漲跌對昨天收盤">
-          <Companies companies={m.companies} onPick={onPick} />
-        </Part>
-        <Part title="新聞" aside="種類和大小由程式抽,她只寫字">
-          <NewsList news={m.news} />
-        </Part>
+    <form className="grid gap-1" onSubmit={submit} role="search">
+      <label htmlFor={id} className="text-xs text-muted-foreground">
+        找股票:台股代號(2330、0050)、美股代號(AAPL)或名稱
+      </label>
+      <div className="flex gap-2">
+        <Input id={id} value={q} onChange={(e) => setQ(e.target.value)} autoComplete="off" />
+        <Button type="submit" variant="outline" busy={lookup.isPending}>
+          查詢
+        </Button>
       </div>
-      {m.rating && (
-        <Part title="她這週的評等" aside="是她的意見,她也會錯">
-          <ul className="divide-y divide-line-soft">
-            {m.rating.items.map((r) => (
-              <li key={r.code} className="flex items-baseline gap-3 py-(--row-y) text-sm">
-                <span className="w-12 shrink-0 font-mono text-[13px]">{r.code}</span>
-                <span className="w-12 shrink-0 font-medium">{r.rating}</span>
-                <span className="min-w-0 flex-1 text-muted-foreground">{r.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </Part>
+      {typed && (suggest.data?.items.length ?? 0) > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="建議">
+          {suggest.data?.items.slice(0, 10).map((s) => (
+            <li key={s.code}>
+              <Button type="button" variant="outline" size="sm" onClick={() => lookup.mutate(s.code)}>
+                {`${s.code} ${s.name}`}
+              </Button>
+            </li>
+          ))}
+        </ul>
       )}
-      <Part title="規則">
-        <RulesFacts m={m} />
-      </Part>
-    </div>
+    </form>
   );
 }
 
-// ---- 個股 --------------------------------------------------------------------------------------
-
-/** A price line; with `line`, the price at which a leveraged position is sold, drawn across. */
-function PriceChart({ history, line, title, aside }: { history: { at: string; price: number }[]; line?: number | null; title: string; aside?: ReactNode }) {
-  const times = history.map((h) => Date.parse(h.at));
-  const series = [{ key: "p", label: "價格", color: "var(--chart-1)", values: history.map((h) => h.price / 100) }];
-  if (line !== undefined && line !== null) series.push({ key: "l", label: "自動賣出價", color: "var(--chart-2)", values: history.map(() => line / 100) });
-  const last = history.at(-1);
+function TickerChart({ points, title, aside }: { points: { at: string; price: number }[]; title: string; aside?: ReactNode }) {
+  const times = points.map((p) => Date.parse(p.at));
+  const last = points.at(-1);
   return (
-    <ChartBlock title={title} value={last ? price(last.price) : "—"} aside={aside}>
-      {history.length < 2 ? (
+    <ChartBlock title={title} value={last ? last.price.toFixed(2) : "—"} aside={aside}>
+      {points.length < 2 ? (
         <ChartEmpty height={168}>還沒有走勢</ChartEmpty>
       ) : (
-        <TimeChart times={times} series={series} label={`${title}(價格)`} height={168} format={(v) => v.toFixed(2)} area />
+        <TimeChart times={times} series={[{ key: "p", label: "價格", color: "var(--chart-1)", values: points.map((p) => p.price) }]} label={`${title}(價格)`} height={168} format={(v) => v.toFixed(2)} area />
       )}
     </ChartBlock>
   );
 }
 
-function CompanyTab({ code, setCode, companies }: { code: string; setCode: (c: string) => void; companies: ExchangeCompany[] }) {
-  const page = useCompany(code);
+function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: () => void }) {
+  const api = useApi();
+  const refresh = useRefresh();
+  const ticker = useQuery({
+    queryKey: [...ROOT, "ticker", code],
+    queryFn: ({ signal }) => api.rpc.exchange.ticker({ params: { code } }, { signal }),
+    refetchInterval: poll,
+    retry,
+  });
+  const watch = useMutation({
+    mutationFn: (on: boolean) => api.rpc.exchange.watch({ body: { code, on } }),
+    onSuccess: (r) => {
+      notify.ok(r.watching ? "加入觀察了" : "取消觀察了");
+      refresh();
+    },
+    onError: (e) => notify.error(e),
+  });
+  return (
+    <Loaded query={ticker} rows={5}>
+      {(t) => (
+        <div className="grid gap-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={onBack}>
+              回清單
+            </Button>
+            <Button variant="outline" size="sm" busy={watch.isPending} onClick={() => watch.mutate(!t.watching)}>
+              {t.watching ? "取消觀察" : "加入觀察"}
+            </Button>
+          </div>
+          <TickerChart points={t.points} title={`${t.line.code} ${t.line.name}`} aside={<Move value={t.line.change} colors={m.colors} />} />
+          <dl className="flex flex-wrap gap-x-8 gap-y-3">
+            <Fact label="價格">{nativePrice(t.line)}</Fact>
+            {t.line.currency !== "COIN" && <Fact label="約魚幣一股">{coins(t.line.coin_price)}</Fact>}
+            <Fact label="漲跌">
+              <Move value={t.line.change} colors={m.colors} />
+            </Fact>
+            <Fact label="報價時間">{t.line.at ? `${fmtDateTime(t.line.at)}${t.line.age_minutes !== null ? `(約 ${t.line.age_minutes} 分鐘前)` : ""}` : "還沒有報價"}</Fact>
+            <Fact label="市場">{t.line.open ? "開盤中" : "休市"}</Fact>
+          </dl>
+          {t.line.stale && <p className="text-[13px] text-muted-foreground">報價太舊,暫停成交;持股不會因為沒有報價被賣出。</p>}
+          <p className="text-[13px] text-muted-foreground">{t.line.local ? t.line.local.what_moves : t.line.source}</p>
+          <OrderPart m={m} line={t.line} />
+          <SmallPrint m={m} real={t.line.local === null} />
+        </div>
+      )}
+    </Loaded>
+  );
+}
+
+function MarketTab({ m }: { m: ExchangeMarket }) {
+  const api = useApi();
+  const [list, setList] = useState<ListKind>(m.default_list);
+  const [code, setCode] = useState<string | null>(null);
+  const rows = useQuery({
+    queryKey: [...ROOT, "list", list],
+    queryFn: ({ signal }) => api.rpc.exchange.list({ params: { kind: list } }, { signal }),
+    refetchInterval: poll,
+    retry,
+  });
+  if (code !== null) return <Ticker m={m} code={code} onBack={() => setCode(null)} />;
   return (
     <div className="grid gap-6">
-      <Segmented label="哪一家" value={code} onChange={setCode} options={companies.map((c) => ({ value: c.code, label: c.code }))} />
-      <Loaded query={page} rows={5}>
-        {(p) => (
-          <div className="grid gap-8">
-            <PriceChart history={p.history} title={`${p.company.code} ${p.company.name}`} aside={<Move value={p.company.change} limit={p.company.limit} />} />
-            <dl className="flex flex-wrap gap-x-8 gap-y-3">
-              <Fact label="類股">{p.company.sector}</Fact>
-              <Fact label="參考價(昨天收盤)">{price(p.company.ref)}</Fact>
-              <Fact label="漲跌">
-                <Move value={p.company.change} limit={p.company.limit} />
-              </Fact>
-              {p.mine && <Fact label="你的持股">{`${shares(p.mine.qty)} 股・市值 ${fmtInt(Math.floor(p.mine.value))}`}</Fact>}
-            </dl>
-            <p className="max-w-prose text-[13px] text-muted-foreground">{p.company.blurb}</p>
-            <Part title="新聞">
-              <NewsList news={p.news} max={12} />
-            </Part>
-          </div>
-        )}
+      {list === "local" && m.default_list === "local" && (
+        <div className="grid gap-1 text-[13px]">
+          <p className="font-medium">第一次來?這裡用魚幣買賣股票,只是遊戲:</p>
+          <p className="text-muted-foreground">・新手推薦的五檔是這裡獨家,一股約 100 魚幣、單日漲跌最多 ±10%、不開放槓桿</p>
+          <p className="text-muted-foreground">・台股和美股照真實報價,可以買零股;每筆收 {fmtPct(m.rules.fee, 1)} 手續費,燒掉</p>
+        </div>
+      )}
+      <Search onPick={setCode} />
+      <Tabs value={list} onValueChange={(v) => setList(v as ListKind)} className="gap-3">
+        <TabsList variant="inline" aria-label="清單">
+          {m.lists.map((l) => (
+            <TabsTrigger key={l.kind} value={l.kind}>
+              {l.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+      <p className="text-xs text-muted-foreground">{`顏色:${conventionWord(m.colors)};漲跌也一律標 ▲▼ 和正負號`}</p>
+      <Loaded query={rows} rows={5}>
+        {(l) => <ListTable rows={l.rows} colors={m.colors} onPick={setCode} holders={l.kind === "popular"} />}
       </Loaded>
+      <dl className="flex flex-wrap gap-x-8 gap-y-3">
+        {m.sessions.map((s) => (
+          <Fact key={s.market} label={s.market === "tw" ? "台股" : s.market === "us" ? "美股" : s.market}>
+            {`${s.hours} ${s.open ? "開盤中" : "休市"}${s.stale ? "・報價停滯" : ""}`}
+          </Fact>
+        ))}
+        <Fact label="固定匯率">{`1 魚幣 = NT$${m.rates.twd_per_coin}・1 美元 = NT$${m.rates.twd_per_usd}`}</Fact>
+      </dl>
+      {m.house.buys_halted && <p className="text-[13px] text-muted-foreground">今天交易所發出的魚幣到上限了,今天停止買進(賣出照常)。</p>}
+      <SmallPrint m={m} real={list !== "local"} />
     </div>
   );
 }
 
-// ---- 下單 --------------------------------------------------------------------------------------
+// ---- the order ticket ------------------------------------------------------------------------
 
 function OpenAccount({ account }: { account: ExchangeAccount }) {
   const api = useApi();
@@ -317,15 +392,17 @@ function OpenAccount({ account }: { account: ExchangeAccount }) {
   );
 }
 
-const LEVERAGE_RISKS = [
-  "槓桿 2 倍:放進去的保證金 M,可以買到 2M 的部位;漲跌都是兩倍。",
-  "每個槓桿部位分開算。最多賠掉那個部位的保證金,不會動到你錢包裡其他的魚幣和持股,也不會欠錢。",
-  "保證金剩一半時通知你一次,接近自動賣出時再通知一次;跌到自動賣出的價格,那一盤會依規則自動賣出,剩下的退給你(扣掉手續費和稅)。",
-  "借的那一半每個交易日收一點利息,從保證金扣,燒掉。",
+/** What the 2× opt-in says, in full (owner 2026-11-21). */
+export const LEVERAGE_RISKS = [
+  "2 倍:放進去的保證金 M,可以買到 2M 的部位;漲跌都是兩倍。",
+  "賠的可能超過保證金:不夠的部分先從你的錢包扣,再賣掉你其他的持股來補。最壞會賠光錢包和其他持股。",
+  "不會欠錢:全部賠光時,剩下的由交易所吸收,你會進入破產冷靜期,所有持股結清,一段時間內不能買進。",
+  "每一筆報價都會檢查;價格跳空時,可能沒有先通知就被自動賣出。",
+  "只有一股夠貴、有前一天收盤價的股票才能用 2 倍;新手推薦的獨家股票不開放。",
   "這是市場的規則,不是她做的決定;她不會評論任何人的部位。",
 ];
 
-function LeverageOptIn({ account }: { account: ExchangeAccount }) {
+function LeverageOptIn({ m, account }: { m: ExchangeMarket; account: ExchangeAccount }) {
   const api = useApi();
   const refresh = useRefresh();
   const [asking, setAsking] = useState(false);
@@ -335,28 +412,29 @@ function LeverageOptIn({ account }: { account: ExchangeAccount }) {
     mutationFn: () => api.rpc.exchange.leverage({ body: { accept: true } }),
     onSuccess: () => {
       setAsking(false);
-      notify.ok("可以用槓桿了");
+      notify.ok("可以用 2 倍了");
       refresh();
     },
     onError: (e) => notify.error(e),
   });
-  if (account.leverage.opted_in) return null;
-  if (!account.leverage.allowed) return account.leverage.why ? <p className="text-xs text-muted-foreground">槓桿:{account.leverage.why}</p> : null;
+  if (!m.rules.leverage || account.leverage.opted_in) return null;
+  if (!account.leverage.allowed) return account.leverage.why ? <p className="text-xs text-muted-foreground">2 倍:{account.leverage.why}</p> : null;
   return (
     <>
       <Button variant="outline" size="sm" className="justify-self-start" onClick={() => setAsking(true)}>
-        開啟槓桿
+        開啟 2 倍
       </Button>
-      <ConfirmDialog open={asking} title="開啟槓桿之前" confirmLabel="我了解,開啟" busy={opt.isPending} confirmDisabled={!agreed} onConfirm={() => opt.mutate()} onClose={() => setAsking(false)}>
+      <ConfirmDialog open={asking} title="開啟 2 倍之前" confirmLabel="我了解,開啟" busy={opt.isPending} confirmDisabled={!agreed} onConfirm={() => opt.mutate()} onClose={() => setAsking(false)}>
         <div className="grid gap-2">
           <ul className="grid list-disc gap-1 pl-5">
             {LEVERAGE_RISKS.map((r) => (
               <li key={r}>{r}</li>
             ))}
           </ul>
+          <SmallPrint m={m} leverage />
           <div className="flex items-center gap-2">
             <Checkbox id={id} checked={agreed} onCheckedChange={(v) => setAgreed(v === true)} />
-            <label htmlFor={id}>我看過了,知道最多會賠掉保證金</label>
+            <label htmlFor={id}>我看過了,知道可能賠掉保證金以外的錢,最壞會賠光錢包和其他持股</label>
           </div>
         </div>
       </ConfirmDialog>
@@ -364,64 +442,56 @@ function LeverageOptIn({ account }: { account: ExchangeAccount }) {
   );
 }
 
-function QuoteBody({ q, currency }: { q: ExchangeQuote; currency: string }) {
+function QuoteBody({ q, m }: { q: ExchangeQuote; m: ExchangeMarket }) {
   return (
     <div className="grid gap-3">
       <p className="font-medium text-foreground">{q.sentence}</p>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-foreground">
-        <Fact label="公司">{q.code}</Fact>
-        <Fact label="現價">{price(q.price)}</Fact>
+        <Fact label="標的">{q.code}</Fact>
+        <Fact label="現價(魚幣一股)">{coins(q.price)}</Fact>
         {q.side === "buy" ? (
           <>
-            <Fact label="付出">{`${fmtInt(q.coins)} ${currency}`}</Fact>
+            <Fact label="付出">{`${fmtInt(q.coins)} ${m.currency}`}</Fact>
             <Fact label="手續費(燒掉)">{fmtInt(q.fee)}</Fact>
-            <Fact label={q.leverage > 1 ? "保證金" : "成本"}>{fmtInt(q.margin)}</Fact>
-            <Fact label="部位">{`${fmtInt(q.exposure)}(約 ${shares(q.qty)} 股)`}</Fact>
-            {q.max_loss !== null && <Fact label="最多賠掉">{`${fmtInt(q.max_loss)} ${currency}`}</Fact>}
-            {q.line_price !== null && <Fact label="跌到這裡自動賣出">{price(q.line_price)}</Fact>}
-            {q.warn_half_price !== null && <Fact label="第一次通知">{price(q.warn_half_price)}</Fact>}
-            {q.warn_near_price !== null && <Fact label="第二次通知">{price(q.warn_near_price)}</Fact>}
+            <Fact label="約買到">{`${shares(q.qty)} 股`}</Fact>
+            {q.line_price !== null && <Fact label="跌到這裡自動賣出">{coins(q.line_price)}</Fact>}
           </>
         ) : (
           <>
             <Fact label="股數">{shares(q.qty)}</Fact>
             <Fact label="約收到">{fmtInt(q.gross)}</Fact>
-            <Fact label="手續費 / 交易稅">{`${q.fee} / ${q.tax}`}</Fact>
-            <Fact label="約拿回">{`${fmtInt(q.net)} ${currency}`}</Fact>
+            <Fact label="手續費">{fmtInt(q.fee)}</Fact>
+            <Fact label="約拿回">{`${fmtInt(q.net)} ${m.currency}`}</Fact>
           </>
         )}
       </dl>
-      <p className="text-xs">下一盤以那時的價格成交,實際的數字可能不同。</p>
+      {q.warning && <p className="text-[13px] font-medium text-foreground">{q.warning}</p>}
+      <p className="text-xs">以下一筆有效報價成交,實際的數字可能不同。</p>
+      <SmallPrint m={m} leverage={q.leverage > 1} />
     </div>
   );
 }
 
-function OrderTicket({ m, account, preset }: { m: ExchangeMarket; account: ExchangeAccount; preset: string }) {
+function OrderTicket({ m, account, line }: { m: ExchangeMarket; account: ExchangeAccount; line: ExchangeLine }) {
   const api = useApi();
   const refresh = useRefresh();
+  const local = line.local !== null;
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [code, setCode] = useState(preset);
-  const [kind, setKind] = useState<"market" | "limit">("market");
-  const [coins, setCoins] = useState("100");
-  const [qty, setQty] = useState("");
+  const [unit, setUnit] = useState<"coins" | "shares">(local ? "shares" : "coins");
+  const [amount, setAmount] = useState(local ? "1" : "100");
   const [all, setAll] = useState(true);
-  const [limit, setLimit] = useState("");
-  const [days, setDays] = useState("1");
   const [lev, setLev] = useState<"1" | "2">("1");
   const [quote, setQuote] = useState<ExchangeQuote | null>(null);
   const [key, setKey] = useState(newKey);
-  const allId = useId();
+  const id = useId();
   const request = (): ExchangeOrderRequest => {
-    const r: ExchangeOrderRequest = { side, company: code };
+    const r: ExchangeOrderRequest = { side, code: line.code };
     if (side === "buy") {
-      r.coins = Number(coins);
+      if (unit === "shares") r.shares = Number(amount);
+      else r.coins = Number(amount);
       if (lev === "2") r.leverage = 2;
     } else if (all) r.all = true;
-    else r.shares = Number(qty);
-    if (kind === "limit") {
-      r.limit = Number(limit);
-      r.days = Number(days);
-    }
+    else r.shares = Number(amount);
     return r;
   };
   const ask = useMutation({
@@ -436,7 +506,7 @@ function OrderTicket({ m, account, preset }: { m: ExchangeMarket; account: Excha
     mutationFn: () => api.rpc.exchange.order({ headers: { "idempotency-key": key }, body: request() }),
     onSuccess: () => {
       setQuote(null);
-      notify.ok("委託送出了,下一盤成交");
+      notify.ok("委託送出了,下一筆有效報價成交");
       refresh();
     },
     onError: (e) => notify.error(e),
@@ -445,156 +515,113 @@ function OrderTicket({ m, account, preset }: { m: ExchangeMarket; account: Excha
     e.preventDefault();
     ask.mutate();
   };
-  const canLev = account.leverage.opted_in && m.rules.leverage.enabled;
-  const closed = !m.enabled || m.paused;
+  const canLev = !local && account.leverage.opted_in && m.rules.leverage;
   return (
-    <form className="grid max-w-xl gap-4" onSubmit={submit}>
+    <form className="grid max-w-xl gap-4" onSubmit={submit} aria-label="下單">
       <Segmented label="買或賣" value={side} onChange={setSide} options={[{ value: "buy", label: "買進" }, { value: "sell", label: "賣出" }]} />
-      <Segmented label="哪一家" value={code} onChange={setCode} options={m.companies.map((c) => ({ value: c.code, label: c.code }))} />
-      <Segmented label="市價或限價" value={kind} onChange={setKind} options={[{ value: "market", label: "市價(下一盤)" }, { value: "limit", label: "限價" }]} />
       {side === "buy" ? (
-        <div className="grid gap-1">
-          <label className="text-xs text-muted-foreground" htmlFor={`${allId}-coins`}>{`花多少魚幣(含手續費,${m.rules.order_min} 到 ${m.rules.order_max})`}</label>
-          <Input id={`${allId}-coins`} inputMode="numeric" value={coins} onChange={(e) => setCoins(e.target.value)} />
-        </div>
+        <>
+          <Segmented label="用魚幣或股數" value={unit} onChange={setUnit} options={[{ value: "coins", label: "魚幣金額" }, { value: "shares", label: "股數" }]} />
+          <div className="grid gap-1">
+            <label className="text-xs text-muted-foreground" htmlFor={`${id}-amount`}>
+              {unit === "coins" ? `花多少魚幣(含手續費,${m.rules.order_min} 到 ${m.rules.order_max})` : "買幾股(可以有小數)"}
+            </label>
+            <Input id={`${id}-amount`} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />
+          </div>
+        </>
       ) : (
         <div className="grid gap-2">
           <div className="flex items-center gap-2">
-            <Checkbox id={allId} checked={all} onCheckedChange={(v) => setAll(v === true)} />
-            <label htmlFor={allId} className="text-sm">賣掉這一家可以賣的全部</label>
+            <Checkbox id={id} checked={all} onCheckedChange={(v) => setAll(v === true)} />
+            <label htmlFor={id} className="text-sm">賣掉可以賣的全部</label>
           </div>
-          {!all && <Input aria-label="股數" inputMode="decimal" placeholder="股數(到小數三位)" value={qty} onChange={(e) => setQty(e.target.value)} />}
+          {!all && <Input aria-label="股數" inputMode="decimal" placeholder="股數" value={amount} onChange={(e) => setAmount(e.target.value)} />}
         </div>
       )}
-      {kind === "limit" && (
-        <div className="grid grid-cols-2 gap-3">
-          <Input aria-label="限價" inputMode="decimal" placeholder="限價(例如 98.50)" value={limit} onChange={(e) => setLimit(e.target.value)} />
-          <Input aria-label="放幾天" inputMode="numeric" placeholder="放幾個交易日" value={days} onChange={(e) => setDays(e.target.value)} />
-        </div>
-      )}
-      {side === "buy" && canLev && <Segmented label="槓桿" value={lev} onChange={setLev} options={[{ value: "1", label: "不用槓桿" }, { value: "2", label: "2 倍" }]} />}
+      {side === "buy" && canLev && <Segmented label="倍數" value={lev} onChange={setLev} options={[{ value: "1", label: "1 倍" }, { value: "2", label: "2 倍" }]} />}
+      {side === "buy" && lev === "2" && <p className="text-[13px] font-medium">2 倍可能賠掉保證金以外的錢,最壞會賠光錢包和其他持股。</p>}
       <p className="text-xs text-muted-foreground">
         {`今天還能下 ${account.today.orders_left} 筆、買 ${fmtInt(account.today.buy_left)};可以投入 ${account.investable === null ? "—" : fmtInt(account.investable)} ${m.currency}`}
       </p>
-      <Button type="submit" className="justify-self-start" busy={ask.isPending} disabled={closed}>
+      <Button type="submit" className="justify-self-start" busy={ask.isPending} disabled={!m.enabled}>
         試算並確認
       </Button>
-      {closed && <p className="text-[13px] text-muted-foreground">交易所現在不能下單</p>}
       <ConfirmDialog
         open={quote !== null}
-        title={quote?.side === "sell" ? "確認賣出" : quote && quote.leverage > 1 ? "確認槓桿買進" : "確認買進"}
+        title={quote?.side === "sell" ? "確認賣出" : quote && quote.leverage > 1 ? "確認 2 倍買進" : "確認買進"}
         confirmLabel="送出委託"
         busy={place.isPending}
         onConfirm={() => place.mutate()}
         onClose={() => setQuote(null)}
       >
-        {quote && <QuoteBody q={quote} currency={m.currency} />}
+        {quote && <QuoteBody q={quote} m={m} />}
       </ConfirmDialog>
     </form>
   );
 }
 
-function OrderTab({ m, preset }: { m: ExchangeMarket; preset: string }) {
+function OrderPart({ m, line }: { m: ExchangeMarket; line: ExchangeLine }) {
   const account = useAccount();
   return (
-    <Loaded query={account} rows={3}>
-      {(a) =>
-        !a.opened ? (
-          <OpenAccount account={a} />
-        ) : (
-          <div className="grid gap-4">
-            {a.blocked && <p className="text-[13px] text-muted-foreground">你現在只能賣出手上的持股,不能買進。</p>}
-            <OrderTicket m={m} account={a} preset={preset} />
-            <LeverageOptIn account={a} />
-          </div>
-        )
-      }
-    </Loaded>
+    <Part title="下單">
+      <Loaded query={account} rows={2}>
+        {(a) =>
+          !a.opened ? (
+            <OpenAccount account={a} />
+          ) : (
+            <div className="grid gap-4">
+              {a.blocked && <p className="text-[13px] text-muted-foreground">你現在只能賣出手上的持股,不能買進。</p>}
+              <OrderTicket m={m} account={a} line={line} />
+              {line.local === null && <LeverageOptIn m={m} account={a} />}
+            </div>
+          )
+        }
+      </Loaded>
+    </Part>
   );
 }
 
 // ---- 我的 --------------------------------------------------------------------------------------
 
-function LeveragedRow({ p, currency }: { p: ExchangeLeveraged; currency: string }) {
-  const api = useApi();
-  const refresh = useRefresh();
-  const history = useCompany(p.code);
-  const [coins, setCoins] = useState("");
-  const [closing, setClosing] = useState(false);
-  const [key] = useState(newKey);
-  const add = useMutation({
-    mutationFn: () => api.rpc.exchange.margin({ headers: { "idempotency-key": `${key}:${coins}` }, body: { position: p.id, coins: Number(coins) } }),
-    onSuccess: (r) => {
-      setCoins("");
-      notify.ok(`加了 ${r.added} ${currency} 保證金`);
-      refresh();
-    },
-    onError: (e) => notify.error(e),
-  });
-  const close = useMutation({
-    mutationFn: () => api.rpc.exchange.order({ headers: { "idempotency-key": `${key}:close` }, body: { side: "sell", company: p.code, position: p.id } }),
-    onSuccess: () => {
-      setClosing(false);
-      notify.ok("賣單送出了,下一盤成交");
-      refresh();
-    },
-    onError: (e) => notify.error(e),
-  });
-  const ratio = Math.max(0, Math.min(1, p.ratio));
-  return (
-    <li className="grid gap-3 py-4">
-      <PriceChart history={history.data?.history ?? []} line={p.line_price} title={`${p.code} ${p.name}・${p.leverage} 倍`} aside={`跌到 ${price(p.line_price)} 自動賣出`} />
-      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
-        <Fact label="保證金">{fmtInt(p.margin)}</Fact>
-        <Fact label="部位">{`${fmtInt(p.exposure)}(${shares(p.qty)} 股)`}</Fact>
-        <Fact label="現在剩">{`${fmtInt(Math.max(0, Math.floor(p.equity)))}(${fmtPct(ratio)})`}</Fact>
-        <Fact label="借的 / 利息">{`${fmtInt(p.loan)} / ${fmtInt(p.carry)}`}</Fact>
-        <Fact label="現價">{price(p.price)}</Fact>
-        <Fact label="第一次通知">{price(p.warn_half_price)}</Fact>
-        <Fact label="第二次通知">{price(p.warn_near_price)}</Fact>
-        <Fact label="自動賣出">{price(p.line_price)}</Fact>
-      </dl>
-      <Meter value={ratio} tone={ratio <= 0.5 ? "brand" : "neutral"} label={`保證金剩 ${fmtPct(ratio)}`} />
-      <div className="flex flex-wrap items-center gap-2">
-        <Input aria-label="加多少保證金" className="w-32" inputMode="numeric" placeholder="加保證金" value={coins} onChange={(e) => setCoins(e.target.value)} />
-        <Button size="sm" variant="outline" busy={add.isPending} disabled={!(Number(coins) > 0) || p.loan <= 0} onClick={() => add.mutate()}>
-          加保證金
-        </Button>
-        <Button size="sm" variant="outline" disabled={!p.can_close} title={p.can_close ? undefined : "今天買的明天才能賣,或已經有一筆賣單在等"} onClick={() => setClosing(true)}>
-          賣掉整個部位
-        </Button>
-      </div>
-      <ConfirmDialog open={closing} title="賣掉這個槓桿部位" confirmLabel="送出賣單" busy={close.isPending} onConfirm={() => close.mutate()} onClose={() => setClosing(false)}>
-        <p>{`下一盤以那時的價格賣出 ${p.code} 的整個部位;現價算,大約拿回 ${fmtInt(Math.max(0, Math.floor(p.equity)))} ${currency},再扣手續費和稅。`}</p>
-      </ConfirmDialog>
-    </li>
-  );
-}
-
-function MineTab({ currency }: { currency: string }) {
+function MineTab({ m }: { m: ExchangeMarket }) {
   const api = useApi();
   const refresh = useRefresh();
   const portfolio = usePortfolio();
   const cancel = useMutation({
     mutationFn: (order: string) => api.rpc.exchange.cancel({ body: { order } }),
     onSuccess: (r) => {
-      notify.ok(r.refunded > 0 ? `取消了,退回 ${r.refunded} ${currency}` : "取消了");
+      notify.ok(r.refunded > 0 ? `取消了,退回 ${r.refunded} ${m.currency}` : "取消了");
+      refresh();
+    },
+    onError: (e) => notify.error(e),
+  });
+  const sell = useMutation({
+    mutationFn: (position: string) => api.rpc.exchange.order({ headers: { "idempotency-key": newKey() }, body: { side: "sell", code: position.split("|")[0] ?? "", position: position.split("|")[1] ?? "" } }),
+    onSuccess: () => {
+      notify.ok("賣單送出了");
       refresh();
     },
     onError: (e) => notify.error(e),
   });
   return (
     <Loaded query={portfolio} rows={4}>
-      {(p: ExchangePortfolio) =>
-        !p.account.opened ? (
-          <EmptyLine>還沒開戶</EmptyLine>
-        ) : (
+      {(p: ExchangePortfolio) => {
+        const leverage = p.holdings.some((h) => h.leverage > 1);
+        const pnl = p.totals.value - p.totals.cost;
+        return (
           <div className="grid gap-8">
+            {p.bankrupt && (
+              <p role="status" className="text-sm font-medium">
+                {`破產冷靜期到 ${fmtDateTime(p.bankrupt.until)}:所有持股已經結清,不會欠錢(交易所吸收 ${fmtInt(p.bankrupt.written_off)} ${m.currency})。之前不能買進。`}
+              </p>
+            )}
             <dl className="flex flex-wrap gap-x-8 gap-y-3">
-              <Fact label="總資產(錢包加持股市值)">{p.totals.worth === null ? "—" : `${fmtInt(Math.floor(p.totals.worth))} ${currency}`}</Fact>
+              <Fact label="錢包">{p.balance === null ? "—" : `${fmtInt(Math.floor(p.balance))} ${m.currency}`}</Fact>
               <Fact label="持股市值">{fmtInt(Math.floor(p.totals.value))}</Fact>
               <Fact label="成本">{fmtInt(p.totals.cost)}</Fact>
-              <Fact label="持有上限">{`每家 ${p.account.limits.company}、合計 ${p.account.limits.total}`}</Fact>
+              <Fact label="損益">
+                <Move value={p.totals.cost > 0 ? pnl / p.totals.cost : null} colors={m.colors} />
+              </Fact>
             </dl>
             <p className="text-xs text-muted-foreground">只有你自己看得到這裡;她也看不到任何人的持股。</p>
             <Part title="持股">
@@ -603,86 +630,75 @@ function MineTab({ currency }: { currency: string }) {
               ) : (
                 <ul className="divide-y divide-line-soft">
                   {p.holdings.map((h) => (
-                    <li key={h.code} className="flex items-baseline gap-3 py-(--row-y) text-sm">
-                      <span className="w-12 shrink-0 font-mono text-[13px]">{h.code}</span>
-                      <span className="min-w-0 flex-1 truncate tabular-nums">{`${shares(h.qty)} 股(今天可賣 ${shares(h.sellable)})`}</span>
-                      <span className="shrink-0 tabular-nums">{`成本 ${fmtInt(h.cost)}・市值 ${fmtInt(Math.floor(h.value))}`}</span>
-                      <span className="w-16 shrink-0 text-right text-[13px]">
-                        <Move value={h.cost > 0 ? h.value / h.cost - 1 : 0} />
-                      </span>
+                    <li key={h.id} className="grid gap-1 py-(--row-y) text-sm">
+                      <p className="flex flex-wrap items-baseline gap-3">
+                        <span className="font-mono text-[13px] font-medium">{h.code}</span>
+                        <span className="min-w-0 flex-1 truncate">{`${h.name}・${shares(h.qty)} 股${h.leverage > 1 ? "・2 倍" : ""}`}</span>
+                        <span className="tabular-nums">{`市值 ${coins(h.value)}・成本 ${fmtInt(h.cost)}`}</span>
+                        <Move value={h.value !== null && h.cost > 0 ? h.value / h.cost - 1 : null} colors={m.colors} />
+                      </p>
+                      {h.leverage > 1 && (
+                        <p className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                          {`保證金 ${fmtInt(h.margin)}・剩 ${h.ratio === null ? "—" : fmtPct(Math.max(0, h.ratio))}・跌到 ${coins(h.line_price)} 自動賣出`}
+                          <Button size="sm" variant="outline" disabled={!h.can_sell} busy={sell.isPending} onClick={() => sell.mutate(`${h.code}|${h.id}`)}>
+                            賣掉這筆
+                          </Button>
+                        </p>
+                      )}
                     </li>
                   ))}
                 </ul>
               )}
             </Part>
-            {p.leveraged.length > 0 && (
-              <Part title="槓桿部位" aside="最多賠掉保證金,不會欠錢">
+            <Part title="委託">
+              {p.orders.filter((o) => o.status === "open").length === 0 ? (
+                <EmptyLine>沒有等待中的委託</EmptyLine>
+              ) : (
                 <ul className="divide-y divide-line-soft">
-                  {p.leveraged.map((l) => (
-                    <LeveragedRow key={l.id} p={l} currency={currency} />
+                  {p.orders
+                    .filter((o) => o.status === "open")
+                    .map((o) => (
+                      <li key={o.id} className="flex flex-wrap items-baseline gap-3 py-(--row-y) text-sm">
+                        <span className="font-mono text-[13px]">{o.code}</span>
+                        <span className="min-w-0 flex-1">{o.side === "buy" ? `買進 ${fmtInt(o.coins)} ${m.currency}` : `賣出 ${shares(o.qty)} 股`}</span>
+                        <Button size="sm" variant="outline" busy={cancel.isPending} onClick={() => cancel.mutate(o.id)}>
+                          取消
+                        </Button>
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </Part>
+            <Part title="成交">
+              {p.fills.length === 0 ? (
+                <EmptyLine>還沒有成交</EmptyLine>
+              ) : (
+                <ul className="divide-y divide-line-soft">
+                  {p.fills.slice(0, 10).map((f) => (
+                    <li key={f.id} className="flex flex-wrap items-baseline gap-3 py-(--row-y) text-sm">
+                      <span className="font-mono text-[13px]">{f.code}</span>
+                      <span className="min-w-0 flex-1">{`${f.side === "sell" ? "賣出" : "買進"} ${shares(f.qty)} 股・每股 ${coins(f.price)}・手續費 ${f.fee}`}</span>
+                      <span className="font-mono text-xs text-muted-foreground">{fmtDateTime(f.at)}</span>
+                    </li>
                   ))}
                 </ul>
-              </Part>
-            )}
-            <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-x-(--stage-gap)">
-              <Part title="委託">
-                {p.orders.length === 0 ? (
-                  <EmptyLine>還沒有委託</EmptyLine>
-                ) : (
-                  <ul className="divide-y divide-line-soft">
-                    {p.orders.slice(0, 12).map((o) => (
-                      <li key={o.id} className="flex items-baseline gap-3 py-(--row-y) text-sm">
-                        <span className="w-12 shrink-0 font-mono text-[13px]">{o.code}</span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {o.side === "buy" ? `買 ${fmtInt(o.coins)}${o.leverage > 1 ? `(${o.leverage} 倍)` : ""}` : `賣 ${shares(o.qty)} 股`}
-                          {o.limit !== null && `・限價 ${price(o.limit)}`}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground">{o.status === "open" ? "等下一盤" : (o.why ?? o.status)}</span>
-                        {o.status === "open" && (
-                          <Button size="sm" variant="ghost" busy={cancel.isPending && cancel.variables === o.id} onClick={() => cancel.mutate(o.id)}>
-                            取消
-                          </Button>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Part>
-              <Part title="成交">
-                {p.fills.length === 0 ? (
-                  <EmptyLine>還沒有成交</EmptyLine>
-                ) : (
-                  <ul className="divide-y divide-line-soft">
-                    {p.fills.slice(0, 12).map((f) => (
-                      <li key={f.id} className="flex items-baseline gap-3 py-(--row-y) text-sm">
-                        <span className="w-12 shrink-0 font-mono text-[13px]">{f.code}</span>
-                        <span className="min-w-0 flex-1 truncate tabular-nums">
-                          {f.side === "buy" ? `買 ${shares(f.qty)} 股 @ ${price(f.price)}` : `${f.kind === "liquidation" ? "自動賣出" : "賣"} ${shares(f.qty)} 股 @ ${price(f.price)}`}
-                        </span>
-                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                          {f.side === "buy" ? `手續費 ${f.fee}` : `拿回 ${fmtInt(f.paid)}(燒 ${f.fee + f.tax + f.carry})`}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Part>
-            </div>
+              )}
+            </Part>
             {p.notices.length > 0 && (
               <Part title="通知">
                 <ul className="divide-y divide-line-soft">
-                  {p.notices.slice(0, 10).map((n) => (
-                    <li key={n.id} className="grid gap-0.5 py-(--row-y) text-sm">
-                      <span>{n.text}</span>
-                      <span className="font-mono text-xs text-muted-foreground">{fmtDateTime(n.at)}</span>
+                  {p.notices.slice(0, 8).map((n) => (
+                    <li key={n.id} className="py-(--row-y) text-sm">
+                      {n.text}
                     </li>
                   ))}
                 </ul>
               </Part>
             )}
+            <SmallPrint m={m} leverage={leverage || p.bankrupt !== null} />
           </div>
-        )
-      }
+        );
+      }}
     </Loaded>
   );
 }
@@ -707,97 +723,98 @@ function Visibility({ account }: { account: ExchangeAccount }) {
           我要上榜
         </label>
       </div>
-      <p className="text-xs text-muted-foreground">預設會上榜(富人榜和本週交易量)。關掉之後你不會出現在任何一個榜上,只有你自己看得到你的名次。</p>
+      <p className="text-xs text-muted-foreground">預設會上榜。關掉之後你不會出現在富人榜上,她也不會提到你在交易所的事。</p>
       <div className="flex items-center gap-2">
         <Switch id={showId} checked={account.show_holdings} disabled={set.isPending} onCheckedChange={(on) => set.mutate({ show_holdings: on })} />
         <label htmlFor={showId} className="text-sm">
-          在富人榜上公開我持有哪幾家
+          在富人榜上公開我持有哪幾檔
         </label>
       </div>
-      <p className="text-xs text-muted-foreground">預設不公開;打開也只列公司和市值,不列股數和成本。</p>
     </div>
   );
 }
 
-function BoardsTab({ currency }: { currency: string }) {
-  const boards = useBoards();
+function BoardsTab({ m }: { m: ExchangeMarket }) {
+  const api = useApi();
+  const boards = useQuery({ queryKey: BOARDS, queryFn: ({ signal }) => api.rpc.exchange.boards(undefined, { signal }), refetchInterval: poll, retry });
   const account = useAccount();
   return (
     <div className="grid gap-8">
       {account.data?.opened && <Visibility account={account.data} />}
       <Loaded query={boards} rows={5}>
-        {(b: ExchangeBoards) => (
-          <div className="grid items-start gap-8 lg:grid-cols-2 lg:gap-x-(--stage-gap)">
-            <Part title="富人榜" aside="錢包加持股市值">
-              {b.rich.length === 0 ? (
-                <EmptyLine>還沒有人上榜</EmptyLine>
-              ) : (
-                <ol className="divide-y divide-line-soft">
-                  {b.rich.map((r) => (
-                    <li key={r.rank} className={`flex items-baseline gap-3 py-(--row-y) text-sm ${r.me ? "font-medium" : ""}`}>
-                      <span className="w-6 shrink-0 text-right tabular-nums text-muted-foreground">{r.rank}</span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {r.name}
-                        {r.me && <span className="ml-1 text-xs text-primary">你</span>}
-                        {r.holdings && <span className="ml-2 font-mono text-xs text-muted-foreground">{r.holdings.map((h) => h.code).join(" ")}</span>}
-                      </span>
-                      <span className="shrink-0 tabular-nums">{`${fmtInt(r.worth)} ${currency}`}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Part>
-            <Part title="本週交易量" aside={`${b.week_start} 起,不排賺賠`}>
-              {b.volume.length === 0 ? (
-                <EmptyLine>這週還沒有人交易</EmptyLine>
-              ) : (
-                <ol className="divide-y divide-line-soft">
-                  {b.volume.map((r) => (
-                    <li key={r.rank} className={`flex items-baseline gap-3 py-(--row-y) text-sm ${r.me ? "font-medium" : ""}`}>
-                      <span className="w-6 shrink-0 text-right tabular-nums text-muted-foreground">{r.rank}</span>
-                      <span className="min-w-0 flex-1 truncate">
-                        {r.name}
-                        {r.me && <span className="ml-1 text-xs text-primary">你</span>}
-                      </span>
-                      <span className="shrink-0 tabular-nums">{`${fmtInt(r.volume)}・${r.trades} 筆`}</span>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </Part>
-            {b.me && (
-              <p className="text-[13px] text-muted-foreground lg:col-span-2">
-                {b.me.hidden ? `你設定了不上榜。` : ""}
-                {`你在富人榜${b.me.rich === null ? "還沒有名次" : `第 ${b.me.rich} 名`},本週交易量${b.me.volume === null ? "還沒有名次" : `第 ${b.me.volume} 名`}。`}
-              </p>
+        {(b) => (
+          <Part title="富人榜" aside="錢包加持股市值">
+            {b.rich.length === 0 ? (
+              <EmptyLine>還沒有人上榜</EmptyLine>
+            ) : (
+              <ol className="divide-y divide-line-soft">
+                {b.rich.map((r) => (
+                  <li key={r.rank} className={`flex items-baseline gap-3 py-(--row-y) text-sm ${r.me ? "font-medium" : ""}`}>
+                    <span className="w-6 shrink-0 text-right tabular-nums text-muted-foreground">{r.rank}</span>
+                    <span className="min-w-0 flex-1 truncate">
+                      {r.name}
+                      {r.me && <span className="ml-1 text-xs text-primary">你</span>}
+                      {r.holdings && <span className="ml-2 font-mono text-xs text-muted-foreground">{r.holdings.map((h) => h.code).join(" ")}</span>}
+                    </span>
+                    <span className="shrink-0 tabular-nums">{`${fmtInt(r.worth)} ${b.currency}`}</span>
+                  </li>
+                ))}
+              </ol>
             )}
-          </div>
+            {b.me && <p className="text-[13px] text-muted-foreground">{b.me.hidden ? "你設定了不上榜。" : b.me.rich === null ? "你還沒有名次。" : `你是第 ${b.me.rich} 名。`}</p>}
+          </Part>
         )}
       </Loaded>
+      <SmallPrint m={m} />
+    </div>
+  );
+}
+
+// ---- 規則 --------------------------------------------------------------------------------------
+
+function RulesTab({ m }: { m: ExchangeMarket }) {
+  const r = m.rules;
+  return (
+    <div className="grid gap-6">
+      <dl className="grid grid-cols-2 gap-x-8 gap-y-3 sm:grid-cols-4">
+        <Fact label="委託">市價,以下一筆有效報價成交</Fact>
+        <Fact label="手續費">{`每筆 ${fmtPct(r.fee, 1)},最少 ${r.fee_min},燒掉`}</Fact>
+        <Fact label="買進後">{`${r.min_hold_minutes} 分鐘才能賣`}</Fact>
+        <Fact label="一筆">{`${r.order_min} 到 ${r.order_max}`}</Fact>
+        <Fact label="一天">{`${r.orders_per_day} 筆、買 ${fmtInt(r.buy_per_day)}`}</Fact>
+        <Fact label="持有上限">{`成本合計 ${fmtInt(r.limit_total)} 起`}</Fact>
+        <Fact label="開戶">{`認識滿 ${r.account_min_days} 天、${r.account_min_tier}以上`}</Fact>
+        <Fact label="2 倍">{r.leverage ? `認識滿 ${r.leverage_min_days} 天、${r.leverage_min_tier}以上` : "沒有開放"}</Fact>
+        <Fact label="每天最多淨發出">{`${fmtInt(r.payout_cap_daily)},到了當天停止買進`}</Fact>
+        <Fact label="破產冷靜期">{`${r.bankrupt_cooling_days} 天`}</Fact>
+        <Fact label="報價最舊">{`${Math.round(r.quote_max_age_seconds / 60)} 分鐘`}</Fact>
+        <Fact label="觀察清單">{`最多 ${r.watch_max} 檔`}</Fact>
+      </dl>
+      <ul className="grid list-disc gap-1 pl-5 text-[13px]">
+        <li>{m.no_dividends}</li>
+        <li>{m.no_exchange}</li>
+        <li>交易所是對手方:買進的魚幣燒掉,賣出時重新發出;價格照真實報價,固定匯率換成魚幣。</li>
+        <li>報價太舊或看起來不對,就不成交也不自動賣出。</li>
+      </ul>
+      <SmallPrint m={m} leverage={r.leverage} />
     </div>
   );
 }
 
 // ---- the block ---------------------------------------------------------------------------------
 
-/** 深海交易所: the market, a company, the ticket, their own book, the boards. */
+/** 深海交易所: the market and its lists, their own book, the rich list, the rules. */
 export function Exchange() {
   const market = useMarket();
   const stored = readStorage(TAB_KEY);
   const [tab, setTab] = useState<Tab>(TABS.includes(stored as Tab) ? (stored as Tab) : "market");
-  const [code, setCode] = useState("DPSK");
   const pick = (v: string) => {
     if (!TABS.includes(v as Tab)) return;
     setTab(v as Tab);
     writeStorage(TAB_KEY, v);
   };
-  const openCompany = (c: string) => {
-    setCode(c);
-    pick("company");
-  };
   if (market.isError && isNotProvided(market.error)) return null;
   const off = market.isError && isApiError(market.error) && market.error.kind === "unavailable";
-  const currency = market.data?.currency ?? "魚幣";
   return (
     <Card aria-label="深海交易所">
       <CardHeader>
@@ -812,27 +829,23 @@ export function Exchange() {
       ) : (
         <Tabs value={tab} onValueChange={pick} className="gap-4">
           <TabsList variant="inline" aria-label="深海交易所">
-            <TabsTrigger value="market">行情</TabsTrigger>
-            <TabsTrigger value="company">個股</TabsTrigger>
-            <TabsTrigger value="order">下單</TabsTrigger>
+            <TabsTrigger value="market">市場</TabsTrigger>
             <TabsTrigger value="mine">我的</TabsTrigger>
-            <TabsTrigger value="boards">排行榜</TabsTrigger>
+            <TabsTrigger value="boards">富人榜</TabsTrigger>
+            <TabsTrigger value="rules">規則</TabsTrigger>
           </TabsList>
           {!market.data.enabled && <p className="text-[13px] text-muted-foreground">交易所還沒開放,下面是規則和目前的價格。</p>}
           <TabsContent value="market">
-            <MarketTab m={market.data} onPick={openCompany} />
-          </TabsContent>
-          <TabsContent value="company">
-            <CompanyTab code={code} setCode={setCode} companies={market.data.companies} />
-          </TabsContent>
-          <TabsContent value="order">
-            <OrderTab m={market.data} preset={code} />
+            <MarketTab m={market.data} />
           </TabsContent>
           <TabsContent value="mine">
-            <MineTab currency={currency} />
+            <MineTab m={market.data} />
           </TabsContent>
           <TabsContent value="boards">
-            <BoardsTab currency={currency} />
+            <BoardsTab m={market.data} />
+          </TabsContent>
+          <TabsContent value="rules">
+            <RulesTab m={market.data} />
           </TabsContent>
         </Tabs>
       )}

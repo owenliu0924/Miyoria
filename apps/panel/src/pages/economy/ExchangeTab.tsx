@@ -1,8 +1,11 @@
-// 經濟 / 交易所: the deep-sea exchange as the owner sees it (docs/design/exchange.md). The state
-// (`GET /api/exchange`: the vault and its rows, the level, what burned, what is owed, the rounds),
-// the pause, every open position with a sale for cleanup (no fee, recorded in the audit log), and
-// the parameters as they are in force, read-only: they change in 系統 / 交易所 or the file. No
-// hidden value and no seed is ever sent here. The pause and the sale need `admin.economy.adjust`.
+// 經濟 / 交易所: the deep-sea exchange as the owner sees it (docs/design/exchange.md), v1. The
+// daily mint and burn report against the payout cap and whether the books balance, the provider's
+// last problem and the refresh the budget allows, the tickers people added (block for buying,
+// unblock, remove one nobody holds; a split-like jump to confirm; a suspended ticker to settle at
+// its last price or at zero), who is bankrupt, and every open position with a sale by hand. Every
+// change asks first, needs `admin.economy.adjust` and is written to the audit log. The master
+// switch and the parameters (fees, caps, the fixed rates) are in 系統 / 交易所 or the file; a rate
+// change re-values everyone's holdings at once, which its field warns about.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -22,7 +25,12 @@ const KEY = ["exchange", "admin"] as const;
 const DENIED = "你的帳號沒有交易所的權限(需要 admin.economy.adjust)";
 const isDenied = (e: unknown) => isApiError(e) && e.status === 403;
 
-const STATUS: Record<string, string> = { held: "撮合", skipped: "跳過(停機)", halted: "熔斷", paused: "暫停" };
+const STATUS: Record<string, string> = {
+  active: "正常",
+  blocked: "只能賣",
+  paused: "疑似分割,暫停",
+  suspended: "沒有報價,暫停",
+};
 
 function useExchangeAdmin() {
   const api = useApi();
@@ -38,163 +46,181 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
-function State({ v }: { v: ExchangeAdmin }) {
-  const books = v.vault_rows === null || v.vault_rows === v.vault ? "對得上" : `對不上(列 ${v.vault_rows})`;
+function Report({ v }: { v: ExchangeAdmin }) {
+  const r = v.report;
+  const balanced = r.books.postings === r.books.lines;
+  const warning = v.providers.find((p) => p.last_error !== null);
   return (
-    <Card aria-label="狀態">
+    <Card aria-label="今天">
       <CardHeader>
-        <CardTitle>狀態</CardTitle>
+        <CardTitle>今天</CardTitle>
       </CardHeader>
-      <dl className="flex flex-wrap gap-x-8 gap-y-3">
-        <Fact label="交易所">{!v.enabled ? "關(open = false)" : v.paused ? "暫停" : "開"}</Fact>
-        <Fact label="FISH">{v.fish.toFixed(0)}</Fact>
-        <Fact label="金庫">{fmtInt(v.vault)}</Fact>
-        <Fact label="金庫的帳">{books}</Fact>
-        <Fact label="持股市值">{fmtInt(Math.floor(v.obligations))}</Fact>
-        <Fact label="水位">{v.level === null ? "—" : v.level.toFixed(2)}</Fact>
-        <Fact label="本週燒掉">{fmtInt(v.burned_week)}</Fact>
-        <Fact label="總共燒掉">{fmtInt(v.burned)}</Fact>
-        <Fact label="開戶">{fmtInt(v.accounts)}</Fact>
-        <Fact label="持股 / 委託">{`${v.positions} / ${v.open_orders}`}</Fact>
-        <Fact label="還沒入帳">{fmtInt(v.pending_postings)}</Fact>
-        <Fact label="金庫欠的">{v.owed.length === 0 ? "沒有" : v.owed.map((o) => `${o.name ?? o.person} ${o.gross}`).join("、")}</Fact>
-      </dl>
-    </Card>
-  );
-}
-
-function Pause({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; onDenied: () => void }) {
-  const api = useApi();
-  const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const pause = useMutation({
-    mutationFn: (paused: boolean) => api.rpc.exchangeAdmin.pause({ body: { paused } }),
-    onSuccess: (r) => {
-      setOpen(false);
-      notify.ok(r.paused ? `暫停了,退回 ${r.refunded} 筆委託` : "恢復了");
-      void qc.invalidateQueries({ queryKey: KEY });
-    },
-    onError: (e) => {
-      if (isDenied(e)) {
-        onDenied();
-        setOpen(false);
-      }
-      notify.error(e);
-    },
-  });
-  return (
-    <Card aria-label="暫停">
-      <CardHeader>
-        <CardTitle>暫停</CardTitle>
-      </CardHeader>
-      <Button variant="outline" writes disabled={denied || !v.enabled} title={denied ? DENIED : !v.enabled ? "交易所的開關關著" : undefined} className="justify-self-start" onClick={() => (v.paused ? pause.mutate(false) : setOpen(true))}>
-        {v.paused ? "恢復交易" : "暫停交易"}
-      </Button>
-      {v.paused && v.paused_by && <p className="text-xs text-muted-foreground">{`${v.paused_by} 暫停的`}</p>}
-      <ConfirmDialog open={open} title="暫停交易所" confirmLabel="暫停" busy={pause.isPending} onConfirm={() => pause.mutate(true)} onClose={() => setOpen(false)}>
-        <p>暫停時不撮合、價格不動、不能下單;掛著的委託全部退回(買單連手續費)。持股和槓桿部位留著,暫停期間不會被強制賣出,也不收利息。</p>
-      </ConfirmDialog>
-    </Card>
-  );
-}
-
-function Holders({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; onDenied: () => void }) {
-  const api = useApi();
-  const qc = useQueryClient();
-  const [target, setTarget] = useState<{ id: string; label: string } | null>(null);
-  const [note, setNote] = useState("");
-  const sell = useMutation({
-    mutationFn: () => api.rpc.exchangeAdmin.sell({ body: { position: target?.id ?? "", ...(note.trim() ? { note: note.trim() } : {}) } }),
-    onSuccess: (r) => {
-      setTarget(null);
-      setNote("");
-      notify.ok(`賣掉了,付給對方 ${r.paid}`);
-      void qc.invalidateQueries({ queryKey: KEY });
-    },
-    onError: (e) => {
-      if (isDenied(e)) {
-        onDenied();
-        setTarget(null);
-      }
-      notify.error(e);
-    },
-  });
-  return (
-    <Card aria-label="持股">
-      <CardHeader>
-        <CardTitle>持股</CardTitle>
-      </CardHeader>
-      {v.holders.length === 0 ? (
-        <EmptyLine>沒有人持股</EmptyLine>
-      ) : (
-        <ul className="divide-y divide-line-soft">
-          {v.holders.flatMap((h) =>
-            h.positions.map((p) => (
-              <li key={p.id} className="flex items-baseline gap-3 py-(--row-y) text-sm">
-                <span className="min-w-0 flex-1 truncate">{h.name ?? h.person}</span>
-                <span className="w-12 shrink-0 font-mono text-[13px]">{p.code}</span>
-                <span className="shrink-0 tabular-nums">{`${(p.qty / 1000).toFixed(3)} 股${p.leverage > 1 ? `・${p.leverage} 倍` : ""}・${fmtInt(Math.floor(p.leverage > 1 ? p.equity : p.value))}`}</span>
-                <Button size="sm" variant="ghost" writes disabled={denied} title={denied ? DENIED : undefined} onClick={() => setTarget({ id: p.id, label: `${h.name ?? h.person} 的 ${p.code}` })}>
-                  賣掉
-                </Button>
-              </li>
-            )),
-          )}
-        </ul>
+      {warning && (
+        <p role="alert" className="text-[13px] text-primary">
+          {`報價來源 ${warning.id} 的問題:${warning.last_error}。沒有有效報價時不成交、也不自動賣出。`}
+        </p>
       )}
-      <ConfirmDialog open={target !== null} title={`賣掉${target?.label ?? ""}`} confirmLabel="賣掉" busy={sell.isPending} onConfirm={() => sell.mutate()} onClose={() => setTarget(null)}>
-        <div className="grid gap-2">
-          <p>以最後一盤的價格馬上賣掉,不收手續費和稅,不看 T+1;錢付給持有的人。會記在稽核紀錄裡。金庫付不出來就不會賣。</p>
-          <Input aria-label="為什麼" placeholder="為什麼(記在稽核紀錄)" maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
-        </div>
-      </ConfirmDialog>
-    </Card>
-  );
-}
-
-function Rounds({ v }: { v: ExchangeAdmin }) {
-  return (
-    <Card aria-label="最近的盤">
-      <CardHeader>
-        <CardTitle>最近的盤</CardTitle>
-      </CardHeader>
-      {v.rounds.length === 0 ? (
-        <EmptyLine>還沒有任何一盤</EmptyLine>
-      ) : (
+      <dl className="flex flex-wrap gap-x-8 gap-y-3">
+        <Fact label="交易所">{v.enabled ? "開" : "關(open = false)"}</Fact>
+        <Fact label="今天燒掉">{fmtInt(r.today.burned)}</Fact>
+        <Fact label="今天發出">{fmtInt(r.today.minted)}</Fact>
+        <Fact label="淨發出 / 上限">{`${fmtInt(r.today.net)} / ${fmtInt(r.cap_daily)}`}</Fact>
+        <Fact label="買進">{r.today.buys_halted ? "今天停了(到上限)" : "照常"}</Fact>
+        <Fact label="吸收的虧損">{fmtInt(r.today.written_off)}</Fact>
+        <Fact label="帳">{balanced ? "對得上" : `對不上(錢包 ${r.books.postings}、交易所 ${r.books.lines})`}</Fact>
+        <Fact label="還沒入帳">{fmtInt(r.books.pending)}</Fact>
+        <Fact label="報價更新">{`約每 ${v.refresh_seconds} 秒`}</Fact>
+        <Fact label="固定匯率">{`1 魚幣 = NT$${v.rates.twd_per_coin}・1 美元 = NT$${v.rates.twd_per_usd}`}</Fact>
+      </dl>
+      <p className="text-xs text-muted-foreground">改匯率會讓所有人的台股、美股持股市值一起變(股數不變)。匯率在 系統 / 經濟(twd_per_coin)和 系統 / 交易所(twd_per_usd)。</p>
+      {r.days.length > 0 && (
         <ul className="divide-y divide-line-soft">
-          {v.rounds.slice(0, 24).map((r) => (
-            <li key={r.round} className="flex items-baseline gap-3 py-(--row-y) text-sm">
-              <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground">{fmtDateTime(r.at)}</span>
-              <span className="w-20 shrink-0">{STATUS[r.status] ?? r.status}</span>
-              <span className="min-w-0 flex-1 truncate tabular-nums">{`FISH ${r.fish.toFixed(0)}・水位 ${r.level === null ? "—" : r.level.toFixed(2)}`}</span>
-              <span className="shrink-0 tabular-nums">{`成交 ${fmtInt(r.volume)}・燒 ${fmtInt(r.burned)}・金庫 ${fmtInt(r.vault)}`}</span>
+          {r.days.slice(0, 14).map((d) => (
+            <li key={d.day} className="flex items-baseline gap-3 py-(--row-y) text-sm">
+              <span className="w-28 shrink-0 font-mono text-xs text-muted-foreground">{d.date}</span>
+              <span className="min-w-0 flex-1 tabular-nums">{`燒 ${fmtInt(d.burned)}・發 ${fmtInt(d.minted)}・淨 ${fmtInt(d.net)}・吸收 ${fmtInt(d.written_off)}`}</span>
             </li>
           ))}
         </ul>
       )}
+      {r.bankrupt.length > 0 && <p className="text-[13px]">{`破產冷靜期中:${r.bankrupt.map((b) => `${b.name}(到 ${fmtDateTime(b.until)})`).join("、")}`}</p>}
     </Card>
   );
 }
 
-function Params({ v }: { v: ExchangeAdmin }) {
+type Action =
+  | { kind: "ticker"; code: string; action: "block" | "unblock" | "remove" }
+  | { kind: "split"; code: string }
+  | { kind: "settle"; code: string; at: "last" | "zero" }
+  | { kind: "sell"; position: string; label: string };
+
+function Tickers({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; onDenied: () => void }) {
+  const api = useApi();
+  const qc = useQueryClient();
+  const [ask, setAsk] = useState<Action | null>(null);
+  const [ratio, setRatio] = useState("");
+  const run = useMutation({
+    mutationFn: async (a: Action) => {
+      if (a.kind === "ticker") await api.rpc.exchangeAdmin.ticker({ body: { code: a.code, action: a.action } });
+      else if (a.kind === "split") await api.rpc.exchangeAdmin.split({ body: { code: a.code, ratio: Number(ratio) } });
+      else if (a.kind === "settle") await api.rpc.exchangeAdmin.settle({ body: { code: a.code, at: a.at } });
+      else await api.rpc.exchangeAdmin.sell({ body: { position: a.position } });
+    },
+    onSuccess: () => {
+      setAsk(null);
+      notify.ok("好了,記在稽核紀錄");
+      void qc.invalidateQueries({ queryKey: KEY });
+    },
+    onError: (e) => {
+      if (isDenied(e)) onDenied();
+      notify.error(e);
+    },
+  });
+  const title =
+    ask === null
+      ? ""
+      : ask.kind === "ticker"
+        ? `${ask.action === "block" ? "停止買進" : ask.action === "unblock" ? "恢復買進" : "移除"} ${ask.code}`
+        : ask.kind === "split"
+          ? `確認 ${ask.code} 分割`
+          : ask.kind === "settle"
+            ? `結算 ${ask.code}(${ask.at === "last" ? "最後價格" : "歸零"})`
+            : `賣掉 ${ask.label}`;
   return (
-    <Card aria-label="參數">
-      <CardHeader>
-        <CardTitle>參數</CardTitle>
-      </CardHeader>
-      <dl className="grid grid-cols-2 gap-x-8 gap-y-2 sm:grid-cols-3 lg:grid-cols-4">
-        {Object.entries(v.params).map(([k, value]) => (
-          <div key={k} className="grid min-w-0 gap-0.5">
-            <dt className="truncate font-mono text-xs text-muted-foreground">{k}</dt>
-            <dd className="truncate text-sm tabular-nums">{String(value)}</dd>
+    <>
+      <Card aria-label="股票">
+        <CardHeader>
+          <CardTitle>股票</CardTitle>
+        </CardHeader>
+        {denied && <p className="text-[13px] text-muted-foreground">{DENIED}</p>}
+        {v.tickers.length === 0 ? (
+          <EmptyLine>還沒有人查過任何股票</EmptyLine>
+        ) : (
+          <ul className="divide-y divide-line-soft">
+            {v.tickers.map((t) => (
+              <li key={t.code} className="flex flex-wrap items-center gap-3 py-(--row-y) text-sm">
+                <span className="w-24 shrink-0 font-mono text-[13px] font-medium">{t.code}</span>
+                <span className="min-w-0 flex-1 truncate">{`${t.name}・${t.exchange} ${t.type}・${t.holders} 人持有`}</span>
+                <span className="shrink-0 text-xs text-muted-foreground">{`${STATUS[t.status] ?? t.status}${t.missing_days > 0 ? `・${t.missing_days} 天沒報價` : ""}`}</span>
+                {t.market !== "local" && (
+                  <span className="flex shrink-0 gap-1.5">
+                    {t.status === "blocked" ? (
+                      <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "ticker", code: t.code, action: "unblock" })}>
+                        恢復買進
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "ticker", code: t.code, action: "block" })}>
+                        停止買進
+                      </Button>
+                    )}
+                    {t.status === "paused" && (
+                      <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "split", code: t.code })}>
+                        確認分割
+                      </Button>
+                    )}
+                    {t.status === "suspended" && (
+                      <>
+                        <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "settle", code: t.code, at: "last" })}>
+                          照最後價格結算
+                        </Button>
+                        <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "settle", code: t.code, at: "zero" })}>
+                          歸零結算
+                        </Button>
+                      </>
+                    )}
+                    {t.holders === 0 && (
+                      <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "ticker", code: t.code, action: "remove" })}>
+                        移除
+                      </Button>
+                    )}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <Card aria-label="持股">
+        <CardHeader>
+          <CardTitle>持股</CardTitle>
+        </CardHeader>
+        {v.positions.length === 0 ? (
+          <EmptyLine>沒有人持有任何股票</EmptyLine>
+        ) : (
+          <ul className="divide-y divide-line-soft">
+            {v.positions.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center gap-3 py-(--row-y) text-sm">
+                <span className="min-w-0 flex-1 truncate">{`${p.name}・${p.code}${p.leverage > 1 ? "・2 倍" : ""}`}</span>
+                <span className="shrink-0 tabular-nums">{p.value === null ? "—" : fmtInt(Math.floor(p.value))}</span>
+                <Button size="sm" variant="outline" disabled={denied} onClick={() => setAsk({ kind: "sell", position: p.id, label: `${p.name} 的 ${p.code}` })}>
+                  賣掉
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+      <ConfirmDialog open={ask !== null} title={title} confirmLabel="確定" busy={run.isPending} onConfirm={() => ask && run.mutate(ask)} onClose={() => setAsk(null)}>
+        {ask?.kind === "split" ? (
+          <div className="grid gap-1">
+            <label htmlFor="exchange-split-ratio" className="text-xs">
+              每一股變成幾股(1 拆 4 就填 4,4 合 1 就填 0.25)
+            </label>
+            <Input id="exchange-split-ratio" inputMode="decimal" value={ratio} onChange={(e) => setRatio(e.target.value)} />
           </div>
-        ))}
-      </dl>
-    </Card>
+        ) : ask?.kind === "settle" ? (
+          <p>{ask.at === "last" ? "所有持股照最後一筆有效價格賣掉。" : "所有持股以 0 結算,持有的人拿不回魚幣。"}這會寫進稽核紀錄。</p>
+        ) : ask?.kind === "sell" ? (
+          <p>照最新報價賣掉,不收手續費;這會寫進稽核紀錄。</p>
+        ) : (
+          <p>這會寫進稽核紀錄。</p>
+        )}
+      </ConfirmDialog>
+    </>
   );
 }
 
-/** The state, the pause, the holdings with a sale, the rounds, the parameters. */
+/** The day's report, the tickers, the positions. */
 export function ExchangeTab() {
   const q = useExchangeAdmin();
   const [denied, setDenied] = useState(false);
@@ -202,13 +228,8 @@ export function ExchangeTab() {
     <ModuleQuery query={q} module="交易所(exchange 模組)">
       {(v) => (
         <div className="grid gap-(--stage-gap)">
-          <State v={v} />
-          <div className="grid items-start gap-(--stage-gap) lg:grid-cols-2">
-            <Pause v={v} denied={denied} onDenied={() => setDenied(true)} />
-            <Holders v={v} denied={denied} onDenied={() => setDenied(true)} />
-          </div>
-          <Rounds v={v} />
-          <Params v={v} />
+          <Report v={v} />
+          <Tickers v={v} denied={denied} onDenied={() => setDenied(true)} />
         </div>
       )}
     </ModuleQuery>

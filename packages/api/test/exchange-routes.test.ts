@@ -120,8 +120,14 @@ const json = (body: unknown, headers: Record<string, string> = {}) => ({
   headers: { "content-type": "application/json", ...headers },
 });
 
+/** 12:30 Taipei: the local stocks have their first tick. */
+const NOON = Date.UTC(2026, 10, 23, 4, 30);
+
+type Json = Record<string, unknown> & { rows?: { code: string; holders: number | null }[] };
+const body = async (r: Response) => (await r.json()) as Json;
+
 describe("the exchange's routes", () => {
-  it("are member routes, limited, and the owner's two changes need a node", () => {
+  it("are member routes, limited, and the owner's changes need a node", () => {
     for (const name of Object.keys(contract.exchange)) {
       expect(routeMeta(contract, ["exchange", name])).toEqual({
         audience: "member",
@@ -133,7 +139,7 @@ describe("the exchange's routes", () => {
       audience: "admin",
       permission: null,
     });
-    for (const name of ["pause", "sell"]) {
+    for (const name of ["ticker", "split", "settle", "sell"]) {
       expect(routeMeta(contract, ["exchangeAdmin", name])).toMatchObject({
         audience: "admin",
         permission: "admin.economy.adjust",
@@ -149,62 +155,90 @@ describe("the exchange's routes", () => {
   });
 
   it("answer with views that fit the contract, open an account, quote, order once per key", async () => {
-    const { service, wallet } = exchange();
+    const { service, wallet, clock } = exchange();
+    clock.at = NOON;
+    await service.tick();
     const hono = app(service);
-    const market = await hono.request("/api/member/exchange");
-    expect(market.status).toBe(200);
-    expect((await market.json()).companies).toHaveLength(8);
-    expect((await hono.request("/api/member/exchange/company/DPSK")).status).toBe(200);
-    expect((await hono.request("/api/member/exchange/company/ZZZZ")).status).toBe(404);
-    const account = await hono.request("/api/member/exchange/account", { method: "POST" });
-    expect(await account.json()).toMatchObject({ opened: true, limits: { company: 270 } });
-    const quote = await hono.request(
-      "/api/member/exchange/quote",
-      json({ side: "buy", company: "RICE", coins: 100 }),
+    const market = await body(await hono.request("/api/member/exchange"));
+    expect(market).toMatchObject({
+      colors: "tw",
+      default_list: "local",
+      rates: { twd_per_coin: 1, twd_per_usd: 30 },
+    });
+    expect(String(market.no_dividends)).toContain("不發放股息");
+    expect(String(market.no_exchange)).toContain("真錢");
+    const list = await body(await hono.request("/api/member/exchange/list/local"));
+    expect(list.rows?.map((r) => r.code)).toEqual(["RICE", "WHLE", "NAPS", "CUBE", "DPSK"]);
+    expect((await hono.request("/api/member/exchange/ticker/RICE")).status).toBe(200);
+    expect((await hono.request("/api/member/exchange/ticker/ZZZZ")).status).toBe(404);
+    const suggest = await body(await hono.request("/api/member/exchange/suggest?q=ri"));
+    expect((suggest.items as { code: string }[])[0]?.code).toBe("RICE");
+    const watch = await hono.request(
+      "/api/member/exchange/watch",
+      json({ code: "RICE", on: true }),
     );
-    expect(await quote.json()).toMatchObject({ coins: 100, fee: 2, margin: 98 });
+    expect(await watch.json()).toEqual({ watching: true, count: 1 });
+    const account = await hono.request("/api/member/exchange/account", { method: "POST" });
+    expect(await account.json()).toMatchObject({ opened: true });
+    const quote = await body(
+      await hono.request(
+        "/api/member/exchange/quote",
+        json({ side: "buy", code: "RICE", coins: 101 }),
+      ),
+    );
+    expect(quote).toMatchObject({ coins: 101, fee: 1, margin: 100 });
     const order = () =>
       hono.request(
         "/api/member/exchange/order",
-        json({ side: "buy", company: "RICE", coins: 100 }, { "idempotency-key": "abc" }),
+        json({ side: "buy", code: "RICE", coins: 101 }, { "idempotency-key": "abc" }),
       );
     const first = await order();
     expect(first.status).toBe(200);
     const again = await order();
-    expect((await again.json()).id).toBe((await first.json()).id);
+    expect((await body(again)).id).toBe((await body(first)).id);
     expect(wallet.rows.filter((r) => r.key.startsWith("exchange:order:"))).toHaveLength(2);
-    const port = await hono.request("/api/member/exchange/portfolio");
-    expect((await port.json()).orders).toHaveLength(1);
+    clock.at = NOON + 31 * 60_000;
+    await service.tick();
+    const port = await body(await hono.request("/api/member/exchange/portfolio"));
+    expect((port.holdings as unknown[]).length).toBe(1);
+    const popular = await body(await hono.request("/api/member/exchange/list/popular"));
+    expect(popular.rows?.[0]).toMatchObject({ code: "RICE", holders: 1 });
+    expect(JSON.stringify(popular)).not.toContain("小魚乾");
     expect((await hono.request("/api/member/exchange/boards")).status).toBe(200);
     const hide = await hono.request("/api/member/exchange/visibility", json({ hide_boards: true }));
     expect(await hide.json()).toMatchObject({ hide_boards: true });
-    expect((await hono.request("/api/exchange")).status).toBe(200);
+    const admin = await body(await hono.request("/api/exchange"));
+    expect((admin.positions as unknown[]).length).toBe(1);
+    expect(
+      (admin.tickers as { code: string; holders: number }[]).find((t) => t.code === "RICE"),
+    ).toMatchObject({ holders: 1 });
   });
 
   it("bring a refusal back as its status and sentence", async () => {
-    const { service } = exchange();
+    const { service, clock } = exchange();
+    clock.at = NOON;
+    await service.tick();
     const hono = app(service);
     const no = await hono.request(
       "/api/member/exchange/order",
-      json({ side: "buy", company: "RICE", coins: 100 }),
+      json({ side: "buy", code: "RICE", coins: 100 }),
     );
     expect(no.status).toBe(409);
     expect(await no.json()).toMatchObject({ error: "還沒開戶" });
     await hono.request("/api/member/exchange/account", { method: "POST" });
-    const big = await hono.request(
+    const lev = await hono.request(
       "/api/member/exchange/order",
-      json({ side: "buy", company: "RICE", coins: 900 }),
+      json({ side: "buy", code: "RICE", coins: 100, leverage: 2 }),
     );
-    expect(big.status).toBe(409);
-    const lev = await hono.request("/api/member/exchange/leverage", json({ accept: false }));
-    expect(lev.status).toBe(400);
-    const pause = await hono.request("/api/exchange/pause", json({ paused: true }));
-    expect(await pause.json()).toEqual({ paused: true, refunded: 0 });
-    const closed = await hono.request(
-      "/api/member/exchange/order",
-      json({ side: "buy", company: "RICE", coins: 100 }),
+    expect(lev.status).toBe(409);
+    expect(await lev.json()).toMatchObject({ error: "新手推薦的獨家股票不開放槓桿,只能 1 倍" });
+    const optOut = await hono.request("/api/member/exchange/leverage", json({ accept: false }));
+    expect(optOut.status).toBe(400);
+    const remove = await hono.request(
+      "/api/exchange/ticker",
+      json({ code: "ZZZZ", action: "block" }),
     );
-    expect(await closed.json()).toMatchObject({ error: "交易所現在暫停,不能下單" });
+    expect(remove.status).toBe(404);
   });
 
   it("is a 503 naming the module without it", async () => {

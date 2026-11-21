@@ -738,8 +738,10 @@ describe("the route table", () => {
       "GET /api/member/exchange",
       "GET /api/member/exchange/account",
       "GET /api/member/exchange/boards",
-      "GET /api/member/exchange/company/:code",
+      "GET /api/member/exchange/list/:kind",
       "GET /api/member/exchange/portfolio",
+      "GET /api/member/exchange/suggest",
+      "GET /api/member/exchange/ticker/:code",
       "GET /api/member/export",
       "GET /api/member/fortune",
       "GET /api/member/gifts",
@@ -773,10 +775,11 @@ describe("the route table", () => {
       "POST /api/member/exchange/account",
       "POST /api/member/exchange/cancel",
       "POST /api/member/exchange/leverage",
-      "POST /api/member/exchange/margin",
+      "POST /api/member/exchange/lookup",
       "POST /api/member/exchange/order",
       "POST /api/member/exchange/quote",
       "POST /api/member/exchange/visibility",
+      "POST /api/member/exchange/watch",
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
@@ -820,8 +823,8 @@ describe("the route table", () => {
     // song is nobody's, and a karaoke session (and its files) that is not theirs is not found; a
     // room's code names a room, which anyone with the code may join or watch; a queue entry is one
     // of that room's, which only its adder, the opener or a panel admin may take out or move; an
-    // exchange company's code names one of the eight made-up companies; a gift id names a gift,
-    // and one that is not theirs is refused.
+    // exchange ticker's code names a stock and a list's kind one of the fixed lists; a gift id
+    // names a gift, and one that is not theirs is refused.
     const named = all.filter(
       (r) =>
         r.member &&
@@ -832,7 +835,7 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/rooms\/:code(\/queue\/:entry)?/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
-          .replace(/^\/api\/member\/exchange\/company\/:code$/, "")
+          .replace(/^\/api\/member\/exchange\/(ticker\/:code|list\/:kind)$/, "")
           .replace(/^\/api\/member\/gifts\/:id\/(confirm|cancel|picture)$/, "")
           .includes(":"),
     );

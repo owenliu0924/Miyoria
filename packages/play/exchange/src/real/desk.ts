@@ -16,6 +16,7 @@
 import { type Logger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  EXCHANGE_DISCLAIMER,
   type ExchangeEntry,
   type ExchangeWallet,
   newId,
@@ -84,10 +85,13 @@ import {
 import type { InstrumentStatus, RealNoticeRecord, RealOrderRecord } from "./store.js";
 import type { YahooQuote } from "./yahoo.js";
 
-/** The fixed line on every market page and picture (owner 2026-11-21). */
-export const DISCLAIMER = "魚幣沒有現金價值,這是遊戲,不是投資建議。";
+/** The base small print (the shared constant, `exchangeSmallPrint`). */
+export const DISCLAIMER = EXCHANGE_DISCLAIMER;
 /** On the rules: fish coins never become money or goods. */
-export const NO_EXCHANGE_RULE = "魚幣不能換成錢或任何現實中的東西,在伺服器裡外都一樣。";
+export const NO_EXCHANGE_RULE =
+  "魚幣永遠不能換成真錢或現實中的物品,也不能用真錢或物品買魚幣,在伺服器裡外都一樣。";
+/** On the rules: no dividends here. */
+export const NO_DIVIDENDS = "不發放股息;除息日股價下跌屬正常。";
 /** What a 2x order's confirmation always says. */
 export const LEVERAGE_WARNING =
   "可能賠掉保證金以外的錢,最壞會賠光錢包和其他持股。價格跳空時,可能沒有先通知就被自動賣出。";
@@ -188,6 +192,7 @@ export interface RealMarketView {
   };
   disclaimer: string;
   no_exchange: string;
+  no_dividends: string;
 }
 
 export interface RealHolding {
@@ -873,6 +878,7 @@ export class RealDesk {
       },
       disclaimer: DISCLAIMER,
       no_exchange: NO_EXCHANGE_RULE,
+      no_dividends: NO_DIVIDENDS,
     };
   }
 
@@ -1665,6 +1671,36 @@ export class RealDesk {
       .filter((o) => o.person === person && o.side === "buy")
       .reduce((t, o) => t + o.coins, 0);
     return { held, escrow, codes: [...codes] };
+  }
+
+  /** Every open position, for the owner's page (a sale by hand). */
+  allPositions(): {
+    id: string;
+    person: PersonId;
+    code: string;
+    leverage: number;
+    qty: number;
+    value: number | null;
+  }[] {
+    return this.#book().positions.map((p) => {
+      const q = this.#lastKnown(p.code);
+      return {
+        id: p.id,
+        person: p.person,
+        code: p.code,
+        leverage: p.leverage,
+        qty: p.qty,
+        value: q ? Math.round(worthOf(p, q.price) * 100) / 100 : null,
+      };
+    });
+  }
+
+  /** Each provider's last problem, for the owner's page (`null`: none). */
+  providerStatus(): { id: string; last_error: string | null }[] {
+    return [...this.#d.providers].map(([id, p]) => ({
+      id,
+      last_error: (p as { lastError?: string | null }).lastError ?? null,
+    }));
   }
 
   /** How many people hold each ticker (counts only, never who). */
