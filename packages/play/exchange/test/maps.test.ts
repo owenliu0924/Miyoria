@@ -25,6 +25,10 @@ const line = (
   name: `${code} 公司`,
   market,
   price: 100,
+  basis: "quote",
+  price_date: "2026-11-23",
+  price_note: null,
+  next_open: null,
   currency: market === "tw" ? "TWD" : market === "local" ? "COIN" : "USD",
   local: null,
   coin_price: 100,
@@ -111,15 +115,27 @@ describe("the 伺服器持股圖", () => {
 describe("the 熱門 maps and their config", () => {
   it("take each tile's sector and weight from the starter list, and say the size is a preset", () => {
     const map = starterMap("us", [
-      { entry: { code: "AAPL", sector: "科技", weight: 38 }, line: line("AAPL", 0.01, "us") },
-      { entry: { code: "NVDA", sector: "半導體", weight: 45 }, line: line("NVDA", -0.01, "us") },
-      { entry: { code: "GONE", sector: "其他", weight: 9 }, line: null },
+      {
+        entry: { code: "AAPL", name: "Apple", sector: "科技", weight: 38 },
+        line: line("AAPL", 0.01, "us"),
+      },
+      {
+        entry: { code: "NVDA", name: null, sector: "半導體", weight: 45 },
+        line: line("NVDA", -0.01, "us"),
+      },
+      { entry: { code: "GONE", name: null, sector: "其他", weight: 9 }, line: null },
     ]);
     expect(map.tiles.map((t) => [t.code, t.sector, t.weight])).toEqual([
       ["AAPL", "科技", 38],
       ["NVDA", "半導體", 45],
     ]);
     expect(map.footnote).toBe("格子大小為預設權重,非即時市值");
+    expect(map.max_share).toBe(1);
+    const capped = starterMap("us", [], 0.35);
+    expect(capped.footnote).toBe(
+      "格子大小為預設權重,非即時市值;單一格最多占整張圖的 35%,超過的縮到這個大小",
+    );
+    expect(capped.max_share).toBe(0.35);
     expect(map.title).toBe("熱門美股圖");
   });
 
@@ -133,17 +149,41 @@ describe("the 熱門 maps and their config", () => {
     expect(starterEntries(c.starters_tw)).toEqual(STARTERS_TW);
     expect(starterEntries(c.starters_us)).toEqual(STARTERS_US);
     expect(STARTERS_TW.find((e) => e.code === "2330")).toMatchObject({ sector: "半導體" });
+    // Every shipped Taiwan starter has its zh-TW name, each checked against its code.
+    expect(Object.fromEntries(STARTERS_TW.map((e) => [e.code, e.name]))).toEqual({
+      "2330": "台積電",
+      "2317": "鴻海",
+      "2454": "聯發科",
+      "2308": "台達電",
+      "2382": "廣達",
+      "2412": "中華電",
+      "2881": "富邦金",
+      "2882": "國泰金",
+      "2891": "中信金",
+      "2303": "聯電",
+      "1301": "台塑",
+      "2002": "中鋼",
+      "0050": "元大台灣50",
+      "0056": "元大高股息",
+      "00878": "國泰永續高股息",
+      "006208": "富邦台50",
+    });
+    expect(STARTERS_US.every((e) => e.name !== null && /^[ -~]+$/.test(e.name))).toBe(true);
     expect(STARTERS_US.find((e) => e.code === "SPY")).toMatchObject({ sector: "ETF" });
   });
 
   it("accept a plain code or an entry, fill what is left out, and refuse a bad weight or sector", () => {
     const parsed = ExchangeConfigSchema.parse({
-      starters_tw: ["2330", { code: "0050", sector: "ETF", weight: 6 }, { code: "2454" }],
+      starters_tw: [
+        "2330",
+        { code: "0050", name: " 元大台灣50 ", sector: "ETF", weight: 6 },
+        { code: "2454" },
+      ],
     });
     expect(starterEntries(parsed.starters_tw)).toEqual([
-      { code: "2330", sector: "其他", weight: 1 },
-      { code: "0050", sector: "ETF", weight: 6 },
-      { code: "2454", sector: "其他", weight: 1 },
+      { code: "2330", name: null, sector: "其他", weight: 1 },
+      { code: "0050", name: "元大台灣50", sector: "ETF", weight: 6 },
+      { code: "2454", name: null, sector: "其他", weight: 1 },
     ]);
     for (const bad of [
       { code: "2330", weight: 0 },

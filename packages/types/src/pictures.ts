@@ -242,6 +242,11 @@ export interface ExchangeQuotePicture {
   currency: string;
   /** Prices are in cents (10000 = 100.00), in the ticker's own currency. */
   price: number;
+  /**
+   * What `price` is, as the headline's label: `現價`, `收盤價(11/20)・休市中` (its market is
+   * closed, or today's first quote has not come), `開盤參考價`.
+   */
+  price_label: string;
   ref: number;
   /** From the reference, as a fraction. */
   change: number;
@@ -336,6 +341,7 @@ export interface ExchangeBankruptPicture {
 /** One tile of a heat map (`ExchangeMapPicture`). */
 export interface ExchangeMapTile {
   code: string;
+  /** The display name (zh-TW for Taiwan), written first where it fits. */
   name: string;
   sector: string;
   /** Its area. */
@@ -353,6 +359,8 @@ export interface ExchangeMapPicture {
   tiles: ExchangeMapTile[];
   /** What the tiles' size means (「格子大小為預設權重,非即時市值」). */
   footnote: string;
+  /** No tile is laid out bigger than this share of the map (`1`: no cap). */
+  max_share: number;
   as_of: string;
   colors: ExchangeColors;
   small_print: string;

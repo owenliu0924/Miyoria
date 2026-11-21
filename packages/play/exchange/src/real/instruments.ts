@@ -112,6 +112,95 @@ export function isOpenAt(session: Session, ms: number): boolean {
   return z.minutes >= minutesOf(session.open) && z.minutes < minutesOf(session.close);
 }
 
+/** `YYYY-MM-DD` plus `n` calendar days (pure date arithmetic, no zone). */
+function addDays(date: string, n: number): string {
+  const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/**
+ * The epoch ms of `minutes` after midnight of `date` on the wall clock of `zone` (daylight saving
+ * from the zone itself): a first guess as if it were UTC, corrected by the zone's offset there.
+ */
+export function zonedTime(date: string, minutes: number, zone: string): number {
+  const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
+  const want = Date.UTC(y, m - 1, d) + minutes * 60_000;
+  let t = want;
+  for (let i = 0; i < 3; i++) {
+    const z = zonedParts(t, zone);
+    const [zy = 0, zm = 1, zd = 1] = z.date.split("-").map(Number);
+    const seen = Date.UTC(zy, zm - 1, zd) + z.minutes * 60_000;
+    if (seen === want) break;
+    t += want - seen;
+  }
+  return t;
+}
+
+const tradesOn = (s: Session, date: string): boolean => {
+  const [y = 0, m = 1, d = 1] = date.split("-").map(Number);
+  return s.days.includes(new Date(Date.UTC(y, m - 1, d)).getUTCDay()) && !s.holidays.includes(date);
+};
+
+/**
+ * When the market of `session` next opens after `ms` (epoch ms), in its own zone with daylight
+ * saving and holidays; `null` for a market that never closes. While it is open this is the next
+ * session's open, not the current one's.
+ */
+export function nextOpenAt(session: Session, ms: number): number | null {
+  if (session.always) return null;
+  const today = zonedParts(ms, session.zone).date;
+  for (let i = 0; i <= 21; i++) {
+    const date = addDays(today, i);
+    if (!tradesOn(session, date)) continue;
+    const open = zonedTime(date, minutesOf(session.open), session.zone);
+    if (open > ms) return open;
+  }
+  return null;
+}
+
+/** When the market of `session` next closes after `ms` (epoch ms); `null`: never closes. */
+export function nextCloseAt(session: Session, ms: number): number | null {
+  if (session.always) return null;
+  const today = zonedParts(ms, session.zone).date;
+  for (let i = 0; i <= 21; i++) {
+    const date = addDays(today, i);
+    if (!tradesOn(session, date)) continue;
+    const close = zonedTime(date, minutesOf(session.close), session.zone);
+    if (close > ms) return close;
+  }
+  return null;
+}
+
+/** When the market of `session` last closed at or before `ms` (epoch ms); `null`: never closes. */
+export function lastCloseAt(session: Session, ms: number): number | null {
+  if (session.always) return null;
+  const today = zonedParts(ms, session.zone).date;
+  for (let i = 0; i <= 21; i++) {
+    const date = addDays(today, -i);
+    if (!tradesOn(session, date)) continue;
+    const close = zonedTime(date, minutesOf(session.close), session.zone);
+    if (close <= ms) return close;
+  }
+  return null;
+}
+
+const WEEKDAY = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** `11/24(一)09:00` on Taipei's clock, the community's own (Taiwan has no daylight saving). */
+export function taipeiWhen(ms: number): string {
+  const z = zonedParts(ms, "Asia/Taipei");
+  const [, m = 0, d = 0] = z.date.split("-").map(Number);
+  const hh = String(Math.floor(z.minutes / 60)).padStart(2, "0");
+  const mm = String(z.minutes % 60).padStart(2, "0");
+  return `${m}/${d}(${WEEKDAY[z.weekday] ?? ""})${hh}:${mm}`;
+}
+
+/** `11/20` of a trading date `YYYY-MM-DD`. */
+export function shortDate(date: string): string {
+  const [, m = 0, d = 0] = date.split("-").map(Number);
+  return `${m}/${d}`;
+}
+
 /** The trading date of `ms` in the session's zone (for the day's reference price). */
 export function tradingDate(session: Session, ms: number): string {
   return zonedParts(ms, session.zone).date;

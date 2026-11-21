@@ -80,11 +80,17 @@ import {
   currencyOf,
   fromCoins,
   isOpenAt,
+  lastCloseAt,
   type MarketKind,
+  nextCloseAt,
+  nextOpenAt,
   type Rates,
   type RealInstrument,
   type Session,
+  shortDate,
+  taipeiWhen,
   toCoins,
+  tradingDate,
 } from "./instruments.js";
 import {
   LOCAL_CODES,
@@ -92,6 +98,7 @@ import {
   type LocalCode,
   LocalProvider,
   type LocalSignalFeed,
+  lastTick,
 } from "./local.js";
 import {
   type HeldValue,
@@ -107,8 +114,14 @@ import {
   type Quote,
   type QuoteGuard,
   type QuoteProvider,
+  type RawQuote,
 } from "./provider.js";
-import type { InstrumentStatus, RealNoticeRecord, RealOrderRecord } from "./store.js";
+import type {
+  InstrumentRecord,
+  InstrumentStatus,
+  RealNoticeRecord,
+  RealOrderRecord,
+} from "./store.js";
 import { CHART_SHARE, type YahooQuote } from "./yahoo.js";
 
 /** A ticker's candles for one timeframe, and where they came from. */
@@ -198,12 +211,31 @@ export interface RealDeskDeps {
   newId?: () => string;
 }
 
+/**
+ * What a line's price is: `quote`, a quote of the session in progress; `close`, the last price of
+ * an earlier session (its market is closed, or today's first quote has not come yet): the
+ * provider's previous close or the last quote kept here, shown and used to value holdings, never
+ * traded at; `reference`, a local stock before its first tick: its anchor, the opening reference.
+ */
+export type PriceBasis = "quote" | "close" | "reference";
+
 export interface RealLine {
   code: string;
+  /** The display name: the owner's, else the starter list's, else the provider's (in full). */
   name: string;
   market: MarketKind;
-  /** The quote in the instrument's own currency (`TWD`, `USD`); `null` before the first one. */
+  /**
+   * The last known price in the instrument's own currency (`TWD`, `USD`): see `basis`; `null`
+   * only when nothing at all is known yet (a real ticker before its first answer).
+   */
   price: number | null;
+  basis: PriceBasis | null;
+  /** The trading date of the price in its market's zone (`YYYY-MM-DD`; `null`: a reference). */
+  price_date: string | null;
+  /** What the price is, in words, when it is not a live quote (`收盤價(11/20)・休市中`). */
+  price_note: string | null;
+  /** When its market next opens, while it is closed (`null`: open now). */
+  next_open: Timestamp | null;
   currency: "TWD" | "USD" | "COIN";
   /**
    * One of the five local stocks tied to her (新手推薦 · 這裡獨家): what moves it, in one sentence,
@@ -212,11 +244,11 @@ export interface RealLine {
   local: { what_moves: string; today: string | null } | null;
   /** The same in fish coins at today's fixed rates. */
   coin_price: number | null;
-  /** How old the quote is, in minutes (the source states no delay; its own time is shown). */
+  /** How old a live quote is, in minutes (the source states no delay; its own time is shown); `null` for a close or a reference. */
   age_minutes: number | null;
   /** `資料來源:Yahoo Finance`, or the provider's id. */
   source: string;
-  /** From the previous close (or the session's first quote), as a fraction. */
+  /** From the close before it, as a fraction (a close: that session's own move). */
   change: number | null;
   at: Timestamp | null;
   /** Its market is in session now. */
@@ -298,6 +330,8 @@ export interface RealOrderLine {
   status: string;
   why: string | null;
   at: Timestamp;
+  /** A waiting order whose market is closed: when it opens (it fills at the first valid quote after). */
+  next_open: Timestamp | null;
 }
 
 export interface RealPortfolio {
@@ -336,6 +370,10 @@ export interface RealQuote {
   gross: number;
   net: number;
   line_price: number | null;
+  /** The price above is not a live quote: what it is (`收盤價(11/20)`); the fill is at the next valid quote. */
+  price_note: string | null;
+  /** The market is closed: when it opens (Taipei time in `sentence`). */
+  next_open: Timestamp | null;
   sentence: string;
   warning: string | null;
 }
@@ -343,6 +381,7 @@ export interface RealQuote {
 export interface RealOrderRequest {
   side: "buy" | "sell";
   code: string;
+  /** A buy's coins (fee included); on a sale, that many coins' worth at the price known now. */
   coins?: number;
   /**
    * Shares (six decimals): a sale of a plain holding, or a 1x buy by shares (priced at the latest
@@ -390,6 +429,42 @@ export interface RealReport {
 
 /** A local stock's tick stands for an hour, and a few minutes more for the poll. */
 const LOCAL_MAX_AGE_MS = 65 * 60_000;
+/** A previous close the provider could not give is asked for again after this long. */
+const CLOSE_RETRY_MS = 30 * 60_000;
+/** The provider is asked for a session's close this long after it, when it has it. */
+const CLOSE_SETTLE_MS = 2 * 60_000;
+/** A provider's name is kept whole up to this length (longer: cut at a word, with an ellipsis). */
+const NAME_MAX = 200;
+
+/** The provider's name as stored: whitespace collapsed, whole (never cut inside a word). */
+export function cleanName(raw: string, fallback: string): string {
+  const t = raw.replace(/\s+/g, " ").trim();
+  if (t === "") return fallback;
+  if (t.length <= NAME_MAX) return t;
+  const cut = t.slice(0, NAME_MAX);
+  const space = cut.lastIndexOf(" ");
+  return `${space > NAME_MAX / 2 ? cut.slice(0, space) : cut}…`;
+}
+
+/** The newest of what is known of a ticker's price, in its own currency. */
+interface Known {
+  price: number;
+  prev: number | null;
+  at: number;
+  /** It is the quote kept here (else the provider's close fetched while closed). */
+  quote: boolean;
+}
+
+/** A line's price and what it is. */
+interface Shown {
+  price: number;
+  prev: number | null;
+  at: number | null;
+  basis: PriceBasis;
+}
+
+const finitePositive = (x: unknown): x is number =>
+  typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1e9;
 
 const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10);
 
@@ -408,6 +483,11 @@ export class RealDesk {
   readonly #lookups = new Map<string, { hour: number; n: number }>();
   /** The provider's candles per (symbol, timeframe). */
   readonly #candleCache = new CandleCache();
+  /** Previous closes asked for: when (a failure waits `CLOSE_RETRY_MS`) and for which close. */
+  readonly #closeAsked = new Map<string, number>();
+  readonly #closeAnswered = new Map<string, number>();
+  /** The starter lists' display names by symbol, for the config they came from. */
+  #names: { config: ExchangeConfig; byCode: Map<string, string> } | null = null;
 
   constructor(deps: RealDeskDeps) {
     this.#d = deps;
@@ -448,17 +528,98 @@ export class RealDesk {
 
   /** Every instrument people have looked up and not removed (any status). */
   instruments(): RealInstrument[] {
-    return this.#d.store.real
-      .instrumentList()
-      .filter((i) => i.status !== "removed")
-      .map((i) => ({
-        code: i.code,
-        name: i.name,
-        market: i.market,
-        provider: i.provider,
-        symbol: i.code,
-        enabled: i.status === "active" || i.status === "blocked",
-      }));
+    return this.#rows().map((i) => this.#instOf(i));
+  }
+
+  #rows(): InstrumentRecord[] {
+    return this.#d.store.real.instrumentList().filter((i) => i.status !== "removed");
+  }
+
+  #instOf(i: InstrumentRecord): RealInstrument {
+    return {
+      code: i.code,
+      name: this.#displayName(i),
+      market: i.market,
+      provider: i.provider,
+      symbol: i.code,
+      enabled: i.status === "active" || i.status === "blocked",
+    };
+  }
+
+  /** The owner's name for it, else its starter list's, else the provider's (stored whole). */
+  #displayName(i: Pick<InstrumentRecord, "code" | "name" | "name_override">): string {
+    if (i.name_override) return i.name_override;
+    const c = this.#d.config;
+    if (this.#names?.config !== c) {
+      const byCode = new Map<string, string>();
+      for (const e of [...starterEntries(c.starters_tw), ...starterEntries(c.starters_us)])
+        if (e.name) for (const code of candidates(e.code)) byCode.set(code, e.name);
+      this.#names = { config: c, byCode };
+    }
+    return this.#names.byCode.get(i.code) ?? i.name;
+  }
+
+  /**
+   * The newest price known of `row`: the quote kept here, or the provider's previous close
+   * fetched while the market was closed, whichever is later.
+   */
+  #known(
+    row: InstrumentRecord,
+    quotes: ReadonlyMap<string, { price: number; at: number; prev_close: number | null }>,
+  ): Known | null {
+    const q = quotes.get(row.code);
+    const c = row.close;
+    if (c && (!q || c.at > q.at))
+      return { price: c.price, prev: c.prev_close, at: c.at, quote: false };
+    return q ? { price: q.price, prev: q.prev_close, at: q.at, quote: true } : null;
+  }
+
+  /**
+   * What a line shows: a quote of the session in progress, else the last close (the market is
+   * closed, or today's first quote has not come), else a local stock's anchor before its first
+   * tick (the opening reference). In the instrument's own currency.
+   */
+  #shown(
+    inst: RealInstrument,
+    row: InstrumentRecord,
+    quotes: ReadonlyMap<string, { price: number; at: number; prev_close: number | null }>,
+    now: number,
+  ): Shown | null {
+    const k = this.#known(row, quotes);
+    if (!k) {
+      if (inst.market !== "local") return null;
+      const anchor = this.#d.config.local_anchors[inst.code as LocalCode];
+      return anchor === undefined
+        ? null
+        : { price: anchor, prev: null, at: null, basis: "reference" };
+    }
+    const s = this.sessions[inst.market];
+    const live =
+      k.quote &&
+      isOpenAt(s, now) &&
+      this.#inSession(inst, k.at) &&
+      tradingDate(s, k.at) === tradingDate(s, now);
+    return { price: k.price, prev: k.prev, at: k.at, basis: live ? "quote" : "close" };
+  }
+
+  /**
+   * The last known price of `code` in coins, live or not: what holdings are valued at (the
+   * portfolio, the rich list, the holdings map, the owner's page) when there is no live quote.
+   * Never what an order fills at.
+   */
+  #markPrice(code: string): number | null {
+    const row = this.#d.store.real.instrument(code);
+    if (!row || row.status === "removed") return null;
+    const inst = this.#instOf(row);
+    const live = this.#guard(inst).last(code);
+    const quotes = new Map(this.#d.store.real.quotes());
+    if (live) {
+      const stored = quotes.get(code);
+      if (!stored || live.at > stored.at)
+        quotes.set(code, { ...live, refused: 0, last_refusal: null });
+    }
+    const shown = this.#shown(inst, row, quotes, this.#now());
+    return shown ? toCoins(shown.price, inst.market, this.rates) : null;
   }
 
   #status(code: string): InstrumentStatus | null {
@@ -772,6 +933,102 @@ export class RealDesk {
         await this.#onQuote(inst, r.quote);
       }
     }
+    await this.#refreshCloses(now);
+  }
+
+  /**
+   * The previous close of every real ticker that lacks its market's last one while that market is
+   * closed (a Sunday, a fresh instance, a ticker never polled), and anything at all of one never
+   * quoted while its market is open and nobody polls it: one request per provider batch, asked
+   * once per close (a failure again after `CLOSE_RETRY_MS`). It is shown and values holdings;
+   * orders still wait for the open.
+   */
+  async #refreshCloses(now: number): Promise<void> {
+    const quotes = this.#d.store.real.quotes();
+    const polled = new Set(this.pollSet().map((i) => i.code));
+    const byProvider = new Map<string, { inst: RealInstrument; last: number }[]>();
+    for (const row of this.#rows()) {
+      if (row.market !== "tw" && row.market !== "us") continue;
+      if (row.status === "paused" || row.status === "suspended") continue;
+      const inst = this.#instOf(row);
+      const s = this.sessions[inst.market];
+      const open = isOpenAt(s, now);
+      if (open && polled.has(inst.code)) continue;
+      const last = lastCloseAt(s, now);
+      if (last === null || now < last + CLOSE_SETTLE_MS) continue;
+      const known = this.#known(row, quotes);
+      if (known && known.at >= last - 60_000) continue;
+      if (open && known) continue;
+      if (this.#closeAnswered.get(inst.code) === last) continue;
+      if (now - (this.#closeAsked.get(inst.code) ?? 0) < CLOSE_RETRY_MS) continue;
+      byProvider.set(inst.provider, [...(byProvider.get(inst.provider) ?? []), { inst, last }]);
+    }
+    for (const [id, list] of byProvider) {
+      const provider = this.#provider(id) as
+        | (QuoteProvider & {
+            describe?: (s: readonly string[], now: number) => Promise<Map<string, YahooQuote>>;
+          })
+        | undefined;
+      if (!provider) continue;
+      for (let i = 0; i < list.length; i += this.#d.config.batch_size) {
+        const batch = list.slice(i, i + this.#d.config.batch_size);
+        for (const { inst } of batch) this.#closeAsked.set(inst.code, now);
+        let got: Map<string, RawQuote | YahooQuote>;
+        try {
+          const symbols = batch.map((b) => b.inst.symbol);
+          got = provider.describe
+            ? await provider.describe(symbols, now)
+            : await provider.quotes(symbols, now);
+        } catch (error) {
+          this.#d.log.info(
+            { provider: id, err: String(error) },
+            "exchange: no previous closes from a provider",
+          );
+          break;
+        }
+        for (const { inst, last } of batch) {
+          const q = got.get(inst.symbol);
+          if (!q) continue;
+          this.#closeAnswered.set(inst.code, last);
+          await this.#absorb(inst, q, now);
+        }
+      }
+    }
+  }
+
+  /**
+   * One answer of the provider about `inst` outside the usual poll: a quote of the session in
+   * progress goes through the guard like any other; anything else is kept as its last close
+   * (shown and used to value holdings, never traded at), when it is newer than what is known. A
+   * provider's name, when it gives one, replaces a stored one cut short by an older version.
+   */
+  async #absorb(inst: RealInstrument, q: RawQuote | YahooQuote, now: number): Promise<void> {
+    const store = this.#d.store.real;
+    const row = store.instrument(inst.code);
+    if (!row) return;
+    const name = "name" in q && typeof q.name === "string" ? cleanName(q.name, row.name) : null;
+    if (name !== null && name !== row.name && name.length > row.name.length)
+      store.setInstrument(inst.code, { name }, now);
+    if (!finitePositive(q.price) || !Number.isFinite(q.at) || q.at > now + 60_000) return;
+    const regular = "regular" in q ? q.regular : false;
+    if (regular && isOpenAt(this.sessions[inst.market], now) && this.#inSession(inst, q.at)) {
+      const g = this.#guard(inst).check(inst, q, now);
+      if (g.ok) await this.#onQuote(inst, g.quote);
+      return;
+    }
+    const known = this.#known(row, store.quotes());
+    if (known && known.at >= q.at) return;
+    store.setInstrument(
+      inst.code,
+      {
+        close: {
+          price: q.price,
+          prev_close: finitePositive(q.prev_close) ? q.prev_close : null,
+          at: q.at,
+        },
+      },
+      now,
+    );
   }
 
   async #onQuote(inst: RealInstrument, quote: Quote): Promise<void> {
@@ -874,44 +1131,7 @@ export class RealDesk {
     return {
       enabled: c.open,
       currency: this.#d.wallet()?.currency ?? "魚幣",
-      instruments: this.instruments().map((i) => {
-        const q = quotes.get(i.code) ?? null;
-        const open = isOpenAt(this.sessions[i.market], now);
-        const ref = q?.prev_close ?? null;
-        return {
-          code: i.code,
-          name: i.name,
-          market: i.market,
-          price: q?.price ?? null,
-          currency: currencyOf(i.market),
-          coin_price: q
-            ? Math.round(toCoins(q.price, i.market, this.rates) * 10_000) / 10_000
-            : null,
-          age_minutes: q ? Math.max(0, Math.round((now - q.at) / 60_000)) : null,
-          source:
-            i.provider === "yahoo"
-              ? "資料來源:Yahoo Finance"
-              : i.provider === "local"
-                ? "這裡獨家:價格由程式模擬"
-                : `資料來源:${i.provider}`,
-          local:
-            i.market === "local"
-              ? {
-                  what_moves: LOCAL_WHAT_MOVES[i.code as LocalCode] ?? "",
-                  today: this.#d.signals?.line(i.code as LocalCode, now) ?? null,
-                }
-              : null,
-          change: q && ref ? Math.round((q.price / ref - 1) * 10_000) / 10_000 : null,
-          at: q ? toTimestamp(q.at) : null,
-          open,
-          stale:
-            q !== null &&
-            open &&
-            this.#mode(i.market) === "intraday" &&
-            now - q.at > this.#maxAge(i.market),
-          quotes: this.#mode(i.market),
-        };
-      }),
+      instruments: this.#rows().map((row) => this.#line(row, quotes, now)),
       sessions: (["tw", "us"] as const).map((m) => {
         const open = isOpenAt(this.sessions[m], now);
         const list = this.instruments().filter((i) => i.market === m);
@@ -958,6 +1178,70 @@ export class RealDesk {
       disclaimer: DISCLAIMER,
       no_exchange: NO_EXCHANGE_RULE,
       no_dividends: NO_DIVIDENDS,
+    };
+  }
+
+  /** One ticker's line: its last known price, what that price is, its market's state. */
+  #line(
+    row: InstrumentRecord,
+    quotes: ReadonlyMap<string, { price: number; at: number; prev_close: number | null }>,
+    now: number,
+  ): RealLine {
+    const i = this.#instOf(row);
+    const q = quotes.get(i.code) ?? null;
+    const session = this.sessions[i.market];
+    const open = isOpenAt(session, now);
+    const shown = this.#shown(i, row, quotes, now);
+    const date = shown && shown.at !== null ? tradingDate(session, shown.at) : null;
+    const next = open ? null : nextOpenAt(session, now);
+    const note =
+      shown === null || shown.basis === "quote"
+        ? null
+        : shown.basis === "reference"
+          ? `開盤參考價・第一筆價格在 ${taipeiWhen(open ? (lastTick(now) ?? now) : (next ?? now))}`
+          : `收盤價(${shortDate(date ?? "")})・${open ? "等今天第一筆報價" : "休市中"}`;
+    return {
+      code: i.code,
+      name: i.name,
+      market: i.market,
+      price: shown?.price ?? null,
+      basis: shown?.basis ?? null,
+      price_date: date,
+      price_note: note,
+      next_open: next === null ? null : toTimestamp(next),
+      currency: currencyOf(i.market),
+      coin_price: shown
+        ? Math.round(toCoins(shown.price, i.market, this.rates) * 10_000) / 10_000
+        : null,
+      age_minutes:
+        shown?.basis === "quote" && shown.at !== null
+          ? Math.max(0, Math.round((now - shown.at) / 60_000))
+          : null,
+      source:
+        i.provider === "yahoo"
+          ? "資料來源:Yahoo Finance"
+          : i.provider === "local"
+            ? "這裡獨家:價格由程式模擬"
+            : `資料來源:${i.provider}`,
+      local:
+        i.market === "local"
+          ? {
+              what_moves: LOCAL_WHAT_MOVES[i.code as LocalCode] ?? "",
+              today: this.#d.signals?.line(i.code as LocalCode, now) ?? null,
+            }
+          : null,
+      change:
+        shown && shown.prev !== null && shown.prev > 0
+          ? Math.round((shown.price / shown.prev - 1) * 10_000) / 10_000
+          : null,
+      at: shown && shown.at !== null ? toTimestamp(shown.at) : null,
+      open,
+      stale:
+        q !== null &&
+        open &&
+        this.#mode(i.market) === "intraday" &&
+        now - q.at > this.#maxAge(i.market),
+      quotes: this.#mode(i.market),
     };
   }
 
@@ -1070,8 +1354,8 @@ export class RealDesk {
     const lines = new Map(this.view().instruments.map((l) => [l.code, l]));
     if (kind === "holdings") {
       const held: HeldValue[] = this.#book().positions.flatMap((p) => {
-        const q = this.#lastKnown(p.code);
-        return q ? [{ person: p.person, code: p.code, value: worthOf(p, q.price) }] : [];
+        const price = this.#markPrice(p.code);
+        return price === null ? [] : [{ person: p.person, code: p.code, value: worthOf(p, price) }];
       });
       const sectors = new Map<string, string>();
       for (const m of ["tw", "us"] as const)
@@ -1082,6 +1366,7 @@ export class RealDesk {
         sectorOf: (l) =>
           l.market === "local" ? LOCAL_SECTOR : (sectors.get(l.code) ?? OTHER_SECTOR),
         minHolders: this.#d.config.map_min_holders,
+        maxShare: this.#d.config.map_max_share,
       });
     }
     const entries = this.starterLines(kind).map((s) => ({
@@ -1095,7 +1380,7 @@ export class RealDesk {
         if (seen === null || now - seen > 60_000)
           this.#d.store.real.setInstrument(line.code, { last_viewed_at: now }, now);
       }
-    return starterMap(kind, entries);
+    return starterMap(kind, entries, this.#d.config.map_max_share);
   }
 
   /**
@@ -1170,12 +1455,22 @@ export class RealDesk {
     const t = asker.trader;
     if (!t.opened) return refuse(409, "no_account", "還沒開戶");
     const now = this.#now();
-    const latest = this.#latest(inst.code) ?? this.#lastKnown(inst.code);
-    const open = isOpenAt(this.sessions[inst.market], now);
+    // The estimate: a live quote, else the last known price (a close, a local stock's opening
+    // reference), said as such. An order always fills at the first valid quote after it.
+    const live = this.#latest(inst.code);
+    const mark = live?.price ?? this.#markPrice(inst.code);
+    const latest = mark === null ? null : { price: mark };
+    const row = this.#d.store.real.instrument(inst.code);
+    const shownLine = row ? this.#line(row, this.#d.store.real.quotes(), now) : null;
+    const priceNote = live ? null : (shownLine?.price_note ?? null);
+    const est = live ? "照現價" : priceNote ? `照${priceNote.split("・")[0]}估` : "照現價";
+    const session = this.sessions[inst.market];
+    const open = isOpenAt(session, now);
+    const next = open ? null : nextOpenAt(session, now);
     const counted = this.#d.store.real.countedToday(asker.person, this.#dayStartMs());
     if (counted.orders >= c.orders_per_day)
       return refuse(409, "orders", `一天最多 ${c.orders_per_day} 筆委託`);
-    const when = open ? "下一筆有效報價成交" : `現在休市,開盤後第一筆有效報價成交(之前都可以取消)`;
+    const when = this.#whenText(inst.market, now);
     if (req.side === "buy") {
       const no: GuardRefusal | null = checkOpen(asker.rules, t);
       if (no) return refuse(403, no.code, no.message);
@@ -1304,10 +1599,12 @@ export class RealDesk {
           gross: 0,
           net: 0,
           line_price: line,
+          price_note: priceNote,
+          next_open: next === null ? null : toTimestamp(next),
           sentence:
             leverage > 1
               ? `付 ${split.margin + split.fee} 魚幣(保證金 ${split.margin}、手續費 ${split.fee}),買 2 倍的部位 ${split.exposure};${when}。${line ? `跌到約 ${line.toFixed(2)} 會依規則自動賣出。` : ""}`
-              : `付 ${split.margin + split.fee} 魚幣(含手續費 ${split.fee}),照現價約 ${(qty / QTY_REAL).toFixed(4)} 股,${when}。買進後 ${c.min_hold_minutes} 分鐘才能賣。`,
+              : `付 ${split.margin + split.fee} 魚幣(含手續費 ${split.fee}),${est}約 ${(qty / QTY_REAL).toFixed(4)} 股,${when}。買進後 ${c.min_hold_minutes} 分鐘才能賣。`,
           warning: leverage > 1 ? LEVERAGE_WARNING : null,
         },
       };
@@ -1338,8 +1635,15 @@ export class RealDesk {
         lots.filter(sellable).reduce((t2, p) => t2 + p.qty, 0) -
         pending.filter((o) => o.position === null).reduce((t2, o) => t2 + o.qty, 0);
       if (free <= 0) return refuse(409, "hold", `買進後 ${c.min_hold_minutes} 分鐘才能賣`);
-      qty = req.all ? free : Math.min(free, Math.round((req.shares ?? 0) * QTY_REAL));
-      if (qty <= 0) return refuse(409, "qty", "要賣多少?");
+      if (!req.all && req.shares === undefined && req.coins !== undefined) {
+        // A sale by coins: that many coins' worth at the price known now (the fill is at the next
+        // valid quote, so what comes back may differ a little).
+        const px = latest?.price ?? null;
+        if (px === null) return refuse(409, "no_quote", "還沒有價格,請用股數賣出");
+        if (!(req.coins > 0)) return refuse(409, "qty", "要賣多少?");
+        qty = Math.min(free, Math.floor((req.coins / px) * QTY_REAL));
+      } else qty = req.all ? free : Math.min(free, Math.round((req.shares ?? 0) * QTY_REAL));
+      if (qty <= 0) return refuse(409, "qty", "要賣多少?(四捨五入後是 0 股)");
     }
     const price = latest?.price ?? null;
     if (price) gross = Math.floor(valueAt(qty, price));
@@ -1368,10 +1672,42 @@ export class RealDesk {
         gross,
         net: Math.max(0, gross - loan - fee),
         line_price: null,
-        sentence: `${when};現價算大約拿回 ${Math.max(0, gross - loan - fee)} 魚幣(手續費燒掉)。`,
+        price_note: priceNote,
+        next_open: next === null ? null : toTimestamp(next),
+        sentence: `賣出 ${(qty / QTY_REAL).toFixed(4)} 股,${when};${est}大約拿回 ${Math.max(0, gross - loan - fee)} 魚幣(手續費 ${fee} 燒掉)。`,
         warning: loan > 0 && gross - loan < 0 ? LEVERAGE_WARNING : null,
       },
     };
+  }
+
+  /**
+   * When an order placed now on `market` fills, in words: at the next valid quote while it is
+   * open; else after the next open, in Taipei time (the US open with its daylight saving), and it
+   * can be cancelled until then. A market quoted only at its close fills at the next close.
+   */
+  #whenText(market: MarketKind, now: number): string {
+    const s = this.sessions[market];
+    if (this.#mode(market) === "close") {
+      const close = nextCloseAt(s, now);
+      return close === null
+        ? "下一個收盤價成交"
+        : `在下一個收盤價成交(${taipeiWhen(close)} 台北時間,之前都可以取消)`;
+    }
+    if (isOpenAt(s, now)) return "下一筆有效報價成交";
+    const next = nextOpenAt(s, now);
+    return next === null
+      ? "開盤後第一筆有效報價成交(之前都可以取消)"
+      : `現在休市,下一個開盤 ${taipeiWhen(next)}(台北時間)後第一筆有效報價成交,之前都可以取消`;
+  }
+
+  /** When a waiting order of `code` is expected to fill, while its market is closed. */
+  #orderNextOpen(code: string, now: number): Timestamp | null {
+    const inst = this.#inst(code);
+    if (!inst) return null;
+    const s = this.sessions[inst.market];
+    if (isOpenAt(s, now)) return null;
+    const next = nextOpenAt(s, now);
+    return next === null ? null : toTimestamp(next);
   }
 
   #dayStartMs(): number {
@@ -1459,7 +1795,8 @@ export class RealDesk {
         {
           code,
           market,
-          name: (q.name ?? code).slice(0, 40),
+          // Whole: a long name is ellipsized where it is drawn, by the room there.
+          name: cleanName(q.name ?? "", code),
           exchange: q.exchange ?? "",
           type: q.type ?? "",
           currency: q.currency ?? "",
@@ -1471,13 +1808,10 @@ export class RealDesk {
         now,
       );
       if (by !== null) this.#d.store.real.setInstrument(code, { last_viewed_at: now }, now);
-      // Its price now, if it is in session: the same checks as every quote.
+      // Its price now: a quote when it is in session (the same checks as every quote), else the
+      // provider's last close, kept to show (never traded at).
       const inst = this.#inst(code);
-      if (inst && q.regular) {
-        const g = this.#guard(inst).check(inst, q, now);
-        if (g.ok && this.#inSession(inst, g.quote.at))
-          await this.#turns.run(() => this.#onQuote(inst, g.quote));
-      }
+      if (inst) await this.#turns.run(() => this.#absorb(inst, q, now));
       const line = this.view().instruments.find((i) => i.code === code);
       if (line) return { ok: true, instrument: line };
     }
@@ -1555,6 +1889,26 @@ export class RealDesk {
   }
 
   // ---- the owner on tickers -----------------------------------------------------------------
+
+  /**
+   * The owner's display name for a ticker (`null` or blank: back to the starter list's, else the
+   * provider's). Plain text, at most 60 characters.
+   */
+  setName(code: string, name: string | null): { ok: true; name: string } | Refusal {
+    const row = this.#d.store.real.instrument(code);
+    if (!row || row.status === "removed") return refuse(404, "instrument", "沒有這個標的");
+    const clean = name === null ? "" : name.replace(/\s+/g, " ").trim();
+    if (clean.length > 60) return refuse(400, "name", "名稱最多 60 個字");
+    this.#d.store.real.setInstrument(
+      code,
+      { name_override: clean === "" ? null : clean },
+      this.#now(),
+    );
+    return {
+      ok: true,
+      name: this.#displayName({ ...row, name_override: clean === "" ? null : clean }),
+    };
+  }
 
   /** Blocks (sell only), unblocks, or removes a ticker (removing one people hold is refused). */
   setTicker(code: string, action: "block" | "unblock" | "remove"): { ok: true } | Refusal {
@@ -1699,7 +2053,7 @@ export class RealDesk {
         if (first)
           return first.status === "void"
             ? refuse(409, "void", "這筆沒有成立(魚幣不夠),請再下一次")
-            : { ok: true, order: orderLine(first) };
+            : { ok: true, order: orderLine(first, this.#orderNextOpen(first.code, this.#now())) };
       }
       const r = await this.#check(account, req);
       if (!r.ok) return r;
@@ -1744,7 +2098,7 @@ export class RealDesk {
           this.#day(),
           { placed: [base] },
         );
-        return { ok: true, order: orderLine(base) };
+        return { ok: true, order: orderLine(base, this.#orderNextOpen(base.code, now)) };
       }
       if (!wallet || !r.split) return refuse(503, "wallet", "錢包現在打不開");
       const order: RealOrderRecord = {
@@ -1772,7 +2126,10 @@ export class RealDesk {
         return post.reason === "short"
           ? refuse(402, "short", "魚幣不夠")
           : refuse(409, "refused", post.message);
-      return { ok: true, order: orderLine({ ...order, status: "open" }) };
+      return {
+        ok: true,
+        order: orderLine({ ...order, status: "open" }, this.#orderNextOpen(order.code, now)),
+      };
     });
   }
 
@@ -1815,8 +2172,8 @@ export class RealDesk {
     const holdings: RealHolding[] = book.positions
       .filter((p) => p.person === person)
       .map((p) => {
-        const q = this.#lastKnown(p.code);
-        const price = q?.price ?? null;
+        // The last known price: a live quote, else the last close (never what a sale fills at).
+        const price = this.#markPrice(p.code);
         return {
           id: p.id,
           code: p.code,
@@ -1846,7 +2203,9 @@ export class RealDesk {
     const b = book.state.bankrupt[person];
     return {
       holdings,
-      orders: this.#d.store.real.orders(person, { limit: 30 }).map(orderLine),
+      orders: this.#d.store.real
+        .orders(person, { limit: 30 })
+        .map((o) => orderLine(o, this.#orderNextOpen(o.code, now))),
       fills: this.#d.store.real.fills(person, 30).map((f) => ({
         id: f.id,
         code: f.code,
@@ -1894,8 +2253,8 @@ export class RealDesk {
     const codes = new Set<string>();
     for (const p of book.positions) {
       if (p.person !== person) continue;
-      const q = this.#lastKnown(p.code);
-      if (q) held += worthOf(p, q.price);
+      const price = this.#markPrice(p.code);
+      if (price !== null) held += worthOf(p, price);
       codes.add(p.code);
     }
     const escrow = book.orders
@@ -1914,14 +2273,14 @@ export class RealDesk {
     value: number | null;
   }[] {
     return this.#book().positions.map((p) => {
-      const q = this.#lastKnown(p.code);
+      const price = this.#markPrice(p.code);
       return {
         id: p.id,
         person: p.person,
         code: p.code,
         leverage: p.leverage,
         qty: p.qty,
-        value: q ? Math.round(worthOf(p, q.price) * 100) / 100 : null,
+        value: price === null ? null : Math.round(worthOf(p, price) * 100) / 100,
       };
     });
   }
@@ -1952,7 +2311,9 @@ export class RealDesk {
       .filter((i) => i.status !== "removed")
       .map((i) => ({
         code: i.code,
-        name: i.name,
+        name: this.#displayName(i),
+        provider_name: i.name,
+        name_override: i.name_override,
         market: i.market,
         exchange: i.exchange,
         type: i.type,
@@ -2086,7 +2447,7 @@ export function mintReportOf(
   return { windows, circulation, warn_share: warnShare, warning };
 }
 
-function orderLine(o: RealOrderRecord): RealOrderLine {
+function orderLine(o: RealOrderRecord, nextOpen: Timestamp | null = null): RealOrderLine {
   return {
     id: o.id,
     code: o.code,
@@ -2098,6 +2459,7 @@ function orderLine(o: RealOrderRecord): RealOrderLine {
     status: o.status,
     why: o.why,
     at: toTimestamp(o.placed_at),
+    next_open: o.status === "open" || o.status === "charging" ? nextOpen : null,
   };
 }
 

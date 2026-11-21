@@ -613,27 +613,42 @@ dirs = ["extensions"]
 # allow_only = []             # 非空時只有這些代號能交易
 # lookups_per_hour = 20       # 每人每小時最多查幾個新代號
 # negative_cache_minutes = 60 # 查不到的代號多久內不再問
-# # 熱門台股 / 熱門美股:代號、產業(熱門股票圖的分組)和權重(格子大小,約略照市值大小排的固定值,不是即時市值,可以自己改);
-# # 只寫代號也可以("2330"),產業算「其他」、權重 1
+# # 熱門台股 / 熱門美股:代號、顯示名稱(沒寫就用報價來源的名稱)、產業(熱門股票圖的分組)和權重(格子大小,
+# # 約略照市值大小排的固定值,不是即時市值,可以自己改);只寫代號也可以("2330"),產業算「其他」、權重 1
 # starters_tw = [
-#   { code = "2330", sector = "半導體", weight = 300 }, { code = "2317", sector = "科技", weight = 30 },
-#   { code = "2454", sector = "半導體", weight = 23 }, { code = "2308", sector = "科技", weight = 20 },
-#   { code = "2382", sector = "科技", weight = 11 }, { code = "2412", sector = "電信", weight = 10 },
-#   { code = "2881", sector = "金融", weight = 12 }, { code = "2882", sector = "金融", weight = 10 },
-#   { code = "2891", sector = "金融", weight = 9 }, { code = "2303", sector = "半導體", weight = 6 },
-#   { code = "1301", sector = "原物料", weight = 3 }, { code = "2002", sector = "原物料", weight = 3 },
-#   { code = "0050", sector = "ETF", weight = 6 }, { code = "0056", sector = "ETF", weight = 4 },
-#   { code = "00878", sector = "ETF", weight = 4 }, { code = "006208", sector = "ETF", weight = 2 },
+#   { code = "2330", name = "台積電", sector = "半導體", weight = 300 },
+#   { code = "2317", name = "鴻海", sector = "科技", weight = 30 },
+#   { code = "2454", name = "聯發科", sector = "半導體", weight = 23 },
+#   { code = "2308", name = "台達電", sector = "科技", weight = 20 },
+#   { code = "2382", name = "廣達", sector = "科技", weight = 11 },
+#   { code = "2412", name = "中華電", sector = "電信", weight = 10 },
+#   { code = "2881", name = "富邦金", sector = "金融", weight = 12 },
+#   { code = "2882", name = "國泰金", sector = "金融", weight = 10 },
+#   { code = "2891", name = "中信金", sector = "金融", weight = 9 },
+#   { code = "2303", name = "聯電", sector = "半導體", weight = 6 },
+#   { code = "1301", name = "台塑", sector = "原物料", weight = 3 },
+#   { code = "2002", name = "中鋼", sector = "原物料", weight = 3 },
+#   { code = "0050", name = "元大台灣50", sector = "ETF", weight = 6 },
+#   { code = "0056", name = "元大高股息", sector = "ETF", weight = 4 },
+#   { code = "00878", name = "國泰永續高股息", sector = "ETF", weight = 4 },
+#   { code = "006208", name = "富邦台50", sector = "ETF", weight = 2 },
 # ]
 # starters_us = [
-#   { code = "AAPL", sector = "科技", weight = 38 }, { code = "MSFT", sector = "科技", weight = 38 },
-#   { code = "NVDA", sector = "半導體", weight = 45 }, { code = "AMZN", sector = "消費", weight = 24 },
-#   { code = "GOOGL", sector = "科技", weight = 30 }, { code = "META", sector = "科技", weight = 18 },
-#   { code = "TSLA", sector = "消費", weight = 14 }, { code = "BRK-B", sector = "金融", weight = 10 },
-#   { code = "JPM", sector = "金融", weight = 8 }, { code = "V", sector = "金融", weight = 7 },
-#   { code = "SPY", sector = "ETF", weight = 7 }, { code = "QQQ", sector = "ETF", weight = 4 },
-#   { code = "VOO", sector = "ETF", weight = 7 }, { code = "VTI", sector = "ETF", weight = 5 },
-#   { code = "DIA", sector = "ETF", weight = 1 },
+#   { code = "AAPL", name = "Apple", sector = "科技", weight = 38 },
+#   { code = "MSFT", name = "Microsoft", sector = "科技", weight = 38 },
+#   { code = "NVDA", name = "NVIDIA", sector = "半導體", weight = 45 },
+#   { code = "AMZN", name = "Amazon", sector = "消費", weight = 24 },
+#   { code = "GOOGL", name = "Google", sector = "科技", weight = 30 },
+#   { code = "META", name = "Meta", sector = "科技", weight = 18 },
+#   { code = "TSLA", name = "Tesla", sector = "消費", weight = 14 },
+#   { code = "BRK-B", name = "Berkshire Hathaway", sector = "金融", weight = 10 },
+#   { code = "JPM", name = "JPMorgan", sector = "金融", weight = 8 },
+#   { code = "V", name = "Visa", sector = "金融", weight = 7 },
+#   { code = "SPY", name = "SPDR S&P 500", sector = "ETF", weight = 7 },
+#   { code = "QQQ", name = "Invesco QQQ", sector = "ETF", weight = 4 },
+#   { code = "VOO", name = "Vanguard S&P 500", sector = "ETF", weight = 7 },
+#   { code = "VTI", name = "Vanguard Total Stock", sector = "ETF", weight = 5 },
+#   { code = "DIA", name = "SPDR Dow Jones", sector = "ETF", weight = 1 },
 # ]
 # watch_max = 20              # 觀察清單最多幾檔
 # watch_active_days = 3       # 觀察中的股票只有在那個人這幾天用過交易所、而且開盤時才更新報價
@@ -661,6 +676,7 @@ dirs = ["extensions"]
 # payout_cap_daily = 0       # 每天最多淨發出(0 = 不限);設了之後,到了當天停止買進,賣出照常全額付
 # mint_warn_share = 0.05      # 7 天淨發出超過流通魚幣的這個比例時,owner 頁提醒(只提醒,不停止)
 # map_min_holders = 2         # 伺服器持股圖:少於這麼多人持有的股票併入「其他」,看不出是誰持有
+# map_max_share = 0.35        # 熱力圖:一格最多占整張圖的這個比例(台積電一檔就占熱門台股的三分之二);1 = 不限
 # # ---- 2 倍(交叉保證金:賠超過保證金時先扣錢包、再賣其他持股;最壞賠光,不會欠錢,破產有冷靜期)
 # leverage = true             # false = 不能開新的 2 倍部位
 # leverage_line = 0.2         # 保證金剩這麼多就依規則自動賣出

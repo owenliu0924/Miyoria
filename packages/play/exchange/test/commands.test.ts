@@ -381,14 +381,34 @@ describe("/me market", () => {
     expect(await registry.autocomplete(data, "code", "w")).not.toEqual([]);
   });
 
-  it("reads amounts as coins or shares", () => {
-    expect(parseAmount("100", "coins")).toEqual({ unit: "c", value: 100 });
-    expect(parseAmount("1", "shares")).toEqual({ unit: "s", value: 1 });
-    expect(parseAmount("0.5 股", "coins")).toEqual({ unit: "s", value: 0.5 });
-    expect(parseAmount("100 幣", "shares")).toEqual({ unit: "c", value: 100 });
-    expect(parseAmount("全部", "coins")).toEqual({ unit: "a", value: 0 });
-    expect(parseAmount("1.5", "coins")).toBeNull();
-    expect(parseAmount("-1", "coins")).toBeNull();
+  it("reads one amount: a bare number is shares, $ and a number is coins", () => {
+    expect(parseAmount("3", "buy")).toEqual({ unit: "s", value: 3 });
+    expect(parseAmount("0.5", "buy")).toEqual({ unit: "s", value: 0.5 });
+    expect(parseAmount("0.5 股", "buy")).toEqual({ unit: "s", value: 0.5 });
+    expect(parseAmount("$200", "buy")).toEqual({ unit: "c", value: 200 });
+    expect(parseAmount("＄ 1,200 魚幣", "buy")).toEqual({ unit: "c", value: 1200 });
+    expect(parseAmount("１２", "buy")).toEqual({ unit: "s", value: 12 });
+    expect(parseAmount("1,234.5", "sell")).toEqual({ unit: "s", value: 1234.5 });
+    expect(parseAmount("0.000001", "buy")).toEqual({ unit: "s", value: 0.000001 });
+    expect(parseAmount("全部", "sell")).toEqual({ unit: "a", value: 0 });
+    // One line that shows both forms, for everything else.
+    for (const bad of [
+      "全部",
+      "abc",
+      "",
+      "0",
+      "$0",
+      "-1",
+      "$-5",
+      "$1.5",
+      "0.0000001",
+      "1,00",
+      "3 張",
+    ]) {
+      const out = parseAmount(bad, "buy");
+      expect(out, bad).toHaveProperty("error");
+      expect((out as { error: string }).error, bad).toContain("前面加 $ 是魚幣");
+    }
   });
 
   it("says the market is off while it is, with the small print", async () => {

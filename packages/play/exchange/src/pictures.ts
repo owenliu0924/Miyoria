@@ -23,7 +23,7 @@ import {
 import type { Timeframe } from "./real/candles.js";
 import type { CandleSet, RealLine, RealPortfolio } from "./real/desk.js";
 import { QTY_REAL } from "./real/house.js";
-import { zonedParts } from "./real/instruments.js";
+import { taipeiWhen, zonedParts } from "./real/instruments.js";
 import type { ListRow } from "./real/lists.js";
 import type { MapData } from "./real/maps.js";
 import type { BoardsView, ExchangeService } from "./service.js";
@@ -63,17 +63,31 @@ export function coinText(x: number): string {
   return x >= 100 ? Math.round(x).toLocaleString("en-US") : (Math.round(x * 100) / 100).toString();
 }
 
-/** `台股開盤中・報價約 3 分鐘前` (the source states no delay; the quote's own time is what we know). */
+/**
+ * `台股開盤中・報價約 3 分鐘前` (the source states no delay; the quote's own time is what we
+ * know); a close or a reference says what it is and when the market opens (Taipei time).
+ */
 export function marketLine(l: RealLine): string {
   const where = MARKET_WORD[l.market] ?? l.market;
   const state = l.open ? "開盤中" : "休市";
+  const opens =
+    l.next_open === null ? "" : `・下一個開盤 ${taipeiWhen(Date.parse(l.next_open))}(台北時間)`;
+  if (l.basis === "close" || l.basis === "reference")
+    return `${where}${state}・${l.price_note ?? ""}${opens}`;
   const age =
     l.age_minutes === null
       ? "還沒有報價"
       : l.age_minutes <= 1
         ? "報價是最新的"
         : `報價約 ${l.age_minutes} 分鐘前${l.stale ? "(太舊,暫停成交)" : ""}`;
-  return `${where}${state}・${age}`;
+  return `${where}${state}・${age}${opens}`;
+}
+
+/** The headline word of a line's price: `現價`, `收盤價(11/20)・休市中`, `開盤參考價`. */
+export function priceLabel(l: RealLine): string {
+  if (l.basis === "reference") return "開盤參考價";
+  if (l.basis === "close") return l.price_note ?? "收盤價";
+  return l.price === null ? "還沒有價格" : "現價";
 }
 
 /** A bar's time as the date axis writes it, in the market's zone: `10:05`, `11/20`, `2025/11`. */
@@ -116,6 +130,7 @@ export function quotePictureData(service: ExchangeService, set: CandleSet): Exch
     blurb: isLocal ? (l.local?.what_moves ?? "") : l.source,
     currency: coin ? "魚幣" : l.currency,
     price: cents(price),
+    price_label: priceLabel(l),
     ref: cents(ref),
     change: l.change ?? 0,
     limit: null,
@@ -132,7 +147,12 @@ export function quotePictureData(service: ExchangeService, set: CandleSet): Exch
     // The local stock's line of what moved today's open (the card and the member page have it too).
     today: l.local?.today ?? null,
     news: [],
-    as_of: l.at === null ? "還沒有報價" : `${timeText(l.at, offset)} 的報價`,
+    as_of:
+      l.basis === "reference"
+        ? "還沒有第一筆價格"
+        : l.at === null
+          ? "還沒有報價"
+          : `${timeText(l.at, offset)} 的${l.basis === "close" ? "收盤價" : "報價"}`,
     coin_line: coin || l.coin_price === null ? null : `約 ${coinText(l.coin_price)} 魚幣一股`,
     market_line: `${marketLine(l)}${set.stale ? "・K 線暫時沒有更新" : ""}`,
     colors: service.config.colors,
@@ -156,6 +176,7 @@ export function mapPictureData(
       change: t.change,
     })),
     footnote: map.footnote,
+    max_share: map.max_share,
     as_of: timeText(now, service.config.utc_offset_minutes),
     colors: service.config.colors,
     small_print: exchangeSmallPrint({ real: true }),
@@ -328,7 +349,11 @@ export async function drawPicture<K extends PictureKind>(
   }
 }
 
-/** `reply` with the picture of `kind` above its card, when one can be drawn. */
+/**
+ * `reply` with the picture of `kind` above its card, when one can be drawn. The picture ends with
+ * the small print; the card's own muted small print is then dropped when the picture's says all of
+ * it (owner 2026-11-22: not the same sentence twice), and kept whenever the picture is missing.
+ */
 export async function withPicture<K extends PictureKind>(
   pictures: Pictures | null | undefined,
   kind: K,
@@ -338,9 +363,14 @@ export async function withPicture<K extends PictureKind>(
   const file = await drawPicture(pictures, kind, data);
   if (file === null || reply.card === undefined) return reply;
   const parts = pictureParts(file);
+  const drawn = (data as { small_print?: unknown }).small_print;
+  const blocks = reply.card.blocks.filter(
+    (b) => !(b.type === "muted" && typeof drawn === "string" && drawn.includes(b.text)),
+  );
   return {
     ...reply,
-    card: { ...reply.card, blocks: [...parts.blocks, ...reply.card.blocks] },
+    // The plain text (where a picture cannot go) keeps the small print.
+    card: { ...reply.card, blocks: [...parts.blocks, ...blocks] },
     files: [...(reply.files ?? []), ...parts.files],
   };
 }

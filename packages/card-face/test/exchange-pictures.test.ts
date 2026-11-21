@@ -108,38 +108,53 @@ describe("the quote's candle chart", () => {
 describe("the heat map picture", () => {
   const m = PICTURE_SAMPLES.exchange_map;
 
-  it("fills each tile by its change under the convention and writes code and change where it fits", () => {
+  it("fills each tile by its change and writes its name over its code and its change where it fits", () => {
     const tw = layoutPicture("exchange_map", m).svg(null);
     const us = layoutPicture("exchange_map", { ...m, colors: "us" }).svg(null);
     const big = m.tiles[0];
     expect(tw).toContain(`fill="${tileColor(big?.change ?? 0, "tw")}"`);
     expect(us).toContain(`fill="${tileColor(big?.change ?? 0, "us")}"`);
-    // Taiwan codes without their board, so they fit.
+    // The name first, then the Taiwan code without its board (smaller), then the change.
+    expect(tw).toContain(">示範半導體<");
     expect(tw).toContain(">2330<");
+    expect(tw.indexOf(">示範半導體<")).toBeLessThan(tw.indexOf(">2330<"));
     expect(tw).toContain("▲ +1.7%");
-    expect(tw).toContain("格子大小為預設權重,非即時市值");
+    expect(tw).toContain("格子大小為預");
+    expect(tw).toContain("最多占整張圖的 35%");
     // Sector labels.
     for (const s of ["半導體", "科技", "金融"]) expect(tw).toContain(s);
   });
 
   it("agrees with the shared layout the panel uses", () => {
-    const layout = layoutMap(m.tiles, 484, 300, { header: 16, gap: 2 });
+    const layout = layoutMap(m.tiles, 484, 300, { header: 16, gap: 2, maxShare: m.max_share });
     const biggest = layout.tiles.find((t) => t.tile.code === "2330.TW");
     const svg = layoutPicture("exchange_map", m).svg(null);
     expect(biggest).toBeDefined();
     if (biggest) expect(svg).toContain(`width="${Math.round(biggest.w * 100) / 100}"`);
   });
 
+  it("no tile is laid out over the map's cap (2330 is two thirds of the weights)", () => {
+    const capped = layoutMap(m.tiles, 484, 300, { header: 0, gap: 0, maxShare: m.max_share });
+    const area = (t: { w: number; h: number }) => t.w * t.h;
+    const all = capped.tiles.reduce((s, t) => s + area(t), 0);
+    const big = capped.tiles.find((t) => t.tile.code === "2330.TW");
+    expect(big && area(big) / all).toBeCloseTo(0.35, 2);
+    const raw = layoutMap(m.tiles, 484, 300, { header: 0, gap: 0 });
+    const rawBig = raw.tiles.find((t) => t.tile.code === "2330.TW");
+    expect(rawBig && area(rawBig) / all).toBeGreaterThan(0.6);
+  });
+
   it("names the tiles too small for text in the picture and the alt text", () => {
     const tiny = {
       ...m,
+      max_share: 1,
       tiles: [
         { code: "BIG", name: "大", sector: "S", weight: 10_000, change: 0.01 },
         { code: "TINY", name: "小", sector: "S", weight: 1, change: -0.02 },
       ],
     };
     const l = layoutPicture("exchange_map", tiny);
-    expect(l.svg(null)).toContain("太小沒寫字的:TINY ▼ −2.0%");
-    expect(l.alt).toContain("TINY ▼ −2.0%");
+    expect(l.svg(null)).toContain("太小沒寫完的:小(TINY)▼ −2.0%");
+    expect(l.alt).toContain("小(TINY)▼ −2.0%");
   });
 });

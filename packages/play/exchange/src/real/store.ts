@@ -617,7 +617,10 @@ export class RealStore {
   }
 
   addInstrument(
-    i: Omit<InstrumentRecord, "missing_days" | "last_quote_at" | "last_viewed_at" | "reason">,
+    i: Omit<
+      InstrumentRecord,
+      "missing_days" | "last_quote_at" | "last_viewed_at" | "reason" | "name_override" | "close"
+    >,
     now: number,
   ): InstrumentRecord {
     this.#write(() => {
@@ -650,10 +653,21 @@ export class RealStore {
       missing_days?: number;
       last_quote_at?: number;
       last_viewed_at?: number;
+      /** The provider's name (the full one; display trims nothing). */
+      name?: string;
+      name_override?: string | null;
+      close?: { price: number; prev_close: number | null; at: number };
     },
     now: number,
   ): void {
     const set: Record<string, unknown> = { updated_at: ts(now) };
+    if (patch.name !== undefined) set.name = patch.name;
+    if (patch.name_override !== undefined) set.name_override = patch.name_override;
+    if (patch.close !== undefined) {
+      set.close_price = patch.close.price;
+      set.close_prev = patch.close.prev_close;
+      set.close_at = ts(patch.close.at);
+    }
     if (patch.status !== undefined) set.status = patch.status;
     if (patch.reason !== undefined) set.reason = patch.reason;
     if (patch.missing_days !== undefined) set.missing_days = patch.missing_days;
@@ -963,6 +977,10 @@ export interface InstrumentRecord {
   last_quote_at: number | null;
   missing_days: number;
   last_viewed_at: number | null;
+  /** The owner's display name (`null`: none set). */
+  name_override: string | null;
+  /** The provider's last price outside a session (shown, never traded at). */
+  close: { price: number; prev_close: number | null; at: number } | null;
 }
 
 function instrumentOf(r: typeof exchangeInstruments.$inferSelect): InstrumentRecord {
@@ -981,5 +999,10 @@ function instrumentOf(r: typeof exchangeInstruments.$inferSelect): InstrumentRec
     last_quote_at: ms(r.last_quote_at),
     missing_days: r.missing_days,
     last_viewed_at: ms(r.last_viewed_at),
+    name_override: r.name_override,
+    close:
+      r.close_price !== null && r.close_at !== null
+        ? { price: r.close_price, prev_close: r.close_prev, at: Date.parse(r.close_at) }
+        : null,
   };
 }

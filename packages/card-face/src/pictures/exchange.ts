@@ -29,6 +29,8 @@ import {
   maDirection,
   moveColors as marketColors,
   movingAverage,
+  TILE_LINES,
+  type TileLines,
   tileColor,
   tileRoom,
 } from "../market.js";
@@ -339,7 +341,7 @@ export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
   const { canvas: c, top } = page("交易所", `${d.code} ${d.name}`, d.as_of);
   const word = limitWord(d.limit);
   const tf = TIMEFRAME_WORD[d.timeframe];
-  let y = head(c, top, `現價(${d.sector}・${d.currency})`, price(d.price), `${change(d.change)}${word === "" ? "" : ` ${word}`}`, colorOf(d.change, d.colors), d.range === null ? tf : `${tf}・${d.range}`);
+  let y = head(c, top, `${d.price_label}(${d.sector}・${d.currency})`, price(d.price), `${change(d.change)}${word === "" ? "" : ` ${word}`}`, colorOf(d.change, d.colors), d.range === null ? tf : `${tf}・${d.range}`);
   if (d.coin_line !== null) {
     c.text(X0, baseline(y - 6, TYPE.label), d.coin_line, { size: TYPE.label, fill: T.sheetMuted, max: CONTENT });
     y += TYPE.label + 4;
@@ -363,7 +365,7 @@ export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
   }
   y += 4;
   y = paragraph(c, y, d.blurb, 2, { fill: T.sheetMuted, size: TYPE.label });
-  const alt = `${d.code} ${d.name}(${tf}):${d.currency} ${price(d.price)}(${change(d.change)}${word === "" ? "" : `,${word}`})${d.coin_line === null ? "" : `,${d.coin_line}`},${d.market_line}${d.today === null ? "" : `;${d.today}`}。`;
+  const alt = `${d.code} ${d.name}(${tf}):${d.price_label} ${d.currency} ${price(d.price)}(${change(d.change)}${word === "" ? "" : `,${word}`})${d.coin_line === null ? "" : `,${d.coin_line}`},${d.market_line}${d.today === null ? "" : `;${d.today}`}。`;
   y = smallPrint(c, y, d.small_print);
   return { drawn: finish(c, y), alt };
 }
@@ -372,14 +374,42 @@ export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
 export const shortCode = (code: string): string => code.replace(/\.TWO?$/, "");
 
 /**
- * A heat map (伺服器持股圖, 熱門台股圖, 熱門美股圖): the shared squarified layout, each tile filled by
- * today's change on the diverging scale, with its code and change (arrow and sign) when it has
- * room; a sector's name on its top strip. Tiles too small for text are named in the alt text.
+ * What a tile of `w` × `h` writes and at what sizes: the first of `TILE_LINES` that fits whole
+ * (the name over its code and the move, the name and the move, the code and the move, the code),
+ * the biggest size that fits it; `null`: nothing fits (the alt text names it).
+ */
+function tileText(name: string, code: string, move: string, w: number, h: number): { lines: TileLines; size: number; small: number } | null {
+  if (tileRoom(w, h) === 0) return null;
+  const sizes = [TYPE.title, TYPE.label, TYPE.tick];
+  const under = (s: number) => (s === TYPE.title ? TYPE.label : TYPE.tick);
+  for (const lines of TILE_LINES) {
+    for (const size of sizes) {
+      const small = under(size);
+      let height = 0;
+      let ok = true;
+      lines.forEach((part, i) => {
+        const big = i === 0;
+        const px = big ? size : small;
+        const text = part === "name" ? name : part === "code" ? code : move;
+        if (textWidth(text, px, big ? 700 : 400) > w - 6) ok = false;
+        height += px + (i > 0 ? 3 : 0);
+      });
+      if (ok && height + 6 <= h) return { lines, size, small };
+    }
+  }
+  return null;
+}
+
+/**
+ * A heat map (伺服器持股圖, 熱門台股圖, 熱門美股圖): the shared squarified layout (no tile over
+ * `max_share` of the map), each tile filled by its last session's change on the diverging scale,
+ * with its name over its code and its change (arrow and sign) as far as it has room; a sector's
+ * name on its top strip. Tiles too small for text are named in the alt text and under the map.
  */
 export function exchangeMapPicture(d: ExchangeMapPicture): Out {
   const { canvas: c, top } = page("交易所", d.title, d.as_of);
   const h = 300;
-  const layout = layoutMap(d.tiles, CONTENT, h, { header: 16, gap: 2 });
+  const layout = layoutMap(d.tiles, CONTENT, h, { header: 16, gap: 2, maxShare: d.max_share });
   if (layout.tiles.length === 0) {
     c.rect(X0, top, CONTENT, 120, T.chartFaint, 4);
     c.text(X0 + CONTENT / 2, baseline(top + 52, TYPE.label), "還沒有可以畫的股票", { size: TYPE.label, fill: T.sheetMuted, anchor: "middle" });
@@ -393,36 +423,33 @@ export function exchangeMapPicture(d: ExchangeMapPicture): Out {
     const ty = top + t.y;
     c.rect(tx, ty, t.w, t.h, tileColor(t.tile.change, d.colors), 2);
     const code = shortCode(t.tile.code);
+    const name = t.tile.name === "" ? code : t.tile.name;
     const move = changeText(t.tile.change);
-    // The biggest size that fits the code and the change under it; else the biggest that fits the code.
-    const room = tileRoom(t.w, t.h);
-    const sizes = [TYPE.title, TYPE.label, TYPE.tick];
-    const under = (s: number) => (s === TYPE.title ? TYPE.label : TYPE.tick);
-    const fitsCode = (s: number) => textWidth(code, s, 700) <= t.w - 4 && s + 4 <= t.h;
-    const fitsBoth = (s: number) =>
-      fitsCode(s) && textWidth(move, under(s)) <= t.w - 4 && t.h >= s + under(s) + 8;
-    const size = sizes.find(fitsBoth) ?? sizes.find(fitsCode);
-    if (room === 0 || size === undefined) {
-      unlabeled.push(`${code} ${move}`);
+    const fit = tileText(name, code, move, t.w, t.h);
+    if (fit === null) {
+      unlabeled.push(`${name}(${code})${move}`);
       continue;
     }
-    const small = under(size);
-    const both = fitsBoth(size);
-    const block = both ? size + small + 4 : size;
-    const y0 = ty + (t.h - block) / 2;
+    const heights = fit.lines.map((_, i) => (i === 0 ? fit.size : fit.small));
+    const block = heights.reduce((a, b) => a + b, 0) + 3 * (heights.length - 1);
+    let y0 = ty + (t.h - block) / 2;
     const cx = tx + t.w / 2;
-    c.text(cx, baseline(y0, size), code, { size, weight: 700, anchor: "middle" });
-    if (both) c.text(cx, baseline(y0 + size + 4, small), move, { size: small, anchor: "middle" });
-    else unlabeled.push(`${code} ${move}`);
+    fit.lines.forEach((part, i) => {
+      const px = heights[i] as number;
+      const text = part === "name" ? name : part === "code" ? code : move;
+      c.text(cx, baseline(y0, px), text, { size: px, weight: i === 0 ? 700 : 400, anchor: "middle", max: t.w - 4 });
+      y0 += px + 3;
+    });
+    if (!(fit.lines as readonly string[]).includes("move")) unlabeled.push(`${name}(${code})${move}`);
   }
   let y = top + (layout.tiles.length === 0 ? 120 : h) + 12;
   y = moveLegend(c, y, d.colors) + 4;
-  y = paragraph(c, y, `顏色是今天的漲跌,±3% 以上最深;${d.footnote}`, 3, { size: TYPE.label, fill: T.sheetMuted });
-  if (unlabeled.length > 0) y = paragraph(c, y + 2, `太小沒寫字的:${unlabeled.join("、")}`, 3, { size: TYPE.tick, fill: T.sheetMuted });
+  y = paragraph(c, y, `顏色是最近一個交易日的漲跌(休市時是上一個交易日),±3% 以上最深;${d.footnote}`, 3, { size: TYPE.label, fill: T.sheetMuted });
+  if (unlabeled.length > 0) y = paragraph(c, y + 2, `太小沒寫完的:${unlabeled.join("、")}`, 3, { size: TYPE.tick, fill: T.sheetMuted });
   const named = [...d.tiles]
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 8)
-    .map((t) => `${t.code} ${changeText(t.change)}`)
+    .map((t) => `${t.name}(${shortCode(t.code)})${changeText(t.change)}`)
     .join("、");
   const alt = `${d.title}:${named === "" ? "還沒有可以畫的股票" : named}。${d.footnote}。`;
   y = smallPrint(c, y, d.small_print);

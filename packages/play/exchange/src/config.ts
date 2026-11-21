@@ -37,15 +37,17 @@ const coins = (d: number) => z.number().int().positive().default(d);
 const cap = () => z.number().int().min(0).default(0);
 
 /**
- * One entry of a starter list (熱門台股 / 熱門美股): the code as people type it, its broad sector
- * and its weight on the 熱門 heat map. Yahoo's keyless endpoint gives neither market cap nor
- * sector, so both live here: static approximations by size, which the owner may edit. A plain code
- * is sector 其他, weight 1.
+ * One entry of a starter list (熱門台股 / 熱門美股): the code as people type it, its display name
+ * (zh-TW for Taiwan, the short name people here use for the US; none: the provider's), its broad
+ * sector and its weight on the 熱門 heat map. Yahoo's keyless endpoint gives neither market cap nor
+ * sector nor a Chinese name, so these live here: static values, which the owner may edit. A plain
+ * code is sector 其他, weight 1, the provider's name.
  */
 const starter = z.union([
   z.string().min(1).max(16),
   z.object({
     code: z.string().min(1).max(16),
+    name: z.string().trim().min(1).max(60).optional(),
     sector: z.string().min(1).max(12).default("其他"),
     weight: z.number().positive().max(1_000_000).default(1),
   }),
@@ -53,65 +55,79 @@ const starter = z.union([
 export type StarterInput = z.input<typeof starter>;
 export interface StarterEntry {
   code: string;
+  /** The display name (`null`: the provider's). */
+  name: string | null;
   sector: string;
   weight: number;
 }
 
 /** A starter list's entries, each with its sector and weight. */
-export function starterEntries(list: readonly (string | StarterEntry)[]): StarterEntry[] {
+export function starterEntries(
+  list: readonly (
+    | string
+    | { code: string; name?: string | null | undefined; sector: string; weight: number }
+  )[],
+): StarterEntry[] {
   return list.map((e) =>
-    typeof e === "string" ? { code: e, sector: OTHER_SECTOR, weight: 1 } : e,
+    typeof e === "string"
+      ? { code: e, name: null, sector: OTHER_SECTOR, weight: 1 }
+      : { code: e.code, name: e.name ?? null, sector: e.sector, weight: e.weight },
   );
 }
 
 /** The sector of anything a starter list does not name. */
 export const OTHER_SECTOR = "其他";
 
-const S = (code: string, sector: string, weight: number): StarterEntry => ({
+const S = (code: string, name: string, sector: string, weight: number): StarterEntry => ({
   code,
+  name,
   sector,
   weight,
 });
 
 /**
- * The shipped starter lists, with sectors and weights roughly by size (market cap, or an ETF's
- * assets; late 2025, rounded). They are static approximations, never live market caps.
+ * The shipped starter lists, with names, sectors and weights roughly by size (market cap, or an
+ * ETF's assets; late 2025, rounded). The weights are static approximations, never live market
+ * caps. Taiwan's names are the usual zh-TW short names (each checked against its code); the US
+ * names stay in English, the way people here know them.
  */
 export const STARTERS_TW: readonly StarterEntry[] = [
-  S("2330", "半導體", 300),
-  S("2317", "科技", 30),
-  S("2454", "半導體", 23),
-  S("2308", "科技", 20),
-  S("2382", "科技", 11),
-  S("2412", "電信", 10),
-  S("2881", "金融", 12),
-  S("2882", "金融", 10),
-  S("2891", "金融", 9),
-  S("2303", "半導體", 6),
-  S("1301", "原物料", 3),
-  S("2002", "原物料", 3),
-  S("0050", "ETF", 6),
-  S("0056", "ETF", 4),
-  S("00878", "ETF", 4),
-  S("006208", "ETF", 2),
+  S("2330", "台積電", "半導體", 300),
+  S("2317", "鴻海", "科技", 30),
+  S("2454", "聯發科", "半導體", 23),
+  S("2308", "台達電", "科技", 20),
+  S("2382", "廣達", "科技", 11),
+  S("2412", "中華電", "電信", 10),
+  S("2881", "富邦金", "金融", 12),
+  S("2882", "國泰金", "金融", 10),
+  S("2891", "中信金", "金融", 9),
+  S("2303", "聯電", "半導體", 6),
+  S("1301", "台塑", "原物料", 3),
+  S("2002", "中鋼", "原物料", 3),
+  S("0050", "元大台灣50", "ETF", 6),
+  S("0056", "元大高股息", "ETF", 4),
+  S("00878", "國泰永續高股息", "ETF", 4),
+  S("006208", "富邦台50", "ETF", 2),
 ];
 export const STARTERS_US: readonly StarterEntry[] = [
-  S("AAPL", "科技", 38),
-  S("MSFT", "科技", 38),
-  S("NVDA", "半導體", 45),
-  S("AMZN", "消費", 24),
-  S("GOOGL", "科技", 30),
-  S("META", "科技", 18),
-  S("TSLA", "消費", 14),
-  S("BRK-B", "金融", 10),
-  S("JPM", "金融", 8),
-  S("V", "金融", 7),
-  S("SPY", "ETF", 7),
-  S("QQQ", "ETF", 4),
-  S("VOO", "ETF", 7),
-  S("VTI", "ETF", 5),
-  S("DIA", "ETF", 1),
+  S("AAPL", "Apple", "科技", 38),
+  S("MSFT", "Microsoft", "科技", 38),
+  S("NVDA", "NVIDIA", "半導體", 45),
+  S("AMZN", "Amazon", "消費", 24),
+  S("GOOGL", "Google", "科技", 30),
+  S("META", "Meta", "科技", 18),
+  S("TSLA", "Tesla", "消費", 14),
+  S("BRK-B", "Berkshire Hathaway", "金融", 10),
+  S("JPM", "JPMorgan", "金融", 8),
+  S("V", "Visa", "金融", 7),
+  S("SPY", "SPDR S&P 500", "ETF", 7),
+  S("QQQ", "Invesco QQQ", "ETF", 4),
+  S("VOO", "Vanguard S&P 500", "ETF", 7),
+  S("VTI", "Vanguard Total Stock", "ETF", 5),
+  S("DIA", "SPDR Dow Jones", "ETF", 1),
 ];
+/** A shipped entry as config input (a `null` name is left out: the provider's). */
+const starterInput = ({ name, ...e }: StarterEntry) => (name === null ? e : { ...e, name });
 const tier = (d: string) => z.enum(TIERS).default(d);
 const date = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -373,6 +389,12 @@ export const ExchangeConfigSchema = z
     ),
     /** The 伺服器持股圖 merges a ticker held by fewer people than this into 其他. */
     map_min_holders: z.number().int().min(1).max(20).default(2),
+    /**
+     * No tile of a heat map takes more than this share of the map (2330 alone is two thirds of
+     * the Taiwan list's weights): a bigger one is cut to it and the rest grow in proportion, the
+     * same in the panel and the picture, and the footnote says so. `1`: off.
+     */
+    map_max_share: z.number().min(0.1).max(1).default(0.35),
 
     // ---- leverage: 1x or 2x, cross margin ----
     leverage: z
@@ -502,11 +524,11 @@ export const ExchangeConfigSchema = z
     starters_tw: z
       .array(starter)
       .max(50)
-      .default(() => STARTERS_TW.map((e) => ({ ...e }))),
+      .default(() => STARTERS_TW.map(starterInput)),
     starters_us: z
       .array(starter)
       .max(50)
-      .default(() => STARTERS_US.map((e) => ({ ...e }))),
+      .default(() => STARTERS_US.map(starterInput)),
     /** A member's watch list holds at most this many tickers. */
     watch_max: z.number().int().min(1).max(50).default(20),
     /**
