@@ -176,6 +176,9 @@ ambient_channels = []
 # Privileged Gateway Intents 打開 Presence Intent 與 Server Members Intent;
 # 沒開就設成 false,否則 Discord 會拒絕連線
 presence_intents = true
+# 她傳給人的檔案(附件)一則訊息加起來最多幾 bytes。預設 10 MiB 是 Discord 一般伺服器的上限,
+# 加成過的伺服器收得更大,調大才有用。
+# max_upload_bytes = 10485760
 
 # 伺服器自訂 emoji(docs/design/server-emoji.md):她看得到每個 emoji 的意思、寫 :名字: 就會送出那個 emoji。
 # 沒寫意思的 emoji,如果聊天模型看得懂圖,會自己看一次圖寫一句(存起來,只看一次)。
@@ -184,16 +187,27 @@ presence_intents = true
 # (字數上限是 [modules.agent.mainline] 的 emoji_chars)。
 # [modules."platform.discord.bot".emoji]
 # enabled = true
-
-# 她傳給人的檔案(附件)一則訊息加起來最多幾 bytes。預設 10 MiB 是 Discord 一般伺服器的上限,
-# 加成過的伺服器收得更大,調大才有用。
-# max_upload_bytes = 10485760
 # auto_describe = true
 # max_listed = 40
 # per_message = 1
 # window_messages = 3
 # max_in_window = 1
 # descriptions = { fanfan = "一碗白飯,討飯用" }
+
+# 伺服器貼圖(同一份文件):她看得到這個伺服器的貼圖和意思,在訊息裡寫 [貼圖: 名字] 就會跟著那則訊息送出那張貼圖
+# (別人傳的貼圖她看到的也是 [貼圖: 名字])。只有這個伺服器自己的貼圖,私訊和語音裡不能用。
+# 意思:這裡的 descriptions 優先,其次是看圖模型看一次寫的一句(存起來,只看一次;動態的 Lottie 貼圖看不了,只列名字和標籤),
+# 再來是伺服器自己寫的說明。頻率:一則最多一張;同一個頻道最近 window_messages 則裡最多 max_in_window 則有;
+# 同一張不連續用;每個頻道每小時最多 per_hour 張。超過的就拿掉,只剩貼圖的那則就不送。
+# 清單在主線提示詞對話紀錄前面那段,字數上限跟 emoji 一樣是 [modules.agent.mainline] 的 emoji_chars。下面都是預設值
+# [modules."platform.discord.bot".stickers]
+# enabled = true
+# auto_describe = true
+# max_listed = 20
+# window_messages = 5
+# max_in_window = 1
+# per_hour = 3
+# descriptions = { "貓咪鞠躬" = "道謝用" }
 
 # Admin API:CLI(`miyoria module ...`)和之後的管理面板用。token 由 `miyoria init` 產生
 [modules.api]
@@ -782,6 +796,11 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # pace_ms_per_char = 40          # 一次回覆分成幾則短訊息時,依下一則的長度隔開並顯示輸入中:每字這麼久
 # pace_min_ms = 300              # 但最短
 # pace_max_ms = 1800             # 最長
+# 對她說的話如果只是單純的道謝或道別(「謝謝」「掰掰」「晚安」「thanks」「おやすみ」),有時她只按一個表情、不叫模型。
+# 有問題、附件、提到別人、那裡有派對遊戲或她開的工作在等、她上一句在問對方、那裡正在回話時都不會。這個反應也算 reactions_per_hour
+# courtesy_react = true          # 開關
+# courtesy_chance = 0.35         # 這種話有多少機率只按表情(其餘照常回)
+# courtesy_per_hour = 3          # 每個頻道每小時最多幾次
 
 # 她自己起頭的事:她設的時間到了、外面發生的事、該追問的事、答應過
 # 還沒做的事、這裡安靜了、想念某人、早上醒來,都先過程式的關卡,過了才叫醒她,說不說由她決定。
