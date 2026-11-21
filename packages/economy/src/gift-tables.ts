@@ -41,8 +41,11 @@ export interface GiftRecord {
   item: string;
   item_key: string;
   kind: GiftKind | null;
+  /** The old scheme's tier; `null` from the NT$ estimates on. */
   tier: number | null;
   price: number;
+  /** The NT$ estimate the price came from; `null` for a coin pin or the fallback. */
+  twd: number | null;
   priced_by: GiftPricedBy;
   asked_model: boolean;
   hunger: number;
@@ -100,7 +103,12 @@ export interface GiftPrice {
   item_key: string;
   item: string;
   kind: GiftKind | null;
+  /** The old scheme's tier (kept on old rows). */
   tier: number | null;
+  /** The model's estimate, or the owner's pin, in NT$ (follows the rate). */
+  twd: number | null;
+  /** The owner's pin in coins (does not follow the rate). */
+  coins: number | null;
   refuse: GiftRefusal | null;
   source: "model" | "pinned" | "blocked";
   by: string | null;
@@ -121,6 +129,7 @@ function giftOf(r: GiftRequestRow): GiftRecord {
     kind: r.kind as GiftKind | null,
     tier: r.tier,
     price: r.price,
+    twd: r.twd,
     priced_by: r.priced_by as GiftPricedBy,
     asked_model: r.asked_model,
     hunger: r.hunger,
@@ -148,6 +157,8 @@ function priceOf(r: GiftPriceRow): GiftPrice {
     item: r.item,
     kind: r.kind as GiftKind | null,
     tier: r.tier,
+    twd: r.twd,
+    coins: r.coins,
     refuse: r.refuse as GiftRefusal | null,
     source: r.source,
     by: r.by,
@@ -187,6 +198,7 @@ export class GiftTables {
           kind: gift.kind,
           tier: gift.tier,
           price: gift.price,
+          twd: gift.twd,
           priced_by: gift.priced_by,
           asked_model: gift.asked_model,
           hunger: gift.hunger,
@@ -330,6 +342,8 @@ export class GiftTables {
         item: price.item,
         kind: price.kind,
         tier: price.tier,
+        twd: price.twd,
+        coins: price.coins,
         refuse: price.refuse,
         source: price.source,
         by: price.by,
@@ -454,6 +468,7 @@ const giftData: readonly CategoryData[] = [
         kind: "text",
         tier: "num",
         price: "num",
+        twd: "num",
         priced_by: "text",
         asked_model: "bool",
         hunger: "num",
@@ -478,6 +493,8 @@ const giftData: readonly CategoryData[] = [
         item: "text",
         kind: "text",
         tier: "num",
+        twd: "num",
+        coins: "num",
         refuse: "text",
         source: "text",
         by: "text",

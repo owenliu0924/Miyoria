@@ -7,8 +7,10 @@
 //   row (`entry_id`, keyed `gift:<id>`), given back by a `refund` row when she says no or an admin
 //   refunds it. When the giver is forgotten their identity (person, account, name) is taken out;
 //   the ledger keeps its rows.
-// - `gifts_prices`: one row per gift name (`giftKey`): the tier the model picked (a cache, so the
-//   same name costs the same for everyone), or the owner's pin or block, which wins over the model.
+// - `gifts_prices`: one row per gift name (`giftKey`): the model's estimate in NT$ (a cache, so the
+//   same name costs the same for everyone, and follows the rate), or the owner's pin (coins or NT$)
+//   or block, which wins over the model. Version 2 added the estimates and coin pins; the old
+//   scheme's tiers were kept as pinned coin prices (`gift-migrations.ts`).
 //
 // No foreign key to `persons`: the rows outlive a forgotten giver (without the giver in them).
 
@@ -56,9 +58,11 @@ export const giftsRequests = sqliteTable(
     item_key: text().notNull(),
     /** `food`, `drink`, `small_object`, `big_object`, `experience`; `null` when refused first. */
     kind: text(),
-    /** 1-based into the configured tiers; `null` when refused. */
+    /** The old scheme's tier (1-based), kept on its rows; `null` from version 2 on. */
     tier: integer(),
     price: integer().notNull().default(0),
+    /** The NT$ estimate the price came from (version 2); `null` for a pin in coins or a fallback. */
+    twd: integer(),
     /** `model`, `cache`, `pinned`, `fallback` or `rule` (refused before anyone was asked). */
     priced_by: text().notNull(),
     /** This ask cost a price question to the model (the daily caps count these). */
@@ -106,7 +110,12 @@ export const giftsPrices = sqliteTable(
     /** The name it was first priced as. */
     item: text().notNull(),
     kind: text(),
+    /** The old scheme's tier; the migration turned it into `coins`. */
     tier: integer(),
+    /** The estimate (the model's) or the owner's pin, in NT$: coins follow the rate. */
+    twd: integer(),
+    /** The owner's pin in coins (and the old tiers), which does not follow the rate. */
+    coins: integer(),
     /** A refusal the model gave (`GiftRefusal`); `null` with a tier. */
     refuse: text(),
     /** `model` (a cached answer), `pinned` (the owner's tier) or `blocked` (the owner's no). */

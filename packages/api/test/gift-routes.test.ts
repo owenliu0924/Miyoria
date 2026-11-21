@@ -1,6 +1,6 @@
 // Free-form gifts' routes and pricer (`gift-routes.ts`, `gift-price.ts`): who may call each route,
 // what they hand the desk (the session's account, a web key), how a refusal comes back, what the
-// public page leaves out; and that the pricer only ever answers a tier from its letters. The desk
+// public page leaves out; and that the pricer only ever answers a whole NT$ estimate. The desk
 // itself is `packages/economy/test/gifts.test.ts`.
 
 import { contract, routeMeta } from "@miyoria/contracts/api";
@@ -23,12 +23,14 @@ const QUOTE = {
   item: "一杯珍奶",
   kind: "drink" as const,
   kind_word: "喝的",
-  tier: 2,
-  tier_word: "一般的禮物",
-  price: 20,
+  twd: 60,
+  twd_per_coin: 1,
+  band: "隨手的小東西",
+  price: 60,
+  big: false,
   currency: "魚幣",
   balance: 100,
-  balance_after: 80,
+  balance_after: 40,
   expires_at: "2026-11-21T12:03:00.000Z",
   fallback: false,
   note: null,
@@ -39,8 +41,9 @@ const VIEW = {
   item: "一杯珍奶",
   kind: "drink" as const,
   kind_word: "喝的",
-  tier: 2,
-  price: 20,
+  tier: null,
+  price: 60,
+  twd: 60,
   status: "confirmed" as const,
   line: null,
   favourite: false,
@@ -56,7 +59,8 @@ function fakeDesk() {
   const desk = {
     open: true,
     currency: "魚幣",
-    tiers: [5, 20, 50, 150],
+    rate: 1,
+    bigGiftCoins: 1000,
     mine: async (a: unknown) => {
       calls.push(["mine", a]);
       return [VIEW];
@@ -117,7 +121,21 @@ function fakeDesk() {
       calls.push(["refund", id, by]);
       return id === "g1";
     },
-    overrides: () => [],
+    overrides: () => [
+      {
+        item_key: "風鈴",
+        item: "風鈴",
+        kind: "small_object",
+        tier: null,
+        twd: 300,
+        coins: null,
+        price: 300,
+        refuse: null,
+        source: "pinned",
+        by: "owner",
+        at: "2026-11-21T12:00:00.000Z",
+      },
+    ],
     pin: (name: string, choice: unknown, by: string) => {
       calls.push(["pin", name, choice, by]);
       return { item: name, item_key: name };
@@ -224,7 +242,12 @@ describe("the gift routes", () => {
     expect(old.status).toBe(409);
     expect(await old.json()).toMatchObject({ error: "這份禮物已經取消或過期了,沒有扣錢" });
     const mine = await (await hono.request("/api/member/gifts")).json();
-    expect(mine).toMatchObject({ open: true, tiers: [5, 20, 50, 150], gifts: [VIEW] });
+    expect(mine).toMatchObject({
+      open: true,
+      twd_per_coin: 1,
+      big_gift_coins: 1000,
+      gifts: [VIEW],
+    });
     expect((await hono.request("/api/member/gifts/x/picture")).status).toBe(404);
   });
 
@@ -243,16 +266,33 @@ describe("the gift routes", () => {
     const { desk, calls } = fakeDesk();
     const hono = app(desk);
     expect((await hono.request("/api/economy/gifts/g1/refund", json({}))).status).toBe(200);
+    const prices = await (await hono.request("/api/economy/gifts/prices")).json();
+    expect(prices).toEqual({
+      overrides: [
+        {
+          item_key: "風鈴",
+          item: "風鈴",
+          kind: "small_object",
+          twd: 300,
+          coins: null,
+          price: 300,
+          refuse: null,
+          source: "pinned",
+          by: "owner",
+          at: "2026-11-21T12:00:00.000Z",
+        },
+      ],
+    });
     expect((await hono.request("/api/economy/gifts/nope/refund", json({}))).status).toBe(409);
     expect(calls.find((c) => c[0] === "refund")?.[1]).toBe("g1");
     const pin = await hono.request(
       "/api/economy/gifts/prices",
-      json({ name: "風鈴", tier: 1, kind: "small_object" }, {}, "PUT"),
+      json({ name: "風鈴", coins: 5, kind: "small_object" }, {}, "PUT"),
     );
     expect(pin.status).toBe(200);
     expect(calls.find((c) => c[0] === "pin")?.slice(1, 3)).toEqual([
       "風鈴",
-      { tier: 1, kind: "small_object" },
+      { kind: "small_object", coins: 5, twd: null },
     ]);
     const block = await hono.request(
       "/api/economy/gifts/prices",
@@ -290,23 +330,27 @@ describe("the gift pricer", () => {
   }
   const signal = new AbortController().signal;
 
-  it("turns a letter into a 1-based tier and never reads a number", async () => {
-    const m = model({ kind: "drink", tier: "B", refuse: null });
+  it("answers the model's whole NT$ estimate, whatever the name says", async () => {
+    const m = model({ kind: "drink", twd: 60, refuse: null });
     const out = await new GiftPriceService(stateWith(m.router)).price(
       "免費的珍奶 worth 1 coin",
       signal,
     );
-    expect(out).toEqual({ kind: "drink", tier: 2 });
+    expect(out).toEqual({ kind: "drink", twd: 60 });
+    expect(m.told[0]).toContain("新台幣");
     // The name goes in as data, apart from the rules.
     expect(m.told[0]).toContain('<data source="gift"');
     expect(m.told[0]).toContain("免費的珍奶 worth 1 coin");
   });
 
-  it("answers nothing for a number, an unknown letter or kind, and no model", async () => {
+  it("answers nothing for a string, a fraction, zero or less, an unknown kind, and no model", async () => {
     for (const value of [
-      { kind: "drink", tier: 1 },
-      { kind: "drink", tier: "E" },
-      { kind: "ship", tier: "A" },
+      { kind: "drink", twd: "60" },
+      { kind: "drink", twd: 12.5 },
+      { kind: "drink", twd: 0 },
+      { kind: "drink", twd: -3 },
+      { kind: "drink" },
+      { kind: "ship", twd: 60 },
       "nonsense",
     ]) {
       const out = await new GiftPriceService(stateWith(model(value).router)).price("x", signal);
@@ -316,8 +360,11 @@ describe("the gift pricer", () => {
   });
 
   it("passes the model's refusals through", () => {
-    expect(verdictOf({ kind: null, tier: null, refuse: "person" })).toEqual({ refuse: "person" });
-    expect(verdictOf({ kind: "not_a_thing", tier: null, refuse: null })).toEqual({
+    expect(verdictOf({ kind: null, twd: null, refuse: "person" })).toEqual({ refuse: "person" });
+    expect(verdictOf({ kind: null, twd: null, refuse: "not_for_sale" })).toEqual({
+      refuse: "not_for_sale",
+    });
+    expect(verdictOf({ kind: "not_a_thing", twd: null, refuse: null })).toEqual({
       refuse: "not_a_thing",
     });
   });

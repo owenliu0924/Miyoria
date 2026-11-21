@@ -5,8 +5,11 @@
 //   words go to the ordinary feed instead (`fixed`, no confirmation, exactly as before). Rules,
 //   moderation, the owner's pins and blocks and the price cache come first; only a name never seen
 //   costs one small model call (`GiftPricerKey`), within a per-person and a global daily count. The
-//   model only picks a tier from the configured list (and a kind), or refuses; without an answer
-//   the fallback tier is used and the quote says so. Nothing the member writes is read as a price.
+//   model only estimates what a plain one costs in NT$ (and a kind), or refuses; the price is that
+//   estimate at the economy's one fixed rate (`twd_per_coin`, the exchange's too), rounded and held
+//   within `[min_coins, max_coins]`. An estimate kept in NT$ follows the rate when it changes.
+//   Without a usable answer the fallback price is used, not kept, and the quote says so. Nothing
+//   the member writes is read as a price.
 // * Confirming (`confirm`) is the only charge: one `gift` row of the ledger keyed `gift:<id>`, so a
 //   second press or a retry charges once. Only the person who asked may confirm, before
 //   `confirm_s` runs out; an expired or cancelled gift costs nothing. Food and drink count against
@@ -47,10 +50,13 @@ import {
   plainName,
   STRANGER,
 } from "./economy.js";
-import { GIFT_TIERS } from "./gift-config.js";
-import type { GiftRecord, GiftSource, GiftStatus, GiftTables } from "./gift-tables.js";
+import { OLD_TIER_COINS } from "./gift-config.js";
+import type { GiftPrice, GiftRecord, GiftSource, GiftStatus, GiftTables } from "./gift-tables.js";
 import {
+  bandOf,
+  coinsOf,
   fixedFood,
+  foodHunger,
   GIFT_KINDS,
   GIFT_REASON,
   type GiftKind,
@@ -65,7 +71,6 @@ import {
   KIND_WORD,
   REFUSAL_TEXT,
   ruleRefusal,
-  TIER_WORD,
 } from "./gift-words.js";
 import { type CoinEntry, PURSE } from "./records.js";
 import { EconomyError, type FeedItem } from "./types.js";
@@ -93,16 +98,20 @@ export interface GiftQuote {
   kind: GiftKind;
   /** 「吃的」「小東西」. */
   kind_word: string;
-  /** 1-based. */
-  tier: number;
-  /** 「用心的禮物」. */
-  tier_word: string;
+  /** The real-world estimate in NT$ the price came from; `null` for a coin pin or the fallback. */
+  twd: number | null;
+  /** NT$ a coin (`twd_per_coin`), as it was used. */
+  twd_per_coin: number;
+  /** 「有點心意」: the price in words (`band_coins`). */
+  band: string;
   price: number;
+  /** Above `big_gift_coins`: the card says it is a large gift and what is left after. */
+  big: boolean;
   currency: string;
   balance: number;
   balance_after: number;
   expires_at: Timestamp;
-  /** The price is the fallback tier: it could not be asked now. */
+  /** The price is the fallback: it could not be estimated now. */
   fallback: boolean;
   /** A line for the member, e.g. why it is the fallback price; `null`: none. */
   note: string | null;
@@ -120,8 +129,11 @@ export interface GiftView {
   item: string;
   kind: GiftKind | null;
   kind_word: string | null;
+  /** The old scheme's tier, on gifts priced before the NT$ estimates. */
   tier: number | null;
   price: number;
+  /** The NT$ estimate the price came from, if any. */
+  twd: number | null;
   status: GiftStatus;
   /** Her line; `null` when she said nothing or it was taken for her. */
   line: string | null;
@@ -194,9 +206,14 @@ export class GiftDesk {
     return this.e.config.currency;
   }
 
-  /** The configured tiers' prices, cheapest first. */
-  get tiers(): readonly number[] {
-    return this.#c.tiers;
+  /** NT$ a coin: the economy's one fixed rate. */
+  get rate(): number {
+    return this.e.config.twd_per_coin;
+  }
+
+  /** Above this many coins a gift is a large one. */
+  get bigGiftCoins(): number {
+    return this.#c.big_gift_coins;
   }
 
   /** Members may name gifts now. */
@@ -256,21 +273,16 @@ export class GiftDesk {
     if (!this.e.passes(who, item)) return this.#reject(tables, base, "unfit", "rule", false);
 
     // The owner's word, then what the model said before.
-    let verdict: GiftVerdict | null = null;
+    let priced: Priced | null = null;
     let pricedBy: GiftRecord["priced_by"] = "cache";
     let asked = false;
     const cached = tables.price(itemKey);
     if (cached?.source === "blocked") return this.#reject(tables, base, "blocked", "pinned", false);
     if (cached !== null) {
       pricedBy = cached.source === "pinned" ? "pinned" : "cache";
-      verdict =
-        cached.refuse !== null
-          ? { refuse: cached.refuse }
-          : cached.tier !== null && cached.kind !== null
-            ? { kind: cached.kind, tier: cached.tier }
-            : null;
+      priced = this.#fromPrice(cached);
     }
-    if (verdict === null) {
+    if (priced === null) {
       const pricer = this.e.services.get(GiftPricerKey);
       if (pricer) {
         const since = this.e.todayStart();
@@ -281,38 +293,54 @@ export class GiftDesk {
           throw new EconomyError(503, "現在估不了價,晚點再試;沒有扣錢");
         }
         asked = true;
-        verdict = validVerdict(await this.#priceOf(pricer, item, signal));
-        if (verdict !== null) {
+        const verdict = validVerdict(await this.#priceOf(pricer, item, signal));
+        // An estimate is kept only when it gives a price (an absurd one is no answer).
+        const estimate = verdict !== null && "twd" in verdict ? this.#coins(verdict.twd) : null;
+        if (verdict !== null && ("refuse" in verdict || estimate !== null)) {
           tables.putPrice({
             item_key: itemKey,
             item,
             kind: "kind" in verdict ? verdict.kind : null,
-            tier: "tier" in verdict ? verdict.tier : null,
+            tier: null,
+            twd: "twd" in verdict ? verdict.twd : null,
+            coins: null,
             refuse: "refuse" in verdict ? verdict.refuse : null,
             source: "model",
             by: null,
             at: toTimestamp(this.#now()),
           });
           pricedBy = "model";
+          priced =
+            "refuse" in verdict
+              ? { refuse: verdict.refuse }
+              : { kind: verdict.kind, coins: estimate as number, twd: verdict.twd };
         }
       }
     }
-    if (verdict !== null && "refuse" in verdict) {
-      return this.#reject(tables, base, verdict.refuse, pricedBy, asked);
+    if (priced !== null && "refuse" in priced) {
+      return this.#reject(tables, base, priced.refuse, pricedBy, asked);
     }
-    const fallback = verdict === null;
-    const tier = verdict?.tier ?? c.fallback_tier;
-    const kind: GiftKind = verdict?.kind ?? "small_object";
+    const fallback = priced === null;
+    const kind: GiftKind = priced?.kind ?? "small_object";
     if (fallback) pricedBy = "fallback";
-    const price = c.tiers[tier - 1] as number;
-    const full = (c.tier_hunger[tier - 1] ?? 0) * (kind === "drink" ? 0.5 : 1);
+    const price = priced?.coins ?? c.fallback_coins;
+    const twd = priced?.twd ?? null;
+    const full = isEdible(kind)
+      ? foodHunger(
+          price,
+          kind as "food" | "drink",
+          c.food_hunger_max,
+          c.food_hunger_half_coins,
+          this.e.config.feed_hunger_cap,
+        )
+      : 0;
 
     return this.e.serial(async (): Promise<GiftAsk> => {
       const same = tables.byKey(persons, key);
       if (same !== null) return this.#asked(who, same);
       const rows = this.#today(tables, persons);
       const no = this.#capNo(rows, null, kind, price);
-      const row = { ...base, kind, tier, price, pricedBy, asked };
+      const row = { ...base, kind, twd, price, pricedBy, asked };
       if (no !== null) throw no;
       let hunger = 0;
       if (isEdible(kind)) {
@@ -332,8 +360,9 @@ export class GiftDesk {
         item,
         item_key: itemKey,
         kind,
-        tier,
+        tier: null,
         price,
+        twd,
         priced_by: pricedBy,
         asked_model: asked,
         hunger,
@@ -346,6 +375,35 @@ export class GiftDesk {
       });
       return { status: "quote", quote: this.#quote(gift, balance) };
     });
+  }
+
+  /** Coins for an estimate in NT$ at the economy's rate, within the bounds; `null`: absurd. */
+  #coins(twd: number): number | null {
+    const c = this.#c;
+    return coinsOf(twd, this.e.config.twd_per_coin, c.min_coins, c.max_coins);
+  }
+
+  /**
+   * What a kept price says now: a refusal, a coin pin, an NT$ estimate or pin at today's rate,
+   * or an old tier's coins; `null` when it gives no price (no kind, or absurd at today's rate).
+   */
+  #fromPrice(p: GiftPrice): Priced | null {
+    if (p.refuse !== null) return { refuse: p.refuse };
+    if (p.kind === null) return null;
+    const c = this.#c;
+    if (p.coins !== null) {
+      return {
+        kind: p.kind,
+        coins: Math.min(Math.max(p.coins, c.min_coins), c.max_coins),
+        twd: null,
+      };
+    }
+    if (p.twd !== null) {
+      const coins = this.#coins(p.twd);
+      return coins === null ? null : { kind: p.kind, coins, twd: p.twd };
+    }
+    const old = p.tier === null ? undefined : OLD_TIER_COINS[p.tier - 1];
+    return old === undefined ? null : { kind: p.kind, coins: old, twd: null };
   }
 
   /** The price of a name, or `null` (logged) when it cannot be asked now. */
@@ -374,23 +432,25 @@ export class GiftDesk {
   }
 
   #quote(gift: GiftRecord, balance: number): GiftQuote {
-    const tier = gift.tier ?? this.#c.fallback_tier;
     const kind = gift.kind ?? "small_object";
     const fallback = gift.priced_by === "fallback";
+    const cur = this.e.config.currency;
     return {
       id: gift.id,
       item: gift.item,
       kind,
       kind_word: KIND_WORD[kind],
-      tier,
-      tier_word: TIER_WORD[tier - 1] ?? "",
+      twd: gift.twd,
+      twd_per_coin: this.e.config.twd_per_coin,
+      band: bandOf(gift.price, this.#c.band_coins),
       price: gift.price,
+      big: gift.price > this.#c.big_gift_coins,
       currency: this.e.config.currency,
       balance,
       balance_after: balance - gift.price,
       expires_at: gift.expires_at,
       fallback,
-      note: fallback ? "現在問不到價,先用預設的價格;確認了才扣。" : null,
+      note: fallback ? `現在估不了價,先用預設的 ${gift.price} ${cur};確認了才扣。` : null,
     };
   }
 
@@ -417,7 +477,7 @@ export class GiftDesk {
       key: string;
       source: GiftSource;
       kind?: GiftKind;
-      tier?: number;
+      twd?: number | null;
       price?: number;
     },
     reason: GiftNo,
@@ -434,8 +494,9 @@ export class GiftDesk {
         item: row.item,
         item_key: row.itemKey,
         kind: row.kind ?? null,
-        tier: row.tier ?? null,
+        tier: null,
         price: row.price ?? 0,
+        twd: row.twd ?? null,
         priced_by: pricedBy,
         asked_model: asked,
         hunger: 0,
@@ -471,8 +532,9 @@ export class GiftDesk {
     const c = this.#c;
     const kept = this.#counted(rows, except);
     if (kept.length >= c.per_day) throw new EconomyError(429, `今天最多送 ${c.per_day} 份`);
+    if (c.coins_per_day === 0) return;
     const spent = kept.reduce((n, g) => n + g.price, 0);
-    if (c.coins_per_day - spent < (c.tiers[0] ?? 0)) {
+    if (c.coins_per_day - spent < c.min_coins) {
       throw new EconomyError(429, `今天送禮最多花 ${c.coins_per_day} ${this.e.config.currency}`);
     }
   }
@@ -493,7 +555,7 @@ export class GiftDesk {
     }
     const kept = this.#counted(rows, except);
     const spent = kept.reduce((n, g) => n + g.price, 0);
-    if (spent + price > c.coins_per_day) {
+    if (c.coins_per_day > 0 && spent + price > c.coins_per_day) {
       return new EconomyError(
         429,
         `今天送禮最多花 ${c.coins_per_day} ${cur},還剩 ${c.coins_per_day - spent}`,
@@ -607,7 +669,7 @@ export class GiftDesk {
         this.e.record(who, "economy.gift.confirm", {
           gift: id,
           item: gift.item,
-          tier: gift.tier,
+          twd: gift.twd,
           price: gift.price,
         });
       }
@@ -641,7 +703,7 @@ export class GiftDesk {
       gift.kind === "food" ? "收下就是吃掉。" : gift.kind === "drink" ? "收下就是喝掉。" : "";
     const parts = [
       `${safeName(who.name)}想送你「${safeName(gift.item, 40)}」` +
-        `(${KIND_WORD[kind]},${TIER_WORD[(gift.tier ?? 1) - 1] ?? ""},${gift.price} ${cur},已經付了;禮物代號 ${gift.id})。`,
+        `(${KIND_WORD[kind]},${bandOf(gift.price, this.#c.band_coins)},${gift.price} ${cur},已經付了;禮物代號 ${gift.id})。`,
       eat,
       past.length > 0 ? `他之前也送過你:${past.join("、")}。` : "",
       `收不收由你決定,照你現在的心情和你對他的感覺:用 answer_gift 回答,一句你自己的話。` +
@@ -842,6 +904,7 @@ export class GiftDesk {
       kind_word: g.kind === null ? null : KIND_WORD[g.kind],
       tier: g.tier,
       price: g.price,
+      twd: g.twd,
       status: g.status,
       line: g.line,
       favourite: g.favourite,
@@ -940,19 +1003,33 @@ export class GiftDesk {
     return true;
   }
 
-  /** The owner fixes a name's tier and kind (`tier` 1-based), or blocks it (`tier` `null`). */
+  /**
+   * The owner fixes a name's price and kind, in coins (stays put when the rate changes) or in NT$
+   * (follows the rate), or blocks it (`null`).
+   */
   pin(
     name: string,
-    choice: { tier: number; kind: GiftKind } | null,
+    choice: { kind: GiftKind; coins?: number | null; twd?: number | null } | null,
     by: string,
   ): { item: string; item_key: string } {
-    const item = giftName(name, this.#c.max_chars);
-    if (item === null) throw new EconomyError(400, `名字要 1 到 ${this.#c.max_chars} 個字`);
-    if (
-      choice !== null &&
-      (!Number.isInteger(choice.tier) || choice.tier < 1 || choice.tier > GIFT_TIERS)
-    ) {
-      throw new EconomyError(400, `價位要是 1 到 ${GIFT_TIERS}`);
+    const c = this.#c;
+    const item = giftName(name, c.max_chars);
+    if (item === null) throw new EconomyError(400, `名字要 1 到 ${c.max_chars} 個字`);
+    const coins = choice?.coins ?? null;
+    const twd = choice?.twd ?? null;
+    if (choice !== null) {
+      if ((coins === null) === (twd === null)) {
+        throw new EconomyError(400, "要給魚幣價錢或台幣估價其中一個");
+      }
+      if (
+        coins !== null &&
+        (!Number.isSafeInteger(coins) || coins < c.min_coins || coins > c.max_coins)
+      ) {
+        throw new EconomyError(400, `價錢要是 ${c.min_coins} 到 ${c.max_coins} 的整數`);
+      }
+      if (twd !== null && this.#coins(twd) === null) {
+        throw new EconomyError(400, "台幣估價要是正整數,換算後不能超過上限");
+      }
     }
     if (choice !== null && !GIFT_KINDS.includes(choice.kind)) {
       throw new EconomyError(400, "沒有這種禮物");
@@ -962,7 +1039,9 @@ export class GiftDesk {
       item_key: itemKey,
       item,
       kind: choice?.kind ?? null,
-      tier: choice?.tier ?? null,
+      tier: null,
+      twd,
+      coins,
       refuse: choice === null ? "blocked" : null,
       source: choice === null ? "blocked" : "pinned",
       by,
@@ -979,8 +1058,11 @@ export class GiftDesk {
   }
 
   /** The owner's pins and blocks, newest first. */
-  overrides(limit = 100) {
-    return this.tablesOf()?.overrides(clamp(limit, 1, 500)) ?? [];
+  overrides(limit = 100): (GiftPrice & { price: number | null })[] {
+    return (this.tablesOf()?.overrides(clamp(limit, 1, 500)) ?? []).map((o) => {
+      const now = this.#fromPrice(o);
+      return { ...o, price: now !== null && "coins" in now ? now.coins : null };
+    });
   }
 
   /** A kept gift of theirs as the picture draws it; `null` when it is not theirs or not kept. */
@@ -1016,15 +1098,21 @@ export class GiftDesk {
   }
 }
 
-/** A verdict the engine can use: a refusal it knows, or a known kind with a tier in the list. */
+/** A price the desk can use: a refusal, or a kind with coins (and the NT$ it came from). */
+type Priced = { refuse: GiftRefusal } | { kind: GiftKind; coins: number; twd: number | null };
+
+/**
+ * A verdict the engine can use: a refusal it knows, or a known kind with a whole NT$ estimate
+ * above zero (whether it is absurd is for the rate to say, `coinsOf`).
+ */
 export function validVerdict(v: GiftVerdict | null): GiftVerdict | null {
   if (v === null || typeof v !== "object") return null;
   if ("refuse" in v) {
     return (REFUSAL_TEXT as Record<string, string>)[v.refuse] === undefined ? null : v;
   }
   if (!GIFT_KINDS.includes(v.kind)) return null;
-  if (!Number.isInteger(v.tier) || v.tier < 1 || v.tier > GIFT_TIERS) return null;
-  return { kind: v.kind, tier: v.tier };
+  if (!Number.isSafeInteger(v.twd) || v.twd <= 0) return null;
+  return { kind: v.kind, twd: v.twd };
 }
 
 function publicGift(g: GiftRecord, named: boolean): PublicGift {

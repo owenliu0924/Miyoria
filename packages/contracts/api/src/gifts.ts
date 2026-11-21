@@ -1,5 +1,6 @@
 // Free-form gifts (docs/design/economy.md §16): a member names anything for her, the system prices
-// it by tier, the member confirms, and she takes it or gives it back.
+// it (a real-world estimate in NT$ at the economy's fixed rate), the member confirms, and she takes
+// it or gives it back.
 //
 // * Member (`gifts` group, a session, limited per account): `GET /api/member/gifts` (what they
 //   named and what she said), `POST /api/member/gifts/quote` `{ name }` with an `Idempotency-Key`
@@ -11,7 +12,7 @@
 //   they stay on the public boards.
 // * Admin (`giftsAdmin`): `GET /api/economy/gifts` (every status), `POST
 //   /api/economy/gifts/{id}/refund`, `GET /api/economy/gifts/prices`, `PUT /api/economy/gifts/prices`
-//   `{ name, tier, kind }` or `{ name, block: true }`, `DELETE /api/economy/gifts/prices` `{ name }`;
+//   `{ name, kind, coins }`, `{ name, kind, twd }` or `{ name, block: true }`, `DELETE /api/economy/gifts/prices` `{ name }`;
 //   the writes need `admin.economy.adjust`, like a hand on someone's coins.
 //
 // Without the economy these are a `503`. No shape carries a bond or relationship number.
@@ -46,15 +47,20 @@ export const GiftQuoteSchema = z
     item: z.string(),
     kind: GiftKindSchema,
     kind_word: z.string(),
-    /** 1-based into the configured tiers. */
-    tier: z.number().int(),
-    tier_word: z.string(),
+    /** The real-world estimate in NT$ it came from; `null` for a coin pin or the fallback. */
+    twd: z.number().int().nullable(),
+    /** NT$ a coin, as it was used. */
+    twd_per_coin: z.number(),
+    /** The price in words: 隨手的小東西, 有點心意, 很貴重, 誇張. */
+    band: z.string(),
     price: z.number().int(),
     currency: z.string(),
     balance: z.number().int(),
     balance_after: z.number().int(),
     expires_at: z.string(),
-    /** The fallback tier: the price could not be asked now. */
+    /** A large gift: the confirmation says so, with the balance after. */
+    big: z.boolean(),
+    /** The fallback price: it could not be estimated now. */
     fallback: z.boolean(),
     note: z.string().nullable(),
   })
@@ -86,8 +92,10 @@ export const GiftViewSchema = z
     item: z.string(),
     kind: GiftKindSchema.nullable(),
     kind_word: z.string().nullable(),
+    /** The old scheme's tier, on gifts priced before the NT$ estimates. */
     tier: z.number().int().nullable(),
     price: z.number().int(),
+    twd: z.number().int().nullable(),
     status: GiftStatusSchema,
     /** Her line; `null` when she said nothing or it was taken for her. */
     line: z.string().nullable(),
@@ -107,8 +115,10 @@ export const MyGiftsSchema = z
     /** Members may name gifts now. */
     open: z.boolean(),
     currency: z.string(),
-    /** The configured tiers' prices, cheapest first. */
-    tiers: z.array(z.number().int()),
+    /** NT$ a coin (the economy's one fixed rate). */
+    twd_per_coin: z.number(),
+    /** Above this many coins a gift is a large one. */
+    big_gift_coins: z.number().int(),
     gifts: z.array(GiftViewSchema),
   })
   .meta({ id: "ApiMyGifts" });
@@ -167,7 +177,8 @@ export type AdminGiftItem = z.output<typeof AdminGiftSchema>;
 export const AdminGiftsSchema = z
   .object({
     currency: z.string(),
-    tiers: z.array(z.number().int()),
+    twd_per_coin: z.number(),
+    big_gift_coins: z.number().int(),
     gifts: z.array(AdminGiftSchema),
   })
   .meta({ id: "ApiAdminGifts" });
@@ -179,7 +190,13 @@ export const GiftOverrideSchema = z
     item_key: z.string(),
     item: z.string(),
     kind: GiftKindSchema.nullable(),
-    tier: z.number().int().nullable(),
+    /** The estimate or the owner's pin in NT$ (follows the rate). */
+    twd: z.number().int().nullable(),
+    /** The owner's pin in coins (does not follow the rate; the old tiers were kept this way). */
+    coins: z.number().int().nullable(),
+    /** What it costs now, in coins; `null` for a block or a refusal. */
+    price: z.number().int().nullable(),
+    refuse: z.string().nullable(),
     source: z.enum(["model", "pinned", "blocked"]),
     by: z.string().nullable(),
     at: z.string(),
@@ -187,11 +204,12 @@ export const GiftOverrideSchema = z
   .meta({ id: "ApiGiftOverride" });
 export type GiftOverride = z.output<typeof GiftOverrideSchema>;
 
-/** Body of `PUT /api/economy/gifts/prices`: a tier and kind for a name, or a block. */
+/** Body of `PUT /api/economy/gifts/prices`: a price in coins or NT$ and a kind, or a block. */
 export const GiftPinRequestSchema = z
   .strictObject({
     name: z.string().trim().min(1).max(80),
-    tier: z.number().int().min(1).optional(),
+    coins: z.number().int().min(1).optional(),
+    twd: z.number().int().min(1).optional(),
     kind: GiftKindSchema.optional(),
     block: z.boolean().optional(),
   })

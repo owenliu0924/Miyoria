@@ -63,8 +63,31 @@ CREATE INDEX \`gifts_requests_status_idx\` ON \`gifts_requests\` (\`status\`,\`c
 CREATE INDEX \`gifts_requests_created_idx\` ON \`gifts_requests\` (\`created_at\`);
 `;
 
+/**
+ * Version 2 (owner 2026-11-21): prices are a real-world estimate in NT$ turned into coins at the
+ * fixed rate, not one of four tiers. The estimate and a coin pin get their own columns; every name
+ * the old scheme had priced (the model's tier or the owner's pin) keeps the coins it cost then as
+ * a pin in coins, so nothing already priced changes silently. Additive: no column is dropped and
+ * the old rows keep their tier.
+ */
+const ESTIMATES = `ALTER TABLE \`gifts_prices\` ADD \`twd\` integer;
+
+ALTER TABLE \`gifts_prices\` ADD \`coins\` integer;
+
+ALTER TABLE \`gifts_requests\` ADD \`twd\` integer;
+
+UPDATE \`gifts_prices\`
+SET \`coins\` = CASE \`tier\` WHEN 1 THEN 5 WHEN 2 THEN 20 WHEN 3 THEN 50 WHEN 4 THEN 150 END,
+  \`source\` = 'pinned',
+  \`by\` = COALESCE(\`by\`, 'tiers')
+WHERE \`tier\` IN (1, 2, 3, 4) AND \`refuse\` IS NULL;
+`;
+
 /** The gift requests and the price cache with the owner's pins and blocks. */
 export const giftSchema: PluginSchema = {
   plugin: "gifts",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "estimates", sql: ESTIMATES },
+  ],
 };

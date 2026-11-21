@@ -83,7 +83,8 @@ export const giftsRpc = {
     return {
       open: gifts.open,
       currency: gifts.currency,
-      tiers: [...gifts.tiers],
+      twd_per_coin: gifts.rate,
+      big_gift_coins: gifts.bigGiftCoins,
       gifts: await gifts.mine(accountOf(c)),
     };
   }),
@@ -182,7 +183,12 @@ export const giftsPublicRpc = {
 export const giftsAdminRpc = {
   list: os.giftsAdmin.list.handler(async ({ context: { state } }): Promise<AdminGifts> => {
     const gifts = desk(state);
-    return { currency: gifts.currency, tiers: [...gifts.tiers], gifts: gifts.adminList(100) };
+    return {
+      currency: gifts.currency,
+      twd_per_coin: gifts.rate,
+      big_gift_coins: gifts.bigGiftCoins,
+      gifts: gifts.adminList(100),
+    };
   }),
   refund: os.giftsAdmin.refund.handler(async ({ input, context: { state, c } }) => {
     const gifts = desk(state);
@@ -191,16 +197,31 @@ export const giftsAdminRpc = {
     return { ok: true as const };
   }),
   prices: os.giftsAdmin.prices.handler(async ({ context: { state } }) => ({
-    overrides: desk(state).overrides(),
+    overrides: desk(state)
+      .overrides()
+      .map((o) => ({
+        item_key: o.item_key,
+        item: o.item,
+        kind: o.kind,
+        twd: o.twd,
+        coins: o.coins,
+        price: o.price,
+        refuse: o.refuse,
+        source: o.source,
+        by: o.by,
+        at: o.at,
+      })),
   })),
   pin: os.giftsAdmin.pin.handler(async ({ input, context: { state, c } }) => {
     const gifts = desk(state);
-    const { name, tier, kind, block } = input.body;
-    if (block !== true && (tier === undefined || kind === undefined)) {
-      throw ApiError.badRequest("要給價位和種類,或 block: true");
+    const { name, coins, twd, kind, block } = input.body;
+    if (block !== true && (kind === undefined || (coins === undefined) === (twd === undefined))) {
+      throw ApiError.badRequest("要給種類和魚幣價錢或台幣估價其中一個,或 block: true");
     }
     const choice =
-      block === true ? null : { tier: tier as number, kind: kind as NonNullable<typeof kind> };
+      block === true
+        ? null
+        : { kind: kind as NonNullable<typeof kind>, coins: coins ?? null, twd: twd ?? null };
     return refusing(async () => gifts.pin(name, choice, actorOf(c)));
   }),
   unpin: os.giftsAdmin.unpin.handler(async ({ input, context: { state } }) => ({

@@ -614,6 +614,18 @@
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "status": {
           "$ref": "#/$defs/ApiGiftStatus"
         },
@@ -705,6 +717,7 @@
         "kind_word",
         "tier",
         "price",
+        "twd",
         "status",
         "line",
         "favourite",
@@ -727,13 +740,13 @@
         "currency": {
           "type": "string"
         },
-        "tiers": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          }
+        "twd_per_coin": {
+          "type": "number"
+        },
+        "big_gift_coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
         },
         "gifts": {
           "type": "array",
@@ -744,7 +757,8 @@
       },
       "required": [
         "currency",
-        "tiers",
+        "twd_per_coin",
+        "big_gift_coins",
         "gifts"
       ]
     },
@@ -7115,7 +7129,7 @@
             }
           ]
         },
-        "tier": {
+        "twd": {
           "anyOf": [
             {
               "type": "integer",
@@ -7125,6 +7139,36 @@
             {
               "type": "null"
             }
+          ]
+        },
+        "coins": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refuse": {
+          "type": [
+            "string",
+            "null"
           ]
         },
         "source": {
@@ -7149,7 +7193,10 @@
         "item_key",
         "item",
         "kind",
-        "tier",
+        "twd",
+        "coins",
+        "price",
+        "refuse",
         "source",
         "by",
         "at"
@@ -7181,7 +7228,12 @@
           "minLength": 1,
           "maxLength": 80
         },
-        "tier": {
+        "coins": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "twd": {
           "type": "integer",
           "minimum": 1,
           "maximum": 9007199254740991
@@ -7213,12 +7265,22 @@
         "kind_word": {
           "type": "string"
         },
-        "tier": {
-          "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
-        "tier_word": {
+        "twd_per_coin": {
+          "type": "number"
+        },
+        "band": {
           "type": "string"
         },
         "price": {
@@ -7242,6 +7304,9 @@
         "expires_at": {
           "type": "string"
         },
+        "big": {
+          "type": "boolean"
+        },
         "fallback": {
           "type": "boolean"
         },
@@ -7257,13 +7322,15 @@
         "item",
         "kind",
         "kind_word",
-        "tier",
-        "tier_word",
+        "twd",
+        "twd_per_coin",
+        "band",
         "price",
         "currency",
         "balance",
         "balance_after",
         "expires_at",
+        "big",
         "fallback",
         "note"
       ]
@@ -7352,6 +7419,18 @@
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
         },
+        "twd": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "status": {
           "$ref": "#/$defs/ApiGiftStatus"
         },
@@ -7405,6 +7484,7 @@
         "kind_word",
         "tier",
         "price",
+        "twd",
         "status",
         "line",
         "favourite",
@@ -14368,13 +14448,13 @@
         "currency": {
           "type": "string"
         },
-        "tiers": {
-          "type": "array",
-          "items": {
-            "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 9007199254740991
-          }
+        "twd_per_coin": {
+          "type": "number"
+        },
+        "big_gift_coins": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
         },
         "gifts": {
           "type": "array",
@@ -14386,7 +14466,8 @@
       "required": [
         "open",
         "currency",
-        "tiers",
+        "twd_per_coin",
+        "big_gift_coins",
         "gifts"
       ]
     },

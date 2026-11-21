@@ -28,7 +28,7 @@ export {
   WALLET_NODE,
 } from "./economy.js";
 export { EconomyExchangeWallet } from "./exchange-wallet.js";
-export { type FreeGiftConfig, FreeGiftConfigSchema, GIFT_TIERS } from "./gift-config.js";
+export { type FreeGiftConfig, FreeGiftConfigSchema, OLD_TIER_COINS } from "./gift-config.js";
 export { giftSchema } from "./gift-migrations.js";
 export {
   type GiftPrice,
@@ -38,6 +38,10 @@ export {
   giftTables,
 } from "./gift-tables.js";
 export {
+  BAND_WORD,
+  bandOf,
+  coinsOf,
+  foodHunger,
   GIFT_KINDS,
   GIFT_REASON,
   GIFT_REFUSALS,
@@ -50,7 +54,6 @@ export {
   giftName,
   KIND_WORD,
   REFUSAL_TEXT,
-  TIER_WORD,
 } from "./gift-words.js";
 export {
   type AdminGift,

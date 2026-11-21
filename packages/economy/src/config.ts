@@ -304,8 +304,15 @@ export const EconomyConfigSchema = z
     health_days: z.number().int().positive().max(90).default(14),
     health_warn_ratio: z.number().min(0).max(1).default(0.6),
     /**
+     * The one fixed rate between New Taiwan dollars and coins (owner 2026-11-21): one coin is this
+     * many NT$, about one (a bowl of rice is 10). Never fetched, never floating. Free-form gifts
+     * price by it; the exchange's `twd_per_coin` is meant to be this same number.
+     */
+    twd_per_coin: z.number().positive().default(1),
+    /**
      * Gifts a member names in their own words (`[modules.economy.free_gifts]`, gift-config.ts,
-     * docs/design/economy.md §16): priced by tier, confirmed by the member, taken or refused by her.
+     * docs/design/economy.md §16): a real-world estimate in NT$ turned into coins at
+     * `twd_per_coin`, confirmed by the member, taken or refused by her.
      */
     free_gifts: FreeGiftConfigSchema.default(DEFAULT_FREE_GIFTS),
     /** Where "today" starts. */

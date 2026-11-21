@@ -83,13 +83,24 @@ function refusal(error: unknown): CommandReply {
   return notice("warn", UNAVAILABLE);
 }
 
-/** The quote: what it is, what it costs, what is left after, and 確認 / 取消. */
+/** 「約 NT$1,500 → 1,500 魚幣」, or the price alone when it did not come from an estimate. */
+export function priceLine(q: Pick<GiftQuote, "twd" | "price" | "currency">): string {
+  const coins = `${q.price.toLocaleString("en-US")} ${q.currency}`;
+  return q.twd === null ? coins : `約 NT$${q.twd.toLocaleString("en-US")} → ${coins}`;
+}
+
+/**
+ * The quote: what it is, what it costs (the NT$ estimate and the coins), what is left after, and
+ * 確認 / 取消. A large gift says so on a line of its own, with the balance after.
+ */
 export function quoteCard(q: GiftQuote, confirmS: number): CommandReply {
   const minutes = Math.max(1, Math.round(confirmS / 60));
-  const lines = [
-    `**${q.item}**　${q.kind_word}・${q.tier_word}`,
-    `價格 ${q.price} ${q.currency}　送出後剩 ${q.balance_after}`,
-  ];
+  const lines = [`**${q.item}**　${q.kind_word}`, `${priceLine(q)}　送出後剩 ${q.balance_after}`];
+  if (q.big) {
+    lines.push(
+      `這是一份大禮:${q.price.toLocaleString("en-US")} ${q.currency},送出後只剩 ${q.balance_after}。`,
+    );
+  }
   const muted = [
     ...(q.note ? [q.note] : []),
     `按確認才扣${q.currency},她會自己決定收不收,不收全部退回。${minutes} 分鐘內有效。`,

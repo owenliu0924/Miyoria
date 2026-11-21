@@ -26,7 +26,10 @@ async function setup() {
     adjust: () => undefined,
   } as never);
   r.services.provide("test", GiftPricerKey, {
-    price: async () => ({ kind: "big_object", tier: 3 }),
+    price: async (item: string) => ({
+      kind: "big_object" as const,
+      twd: item === "一台跑車" ? 2500 : 50,
+    }),
   });
   const desk = new GiftDesk(r.economy, () => r.store.plugin(giftTables));
   r.services.provide("test", FreeGiftsKey, desk);
@@ -76,7 +79,8 @@ describe("/me feed thing:", () => {
     expect(replyEphemeral(false, reply)).toBe(true);
     expect(reply.card?.accent).toBe("neutral");
     expect(reply.text).toContain("一把電吉他");
-    expect(reply.text).toContain("價格 50 魚幣");
+    expect(reply.text).toContain("約 NT$50 → 50 魚幣");
+    expect(reply.text).not.toContain("大禮");
     expect(reply.text).toContain("送出後剩 50");
     expect(reply.session).toBeDefined();
     const [ok, no] = buttons(reply);
@@ -91,6 +95,15 @@ describe("/me feed thing:", () => {
     expect(done.text).toContain("送出了「一把電吉他」");
     await press(registry, ALICE, ok?.id as string);
     expect(await balance(r, ALICE)).toBe(50);
+  });
+
+  it("says a large gift is one, with the balance after, and asks nothing more", async () => {
+    const { r, registry } = await setup();
+    await fund(r, ALICE, 3000);
+    const reply = await run(registry, ALICE, { thing: "一台跑車" });
+    expect(reply.text).toContain("約 NT$2,500 → 2,500 魚幣");
+    expect(reply.text).toContain("這是一份大禮:2,500 魚幣,送出後只剩 500");
+    expect(buttons(reply).map((b) => b.label)).toEqual(["確認", "取消"]);
   });
 
   it("取消 costs nothing", async () => {

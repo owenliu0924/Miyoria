@@ -4,15 +4,16 @@
 //   most `max_chars`. It is only ever data: shown back, put in her context escaped, never read for
 //   a price. "worth 1 coin" or "free" in it is just a strange name.
 // * The cache key (`giftKey`) folds what rephrasing changes without changing the thing (case,
-//   spaces, punctuation, a leading 「一杯」「一把」), so the same thing gets the same tier for
+//   spaces, punctuation, a leading 「一杯」「一把」), so the same thing gets the same price for
 //   everyone and asking again in other words buys nothing.
 // * Some names are refused before anyone is asked (`ruleRefusal`): a mention or a link, real money
 //   or points, coins themselves, bond or affection, and text that reads like an instruction. The
 //   moderation screen and the model's own refusal come after.
 // * The fixed foods (白飯, 鋼盆, 甜點) named in words go to the ordinary feed, which needs no
 //   confirmation (`fixedFood`).
-// * The price is one of the configured tiers; `GiftPricer` (the api's one small model call) only
-//   picks a tier and a kind, or refuses.
+// * The price is a real-world estimate in NT$ (`GiftPricer`, the api's one small model call:
+//   a whole number, a kind, or a refusal), turned into coins at the economy's fixed rate
+//   (`coinsOf`). An estimate that is not a whole number above zero, or is absurd, is no answer.
 
 import { serviceKey } from "@miyoria/types";
 import type { CoinEntry } from "./records.js";
@@ -36,6 +37,7 @@ export const GIFT_REFUSALS = [
   "instruction",
   "unfit",
   "blocked",
+  "not_for_sale",
 ] as const;
 export type GiftRefusal = (typeof GIFT_REFUSALS)[number];
 
@@ -51,6 +53,7 @@ export const REFUSAL_TEXT: Readonly<Record<GiftRefusal, string>> = {
   instruction: "這看起來不是一樣東西,是一段指示",
   unfit: "這個名字沒辦法送出去",
   blocked: "這個現在不能送",
+  not_for_sale: "這不是買得到的東西",
 };
 
 /** How a kind reads (her context, the notice). */
@@ -62,21 +65,58 @@ export const KIND_WORD: Readonly<Record<GiftKind, string>> = {
   experience: "一段經驗",
 };
 
-/** How a tier reads, cheapest first. */
-export const TIER_WORD = ["小小心意", "一般的禮物", "用心的禮物", "大手筆"] as const;
+/** How a price reads to her, cheapest first (`band_coins` sets where each starts). */
+export const BAND_WORD = ["隨手的小東西", "有點心意", "很貴重", "誇張"] as const;
+
+/** The words for a price of `coins`: up to each of the thresholds `bands` (three, going up). */
+export function bandOf(coins: number, bands: readonly number[]): string {
+  let i = 0;
+  while (i < bands.length && coins > (bands[i] ?? Number.POSITIVE_INFINITY)) i += 1;
+  return BAND_WORD[Math.min(i, BAND_WORD.length - 1)] ?? BAND_WORD[0];
+}
+
+/**
+ * Coins for an estimate of `twd` NT$ at `rate` NT$ a coin: rounded half up to a whole coin, then
+ * held within `[min, max]`. `null` for an estimate that is no answer: not a whole number, zero or
+ * less, or above `max` × `rate` (absurd).
+ */
+export function coinsOf(twd: number, rate: number, min: number, max: number): number | null {
+  if (!Number.isSafeInteger(twd) || twd <= 0 || !(rate > 0)) return null;
+  if (twd > max * rate) return null;
+  const coins = Math.floor(twd / rate + 0.5);
+  return Math.min(Math.max(coins, min), max);
+}
+
+/**
+ * What food of `coins` takes off her hunger: `most` × coins ÷ (coins + `half`), a drink half of
+ * it, never above `cap` (what `feed_hunger_cap` allows). Bounded: it never reaches `most`.
+ */
+export function foodHunger(
+  coins: number,
+  kind: "food" | "drink",
+  most: number,
+  half: number,
+  cap: number,
+): number {
+  const c = Math.max(coins, 0);
+  const full = half > 0 ? (most * c) / (c + half) : most;
+  const h = kind === "drink" ? full / 2 : full;
+  return Math.max(0, Math.min(h, most, cap));
+}
 
 /** Food and drink go through her hunger, and the same daily share of it as rice. */
 export function isEdible(kind: GiftKind | null): boolean {
   return kind === "food" || kind === "drink";
 }
 
-/** A tier's verdict, or a refusal. */
-export type GiftVerdict = { kind: GiftKind; tier: number } | { refuse: GiftRefusal };
+/** An estimate in NT$ with the kind, or a refusal. */
+export type GiftVerdict = { kind: GiftKind; twd: number } | { refuse: GiftRefusal };
 
 /**
- * Prices a named gift with one small model call (provided by the api). `tier` is 1-based into
- * the configured list. `null`: it cannot tell now (no model, a failure, too slow, an answer that
- * is not one of the choices); the caller then uses its fallback tier. Never throws.
+ * Estimates a named gift with one small model call (provided by the api): what a plain, ordinary
+ * one costs in the real world, in whole NT$. `null`: it cannot tell now (no model, a failure, too
+ * slow, an answer that is not one of the choices); the caller then uses its fallback price.
+ * Never throws.
  */
 export interface GiftPricer {
   price(item: string, signal: AbortSignal): Promise<GiftVerdict | null>;
