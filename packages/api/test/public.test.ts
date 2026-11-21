@@ -537,7 +537,11 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
   const base = api.url() ?? "";
 
   const loginResult = async (code: string) => {
-    const start = await fetch(`${base}/api/auth/oauth/login`, { redirect: "manual" });
+    // From a browser on the redirect's host, so the login is not sent over to it first.
+    const start = await fetch(`${base}/api/auth/oauth/login`, {
+      redirect: "manual",
+      headers: { "x-forwarded-host": new URL(REDIRECT).host },
+    });
     await start.arrayBuffer();
     const authorize = new URL(start.headers.get("location") ?? "");
     const url = new URL(`${base}/api/auth/oauth/callback`);

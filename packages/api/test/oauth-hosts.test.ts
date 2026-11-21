@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { DiscordOAuthConfigSchema, OAuth } from "../src/oauth.js";
+import {
+  DiscordOAuthConfigSchema,
+  loginCookiePath,
+  OAuth,
+  OAuthConfigError,
+} from "../src/oauth.js";
 
 const LOCAL = "http://127.0.0.1:7878/api/auth/oauth/callback";
 const PUBLIC = "https://panel.example.com/api/auth/oauth/callback";
@@ -37,5 +42,24 @@ describe("the callback follows the address the login started on", () => {
     const url = oauth.begin("/", "panel.example.com", "b");
     const pending = oauth.take(url.searchParams.get("state") ?? "");
     expect(pending?.redirect.href).toBe(PUBLIC);
+  });
+});
+
+describe("the login cookie's path", () => {
+  it("is the callback's directory, prefix included", () => {
+    expect(loginCookiePath(new URL(LOCAL))).toBe("/api/auth/oauth");
+    expect(loginCookiePath(new URL("https://x.example/m/api/auth/oauth/callback"))).toBe(
+      "/m/api/auth/oauth",
+    );
+    expect(loginCookiePath(new URL("https://x.example/cb"))).toBe("/");
+  });
+
+  it("refuses a redirect_uri whose path would end the cookie early", () => {
+    const config = DiscordOAuthConfigSchema.parse({
+      client_id: "cid",
+      client_secret: "secret",
+      redirect_uri: "https://x.example/a;b/api/auth/oauth/callback",
+    });
+    expect(() => OAuth.fromConfig(config, { now: () => 0 } as never)).toThrow(OAuthConfigError);
   });
 });

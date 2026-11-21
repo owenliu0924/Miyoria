@@ -47,7 +47,7 @@ interface FakeDiscord {
   tokenRequests: Array<Record<string, string>>;
 }
 
-async function startFake(): Promise<FakeDiscord> {
+async function startFake(redirect = REDIRECT): Promise<FakeDiscord> {
   const tokenRequests: Array<Record<string, string>> = [];
   const server = createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -64,7 +64,7 @@ async function startFake(): Promise<FakeDiscord> {
           form.grant_type === "authorization_code" &&
           form.client_id === "cid" &&
           form.client_secret === "secret" &&
-          form.redirect_uri === REDIRECT &&
+          form.redirect_uri === redirect &&
           (form.code_verifier ?? "") !== "" &&
           (form.code ?? "") in USERS;
         if (ok) {
@@ -122,18 +122,34 @@ class Harness {
     return url;
   }
 
-  /** `GET /api/auth/oauth/login`; returns the Discord authorize URL. */
-  async startLogin(next?: string): Promise<URL> {
+  /**
+   * `GET /api/auth/oauth/login` from a browser on `host` (the redirect's, `panel.test`, unless
+   * told otherwise); returns where it is sent.
+   */
+  async startLogin(
+    next?: string,
+    host = "panel.test",
+    query: Array<[string, string]> = [],
+  ): Promise<URL> {
     const url = new URL(`${this.base()}/api/auth/oauth/login`);
     if (next !== undefined) url.searchParams.append("next", next);
-    const response = await fetch(url, { redirect: "manual" });
+    for (const [k, v] of query) url.searchParams.append(k, v);
+    const response = await fetch(url, {
+      redirect: "manual",
+      headers: { "x-forwarded-host": host },
+    });
     await response.arrayBuffer();
     expect(response.status).toBe(302);
     // What the browser keeps from here to the callback.
-    const held = /miyoria_login=([^;]+)/.exec(response.headers.get("set-cookie") ?? "")?.[1];
+    const setCookie = response.headers.get("set-cookie");
+    this.loginSetCookie = setCookie;
+    const held = /miyoria_login=([^;]+)/.exec(setCookie ?? "")?.[1];
     this.loginCookieHeld = held ?? null;
     return new URL(response.headers.get("location") ?? "");
   }
+
+  /** The `Set-Cookie` of the last `startLogin`. */
+  loginSetCookie: string | null = null;
 
   /** The login cookie of the last `startLogin`; `null`: the callback comes from another browser. */
   loginCookieHeld: string | null = null;
@@ -232,8 +248,9 @@ afterEach(async () => {
 async function harnessWith(
   withOauth: boolean,
   publicConfig: Record<string, JsonValue> = {},
+  redirect = REDIRECT,
 ): Promise<Harness> {
-  const fake = await startFake();
+  const fake = await startFake(redirect);
   const sup = new Supervisor();
   const store = new TestStore();
   const s = sup.services;
@@ -258,7 +275,7 @@ async function harnessWith(
     config.discord_oauth = {
       client_id: "cid",
       client_secret: "secret",
-      redirect_uri: REDIRECT,
+      redirect_uri: redirect,
       recheck_secs: 0,
       discord_url: fake.url,
     };
@@ -371,7 +388,81 @@ describe("oauth", () => {
     // The browser that started it gets in, and the cookie that tied the login to it goes.
     const done = await h.login("owner-code");
     expect(done.cookie).not.toBeNull();
-    expect(done.setCookie).toMatch(/miyoria_login=; Max-Age=0; Path=\/api\/auth\/oauth/);
+    expect(done.setCookie).toMatch(/miyoria_login=; Max-Age=0; Path=\/api\/auth\/oauth;/);
+  });
+
+  it("a_refused_callback_never_reaches_discord_and_uses_its_state_up", async () => {
+    const h = await harnessWith(true);
+    const authorize = await h.startLogin();
+    const state = param(authorize, "state");
+    const held = h.loginCookieHeld;
+    expect(held).not.toBeNull();
+
+    h.loginCookieHeld = null;
+    const refused = await h.callback([
+      ["code", "owner-code"],
+      ["state", state],
+    ]);
+    expect(refused.location).toBe("/login?error=state");
+    expect(h.fake.tokenRequests, "the code was never exchanged").toHaveLength(0);
+
+    // The right browser coming later finds the state gone.
+    h.loginCookieHeld = held;
+    const late = await h.callback([
+      ["code", "owner-code"],
+      ["state", state],
+    ]);
+    expect(late.location).toBe("/login?error=state");
+    expect(late.cookie).toBeNull();
+    expect(h.fake.tokenRequests).toHaveLength(0);
+  });
+
+  it("the_login_cookie_follows_a_redirect_uri_under_a_path_prefix", async () => {
+    const prefixed = "http://panel.test/miyoria/api/auth/oauth/callback";
+    const h = await harnessWith(true, {}, prefixed);
+    const authorize = await h.startLogin("/people");
+    expect(param(authorize, "redirect_uri")).toBe(prefixed);
+    expect(h.loginSetCookie).toMatch(
+      /^miyoria_login=[^;]+; Max-Age=600; Path=\/miyoria\/api\/auth\/oauth; HttpOnly; SameSite=Lax$/,
+    );
+
+    // The proxy strips the prefix on the way in; the browser sent the cookie, as its path matched.
+    const done = await h.callback([
+      ["code", "owner-code"],
+      ["state", param(authorize, "state")],
+    ]);
+    expect(done.location).toBe("/people");
+    expect(done.cookie).not.toBeNull();
+    expect(done.setCookie).toMatch(/miyoria_login=; Max-Age=0; Path=\/miyoria\/api\/auth\/oauth;/);
+  });
+
+  it("a_login_started_on_another_host_starts_over_on_the_redirects_host", async () => {
+    const h = await harnessWith(true, {}, "http://panel.test/miyoria/api/auth/oauth/callback");
+
+    // On `localhost` while the redirect names `panel.test`: no cookie here, sent over instead.
+    const moved = await h.startLogin("/people", "localhost:7878");
+    expect(h.loginSetCookie).toBeNull();
+    expect(moved.origin).toBe("http://panel.test");
+    expect(moved.pathname).toBe("/miyoria/api/auth/oauth/login");
+    expect([...moved.searchParams]).toEqual([
+      ["next", "/people"],
+      ["moved", "1"],
+    ]);
+
+    // There the login starts for real, and comes back to the same host with its cookie.
+    const authorize = await h.startLogin(undefined, "panel.test", [...moved.searchParams]);
+    expect(authorize.href.startsWith(`${h.fake.url}/oauth2/authorize`)).toBe(true);
+    const done = await h.callback([
+      ["code", "owner-code"],
+      ["state", param(authorize, "state")],
+    ]);
+    expect(done.location).toBe("/people");
+    expect(done.cookie).not.toBeNull();
+
+    // A login already moved is never moved again (a proxy that rewrites `Host`): no loop.
+    const again = await h.startLogin(undefined, "localhost:7878", [...moved.searchParams]);
+    expect(again.href.startsWith(`${h.fake.url}/oauth2/authorize`)).toBe(true);
+    expect(h.loginCookieHeld).not.toBeNull();
   });
 
   it("bad_state_cancel_exchange_failure_and_open_redirects", async () => {
