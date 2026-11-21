@@ -7,9 +7,9 @@
 //   `Idempotency-Key`), a cancel, their own portfolio, the rich list. The person is the
 //   session's; a refusal is its status and sentence, the same as in Discord. Nobody sees anybody
 //   else's holdings or orders here (大家都在買 is counts only).
-// * Admin (`exchangeAdmin`): `GET /api/exchange`; blocking or removing a ticker, confirming a
-//   split, settling a suspended ticker and a sale by hand need `admin.economy.adjust` and are
-//   written to the audit log.
+// * Admin (`exchangeAdmin`): `GET /api/exchange`; blocking or removing a ticker, naming one,
+//   confirming a split, settling a suspended ticker and a sale by hand need
+//   `admin.economy.adjust` and are written to the audit log.
 //
 // Without the `exchange` module every route is a `503` that names it.
 
@@ -301,6 +301,13 @@ export const exchangeAdminRpc = {
     if (!r.ok) refused(r);
     x.audit("exchange.settle", input.body.code, { at: input.body.at, paid: r.paid }, actorOf(c));
     return { paid: r.paid };
+  }),
+  name: os.exchangeAdmin.name.handler(async ({ input, context: { state, c } }) => {
+    const x = service(state);
+    const r = x.real.setName(input.body.code.toUpperCase(), input.body.name);
+    if (!r.ok) refused(r);
+    x.audit("exchange.name", input.body.code, { name: input.body.name }, actorOf(c));
+    return { name: r.name };
   }),
   sell: os.exchangeAdmin.sell.handler(async ({ input, context: { state, c } }) => {
     const x = service(state);

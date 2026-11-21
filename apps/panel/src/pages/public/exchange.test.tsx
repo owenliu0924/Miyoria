@@ -25,6 +25,10 @@ const line = (code: string, name: string, chg: number | null, more: Partial<Exch
   name,
   market: "local",
   price: 100,
+  basis: "quote",
+  price_date: "2026-11-23",
+  price_note: null,
+  next_open: null,
   currency: "COIN",
   local: { what_moves: "大家多餵她,白飯食品就容易漲", today: "昨天她被餵了 14 次,比平常多 → 今天開盤 +1.8%" },
   coin_price: 100,
@@ -113,6 +117,8 @@ const QUOTE: ExchangeQuote = {
   gross: 0,
   net: 0,
   line_price: null,
+  price_note: null,
+  next_open: null,
   sentence: "付 102 魚幣(含手續費 1),照現價約 1.0100 股,下一筆有效報價成交。",
   warning: null,
 };
@@ -123,7 +129,7 @@ const PORTFOLIO: ExchangePortfolio = {
     { id: "p1", code: "RICE", name: "白飯食品", leverage: 1, qty: 1_000_000, cost: 101, margin: 101, loan: 0, price: 100, value: 100, equity: 100, ratio: null, line_price: null, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-23T04:00:00.000Z", can_sell: true },
     { id: "p2", code: "AAPL", name: "示範科技", leverage: 2, qty: 20_000, cost: 200, margin: 100, loan: 100, price: 9_000, value: 180, equity: 80, ratio: 0.8, line_price: 6_300, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-23T04:00:00.000Z", can_sell: true },
   ],
-  orders: [{ id: "o1", code: "RICE", side: "buy", coins: 50, qty: 0, leverage: 1, position: null, status: "open", why: null, at: "2026-11-23T04:00:00.000Z" }],
+  orders: [{ id: "o1", code: "RICE", side: "buy", coins: 50, qty: 0, leverage: 1, position: null, status: "open", why: null, at: "2026-11-23T04:00:00.000Z", next_open: "2026-11-24T04:00:00.000Z" }],
   fills: [],
   notices: [],
   bankrupt: null,
@@ -139,7 +145,8 @@ const BOARDS: ExchangeBoards = {
   me: { rich: 2, hidden: false },
 };
 
-function exchange(o: { status?: number } = {}) {
+function exchange(o: { status?: number; line?: Partial<ExchangeLine> } = {}) {
+  const shown = { ...LOCAL[0], ...o.line } as ExchangeLine;
   const posts: { path: string; body: unknown; key: string | null }[] = [];
   mockFetch((method, url, body, headers) => {
     const path = url.pathname;
@@ -154,7 +161,7 @@ function exchange(o: { status?: number } = {}) {
     if (path === "/api/member/exchange/list/popular") return { body: { kind: "popular", label: "大家都在買", rows: [{ ...LOCAL[0], holders: 4 }] } };
     if (path === "/api/member/exchange/suggest") return { body: { items: [{ code: "RICE", name: "白飯食品" }] } };
     if (path === "/api/member/exchange/lookup") return { body: { instrument: LOCAL[0] } };
-    if (path.startsWith("/api/member/exchange/ticker/")) return { body: { line: LOCAL[0], points: [{ at: "2026-11-23T04:00:00.000Z", price: 99 }, { at: "2026-11-23T05:00:00.000Z", price: 100 }], watching: false } };
+    if (path.startsWith("/api/member/exchange/ticker/")) return { body: { line: shown, points: [{ at: "2026-11-23T04:00:00.000Z", price: 99 }, { at: "2026-11-23T05:00:00.000Z", price: 100 }], watching: false } };
     if (path === "/api/member/exchange/watch") return { body: { watching: true, count: 1 } };
     if (path === "/api/member/exchange/quote") return { body: QUOTE };
     if (path === "/api/member/exchange/order") return { body: { ...PORTFOLIO.orders[0], id: "o2" } };
@@ -201,7 +208,8 @@ describe("深海交易所 on the member page", () => {
     expect(screen.getByText("昨天她被餵了 14 次,比平常多 → 今天開盤 +1.8%")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "加入觀察" }));
     await waitFor(() => expect(posts).toContainEqual(expect.objectContaining({ path: "/api/member/exchange/watch", body: { code: "RICE", on: true } })));
-    // A local stock: the ticket starts in shares and has no 2x.
+    // One amount for every stock: a bare number is shares (the ticket starts at 1); no 2x here.
+    expect(screen.getByText("3 = 3 股(約 300 魚幣)・$200 = 花 200 魚幣(約 2 股)")).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: "2 倍" })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "試算並確認" }));
     const dialog = await screen.findByRole("alertdialog");
@@ -212,6 +220,29 @@ describe("深海交易所 on the member page", () => {
     const order = posts.find((p) => p.path === "/api/member/exchange/order");
     expect(order?.body).toEqual({ side: "buy", code: "RICE", shares: 1 });
     expect(order?.key).toBeTruthy();
+  });
+
+  it("takes one amount: $ is coins, garbage gets the line with both forms and asks nothing", async () => {
+    const { posts } = exchange();
+    renderPage(<Exchange initialCode="RICE" />);
+    const amount = await screen.findByLabelText(/買多少/);
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "三股");
+    await userEvent.click(screen.getByRole("button", { name: "試算並確認" }));
+    expect(await screen.findByText("看不懂這個數量:寫數字是股數(例如 3、0.5),前面加 $ 是魚幣(例如 $200)")).toHaveAttribute("role", "alert");
+    expect(posts.some((p) => p.path === "/api/member/exchange/quote")).toBe(false);
+    await userEvent.clear(amount);
+    await userEvent.type(amount, "＄1,200");
+    await userEvent.click(screen.getByRole("button", { name: "試算並確認" }));
+    await waitFor(() => expect(posts).toContainEqual(expect.objectContaining({ path: "/api/member/exchange/quote", body: { side: "buy", code: "RICE", coins: 1200 } })));
+  });
+
+  it("says a closed market's price is its last close and when a waiting order fills", async () => {
+    exchange({ line: { basis: "close", price_note: "收盤價(11/22)・休市中", open: false, next_open: "2026-11-24T04:00:00.000Z", age_minutes: null } });
+    renderPage(<Exchange initialCode="RICE" />);
+    expect(await screen.findByText("收盤價(11/22)・休市中")).toBeInTheDocument();
+    expect(screen.getByText("休市・下一個開盤 11/24(二)12:00")).toBeInTheDocument();
+    expect(screen.getAllByText(/下一個開盤 11\/24\(二\)12:00\(台北時間\)後/).length).toBeGreaterThan(0);
   });
 
   it("shows their own book with the 2x line and says only they see it", async () => {
@@ -264,7 +295,7 @@ const ADMIN: ExchangeAdmin = {
     },
   },
   tickers: [
-    { code: "2330.TW", name: "示範半導體", market: "tw", exchange: "TAI", type: "EQUITY", status: "paused", reason: null, added_at: "2026-11-23T02:00:00.000Z", missing_days: 0, holders: 2 },
+    { code: "2330.TW", name: "示範半導體", provider_name: "Demo Semiconductor Manufacturing Company Limited", name_override: null, market: "tw", exchange: "TAI", type: "EQUITY", status: "paused", reason: null, added_at: "2026-11-23T02:00:00.000Z", missing_days: 0, holders: 2 },
   ],
   providers: [{ id: "yahoo", last_error: "沒有讀到:2330.TW" }],
   refresh_seconds: 60,
@@ -279,6 +310,7 @@ describe("經濟 / 交易所 for the owner", () => {
       if (url.pathname === "/api/exchange") return { body: ADMIN };
       if (url.pathname === "/api/exchange/split") return { body: { positions: 2 } };
       if (url.pathname === "/api/exchange/sell") return { body: { paid: 100 } };
+      if (url.pathname === "/api/exchange/name") return { body: { name: "台積電" } };
       return undefined;
     });
     renderRoute("/economy?tab=exchange");
@@ -291,6 +323,14 @@ describe("經濟 / 交易所 for the owner", () => {
     expect(within(mint).getByText("淨發出 +3,100")).toBeInTheDocument();
     expect(within(mint).getByText("占流通 6.2%")).toBeInTheDocument();
     expect(within(mint).getByText(/流通中的魚幣\(所有錢包合計\):50,000/)).toBeInTheDocument();
+    // The owner's display name for a ticker, with the provider's beside it.
+    await userEvent.click(screen.getByRole("button", { name: "改名稱" }));
+    const naming = await screen.findByRole("alertdialog");
+    expect(naming).toHaveTextContent("Demo Semiconductor Manufacturing Company Limited");
+    await userEvent.type(within(naming).getByLabelText(/顯示名稱/), "台積電");
+    await userEvent.click(within(naming).getByRole("button", { name: "確定" }));
+    await waitFor(() => expect(posts).toContainEqual({ path: "/api/exchange/name", body: { code: "2330.TW", name: "台積電" } }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
     await userEvent.click(screen.getByRole("button", { name: "確認分割" }));
     const dialog = await screen.findByRole("alertdialog");
     await userEvent.type(within(dialog).getByLabelText(/每一股變成幾股/), "4");

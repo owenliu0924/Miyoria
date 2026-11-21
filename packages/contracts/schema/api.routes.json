@@ -3174,6 +3174,20 @@
           }
         }
       },
+      "name": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.economy.adjust"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/exchange/name"
+          }
+        }
+      },
       "sell": {
         "~orpc": {
           "errorMap": {},

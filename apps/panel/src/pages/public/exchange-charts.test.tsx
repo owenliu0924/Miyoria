@@ -70,6 +70,10 @@ const line = (code: string, name: string, chg: number | null, more: Partial<Exch
   name,
   market: "tw",
   price: 2000,
+  basis: "close",
+  price_date: "2026-11-20",
+  price_note: "收盤價(11/20)・休市中",
+  next_open: "2026-11-23T01:00:00.000Z",
   currency: "TWD",
   local: null,
   coin_price: 2000,
@@ -141,8 +145,9 @@ const candles = (tf: ExchangeCandles["tf"]): ExchangeCandles => ({
 const MAP: ExchangeMap = {
   kind: "holdings",
   title: "伺服器持股圖",
-  footnote: "格子大小為伺服器合計持有的市值(魚幣,照最新報價);少於 2 人持有的併入「其他」,不顯示是誰持有",
+  footnote: "格子大小為伺服器合計持有的市值(魚幣,照最後的價格);少於 2 人持有的併入「其他」,不顯示是誰持有",
   hidden: 0,
+  max_share: 1,
   tiles: [
     { code: "2330.TW", name: "示範半導體", sector: "半導體", weight: 6000, change: 0.0174, price: 2000, currency: "TWD", coin_price: 2000, basis: "伺服器合計約 6,000 魚幣・3 人持有" },
     { code: "RICE", name: "白飯食品", sector: "這裡獨家", weight: 3000, change: -0.02, price: 101, currency: "COIN", coin_price: 101, basis: "伺服器合計約 3,000 魚幣・5 人持有" },
@@ -280,7 +285,9 @@ describe("the heat map", () => {
     await userEvent.click(await screen.findByRole("tab", { name: "熱力圖" }));
     const map = await screen.findByRole("group", { name: "伺服器持股圖" });
     const tsmc = within(map).getByRole("button", { name: /示範半導體\(2330\.TW\)/ });
-    expect(tsmc).toHaveAccessibleName(/今天 ▲ \+1\.7%/);
+    expect(tsmc).toHaveAccessibleName(/最近一個交易日 ▲ \+1\.7%/);
+    // The name first, the code under it, then the change.
+    expect(tsmc).toHaveTextContent("示範半導體2330▲ +1.7%");
     expect(tsmc).toHaveAccessibleName(/伺服器合計約 6,000 魚幣・3 人持有/);
     expect(tsmc).toHaveStyle({ background: tileColor(0.0174, "tw") });
     const rice = within(map).getByRole("button", { name: /白飯食品/ });

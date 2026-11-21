@@ -1,9 +1,12 @@
 // 熱力圖 on the member page (owner 2026-11-21, after finviz's market map), loaded only when someone
-// opens the tab: one tile a ticker, its area its weight, its colour today's change on a diverging
-// scale in the product's up/down convention, grouped by sector with the sector's name on top. Each
-// tile that has room writes its code and its change with an arrow and a sign; every tile names
-// itself, its price, its change and what its size means to a screen reader and in the tooltip on
-// hover or focus. A tile opens its ticker on click or Enter. Two maps: 伺服器持股圖 (what the
+// opens the tab: one tile a ticker, its area its weight (no tile over the map's `max_share`, the
+// same cap the picture uses), its colour its last session's change on a diverging scale in the
+// product's up/down convention, grouped by sector with the sector's name on top. Each tile writes
+// as much as it has room for, best first (owner 2026-11-22): its name over its code in a smaller
+// size and its change with an arrow and a sign; the name and the change; the code and the change;
+// the code; a long name is ellipsized by the room there. Every tile names itself (name and code),
+// its price, its change and what its size means to a screen reader and in the tooltip on hover or
+// focus. A tile opens its ticker on click or Enter. Two maps: 伺服器持股圖 (what the
 // server holds, never who; a ticker held by too few people is merged into 其他) and 熱門股票圖 with
 // a switch between 台股 and 美股 (preset weights, not live market caps). The layout is the one the
 // Discord picture uses (`@miyoria/card-face/market`). While the tab is open its map is asked for
@@ -12,7 +15,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import type { ExchangeMap, ExchangeMarket } from "@miyoria/contracts/api";
-import { changeText, layoutMap, moveColors, tileColor, tileRoom } from "@miyoria/card-face/market";
+import { approxTextWidth, changeText, layoutMap, moveColors, TILE_LINES, type TileLines, tileColor, tileRoom } from "@miyoria/card-face/market";
 import { isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
 import { ChartEmpty } from "@/components/charts/charts";
@@ -37,10 +40,31 @@ export const shortCode = (code: string) => code.replace(/\.TWO?$/, "");
 const priceOf = (t: Tile) =>
   t.price === null ? "—" : t.currency === "COIN" ? `${t.price.toFixed(2)} 魚幣` : `${t.currency} ${t.price.toFixed(2)}`;
 
-/** What a tile says to a screen reader and in its tooltip. */
+/** What a tile says to a screen reader and in its tooltip: always the name and the code. */
 export function tileLabel(t: Tile): string {
   if (t.code === OTHER) return `${t.name}:${t.basis}`;
-  return `${t.name}(${t.code}),${priceOf(t)},今天 ${changeText(t.change)},${t.basis}`;
+  return `${t.name}(${t.code}),${priceOf(t)},最近一個交易日 ${changeText(t.change)},${t.basis}`;
+}
+
+/** A tile at least this wide may ellipsize a long name above its code (the picture does the same). */
+const NAME_CUT_MIN = 90;
+
+/** The type sizes of a tile's first line and the lines under it, by the tile's size. */
+const sizesOf = (w: number, h: number) => (w >= 120 && h >= 64 ? { big: 15, small: 12 } : { big: 12, small: 10.5 });
+
+/** What a `w` × `h` tile writes: the first of `TILE_LINES` that fits (the same order as the picture). */
+export function tileLines(t: Tile, w: number, h: number): TileLines | null {
+  if (tileRoom(w, h) === 0) return null;
+  const { big, small } = sizesOf(w, h);
+  const text = { name: t.name, code: shortCode(t.code), move: changeText(t.change) } as const;
+  for (const lines of TILE_LINES) {
+    const height = lines.reduce((sum, _, i) => sum + (i === 0 ? big : small) * 1.25, 0);
+    // A long name may be ellipsized when its code is written under it (the tile stays identifiable).
+    const cut = (part: string) => part === "name" && (lines as readonly string[]).includes("code") && w >= NAME_CUT_MIN;
+    const wide = lines.every((part, i) => cut(part) || approxTextWidth(text[part], i === 0 ? big : small, i === 0) <= w - 6);
+    if (wide && height <= h - 4) return lines;
+  }
+  return null;
 }
 
 function useWidth(ref: React.RefObject<HTMLElement | null>): number {
@@ -63,7 +87,7 @@ function Board({ map, colors, onPick }: { map: ExchangeMap; colors: ExchangeMark
   // jsdom has no layout: a fixed width keeps the tiles testable there.
   const width = measured > 0 ? measured : 640;
   const height = Math.round(width < 520 ? width * 1.15 : width * 0.56);
-  const layout = layoutMap(map.tiles, width, height, { header: 18, gap: 2 });
+  const layout = layoutMap(map.tiles, width, height, { header: 18, gap: 2, maxShare: map.max_share });
   const [hover, setHover] = useState<string | null>(null);
   const hovered = layout.tiles.find((t) => t.tile.code === hover) ?? null;
   return (
@@ -79,14 +103,22 @@ function Board({ map, colors, onPick }: { map: ExchangeMap; colors: ExchangeMark
         </span>
       ))}
       {layout.tiles.map(({ tile, x, y, w, h }) => {
-        const room = tileRoom(w, h);
-        const big = w >= 120 && h >= 64;
+        const lines = tile.code === OTHER ? (tileRoom(w, h) > 0 ? (["name"] as const) : null) : tileLines(tile, w, h);
+        const { big, small } = sizesOf(w, h);
         const label = tileLabel(tile);
         const style = { left: x, top: y, width: w, height: h, background: tileColor(tile.change, colors) };
-        const inner = room > 0 && (
-          <span className="pointer-events-none grid place-items-center gap-0.5 overflow-hidden px-0.5 text-center leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,.6)]">
-            <span className={big ? "text-[15px] font-semibold" : "text-[11px] font-semibold"}>{shortCode(tile.code)}</span>
-            {room === 2 && <span className={big ? "text-[13px] tabular-nums whitespace-nowrap" : "text-[11px] tabular-nums whitespace-nowrap"}>{changeText(tile.change)}</span>}
+        const words = { name: tile.code === OTHER ? OTHER : tile.name, code: shortCode(tile.code), move: changeText(tile.change) } as const;
+        const inner = lines && (
+          <span className="pointer-events-none grid w-full place-items-center overflow-hidden px-1 text-center leading-tight text-white [text-shadow:0_1px_2px_rgba(0,0,0,.6)]">
+            {lines.map((part, i) => (
+              <span
+                key={part}
+                className={`block max-w-full truncate ${i === 0 ? "font-semibold" : part === "move" ? "tabular-nums" : "opacity-85"}`}
+                style={{ fontSize: i === 0 ? big : small }}
+              >
+                {words[part]}
+              </span>
+            ))}
           </span>
         );
         const common = {
@@ -119,7 +151,7 @@ function Board({ map, colors, onPick }: { map: ExchangeMap; colors: ExchangeMark
             top: hovered.y + hovered.h + 4 > height - 70 ? Math.max(0, hovered.y - 76) : hovered.y + Math.min(hovered.h, 40) + 4,
           }}
         >
-          <span className="font-medium">{hovered.tile.code === OTHER ? hovered.tile.name : `${hovered.tile.code} ${hovered.tile.name}`}</span>
+          <span className="font-medium">{hovered.tile.code === OTHER ? hovered.tile.name : `${hovered.tile.name}(${hovered.tile.code})`}</span>
           {hovered.tile.code !== OTHER && <span className="tabular-nums">{`${priceOf(hovered.tile)}・${changeText(hovered.tile.change)}`}</span>}
           <span className="text-muted-foreground">{hovered.tile.basis}</span>
         </div>
@@ -176,7 +208,7 @@ export default function HeatMap({
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden className="inline-block size-2.5 rounded-[2px]" style={{ background: mv.down }} />▼ 跌
         </span>
-        <span>{`${m.colors === "us" ? "綠漲紅跌(美股習慣)" : "紅漲綠跌(台股習慣)"};顏色是今天的漲跌,±3% 以上最深`}</span>
+        <span>{`${m.colors === "us" ? "綠漲紅跌(美股習慣)" : "紅漲綠跌(台股習慣)"};顏色是最近一個交易日的漲跌(休市時是上一個交易日),±3% 以上最深`}</span>
       </p>
       {q.data && <p className="text-xs text-muted-foreground">{q.data.footnote}</p>}
       {footer}

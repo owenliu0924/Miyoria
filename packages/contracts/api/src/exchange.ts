@@ -22,13 +22,29 @@ const TickerCode = z
   .max(20)
   .regex(/^[A-Za-z0-9.\-^=]+$/);
 
-/** One ticker's line: its price in its own currency and in coins, the move, the quote's age. */
+/**
+ * One ticker's line: its last known price in its own currency and in coins, what that price is,
+ * the move, the quote's age, when its market opens next.
+ */
 export const ExchangeLineSchema = z
   .object({
     code: z.string(),
+    /** The display name: the owner's, else the starter list's (zh-TW), else the provider's, whole. */
     name: z.string(),
     market: Market,
     price: z.number().nullable(),
+    /**
+     * `quote`: of the session in progress; `close`: the last session's (closed, or before today's
+     * first quote; shown and used for valuation, never traded at); `reference`: a local stock's
+     * anchor before its first tick; `null`: nothing known yet.
+     */
+    basis: z.enum(["quote", "close", "reference"]).nullable(),
+    /** The trading date of the price (`YYYY-MM-DD`, the market's zone). */
+    price_date: z.string().nullable(),
+    /** What the price is, in words, when it is not a live quote (`收盤價(11/20)・休市中`). */
+    price_note: z.string().nullable(),
+    /** When its market next opens, while it is closed. */
+    next_open: z.string().nullable(),
     currency: z.enum(["TWD", "USD", "COIN"]),
     /** A local stock: what moves it, and what moved today's open in numbers from her day. */
     local: z.object({ what_moves: z.string(), today: z.string().nullable() }).nullable(),
@@ -170,6 +186,8 @@ export const ExchangeMapSchema = z
     title: z.string(),
     footnote: z.string(),
     hidden: z.number().int(),
+    /** No tile is laid out bigger than this share of the map (`1`: no cap). */
+    max_share: z.number(),
     tiles: z.array(
       z.object({
         code: z.string(),
@@ -244,6 +262,10 @@ export const ExchangeQuoteSchema = z
     gross: z.number().int(),
     net: z.number().int(),
     line_price: z.number().nullable(),
+    /** The price is not a live quote: what it is; the fill is at the next valid quote. */
+    price_note: z.string().nullable(),
+    /** Its market is closed: when it opens (the order waits until then and can be cancelled). */
+    next_open: z.string().nullable(),
     sentence: z.string(),
     warning: z.string().nullable(),
   })
@@ -262,6 +284,8 @@ export const ExchangeOrderSchema = z
     status: z.string(),
     why: z.string().nullable(),
     at: z.string(),
+    /** A waiting order whose market is closed: when it opens (it fills at the first valid quote after). */
+    next_open: z.string().nullable(),
   })
   .meta({ id: "ApiExchangeOrder" });
 export type ExchangeOrder = z.output<typeof ExchangeOrderSchema>;
@@ -403,7 +427,10 @@ export const ExchangeAdminSchema = z
     tickers: z.array(
       z.object({
         code: z.string(),
+        /** The display name, and where it comes from: the provider's (whole) and the owner's. */
         name: z.string(),
+        provider_name: z.string(),
+        name_override: z.string().nullable(),
         market: z.string(),
         exchange: z.string(),
         type: z.string(),
@@ -455,6 +482,9 @@ export const ExchangeSplitRequestSchema = z
 export const ExchangeSettleRequestSchema = z
   .strictObject({ code: TickerCode, at: z.enum(["last", "zero"]) })
   .meta({ id: "ApiExchangeSettleRequest" });
+export const ExchangeNameRequestSchema = z
+  .strictObject({ code: TickerCode, name: z.string().max(60).nullable() })
+  .meta({ id: "ApiExchangeNameRequest" });
 export const ExchangeAdminSellRequestSchema = z
   .strictObject({ position: z.string().min(1).max(40) })
   .meta({ id: "ApiExchangeAdminSellRequest" });
@@ -559,6 +589,11 @@ export const exchangeAdmin = {
     .route({ method: "POST", path: "/api/exchange/settle" })
     .input(z.object({ body: ExchangeSettleRequestSchema }))
     .output(z.object({ paid: z.number().int() })),
+  /** The owner's display name of a ticker (`null` or blank: back to the list's or provider's); audited. */
+  name: owner()
+    .route({ method: "POST", path: "/api/exchange/name" })
+    .input(z.object({ body: ExchangeNameRequestSchema }))
+    .output(z.object({ name: z.string() })),
   /** Sells one position now at its latest price, no fee; audited. */
   sell: owner()
     .route({ method: "POST", path: "/api/exchange/sell" })

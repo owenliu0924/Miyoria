@@ -5208,6 +5208,15 @@
               "name": {
                 "type": "string"
               },
+              "provider_name": {
+                "type": "string"
+              },
+              "name_override": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "market": {
                 "type": "string"
               },
@@ -5243,6 +5252,8 @@
             "required": [
               "code",
               "name",
+              "provider_name",
+              "name_override",
               "market",
               "exchange",
               "type",
@@ -5610,6 +5621,39 @@
             "null"
           ]
         },
+        "basis": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "quote",
+                "close",
+                "reference"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "price_date": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "price_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_open": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "currency": {
           "type": "string",
           "enum": [
@@ -5695,6 +5739,10 @@
         "name",
         "market",
         "price",
+        "basis",
+        "price_date",
+        "price_note",
+        "next_open",
         "currency",
         "local",
         "coin_price",
@@ -5749,6 +5797,39 @@
               "price": {
                 "type": [
                   "number",
+                  "null"
+                ]
+              },
+              "basis": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "quote",
+                      "close",
+                      "reference"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "price_date": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "price_note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "next_open": {
+                "type": [
+                  "string",
                   "null"
                 ]
               },
@@ -5849,6 +5930,10 @@
               "name",
               "market",
               "price",
+              "basis",
+              "price_date",
+              "price_note",
+              "next_open",
               "currency",
               "local",
               "coin_price",
@@ -5905,6 +5990,9 @@
           "type": "integer",
           "minimum": -9007199254740991,
           "maximum": 9007199254740991
+        },
+        "max_share": {
+          "type": "number"
         },
         "tiles": {
           "type": "array",
@@ -5979,6 +6067,7 @@
         "title",
         "footnote",
         "hidden",
+        "max_share",
         "tiles"
       ]
     },
@@ -6272,6 +6361,33 @@
         "no_exchange"
       ]
     },
+    "ApiExchangeNameRequest": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 20,
+          "pattern": "^[A-Za-z0-9.\\-^=]+$"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 60
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "name"
+      ],
+      "additionalProperties": false
+    },
     "ApiExchangeOrder": {
       "type": "object",
       "properties": {
@@ -6320,6 +6436,12 @@
         },
         "at": {
           "type": "string"
+        },
+        "next_open": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -6332,7 +6454,8 @@
         "position",
         "status",
         "why",
-        "at"
+        "at",
+        "next_open"
       ]
     },
     "ApiExchangeOrderRequest": {
@@ -6732,6 +6855,18 @@
             "null"
           ]
         },
+        "price_note": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "next_open": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "sentence": {
           "type": "string"
         },
@@ -6756,6 +6891,8 @@
         "gross",
         "net",
         "line_price",
+        "price_note",
+        "next_open",
         "sentence",
         "warning"
       ]
