@@ -18,6 +18,7 @@ import { AFFINITY, FAMILIARITY, TRUST } from "./card";
 import { CardSection } from "./CardSection";
 import { Transfer } from "./Extras";
 import { useAuction } from "./Market";
+import { QuestsCard } from "./Play";
 import { WalletCard } from "./Wallet";
 
 /** Her view of someone changes with a reflection, not by the second. */
@@ -382,6 +383,7 @@ export function MemberActions() {
   return (
     <>
       <WalletCard />
+      <QuestsCard />
       <CardSection />
       <Transfer />
       {me.data?.can_request_song && <RequestSong />}

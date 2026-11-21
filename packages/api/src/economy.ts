@@ -16,6 +16,7 @@ import { IdentityStoreKey } from "@miyoria/store";
 import { isUlid, type PersonId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
+import { questsView } from "./play-routes.js";
 import type { ApiState } from "./state.js";
 
 const NO_ECONOMY = "economy module (economy 2.0) is not available";
@@ -66,7 +67,8 @@ export const personQuestsRpc = {
     const identity = state.service(IdentityStoreKey, "identity store");
     const first = (await identity.accountsOf(id.toUpperCase() as PersonId))[0];
     if (!first) throw unknown;
-    const view = await guard(() => v2.quests(first.account));
-    return { currency: v2.currency, ...view };
+    // An admin's look does not have her choose today's pick for them.
+    const view = await guard(() => v2.quests(first.account, { pick: false }));
+    return questsView(v2.currency, view);
   }),
 };

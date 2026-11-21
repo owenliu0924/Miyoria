@@ -54,14 +54,17 @@ class Handler2 {
 
   quests(inv: Invocation): Promise<CommandReply> {
     return this.guard(async (e) => {
-      const view = await e.quests(inv.invoker);
+      const view = await e.quests(inv.invoker, { pick: true });
       if (view.quests.length === 0) return notice("info", STRANGER);
-      const lines = view.quests.map((q) => `${q.done ? "✅" : "⬜"} ${q.label}`);
+      const lines = view.quests.map(
+        (q) =>
+          `${q.done ? "✅" : "⬜"} ${q.id === "her_pick" ? `她替你想的：${q.label}` : q.label}`,
+      );
       const blocks: CardBlock[] = [
         { type: "text", text: lines.join("\n") },
         {
           type: "muted",
-          text: `每個 ${view.reward}，三個都完成再加 ${view.bonus}${view.bonus_done ? "（已拿到）" : ""}；今天任務賺了 ${view.earned_today} / ${view.cap}。「聊一件新的事」由她判斷。`,
+          text: `每個 ${view.reward}，三個都完成再加 ${view.bonus}${view.bonus_done ? "（已拿到）" : ""}；今天任務賺了 ${view.earned_today} / ${view.cap}。「聊一件新的事」和她替你想的那件由她判斷；「一起玩」要和別人一起玩完一場派對遊戲，或在語音裡一起聽她唱完一首歌。`,
         },
       ];
       return cardReply(blocks, { accent: "neutral", title: "今天的任務" });
@@ -184,8 +187,10 @@ export function unregisterV2(registry: CommandRegistry): void {
 export function registerV2(registry: CommandRegistry, services: ServiceLookup): void {
   const handler = new Handler2(services);
   registry.register(
-    commandSpec("me quests", "今天的三個小任務：聊新的事、玩遊戲、聽完一首歌", {
+    commandSpec("me quests", "今天的三個小任務：聊新的事、和大家一起玩、她替你想的一件事", {
       permission: WALLET_NODE,
+      // Her pick comes from what she remembers of them: only for whoever asked.
+      ephemeral: true,
     }),
     (inv) => handler.quests(inv),
   );

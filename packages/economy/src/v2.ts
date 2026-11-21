@@ -113,8 +113,8 @@ export class V2 implements Economy2 {
     }
   }
 
-  quests(account: AccountRef): Promise<QuestsView> {
-    return this.quest.view(account);
+  quests(account: AccountRef, opts: { pick?: boolean } = {}): Promise<QuestsView> {
+    return this.quest.view(account, opts);
   }
 
   completeQuest(account: AccountRef, quest: QuestId, topic?: string): Promise<QuestResult> {

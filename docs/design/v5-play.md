@@ -612,3 +612,15 @@ owner 2026-11-18:直播的互動用魚幣付,先只做彈幕。分支 `v5p5e`。
 - `no_danmaku` 沿用 heart 的標籤(和 `friend`、`troll` 這些放在一起,讀到標籤的地方都看得到);要另外一套只有經濟知道的禁言,要再做。
 - 直播頁(`/watch`)的網頁畫面上沒有另外畫彈幕:看的是 OBS 推出去的畫面,彈幕已經在裡面。
 
+### 11.7 每日任務:做了什麼
+
+分支 `v5p5t`。v5-architecture §9.4 寫的是「三個任務(一個聊天、一個和別人、一個她從記憶裡替你想的)」;V4 的三個(聊新的事、參加遊戲、聽完一首歌)換成這三個。帳本、獎勵和上限照舊(`packages/economy/src/quests.ts`)。
+
+- **三個**:`new_topic`「跟她聊一件新的事」(她判斷,`complete_quest`,同一件事 `quest_topic_days` 14 天內不算);`together`「和大家一起玩一場」(程式判斷:派對遊戲玩完、拿到分數的人至少 `quest_together_min_people` 2 個;她在語音裡唱完一首歌,從頭聽到尾、她認識的人至少 2 個;`Participation` 的 `game_*`);`her_pick`「她替你想的一件事」(她判斷,`complete_quest` 的 `quest: "her_pick"`)。一個人自己和她玩、自己聽歌不算「和別人」;陌生人和機器人不算人數。
+- **錢**:每個 `quest_reward` 10,三個都完成多 `quest_bonus` 15,一天最多 `quest_cap` 45;帳本一列 `quest`,冪等鍵 `quest:<當地日>:<任務>`,所以重送、重啟、同一個事件再來一次都不會付兩次。「當地日」是經濟的 `utc_offset_minutes`。上線那一天以前的 `play_game`、`listen_song` 列當成今天的 `together`,不會同一天再付一次。
+- **她替你想的**:一個人一天一個,第一次看今天的任務時寫(會員頁 `GET /api/member/quests`、`/me play quests`、她的 `check_quests`);owner 在面板人物頁看不會讓她寫。api 模組提供 `QuestPickerKey`(`packages/api/src/quest-words.ts`):給她看的只有會員頁本來就給這個人看的東西(分級、她寫給他的話、他看得到的記憶,最多 5 則),她用聊天的口氣寫一句 30 字內、在聊天裡跟她說就做得到的事;不花錢、不買東西、不出門、不拍照證明,不寫身體、錢、官司、考試,不寫數字,只寫他們兩個(寫到別人就拿掉那則記憶再寫一次,還有就不用),最後過會員頁的審核。最多等 `quest_pick_secs` 20 秒。沒有記憶、沒有模型、寫不出來、太長、沒過審核,或 `quest_pick_by_her = false`,就從六個一般的任務裡照人和日子挑一個(`PLAIN_PICKS`,每天換、重啟不變)。寫好的存成經濟文件 `quest_pick:<人>:<日>`(只建一次,兩個人同時打開也只問她一次),一整天不變。今天的還沒想好時她不能把它算完成(`unpicked`)。
+- **Discord**:`/me play quests` 改成只有本人看得到(她替你想的那件來自她對你的記憶),列出三個和她想的那句。沒有新指令。
+- **會員頁**:右欄「錢包」下面多一張「今天的任務」:三個任務、怎麼完成、完成或 +10,下面一行三個都完成的加給和今天賺了多少。陌生人、沒有經濟的 Core、舊的 Core 都不顯示。面板人物頁的「今天的任務」多寫她想的是不是一般的。
+- **測試**:`packages/economy/test/quests.test.ts`(付錢、獎勵、上限、舊的列、和別人的人數、她想的寫一次和退回一般的、重啟、工具、指令)、`packages/api/test/quest-words.test.ts`、`public.test.ts` 的會員路由、面板 `public.test.tsx`。
+
+沒做的:她不會主動提醒誰還有任務沒做;她想的那句沒有評測(`tools/eval` 的 `play` 沒有加這一題);`quest_pick` 文件不會刪(一人一天一列,很小)。

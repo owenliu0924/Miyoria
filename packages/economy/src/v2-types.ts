@@ -7,12 +7,24 @@ import { serviceKey } from "@miyoria/types";
 
 // ---- quests ----------------------------------------------------------------------------------
 
-export type QuestId = "new_topic" | "play_game" | "listen_song";
+/**
+ * The three of a day (docs/design/v5-architecture.md §9.4): one with her (`new_topic`), one with
+ * other people (`together`), one she thought of for them from what she remembers (`her_pick`).
+ */
+export type QuestId = "new_topic" | "together" | "her_pick";
 
 export interface QuestView {
   id: QuestId;
+  /** What to do; for `her_pick` her own words once she wrote them for today. */
   label: string;
+  /** How it gets done (who ticks it). */
+  hint: string;
   done: boolean;
+  /**
+   * `her_pick` only: `her` when she wrote it from her memories of them, `fallback` when she could
+   * not (no memories, no model) and it is one of the plain ones, `null` before today's is chosen.
+   */
+  by: "her" | "fallback" | null;
 }
 
 /** Today's three quests as one person sees them (empty for a stranger). */
@@ -29,9 +41,10 @@ export interface QuestsView {
 /**
  * `paid`: done now. `done`: already done today. `repeat`: that topic was already told within the
  * last days. `capped`: today's quest coins are all paid. `stranger`: she does not know them.
+ * `unpicked`: `her_pick` before today's was chosen (nobody has seen it, so nobody did it).
  */
 export interface QuestResult {
-  status: "paid" | "done" | "repeat" | "capped" | "stranger";
+  status: "paid" | "done" | "repeat" | "capped" | "stranger" | "unpicked";
   paid: number;
   /** What finishing all three added with this one. */
   bonus: number;
@@ -168,11 +181,15 @@ export interface HealthView {
 export interface Economy2 {
   /** The currency's name (`魚幣`). */
   readonly currency: string;
-  /** Today's quests for `account`. */
-  quests(account: AccountRef): Promise<QuestsView>;
   /**
-   * Marks a quest done for `account` (the caller judged it: a game ended, a song was heard, she
-   * heard something new). `topic` is required for `new_topic`.
+   * Today's quests for `account`. `pick: true` (they or she look at their own quests) has her
+   * think of today's `her_pick` when it is not chosen yet; an admin's look leaves it unchosen.
+   */
+  quests(account: AccountRef, opts?: { pick?: boolean }): Promise<QuestsView>;
+  /**
+   * Marks a quest done for `account` (the caller judged it: a game with others ended, a song was
+   * heard with others, she heard something new, they did what she thought of). `topic` is
+   * required for `new_topic`.
    */
   completeQuest(account: AccountRef, quest: QuestId, topic?: string): Promise<QuestResult>;
   /** The achievements and titles of `account`. */
@@ -210,3 +227,19 @@ export interface Economy2 {
 }
 
 export const Economy2Key = serviceKey<Economy2>("Economy2");
+
+/**
+ * Who writes today's `her_pick` quest for someone (the api module, which has her memories of them
+ * as the member page shows them, her voice and the model). Optional: without it, or when it
+ * answers `null`, the quest is one of the plain ones (quests.ts).
+ */
+export interface QuestPicker {
+  /**
+   * One small thing for `account` to do today, in her words and from what she remembers of them;
+   * `null` when she cannot now (no memories they may see, no model, too slow, nothing usable).
+   * Never throws for that.
+   */
+  pick(account: AccountRef, signal: AbortSignal): Promise<string | null>;
+}
+
+export const QuestPickerKey = serviceKey<QuestPicker>("QuestPicker");

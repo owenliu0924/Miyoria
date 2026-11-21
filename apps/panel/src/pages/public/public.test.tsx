@@ -141,6 +141,8 @@ interface Options {
   screen?: { status?: number; body: unknown };
   /** Today's slip already drawn. */
   slip?: boolean;
+  /** What `GET /api/member/quests` answers; absent: a Core without the route. */
+  quests?: unknown;
 }
 
 const CARD: IssuedCard = {
@@ -183,6 +185,7 @@ function core(o: Options = {}) {
       if (["wallet", "checkin", "feed", "frame"].includes(path.slice(12))) return undefined;
     }
     if (path === "/api/member/wallet") return { body: wallet };
+    if (path === "/api/member/quests" && o.quests !== undefined) return { body: o.quests };
     if (path === "/api/member/checkin") {
       const withSlip = (body as { fortune?: boolean }).fortune === true;
       // A day checked in already can only buy the slip: no reward.
@@ -934,6 +937,38 @@ describe("the newer places to spend", () => {
     await waitFor(() => expect(toggle).toBeChecked());
     await userEvent.click(toggle);
     await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/board")[1]?.body).toEqual({ on: false }));
+  });
+
+  it("lists today's quests in the rail, with the one she thought of", async () => {
+    core({
+      member: USER,
+      quests: {
+        currency: "魚幣",
+        quests: [
+          { id: "new_topic", label: "跟她聊一件新的事", hint: "她判斷", done: true, by: null },
+          { id: "together", label: "和大家一起玩一場", hint: "派對遊戲", done: false, by: null },
+          { id: "her_pick", label: "跟她說說新家整理好了沒", hint: "她想的", done: false, by: "her" },
+        ],
+        reward: 10,
+        bonus: 15,
+        bonus_done: false,
+        earned_today: 10,
+        cap: 45,
+      },
+    });
+    renderApp();
+    const section = await screen.findByRole("region", { name: "今天的任務" });
+    expect(await within(section).findByText("跟她說說新家整理好了沒")).toBeInTheDocument();
+    expect(within(section).getByText("完成")).toBeInTheDocument();
+    expect(within(section).getAllByText("+10")).toHaveLength(2);
+    expect(within(section).getByText(/三個都完成再加 15/)).toBeInTheDocument();
+  });
+
+  it("leaves the quests out on a Core without them, or for someone she does not know", async () => {
+    core({ member: USER });
+    renderApp();
+    await screen.findByRole("region", { name: "錢包" });
+    await waitFor(() => expect(screen.queryByRole("region", { name: "今天的任務" })).toBeNull());
   });
 
   it("lists her open bounties and says she judges them", async () => {

@@ -74,6 +74,7 @@ const CASES: Case[] = [
   post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
   post("wallet.board", "/api/member/board", { on: true }),
   post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
+  { name: "wallet.quests", method: "GET", path: "/api/member/quests", audience: "member" },
   post("member.pat", "/api/member/live/pat", {}),
   { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
   { name: "fortune.today", method: "GET", path: "/api/member/fortune", audience: "member" },
@@ -257,6 +258,15 @@ const ANSWERS = {
     selected: null,
     balance: 1,
   } satisfies ApiOutputs["wallet"]["frame"],
+  "wallet.quests": {
+    currency: "魚幣",
+    quests: [{ id: "her_pick", label: "a", hint: "b", done: false, by: "her" }],
+    reward: 10,
+    bonus: 15,
+    bonus_done: false,
+    earned_today: 0,
+    cap: 45,
+  } satisfies ApiOutputs["wallet"]["quests"],
   "agency.bounties": {
     bounties: [{ id: "b1", task: "a", reward: 1, posted_at: "x", expires_at: "y" }],
   } satisfies ApiOutputs["agency"]["bounties"],
@@ -426,6 +436,7 @@ describe("the answers", () => {
       transfer: os.wallet.transfer.handler(answer("wallet.transfer")),
       board: os.wallet.board.handler(answer("wallet.board")),
       frame: os.wallet.frame.handler(answer("wallet.frame")),
+      quests: os.wallet.quests.handler(answer("wallet.quests")),
     },
     agency: {
       bounties: os.agency.bounties.handler(answer("agency.bounties")),

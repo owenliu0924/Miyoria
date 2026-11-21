@@ -6,6 +6,7 @@
 // charged when it is sent and given back by itself when the overlay could not show it.
 
 import { z } from "zod";
+import { QuestsViewSchema } from "./economy.js";
 import { IssuedFortuneSchema } from "./fortune.js";
 import { IdempotencyHeaders, route } from "./route.js";
 
@@ -251,4 +252,12 @@ export const wallet = {
     .input(z.object({ body: BoardRequestSchema }))
     .output(BoardChoiceSchema),
   frame: spend("/api/member/frame", FrameRequestSchema).output(FramesResultSchema),
+  /**
+   * Today's three quests (`quests` is empty for someone she does not know). The first look of the
+   * day has her think of the one she picks for them, so it may take a few seconds.
+   */
+  quests: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "GET", path: "/api/member/quests" })
+    .output(QuestsViewSchema),
 };

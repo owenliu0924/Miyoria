@@ -33,6 +33,7 @@ export { EconomyMarketWallet } from "./market-wallet.js";
 export { economySchema } from "./migrations.js";
 export { EconomyModule } from "./module.js";
 export { PURSE_PLATFORM, Purse } from "./purse.js";
+export { MAX_PICK_CHARS, PLAIN_PICKS } from "./quests.js";
 export {
   type Bounty,
   type BountyPatch,
@@ -115,4 +116,11 @@ export {
   type WalletExport,
   type WalletView,
 } from "./types.js";
-export { type Economy2, Economy2Key } from "./v2-types.js";
+export {
+  type Economy2,
+  Economy2Key,
+  type QuestId,
+  type QuestPicker,
+  QuestPickerKey,
+  type QuestsView,
+} from "./v2-types.js";

@@ -436,11 +436,14 @@ dirs = ["extensions"]
 # play_rewards = { game_join = 5, game_finish = 10, game_win = 5, sing_along = 5, headpat = 1, web_reaction = 1, prediction_join = 3 }
 # play_per_activity_per_day = 10
 # play_cap = 40
-# # 每天三個小任務:一個給多少、三個都完成多給多少、一天最多(三個加獎勵)
+# # 每天三個小任務(聊一件新的事、和大家一起玩一場、她替你想的一件事):一個給多少、三個都完成多給多少、一天最多(三個加獎勵)
 # quest_reward = 10
 # quest_bonus = 15
 # quest_cap = 45
 # quest_topic_days = 14       # 「聊點新的」任務:一個話題這麼多天內不能重複
+# quest_together_min_people = 2   # 「和大家一起」:一場遊戲或一首聽完的歌至少要幾個人(含自己,不含她)
+# quest_pick_by_her = true    # 「她替你想的」由她從記得你的事裡寫;false:都用一般的
+# quest_pick_secs = 20        # 她最多想幾秒,想不出來就用一般的
 # # 成就和稱號:一次性獎勵(依大小)和一天最多
 # achievement_small = 10
 # achievement_big = 30

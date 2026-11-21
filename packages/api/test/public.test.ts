@@ -16,6 +16,7 @@ import {
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
+  Economy2Key,
   EconomyCardWallet,
   EconomyConfigSchema,
   EconomyKey,
@@ -739,6 +740,7 @@ describe("the route table", () => {
       "GET /api/member/market/lottery",
       "GET /api/member/market/tickets",
       "GET /api/member/me",
+      "GET /api/member/quests",
       "GET /api/member/session",
       "GET /api/member/wallet",
       "POST /api/member/board",
@@ -2704,7 +2706,16 @@ describe("the wallet", () => {
       });
     const balanceOf = async (id: string) =>
       tables.economy.ledger.balance("p", await tables.wallet(discord(id)));
-    return { ...r, coins, economy: tables.economy, hunger, spend, fund, balanceOf };
+    return {
+      ...r,
+      coins,
+      economy: tables.economy,
+      economy2: economy.v2,
+      hunger,
+      spend,
+      fund,
+      balanceOf,
+    };
   }
 
   it("shows their own wallet, field by field", async () => {
@@ -2722,6 +2733,42 @@ describe("the wallet", () => {
       frames: { owned: [], selected: null },
       recent: [],
     });
+  });
+
+  it("shows their own quests, with the one she thought of from what they may read", async () => {
+    const r = await walletRig();
+    r.sup.services.provide("economy", Economy2Key, r.economy2);
+    const asked: string[] = [];
+    r.sup.services.provide("llm", LlmRouterKey, {
+      complete: async (_purpose: string, request: { messages: { content: string }[] }) => {
+        asked.push(request.messages[1]?.content ?? "");
+        return {
+          text: JSON.stringify({ quest: "「跟她說說吉他練得怎樣」" }),
+          finish_reason: "stop",
+          usage: null,
+        };
+      },
+    } as never);
+    const alice = await r.login("alice");
+    const res = await r.get("/api/member/quests", alice);
+    expect(res.status).toBe(200);
+    const body = res.body as { quests: { id: string; label: string; by: string | null }[] };
+    expect(body.quests.map((q) => q.id)).toEqual(["new_topic", "together", "her_pick"]);
+    expect(body.quests[2]).toMatchObject({ label: "跟她說說吉他練得怎樣", by: "her" });
+    // She thought from what the page shows Alice, and nobody else's memories.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain("想學吉他");
+    expect(asked[0]).not.toContain("SECRET");
+    // The same all day: asked once.
+    await r.get("/api/member/quests", alice);
+    expect(asked).toHaveLength(1);
+    // Someone she does not know, or blocked, has no quests and nobody is asked.
+    for (const who of ["dave", "carol"]) {
+      const other = await r.get("/api/member/quests", await r.login(who));
+      expect(other.status).toBe(200);
+      expect((other.body as { quests: unknown[] }).quests).toEqual([]);
+    }
+    expect(asked).toHaveLength(1);
   });
 
   it("shows her bounties to everyone", async () => {

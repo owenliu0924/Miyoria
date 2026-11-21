@@ -13507,21 +13507,40 @@
                 "type": "string",
                 "enum": [
                   "new_topic",
-                  "play_game",
-                  "listen_song"
+                  "together",
+                  "her_pick"
                 ]
               },
               "label": {
                 "type": "string"
               },
+              "hint": {
+                "type": "string"
+              },
               "done": {
                 "type": "boolean"
+              },
+              "by": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "her",
+                      "fallback"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": [
               "id",
               "label",
-              "done"
+              "hint",
+              "done",
+              "by"
             ]
           }
         },

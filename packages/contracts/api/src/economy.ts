@@ -86,15 +86,26 @@ export const RoomItemSchema = z
   .meta({ id: "ApiRoomItem" });
 export type RoomItem = z.output<typeof RoomItemSchema>;
 
-/** Today's three quests as one person sees them (empty for a stranger). */
+/**
+ * Today's three quests as one person sees them (empty for a stranger): one with her, one with
+ * other people, one she thought of for them from what she remembers.
+ */
 export const QuestsViewSchema = z
   .object({
     currency: z.string(),
     quests: z.array(
       z.object({
-        id: z.enum(["new_topic", "play_game", "listen_song"]),
+        id: z.enum(["new_topic", "together", "her_pick"]),
+        /** What to do; for `her_pick` her own words once she wrote today's. */
         label: z.string(),
+        /** How it gets done (who ticks it). */
+        hint: z.string(),
         done: z.boolean(),
+        /**
+         * `her_pick` only: `her` (from her memories of them), `fallback` (one of the plain ones),
+         * `null` while today's is not chosen yet (the person has not looked).
+         */
+        by: z.enum(["her", "fallback"]).nullable(),
       }),
     ),
     /** What each pays, and what finishing all three adds. */

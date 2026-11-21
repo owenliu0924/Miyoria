@@ -254,6 +254,17 @@ export const EconomyConfigSchema = z
     quest_cap: coins.default(45),
     /** Days a topic may not repeat for the "talk about something new" quest. */
     quest_topic_days: z.number().int().positive().default(14),
+    /**
+     * The "with others" quest: how many people (her not counted) a game or a song heard to its end
+     * needs, them included. 2: at least one other person.
+     */
+    quest_together_min_people: z.number().int().min(2).default(2),
+    /**
+     * The quest she thinks of for each person from her memories of them: `false` gives everyone
+     * one of the plain ones instead (no model call). She gets `quest_pick_secs` to write it.
+     */
+    quest_pick_by_her: z.boolean().default(true),
+    quest_pick_secs: z.number().int().positive().max(60).default(20),
     // Achievements and titles (achievements.ts): a one-time reward by size, and the day's most.
     achievement_small: z.number().int().positive().default(10),
     achievement_big: z.number().int().positive().default(30),

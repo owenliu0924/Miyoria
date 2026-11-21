@@ -176,11 +176,24 @@ describe("party rewards", () => {
     expect(await balance(r, ALICE)).toBe(6);
   });
 
-  it("is played-a-game for the daily quest even when the coins are capped", async () => {
+  it("is played-with-others for the daily quest even when the coins are capped", async () => {
     const r = await rig({ play_cap: 5, quest_reward: 10 });
-    await r.economy.v2.party.award(request("party:q", [{ account: ALICE, coins: 5 }]));
+    await r.economy.v2.party.award(
+      request("party:q", [
+        { account: ALICE, coins: 5 },
+        { account: BOB, coins: 5 },
+      ]),
+    );
     const quests = await r.economy.v2.quests(ALICE);
-    expect(quests.quests.find((q) => q.id === "play_game")?.done).toBe(true);
+    expect(quests.quests.find((q) => q.id === "together")?.done).toBe(true);
+  });
+
+  it("is not played-with-others when they played alone with her", async () => {
+    const r = await rig({ quest_reward: 10 });
+    await r.economy.v2.party.award(request("party:solo", [{ account: ALICE, coins: 5 }]));
+    const quests = await r.economy.v2.quests(ALICE);
+    expect(quests.quests.find((q) => q.id === "together")?.done).toBe(false);
+    expect(await balance(r, ALICE)).toBe(5);
   });
 });
 

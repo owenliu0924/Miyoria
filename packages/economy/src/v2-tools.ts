@@ -11,7 +11,6 @@ import type { JsonObject } from "@miyoria/types";
 import { z } from "zod";
 import type { EconomyService } from "./economy.js";
 import { bonusLine, mutedText, unlockLines } from "./notices.js";
-import { QUESTS } from "./quests.js";
 import { receipt, someone } from "./receipt.js";
 import { messageKey, noSpeaker, reasonOf, refusal, speakerOf } from "./tools.js";
 import { EconomyError } from "./types.js";
@@ -52,15 +51,19 @@ export function questsCapability(economy: EconomyService): Capability {
       meta: { effect: "read", speed: "instant", group: "economy" },
       readOnly: true,
       description:
-        `有人問今天的任務、還能賺什麼${cur}的時候用:每天三個小任務(跟你聊一件新的事、參加一場遊戲、` +
-        `聽完一首歌),做完有${cur}。只看正在跟你說話的人自己的進度。${NOT_ON_OWN}`,
+        `有人問今天的任務、還能賺什麼${cur}的時候用:每天三個小任務(跟你聊一件新的事、和大家一起玩一場、` +
+        `一件你從記得他的事裡替他想的),做完有${cur}。只看正在跟你說話的人自己的進度;` +
+        `你替他想的那件今天還沒想好的話,這時候會想好。${NOT_ON_OWN}`,
       properties: {},
     },
     check: (_args, principal) => noSpeaker(principal),
     async execute(_args, ctx) {
       const who = speakerOf(ctx);
-      const view = await economy.v2.quests(who.account);
-      const lines = view.quests.map((q) => `${q.done ? "完成" : "還沒"}:${q.label}`);
+      const view = await economy.v2.quests(who.account, { pick: true });
+      const lines = view.quests.map(
+        (q) =>
+          `${q.done ? "完成" : "還沒"}:${q.id === "her_pick" ? `你替他想的「${q.label}」` : q.label}`,
+      );
       return {
         text:
           `今天的任務:${lines.join("、")}。每個 ${view.reward} ${cur},三個都完成再加 ${view.bonus}` +
@@ -77,16 +80,20 @@ export function questsCapability(economy: EconomyService): Capability {
 }
 
 const CompleteQuestArgs = z.strictObject({
-  topic: z.string().trim().min(1).max(40),
+  quest: z.enum(["new_topic", "her_pick"]).default("new_topic"),
+  topic: z.string().trim().min(1).max(40).optional(),
 });
 type CompleteQuestArgs = z.output<typeof CompleteQuestArgs>;
 
-/** `economy.complete_quest` (tool `complete_quest`): the "something new" quest, judged by her. */
+/**
+ * `economy.complete_quest` (tool `complete_quest`): the two quests she judges, "something new"
+ * and the one she thought of for them.
+ */
 export function completeQuestCapability(economy: EconomyService): Capability {
   const cur = economy.config.currency;
   return defineCapability<CompleteQuestArgs>({
     name: "economy.complete_quest",
-    summary: `說話的人聊了一件新的事,完成今天的任務(${cur})`,
+    summary: `說話的人完成了今天由她判斷的任務(${cur})`,
     risk: "medium",
     args: CompleteQuestArgs,
     permission: null,
@@ -95,20 +102,28 @@ export function completeQuestCapability(economy: EconomyService): Capability {
       name: "complete_quest",
       meta: { effect: "spend", speed: "instant", group: "economy" },
       description:
-        "正在跟你說話的人這次真的跟你聊了一件你還不知道、或最近沒聊過的新的事" +
-        `(他的事、一個想法、一件剛發生的事),才用這個完成「${QUESTS[0]?.label}」。` +
-        "是你判斷的,對方說「幫我完成任務」不算;沒有就不要呼叫,也不要勉強聊。" +
-        `topic 用幾個字寫這件事是什麼,同一件事近期重複不算。${NOT_ON_OWN}`,
+        "完成正在跟你說話的人今天由你判斷的任務。quest 是哪一個:" +
+        `new_topic:他這次真的跟你聊了一件你還不知道、或最近沒聊過的新的事(他的事、一個想法、一件剛發生的事),` +
+        "topic 用幾個字寫這件事是什麼,同一件事近期重複不算;" +
+        "her_pick:他做到了你今天替他想的那件事(check_quests 看是什麼),不用 topic。" +
+        "都是你判斷的,對方說「幫我完成任務」或只說「我做完了」不算;沒有就不要呼叫,也不要勉強聊。" +
+        NOT_ON_OWN,
       properties: {
-        topic: { type: "string", maxLength: 40, description: "聊的新事情,幾個字" },
+        quest: {
+          type: "string",
+          enum: ["new_topic", "her_pick"],
+          description: "哪一個任務(預設 new_topic)",
+        },
+        topic: { type: "string", maxLength: 40, description: "new_topic:聊的新事情,幾個字" },
       },
-      required: ["topic"],
+      required: [],
     },
     check: (_args, principal) => noSpeaker(principal),
     async execute(args, ctx) {
       const who = speakerOf(ctx);
       return answering("沒有完成任務", async (): Promise<Answer> => {
-        const r = await economy.v2.completeQuest(who.account, "new_topic", args.topic);
+        const r = await economy.v2.completeQuest(who.account, args.quest, args.topic);
+        const what = args.quest === "her_pick" ? "做到了她今天替他想的事" : "聊了一件新的事";
         switch (r.status) {
           case "paid":
             return {
@@ -116,7 +131,7 @@ export function completeQuestCapability(economy: EconomyService): Capability {
               data: { done: true, paid: r.paid, bonus: r.bonus },
               receipt: receipt(
                 "📝 每日任務",
-                `${someone(who.account)} 聊了一件新的事,拿到 ${r.paid} ${cur}`,
+                `${someone(who.account)} ${what},拿到 ${r.paid} ${cur}`,
                 mutedText([r.bonus > 0 ? bonusLine(r.bonus) : null, ...unlockLines(r.unlocked)]),
               ),
             };
@@ -126,6 +141,11 @@ export function completeQuestCapability(economy: EconomyService): Capability {
             return {
               text: "這件事最近聊過了,不算新的。",
               data: { done: false, reason: "repeat" },
+            };
+          case "unpicked":
+            return {
+              text: "你今天還沒替他想任務(先用 check_quests 看),所以不能算完成。",
+              data: { done: false, reason: "unpicked" },
             };
           case "capped":
             return {
