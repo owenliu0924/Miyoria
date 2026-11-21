@@ -471,6 +471,28 @@ describe("job: Core's speech host", () => {
     expect(order()).toEqual(["friend", "main"]);
   });
 
+  it("does not let a host kept out for her voice decide the variant", () => {
+    const s = setup();
+    s.host("main", [
+      sing("main", { running: 0, queued: 0 }, {}, { yields_to: ["tts", "asr"], variant: "owner" }),
+      service({
+        name: "tts",
+        url: "http://main:8002",
+        routing: routing({ class: "session", latency: "realtime", queue: false }),
+      }),
+    ]);
+    s.host("friend", [
+      sing(
+        "friend",
+        { running: 0, queued: 0 },
+        {},
+        { yields_to: ["tts", "asr"], variant: "friend" },
+      ),
+    ]);
+    expect(s.order()).toEqual(["friend"]);
+    expect(s.reg.routingView().find((c) => c.capability === "sing")?.variant).toBe("friend");
+  });
+
   it("keeps a song from a config address on Core's own machine when her voice is there", () => {
     const s = setup({
       static: { "sing.fallback.1": { provides: ["sing"], url: "http://127.0.0.1:8005" } },

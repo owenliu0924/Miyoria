@@ -762,7 +762,12 @@ export class EndpointRegistry {
         class: info.class,
         latency: info.latency,
         yields_to: info.yields_to,
-        variant: this.#variantOf(capability, all),
+        variant: this.#reference(
+          capability,
+          all,
+          info.class === "job" ? this.#speechHosts(info.yields_to) : new Map(),
+          this.#pinOf(capability),
+        ),
         speech_mode: this.#speechMode(capability),
         conflict:
           single === null || single.others.length === 0
@@ -934,6 +939,20 @@ export class EndpointRegistry {
       }
     }
     return winner?.v ?? null;
+  }
+
+  /**
+   * The variant judged against: chosen among the endpoints that would take work for every other
+   * reason (a host that is drained or carries her voice does not decide it), else among all.
+   */
+  #reference(
+    capability: string,
+    all: Ranked[],
+    speech: Map<string, string[]>,
+    pin: string | null,
+  ): string | null {
+    const usable = all.filter((r) => this.#exclusion(capability, r, null, speech, pin) === null);
+    return this.#variantOf(capability, usable.length > 0 ? usable : all);
   }
 
   #speechMode(capability: string): SpeechHostMode {
@@ -1135,9 +1154,9 @@ export class EndpointRegistry {
       const used = rows.filter((w) => w.eligible);
       return options.all === true ? [...used, ...rows.filter((w) => !w.eligible)] : used;
     }
-    const variant = this.#variantOf(capability, all);
     const speech = info.class === "job" ? this.#speechHosts(info.yields_to) : new Map();
     const pin = this.#pinOf(capability);
+    const variant = this.#reference(capability, all, speech, pin);
     const weighed: Weighed[] = all.map((r) => {
       const reason = this.#exclusion(capability, r, variant, speech, pin);
       return {

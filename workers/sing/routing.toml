@@ -21,7 +21,11 @@ files = ["workers/models/seed-vc", "workers/voices/deepseek-chan/ref.wav"]
 vram_gb = 7.5
 
 [variant]
-# Her voice: the RVC model (the default place, rvcpass.py) and the reference voice, and the settings
-# that choose them. Two hosts with another model are not interchangeable: their covers sound different.
-files = ["workers/models/applio/logs/miyoria-deepseek-48k", "workers/voices/deepseek-chan/ref.wav"]
+# Her voice: the RVC model (its default file, workers/sing/rvcpass.py) and the reference voice, and
+# the settings that choose them. Two hosts with another model are not interchangeable: their covers
+# sound different. Only the model file itself, so training leftovers beside it do not count.
+files = [
+  "workers/models/applio/logs/miyoria-deepseek-48k/miyoria-deepseek-48k_40e_11000s.pth",
+  "workers/voices/deepseek-chan/ref.wav",
+]
 env = ["SING_VOICE", "SING_RVC_MODEL", "SING_RVC_INDEX", "SING_REF"]

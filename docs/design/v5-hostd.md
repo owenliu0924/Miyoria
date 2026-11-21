@@ -868,7 +868,8 @@ files = ["workers/models/seed-vc", "workers/voices/deepseek-chan/ref.wav"]
 vram_gb = 7.5                 # the card's total memory at least
 
 [variant]                     # what makes results differ between hosts: hashed, reported
-files = ["workers/models/applio/logs/miyoria-deepseek-48k", "workers/voices/deepseek-chan/ref.wav"]
+files = ["workers/models/applio/logs/miyoria-deepseek-48k/miyoria-deepseek-48k_40e_11000s.pth",
+         "workers/voices/deepseek-chan/ref.wav"]
 env = ["SING_VOICE", "SING_RVC_MODEL", "SING_RVC_INDEX", "SING_REF"]
 ```
 
@@ -980,8 +981,8 @@ score    = (wait + unit + transfer + penalties) ÷ weight
 An endpoint takes **no new work** (left out of `pick` and `candidates`, listed last with
 `all: true` for callers that look for what an endpoint already holds) when: its host's owner set
 `accept = false`; it is not ready; it reports another variant than the capability's (the config's
-`variant`, else the one most instances report, a tie to `order` then names; endpoints that report
-none are not judged); a pin names another host; it is excluded; its host is drained (by the panel,
+`variant`, else the one most of the instances report that would take work for every other reason,
+a tie to `order` then names; endpoints that report none are not judged); a pin names another host; it is excluded; its host is drained (by the panel,
 by `[modules.cluster.routing] drain`, or while its remote update runs, §14); or the speech-host rule
 says so (§15.5). For `session` and the old order these apply too (a session capability's endpoint
 that is not ready or has another variant is not used); `single` uses only its first instance.
