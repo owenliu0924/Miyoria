@@ -610,6 +610,26 @@ miyoria doctor --deep
 
 npm 安裝的版本沒有 git 資料夾可以 pull:`update` 會告訴你先用套件管理員升級(`npm update -g miyoria`,pnpm 是 `pnpm update -g miyoria`),再重新執行 `miyoria update` 同步環境和重啟服務。
 
+### 從面板更新別台電腦
+
+面板「電腦」頁的每台電腦都會顯示版本(分支 · 提交)、和 Core 那台比是落後幾個提交、相同、比較新還是分岔。勾選幾台按「更新」,那幾台會自己快轉到 **Core 那台現在的提交**、需要時 `pnpm install`、同步變了的 Python 環境、重啟有變動的服務,每一步都顯示在那台底下。要有 `admin.cluster.update` 權限(admin 角色有),每台都會記進稽核紀錄。
+
+- **那台要先同意**:在那台的 `host.toml` 加
+
+  ```toml
+  [update]
+  allow_remote = true
+  ```
+
+  一分鐘內生效,不用重啟。沒加的電腦一樣會回報版本,但不接受更新,面板會寫出原因。
+- **跑 Core 的那台不能從面板更新**(會重啟 Core 自己),照舊在那台 `miyoria update`。
+- 那台只會在它**自己追蹤的分支**(通常是 `origin/main`)上**快轉**:有未提交的變更、分岔、比 Core 新、或 Core 的提交還沒推上去,都會拒絕,什麼都不動。
+- 她在做歌、唱歌或直播時,那台會先**等**(面板顯示「等她忙完」和在等什麼,最多 30 分鐘,可以取消)。
+- 中途裝套件或同步環境失敗,會退回原本的提交、把停掉的服務帶回來。更新後沒起來的服務會列出來,不會自動退回。
+- **不會下載模型**:新版需要的模型檔缺了會列在結果裡,請那台的主人在那台執行 `miyoria doctor --fix` 或 `miyoria models pull`。
+- 遠端更新**不建置**面板、overlay、SDK 和擴充,hostd 自己也還是舊的程式,直到那台 `miyoria down` 再 `miyoria up`;要這些的話在那台 `miyoria update`。結果裡會提醒。
+- 那台的 hostd 太舊時面板寫「版本不明」,不能從這裡更新:先在那台手動更新一次。
+
 ### 其他方式
 
 Docker Core:

@@ -130,6 +130,7 @@ pnpm dev logs sing -f    # 看 log,Ctrl+C 離開
 | 再啟動 | `pnpm dev up` |
 | 登入 Windows 時自動啟動 | `pnpm dev host autostart on`(`off` 關掉,`status` 看目前) |
 | 看狀態 / log | `pnpm dev status`、`pnpm dev logs sing -f` |
+| 讓 Owen 從面板幫你更新 | 在 `host.toml` 加 `[update]` 和 `allow_remote = true`(不加就只有你自己能更新)。只會快轉到 `origin/main` 上的提交,你有沒提交的變更就不動;她在唱歌時會等;不下載模型。細節見 [OPERATIONS.md](OPERATIONS.md) 的「從面板更新別台電腦」 |
 
 `update` 不會動到 `workers/models/`、`workers/voices/` 和歌曲快取(`data/songs`):這些不在 git 裡。
 
