@@ -1122,6 +1122,11 @@ export class KaraokeService {
     await Promise.allSettled([...this.#voices.values()]);
   }
 
+  /** Every file being fetched onto Core (a song's, its video) is in or given up (tests). */
+  async filesSettled(): Promise<void> {
+    await Promise.allSettled([...this.#fetching.values(), ...this.#videos.values()]);
+  }
+
   /** What every score of a song is scored against (the reference already in the session's key). */
   scoreInput(
     reference: WorkersKaraokeReferenceV2,
