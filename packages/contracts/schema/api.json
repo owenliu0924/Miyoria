@@ -5329,6 +5329,12 @@
               "type": "null"
             }
           ]
+        },
+        "cheers": {
+          "default": 0,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [
@@ -5340,6 +5346,76 @@
         "source",
         "move",
         "pitch"
+      ]
+    },
+    "ApiKaraokeCheerEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "cheer"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "id": {
+          "type": "string"
+        },
+        "member": {
+          "type": "string"
+        },
+        "by": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "color": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "name",
+            "color"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiKaraokeCheerKind"
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "id",
+        "member",
+        "by",
+        "kind"
+      ]
+    },
+    "ApiKaraokeCheerKind": {
+      "type": "string",
+      "enum": [
+        "cheer",
+        "nice",
+        "wow",
+        "encore"
+      ]
+    },
+    "ApiKaraokeCheerReply": {
+      "type": "object",
+      "properties": {
+        "wait_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "wait_ms"
       ]
     },
     "ApiKaraokeClock": {
@@ -5593,6 +5669,61 @@
         "history",
         "results",
         "backing_url"
+      ]
+    },
+    "ApiKaraokeLiveEvent": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "live"
+        },
+        "round": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "at_ms": {
+          "type": "number"
+        },
+        "lines": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "member": {
+                "type": "string"
+              },
+              "pitch": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "track": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "track"
+                ]
+              }
+            },
+            "required": [
+              "member",
+              "pitch"
+            ]
+          }
+        }
+      },
+      "required": [
+        "type",
+        "round",
+        "at_ms",
+        "lines"
       ]
     },
     "ApiKaraokeOverview": {
@@ -6180,6 +6311,24 @@
         "relay"
       ]
     },
+    "ApiKaraokeRoomCheer": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "kind": {
+          "$ref": "#/$defs/ApiKaraokeCheerKind"
+        }
+      },
+      "required": [
+        "member",
+        "kind"
+      ],
+      "additionalProperties": false
+    },
     "ApiKaraokeRoomEvent": {
       "oneOf": [
         {
@@ -6268,6 +6417,12 @@
             "source",
             "total"
           ]
+        },
+        {
+          "$ref": "#/$defs/ApiKaraokeLiveEvent"
+        },
+        {
+          "$ref": "#/$defs/ApiKaraokeCheerEvent"
         }
       ]
     },

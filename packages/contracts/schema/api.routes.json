@@ -2935,8 +2935,7 @@
           "errorMap": {},
           "meta": {
             "audience": "member",
-            "permission": null,
-            "limited": true
+            "permission": null
           },
           "route": {
             "inputStructure": "detailed",
@@ -3017,6 +3016,21 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/member/karaoke/rooms/{code}/relay"
+          }
+        }
+      },
+      "cheer": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/karaoke/rooms/{code}/cheer"
           }
         }
       },

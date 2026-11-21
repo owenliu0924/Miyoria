@@ -30,30 +30,48 @@
 //   for it (「讓大家聽到我」), or with two or more singers the leader among those who did not opt
 //   out, when the opener turned that on (「播出第一名的歌聲」). A singer of a round with two or
 //   more singers is never told whose voice is on (it would tell them they lead).
+// * Spectating (「卡拉 OK 第二次實測留下的」): each singer's browser posts its own detected pitch a few
+//   times a second (`pitch`: the round's singers only, a few posts a second, within the song and
+//   not ahead of Core's clock). It is the estimate's track, and the people watching (`live`, about
+//   four times a second) and her stream's lanes (the scene) get its latest second, placed on the
+//   reference by the singer's latency. None of it waits on the song worker: on a slow link the
+//   board runs on the estimate and the lanes go on. The round's words and notes go to the stream
+//   at the start, the video and the backing when they have come.
+// * Cheers: someone in the room who is not singing the round cheers one of its singers
+//   (`cheer`: 「加油」「好聽」「太強了」「安可」), at most one every `CHEER_GAP_MS` and
+//   `CHEER_BURST` a `CHEER_WINDOW_MS` per person, `ROOM_CHEERS_PER_S` a second per room. It goes to
+//   everyone not singing, to that singer (never to the other singers), and onto the stream's scene
+//   beside that singer's lane.
 // * Who sees what is decided here, per connection, not in the page: a singer of the running round
-//   only ever gets `trend` about themselves; everyone else gets the `board`.
+//   only ever gets `trend` about themselves (and the cheers for them); everyone else gets the
+//   `board`.
 // * Coins (the karaoke wallet): the opening is charged before the room exists (written first as
 //   `charging`, so a crash in between still gives it back); a room ends owing it back unless a round
 //   was sung through; a settled round writes what it pays in the same transaction as its ranking,
 //   then pays it, keyed per room, round and person: a restart pays what is `due` again and the
 //   wallet's key makes that the same payment.
 
-import type {
-  KaraokeAudioReply,
-  KaraokeBoardLine,
-  KaraokeClockReply,
-  KaraokeRoomEvent,
-  KaraokeRoomPlace,
-  KaraokeRoomQueueEntry,
-  KaraokeRoomResult,
-  KaraokeRooms,
-  KaraokeRoomTerms,
-  KaraokeRoomView,
-  KaraokeSession,
-  KaraokeVoiceCheck,
+import {
+  KARAOKE_CHEERS,
+  type KaraokeAudioReply,
+  type KaraokeBoardLine,
+  type KaraokeCheerKind,
+  type KaraokeCheerReply,
+  type KaraokeClockReply,
+  type KaraokeLiveEvent,
+  type KaraokeRoomEvent,
+  type KaraokeRoomPlace,
+  type KaraokeRoomQueueEntry,
+  type KaraokeRoomResult,
+  type KaraokeRooms,
+  type KaraokeRoomTerms,
+  type KaraokeRoomView,
+  type KaraokeSession,
+  type KaraokeVoiceCheck,
 } from "@miyoria/contracts/api";
 import {
   KARAOKE_BOARD_MAX,
+  KARAOKE_CHEERS_MAX,
   KARAOKE_JOIN_URL_MAX,
   KARAOKE_NOTES_MAX,
   KARAOKE_PITCH_MAX_CHARS,
@@ -142,8 +160,29 @@ export const OWN_RESULT_GRACE_MS = 5_000;
 export const STREAM_END_MS = 5_000;
 /** A member not following the room (no open page) for this long has left. */
 export const AWAY_MS = 60_000;
-/** Frames of a singer's recent pitch on the board (1.5 s). */
-const BOARD_PITCH_FRAMES = 75;
+/** Frames of a singer's recent pitch kept, and on the board and the stream's scene (2 s). */
+const BOARD_PITCH_FRAMES = 100;
+/** The pitch posts a singer may send a second (their browser sends about four). */
+export const PITCH_PER_S = 8;
+/** A pitch frame may be ahead of Core's song clock by this much (s): clocks differ a little. */
+export const PITCH_AHEAD_S = 1.5;
+/** The singers' latest pitch goes to the people watching (`live`) and the stream this often. */
+export const LIVE_MS = 250;
+/** Frames of each singer's latest pitch one `live` carries (1 s: a lost one leaves no gap). */
+const LIVE_FRAMES = 50;
+/**
+ * The running official score is used for the board only while the stream's pitch is no more than
+ * this far (frames) behind the browser's: a slow worker's lagging number is not shown.
+ */
+const VOICE_BEHIND_FRAMES = 4 * KARAOKE_FRAME_HZ;
+/** One person's cheers: one every `CHEER_GAP_MS`, `CHEER_BURST` in any `CHEER_WINDOW_MS`. */
+export const CHEER_GAP_MS = 1_500;
+export const CHEER_BURST = 8;
+export const CHEER_WINDOW_MS = 20_000;
+/** A room's cheers a second, everyone together. */
+export const ROOM_CHEERS_PER_S = 6;
+/** A cheer stays on the stream's scene this long. */
+const CHEER_SHOW_MS = 6_000;
 /** µ-law silence. */
 const MULAW_SILENCE = 0xff;
 /** What a room code is made of (no 0/O, 1/I/L). */
@@ -174,6 +213,14 @@ const SAY = {
   noSong: "沒有這首歌",
   failedSong: "這首準備失敗了,換一首或重新點",
   queueFull: "點歌的清單滿了,等唱完幾首再點",
+  pitchShape: "音高軌的格式不對",
+  pitchTime: "音高軌的時間不對",
+  pitchFast: "音高送得太快了",
+  cheerNotNow: "只有唱的時候可以加油",
+  cheerSinging: "你正在唱,唱完再幫別人加油",
+  cheerWho: "這一首沒有這個唱的人",
+  cheerFast: "加油得太快了,休息一下再來",
+  cheerRoom: "大家加油得太快了,等一下再來",
 } as const;
 
 /** Why no voice can go out on the stream (`air.relay.reason`). */
@@ -266,6 +313,17 @@ interface Member {
   hear: boolean;
   /** 「不要播我的聲音」 (never relayed as the leader). */
   skip: boolean;
+  /** When they cheered lately (their cheers' limits). */
+  cheerAt: number[];
+}
+
+/** One cheer of a round: whom (their key in the room, name and colour), from whom, which. */
+interface Cheer {
+  id: string;
+  at: number;
+  kind: KaraokeCheerKind;
+  to: { key: string; name: string; color: number };
+  by: { name: string; color: number };
 }
 
 interface Audio {
@@ -311,6 +369,11 @@ interface Singer {
   bestRank: number | null;
   worstRank: number | null;
   recent: { from: number; frames: (number | null)[] };
+  /** When their pitch posts came lately (their limit), and whether one came since the last `live`. */
+  pitchAt: number[];
+  pitchNew: boolean;
+  /** Cheers they got this round. */
+  cheers: number;
   /** Since the board before. */
   move: "up" | "down" | "same";
 }
@@ -335,8 +398,16 @@ interface Round {
   boardAt: number;
   /** The stream's voice of this round, while a scene is on (`null`: none). */
   air: RoomAir | null;
-  /** The words, video and backing the stream plays it with, once found (`null` until then). */
+  /**
+   * The words, notes, video and backing the stream plays it with (`null` without a scene): the
+   * words and notes from the start, the files once they have come.
+   */
   stage: KaraokeStageLyrics | null;
+  /** When the singers' latest pitch last went out (`live`). */
+  liveAt: number;
+  /** The round's latest cheers (the last few seconds), and how many it had. */
+  cheers: Cheer[];
+  cheered: number;
 }
 
 /** One song waiting in a room's queue. */
@@ -376,6 +447,8 @@ interface Room {
   lead: boolean;
   /** Its notice in the comment channel: where, and the message once posted. */
   notice: { channel: RoomChannel; message: Promise<string | null>; opener: string } | null;
+  /** When anyone in it cheered lately (the room's limit). */
+  cheerAt: number[];
 }
 
 /** What the score makes of a microphone chunk (the reply has the stream's part too). */
@@ -561,6 +634,7 @@ export class RoomDesk implements RoomLink {
       relay: { busy: false, failures: 0, off: false, at: 0 },
       lead: this.#cfg.relay_lead,
       notice: null,
+      cheerAt: [],
     };
     if (song !== null) room.queue.push(this.#entry(song.id, shift, member));
     room.queueSeen = this.#queueLook(room);
@@ -652,6 +726,7 @@ export class RoomDesk implements RoomLink {
       seen: now,
       hear: false,
       skip: false,
+      cheerAt: [],
     };
   }
 
@@ -941,6 +1016,9 @@ export class RoomDesk implements RoomLink {
       boardAt: 0,
       air: null,
       stage: null,
+      liveAt: 0,
+      cheers: [],
+      cheered: 0,
     };
     for (const m of room.members.values()) {
       if (sessions.has(m.key)) continue;
@@ -989,6 +1067,9 @@ export class RoomDesk implements RoomLink {
         bestRank: null,
         worstRank: null,
         recent: { from: 0, frames: [] },
+        pitchAt: [],
+        pitchNew: false,
+        cheers: 0,
         move: "same",
       });
       this.#sessions.set(session.session, { room, member: m.key });
@@ -1018,9 +1099,18 @@ export class RoomDesk implements RoomLink {
         gaps: lyricGaps(lines.map((l) => ({ start: l.start, end: sungEnd(l) }))),
         send: (piece) => this.#voice(room, round, piece),
       });
-      const files = this.#stageFiles(room, round, reference.lyrics, reference.notes).finally(() =>
-        this.#inflight.delete(files),
-      );
+      // The words and the notes are Core's own: on the stream from the countdown on. The video
+      // and the backing come from the song worker and may take long on a slow link; they follow.
+      round.stage = {
+        room: room.code,
+        round: round.n,
+        song: round.song.id.slice(0, 128),
+        lyrics: lyricsForStage(reference.lyrics),
+        video: null,
+        backing: null,
+        notes: notesForStage(reference.notes),
+      };
+      const files = this.#stageFiles(room, round).finally(() => this.#inflight.delete(files));
       this.#inflight.add(files);
     }
     this.#changed(room);
@@ -1189,30 +1279,19 @@ export class RoomDesk implements RoomLink {
     this.#d.stage?.voice({ room: room.code, round: round.n, ...piece });
   }
 
-  /** The round's words, video and backing for the stream (fetched while it counts down). */
-  async #stageFiles(
-    room: Room,
-    round: Round,
-    lyrics: KaraokeStageLyrics["lyrics"],
-    notes: readonly { start: number; end: number; midi: number }[],
-  ): Promise<void> {
+  /** The round's video and backing for the stream (fetched while it counts down, or later). */
+  async #stageFiles(room: Room, round: Round): Promise<void> {
     let files: Awaited<ReturnType<KaraokeService["streamFiles"]>>;
     try {
       files = await this.#d.service.streamFiles(round.song, round.shift);
     } catch {
       files = { backing: null, video: null };
     }
-    if (room.round !== round || room.state === "closed") return;
-    round.stage = {
-      room: room.code,
-      round: round.n,
-      song: round.song.id.slice(0, 128),
-      lyrics: lyricsForStage(lyrics),
-      video: files.video,
-      backing: this.#cfg.stream_backing ? files.backing : null,
-      notes: notesForStage(notes),
-    };
-    // A scene that showed this round before its files came gets them now.
+    if (room.round !== round || room.state === "closed" || round.stage === null) return;
+    const backing = this.#cfg.stream_backing ? files.backing : null;
+    if (files.video === null && backing === null) return;
+    round.stage = { ...round.stage, video: files.video, backing };
+    // A scene that shows this round already gets its words again, now with the files.
     const f = this.#featured;
     if (f !== null && f.code === room.code && f.round === round.n) {
       this.#d.stage?.lyrics(round.stage);
@@ -1282,6 +1361,7 @@ export class RoomDesk implements RoomLink {
         join_url: null,
         qr_while_singing: false,
         settling: null,
+        cheers: [],
       };
     }
     const now = this.#d.now();
@@ -1306,7 +1386,8 @@ export class RoomDesk implements RoomLink {
           finished: false,
           on_air: onAir === s.member.key,
           parts: null,
-          pitch: this.#recentPitch(s),
+          pitch: this.#piece(s, BOARD_PITCH_FRAMES),
+          cheers: s.cheers,
         }));
     } else if (room.state === "results" && room.result !== null) {
       board = room.result.places.map((p) => ({
@@ -1330,6 +1411,8 @@ export class RoomDesk implements RoomLink {
                 expression: p.expression,
               },
         pitch: null,
+        cheers:
+          [...(round?.singers.values() ?? [])].find((s) => s.member.id === p.member)?.cheers ?? 0,
       }));
     }
     return {
@@ -1370,7 +1453,21 @@ export class RoomDesk implements RoomLink {
       join_url: this.#joinUrl(room),
       qr_while_singing: c.stream_qr_while_singing,
       settling: this.#sceneSettling(room),
+      cheers: running && round !== null ? this.#sceneCheers(round, now) : [],
     };
+  }
+
+  /** The round's cheers of the last few seconds, oldest first, as the stream's scene has them. */
+  #sceneCheers(round: Round, now: number): KaraokeStageScene["cheers"] {
+    return round.cheers
+      .filter((c) => now - c.at < CHEER_SHOW_MS)
+      .slice(-KARAOKE_CHEERS_MAX)
+      .map((c) => ({
+        id: c.id,
+        kind: c.kind,
+        to: { name: c.to.name.slice(0, 60), color: c.to.color },
+        by: { name: c.by.name.slice(0, 60), color: c.by.color },
+      }));
   }
 
   /** The next few songs waiting after the one the scene shows (it is not repeated). */
@@ -1397,12 +1494,19 @@ export class RoomDesk implements RoomLink {
     return url === null || url.length > KARAOKE_JOIN_URL_MAX ? null : url;
   }
 
-  /** A singer's pitch lately for the stream's lanes, as the spectators' board has it. */
-  #recentPitch(s: Singer): KaraokeStageLine["pitch"] {
+  /**
+   * The last `frames` of a singer's pitch, placed on the reference (their device's latency taken
+   * off, as the score does), for the board, `live` and the stream's lanes; `null` without any.
+   */
+  #piece(s: Singer, frames: number): KaraokeStageLine["pitch"] {
     const r = s.recent;
-    if (r.frames.length === 0) return null;
-    const track = toBase64(encodeTrack(r.frames));
-    return track.length > KARAOKE_PITCH_MAX_CHARS ? null : { from: r.from, track };
+    const tail = r.frames.slice(Math.max(0, r.frames.length - frames));
+    const late = Math.round((s.member.latency_ms / 1000) * TRACK_HZ);
+    const from = r.from + (r.frames.length - tail.length) - late;
+    const kept = tail.slice(Math.max(0, -from));
+    if (kept.length === 0) return null;
+    const track = toBase64(encodeTrack(kept));
+    return track.length > KARAOKE_PITCH_MAX_CHARS ? null : { from: Math.max(0, from), track };
   }
 
   /** The stream's side of settling: whom it waits for, names only. */
@@ -1659,15 +1763,32 @@ export class RoomDesk implements RoomLink {
     return { stream: "estimate" };
   }
 
-  /** The browser's own detected pitch since `from` (50 Hz song time): the estimate. */
+  /**
+   * The browser's own detected pitch since `from` (50 Hz song time): the estimate, and what the
+   * people watching and her stream see of this singer. Only the round's singers (`#singer`), at
+   * most `PITCH_PER_S` posts a second, within the round's longest track and never ahead of Core's
+   * own song clock by more than `PITCH_AHEAD_S` (a track made beforehand is refused).
+   */
   pitch(code: string, account: AccountRef, from: number, track: string): void {
-    const { singer } = this.#singer(code, account);
+    const { room, singer } = this.#singer(code, account);
+    const round = room.round as Round;
+    const now = this.#d.now();
     const bytes = fromBase64(track);
     if (bytes === null || !Number.isInteger(from) || from < 0) {
-      throw new KaraokeError(400, "音高軌的格式不對");
+      throw new KaraokeError(400, SAY.pitchShape);
     }
+    const end = from + bytes.length;
+    const songS = (now - round.startAt) / 1000;
+    if (end > round.maxFrames || end / TRACK_HZ > songS + PITCH_AHEAD_S) {
+      throw new KaraokeError(400, SAY.pitchTime);
+    }
+    singer.pitchAt = singer.pitchAt.filter((t) => t > now - 1000);
+    if (singer.pitchAt.length >= PITCH_PER_S) throw new KaraokeError(429, SAY.pitchFast);
+    singer.pitchAt.push(now);
+    if (bytes.length === 0) return;
     const frames = decodeTrack(bytes);
     singer.estimate.put(from, frames);
+    singer.pitchNew = true;
     const r = singer.recent;
     const all = [...r.frames];
     for (let k = 0; k < frames.length; k++) all[from + k - r.from] = frames[k] ?? null;
@@ -1676,6 +1797,82 @@ export class RoomDesk implements RoomLink {
       from: keepFrom,
       frames: Array.from(all.slice(Math.max(0, keepFrom - r.from)), (m) => m ?? null),
     };
+  }
+
+  // ---- cheers ------------------------------------------------------------------------------------
+
+  /**
+   * Someone in the room who is not singing the round cheers `member`, one of its singers, during
+   * the countdown or the round. Limited per person (`CHEER_GAP_MS`, `CHEER_BURST` a
+   * `CHEER_WINDOW_MS`) and per room (`ROOM_CHEERS_PER_S`): a 429 says to wait. It goes to everyone
+   * not singing, to that singer, and onto the stream's scene; nothing is kept after the round.
+   */
+  cheer(
+    code: string,
+    account: AccountRef,
+    body: { member: string; kind: KaraokeCheerKind },
+  ): KaraokeCheerReply {
+    const { key } = this.#key(account);
+    const room = this.#room(code);
+    const round = room.round;
+    const me = room.members.get(key);
+    if (me === undefined) throw new KaraokeError(409, SAY.notIn);
+    const now = this.#d.now();
+    // While it counts down and is sung (not once the song is over and it settles).
+    const on = room.state === "countdown" || room.state === "singing";
+    if (round === null || !on || now >= round.songEnd) {
+      throw new KaraokeError(409, SAY.cheerNotNow);
+    }
+    if (round.singers.has(key)) throw new KaraokeError(409, SAY.cheerSinging);
+    if (!KARAOKE_CHEERS.includes(body.kind)) throw new KaraokeError(400, SAY.notNow);
+    const to = [...round.singers.values()].find((s) => s.member.id === body.member);
+    if (to === undefined) throw new KaraokeError(404, SAY.cheerWho);
+    me.cheerAt = me.cheerAt.filter((t) => t > now - CHEER_WINDOW_MS);
+    const last = me.cheerAt.at(-1);
+    if ((last !== undefined && now - last < CHEER_GAP_MS) || me.cheerAt.length >= CHEER_BURST) {
+      throw new KaraokeError(429, SAY.cheerFast);
+    }
+    room.cheerAt = room.cheerAt.filter((t) => t > now - 1000);
+    if (room.cheerAt.length >= ROOM_CHEERS_PER_S) throw new KaraokeError(429, SAY.cheerRoom);
+    me.cheerAt.push(now);
+    room.cheerAt.push(now);
+    me.seen = now;
+    round.cheered++;
+    to.cheers++;
+    const cheer: Cheer = {
+      id: `c${round.n}-${round.cheered}`,
+      at: now,
+      kind: body.kind,
+      to: { key: to.member.key, name: to.member.name, color: to.member.color },
+      by: { name: me.name, color: me.color },
+    };
+    round.cheers = [...round.cheers.filter((c) => now - c.at < CHEER_SHOW_MS), cheer].slice(
+      -KARAOKE_CHEERS_MAX,
+    );
+    const event: KaraokeRoomEvent = {
+      type: "cheer",
+      round: round.n,
+      id: cheer.id,
+      member: to.member.id,
+      by: cheer.by,
+      kind: cheer.kind,
+    };
+    for (const f of room.followers) {
+      // The other singers never hear of it (it would say something about how they compare).
+      if (round.singers.has(f.key) && f.key !== to.member.key) continue;
+      try {
+        f.push(event);
+      } catch {
+        room.followers.delete(f);
+      }
+    }
+    this.#stage();
+    // The next one may come after the gap, or when the oldest of a full burst has gone.
+    const burstFull = me.cheerAt.length >= CHEER_BURST;
+    const wait = burstFull
+      ? Math.max(CHEER_GAP_MS, (me.cheerAt[0] as number) + CHEER_WINDOW_MS - now)
+      : CHEER_GAP_MS;
+    return { wait_ms: Math.round(wait) };
   }
 
   // ---- RoomLink: what the service asks of a room's session --------------------------------------
@@ -1766,6 +1963,10 @@ export class RoomDesk implements RoomLink {
       if (now - round.boardAt >= BOARD_MS) {
         round.boardAt = now;
         this.#board(room, now);
+      }
+      if (now - round.liveAt >= LIVE_MS && [...round.singers.values()].some((s) => s.pitchNew)) {
+        round.liveAt = now;
+        this.#live(room, round, now);
       }
       this.#airTick(room, now);
       this.#ownResults(room, round, now);
@@ -1887,6 +2088,32 @@ export class RoomDesk implements RoomLink {
     }
   }
 
+  /**
+   * The singers' latest pitch (the last second of each whose browser sent more since the last
+   * time) to everyone not singing the round, and the stream's scene with it.
+   */
+  #live(room: Room, round: Round, now: number): void {
+    const lines: KaraokeLiveEvent["lines"] = [];
+    for (const s of round.singers.values()) {
+      if (!s.pitchNew) continue;
+      s.pitchNew = false;
+      const pitch = this.#piece(s, LIVE_FRAMES);
+      if (pitch !== null) lines.push({ member: s.member.id, pitch });
+    }
+    if (lines.length > 0) {
+      const event: KaraokeLiveEvent = { type: "live", round: round.n, at_ms: now, lines };
+      for (const f of room.followers) {
+        if (round.singers.has(f.key)) continue;
+        try {
+          f.push(event);
+        } catch {
+          room.followers.delete(f);
+        }
+      }
+    }
+    this.#stage();
+  }
+
   /** The running ranking: to the spectators as the board, to each singer as their trend. */
   #board(room: Room, now: number): void {
     const round = room.round;
@@ -1896,7 +2123,13 @@ export class RoomDesk implements RoomLink {
       // Staggered: half of them this second, the other half the next.
       if (now - s.ranAt < RUNNING_MS && s.ranAt !== 0 && i % 2 !== Math.floor(now / BOARD_MS) % 2)
         return;
-      const useVoice = s.final !== null || (s.stream === "live" && s.voice.length > 0);
+      // The stream's official number while it keeps up with the browser's; else the estimate
+      // (a slow worker never leaves the board behind or empty).
+      const useVoice =
+        s.final !== null ||
+        (s.stream === "live" &&
+          s.voice.length > 0 &&
+          s.voice.length >= s.estimate.length - VOICE_BEHIND_FRAMES);
       const score = useVoice ? s.voice : this.#cleanEstimate(s);
       s.total = score.length > 0 ? score.score().total : 0;
       s.source = useVoice ? "voice" : "estimate";
@@ -1918,7 +2151,6 @@ export class RoomDesk implements RoomLink {
     }
     const lines: KaraokeBoardLine[] = order.map((s) => {
       const prev = before.get(s) ?? s.rank;
-      const r = s.recent;
       return {
         member: s.member.id,
         name: s.member.name,
@@ -1927,8 +2159,8 @@ export class RoomDesk implements RoomLink {
         total: s.total,
         source: s.source,
         move: s.rank < prev ? "up" : s.rank > prev ? "down" : "same",
-        pitch:
-          r.frames.length === 0 ? null : { from: r.from, track: toBase64(encodeTrack(r.frames)) },
+        pitch: this.#piece(s, BOARD_PITCH_FRAMES),
+        cheers: s.cheers,
       };
     });
     this.#deliver(room, lines, now);
