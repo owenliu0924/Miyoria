@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { AFFINITY, FAMILIARITY, TRUST } from "./card";
 import { CardSection } from "./CardSection";
 import { Transfer } from "./Extras";
+import { GiftsCard } from "./Gifts";
 import { GitHubLinkCard } from "./GitHubLink";
 import { useAuction } from "./Market";
 import { QuestsCard } from "./Play";
@@ -384,6 +385,7 @@ export function MemberActions() {
   return (
     <>
       <WalletCard />
+      <GiftsCard />
       <QuestsCard />
       <CardSection />
       <Transfer />
