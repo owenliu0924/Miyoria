@@ -308,3 +308,13 @@ describe("a brand-new instance before the first local tick", () => {
     expect(r.store.real.openPositions("p-alice")).toHaveLength(1);
   });
 });
+
+describe("suggestions by name", () => {
+  it("find a starter by its zh-TW name before it was ever looked up", async () => {
+    const r = await rig({ open: true });
+    expect(r.service.lists.suggest("x", "台積")).toContainEqual({
+      code: "2330",
+      name: "台積電・熱門清單",
+    });
+  });
+});

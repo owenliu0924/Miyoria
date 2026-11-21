@@ -217,12 +217,13 @@ export class MarketLists {
       .map(({ code, name }) => ({ code, name }));
     // Starter codes not validated yet, as typed.
     const starterCodes = [...this.desk.starterConfig("tw"), ...this.desk.starterConfig("us")];
-    for (const { code: typed } of starterCodes) {
+    for (const { code: typed, name } of starterCodes) {
       if (ranked.length >= SUGGEST_MAX) break;
       const up = typed.toUpperCase();
-      if (key !== "" && !up.startsWith(key)) continue;
+      if (key !== "" && !up.startsWith(key) && !(name ?? "").toUpperCase().includes(key)) continue;
       if (candidates(typed).some((x) => known.has(x))) continue;
-      if (!ranked.some((r) => r.code === up)) ranked.push({ code: up, name: "熱門清單" });
+      if (!ranked.some((r) => r.code === up))
+        ranked.push({ code: up, name: name === null ? "熱門清單" : `${name}・熱門清單` });
     }
     // What they typed, to look up when picked.
     if (key !== "" && ranked.length < SUGGEST_MAX && !ranked.some((r) => r.code === key)) {
