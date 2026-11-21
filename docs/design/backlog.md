@@ -277,10 +277,11 @@
 
 ### 問題回報第一版留下的(2026-11-21)
 
-`[modules.report]`(`@miyoria/brain/report`,面板 運作 / 回報)。第一版是先存草稿、owner 核准才開 issue。
+`[modules.report]`(`@miyoria/brain/report`,面板 運作 / 回報,設定步驟寫在 `packages/brain/report/src/config.ts` 開頭和兩份範例設定檔)。第一版是先存草稿、owner 核准才開 issue;第二版加了 GitHub App 和成員自己連結 GitHub。
 
-- **沒有對真的 GitHub 跑過**:四個 REST 呼叫(搜尋、開 issue、留言、讀 issue)只在測試裡對假的 `fetch` 跑過;第一次開的時候先拿一個測試用的 repo 試。
-- **只吃固定的 token**:fine-grained personal access token 可以直接用;GitHub App 的 installation token 一小時就過期,要用 App 得先做「用 App 的私鑰換 token」那一段,現在沒有。
+- **沒有對真的 GitHub 跑過**:REST 呼叫(搜尋、開 issue、留言、讀 issue、用 id 查帳號)、App 的 JWT 換 installation token、成員連結的 OAuth(換 token、`GET /user`、撤銷 token)都只在測試裡對假的 `fetch` 跑過;第一次開的時候先拿一個測試用的 repo 和 App 試。
+- **連結只標記在核准開的 issue 上**:「改成加到 #N 的留言」不寫回報者的 `@`。
+- **還在連結途中的狀態只在記憶體裡**:Core 重新啟動時,剛按下「連結 GitHub」還沒回來的人要再按一次。
 - **找重複只比標題**:GitHub 的搜尋對中文斷詞不準,找不到的時候只是沒有提示,不會擋;要更準得把內文也拿來比,或用向量。
 - **修好的通知靠記憶的 follow-up**:issue 關掉(做完)時寫一則到期的 follow-up,由 initiative 照平常的關卡叫醒她在回報的地方說;那時記憶模組沒開,這一次就不會再補(面板看得到「沒有提醒」)。
 - **重複和留言的 issue 也會追**:標成 #N 的重複、或加到 #N 的留言,#N 關掉時一樣會通知回報的人,不管 #N 是不是從回報開的。

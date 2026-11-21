@@ -20,6 +20,25 @@
 // `MIYORIA_GITHUB_APP_PRIVATE_KEY` (the PEM; one line with literal `\n` works),
 // `MIYORIA_GITHUB_APP_CLIENT_ID`, `MIYORIA_GITHUB_APP_CLIENT_SECRET`, and
 // `MIYORIA_GITHUB_ISSUES_TOKEN` for the fallback. Making the App or the token is the owner's job.
+//
+// Setting the App up (GitHub -> Settings -> Developer settings -> GitHub Apps -> New GitHub App):
+//
+// | Field                                                  | Value                                          |
+// |--------------------------------------------------------|------------------------------------------------|
+// | Homepage URL                                           | the member page's site                         |
+// | Callback URL                                           | `https://<site>/api/member/github/callback`, the same as `link_redirect_uri`; only for linking |
+// | Request user authorization (OAuth) during installation | off                                            |
+// | Webhook                                                | off (Active unticked): none is needed          |
+// | Repository permissions                                 | Issues: Read and write (Metadata: Read-only comes with it); nothing else |
+// | Organization / Account permissions                     | none                                           |
+// | Where can this GitHub App be installed?                | Only on this account                           |
+//
+// Then: note the App ID; generate a private key (the `.pem`); for linking, note the Client ID and
+// generate a client secret; install the App on the one repository only ("Only select
+// repositories"). The installation id may stay empty: Core looks it up from the repository. Put
+// the values in `.env` under the names above (the PEM in double quotes over several lines, or on
+// one line with literal `\n`), reference them from `[modules.report]`, set `repo` and, for linking,
+// `link_redirect_uri`, and restart Core. The panel's 運作 / 回報 then says 「以 GitHub App 開」.
 
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
 import { z } from "zod";
