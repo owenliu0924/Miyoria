@@ -3243,6 +3243,21 @@
           }
         }
       },
+      "mention": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.reports.review",
+            "refusal": "reviewing problem reports needs `admin.reports.review`"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/reports/{id}/mention"
+          }
+        }
+      },
       "reject": {
         "~orpc": {
           "errorMap": {},
@@ -3255,6 +3270,53 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/reports/{id}/reject"
+          }
+        }
+      }
+    },
+    "githubLink": {
+      "status": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/github"
+          }
+        }
+      },
+      "mention": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/github/mention"
+          }
+        }
+      },
+      "unlink": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/github/unlink"
           }
         }
       }

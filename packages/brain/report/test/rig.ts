@@ -64,6 +64,8 @@ export interface FakeIssue {
 export class FakeGitHub implements IssueTracker {
   readonly issues = new Map<number, FakeIssue>();
   readonly calls: string[] = [];
+  /** Logins by numeric id, for `login`. */
+  readonly users = new Map<number, string>();
   /** The next calls of this kind throw it. */
   readonly failing = new Map<string, GitHubError>();
   #next = 1;
@@ -124,6 +126,12 @@ export class FakeGitHub implements IssueTracker {
     return {
       url: `https://github.test/o/r/issues/${number}#issuecomment-${issue.comments.length}`,
     };
+  }
+
+  async login(id: number): Promise<string | null> {
+    this.calls.push(`login ${id}`);
+    this.#fail("login");
+    return this.users.get(id) ?? null;
   }
 
   async issue(number: number): Promise<IssueState> {

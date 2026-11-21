@@ -30,12 +30,15 @@ const draft = (id: string, over: Partial<ReportDraftView> = {}): ReportDraftView
   closed_at: null,
   close_reason: null,
   notified_at: null,
+  mention: { login: null, will_add: false, why: "not_linked" },
   ...over,
 });
 
 const list = (drafts: ReportDraftView[], over: Partial<ReportList> = {}): ReportList => ({
   repo: "owner/repo",
   ready: true,
+  auth: "app",
+  linking: true,
   auto_open: false,
   per_person_daily: 3,
   global_daily: 20,
@@ -104,11 +107,11 @@ describe("Reports", () => {
     await waitFor(() => expect(posts(fetch)).toEqual([["/api/reports/r1/approve", { title: "收音壞了" }]]));
   });
 
-  it("cannot approve without a token or repo", async () => {
-    mockFetch((_m, url) => (url.pathname === "/api/reports" ? { body: list([draft("r1")], { ready: false, repo: "" }) } : undefined));
+  it("cannot approve without the GitHub App or a token", async () => {
+    mockFetch((_m, url) => (url.pathname === "/api/reports" ? { body: list([draft("r1")], { ready: false, repo: "", auth: null }) } : undefined));
     renderRoute("/reports");
     expect(await screen.findByRole("button", { name: "核准" })).toBeDisabled();
-    expect(screen.getByText(/沒有設定 token 或 repo/)).toBeInTheDocument();
+    expect(screen.getByText(/沒有設定 GitHub App 或 token/)).toBeInTheDocument();
   });
 
   it("rejects with a reason", async () => {
@@ -145,6 +148,43 @@ describe("Reports", () => {
     expect(within(dialog).getByLabelText("Issue 編號")).toHaveValue("12");
     await user.click(within(dialog).getByRole("button", { name: "留言" }));
     await waitFor(() => expect(posts(fetch)).toEqual([["/api/reports/r1/comment", { issue: 12 }]]));
+  });
+});
+
+describe("the reporter's GitHub mention", () => {
+  it("says it will name the linked reporter, and takes it off one draft", async () => {
+    const user = userEvent.setup();
+    const fetch = mockFetch((method, url) => {
+      if (method === "GET" && url.pathname === "/api/reports") {
+        return { body: list([draft("r1", { mention: { login: "octocat", will_add: true, why: "on" } })]) };
+      }
+      if (method === "POST" && url.pathname === "/api/reports/r1/mention") {
+        return { body: draft("r1", { mention: { login: "octocat", will_add: false, why: "owner_off" } }) };
+      }
+      return undefined;
+    });
+    renderRoute("/reports");
+    expect(await screen.findByText("@octocat")).toBeInTheDocument();
+    expect(screen.getByText("以 GitHub App 開")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "這份不標記" }));
+    await waitFor(() => expect(posts(fetch)).toEqual([["/api/reports/r1/mention", { on: false }]]));
+  });
+
+  it("says why a reporter who turned it off is not named, and shows nothing for the unlinked", async () => {
+    mockFetch((_m, url) =>
+      url.pathname === "/api/reports"
+        ? {
+            body: list([
+              draft("r1", { mention: { login: "octocat", will_add: false, why: "member_off" } }),
+              draft("r2", { title: "另一個" }),
+            ]),
+          }
+        : undefined,
+    );
+    renderRoute("/reports");
+    expect(await screen.findByText("不會:回報的人關掉了標記")).toBeInTheDocument();
+    const other = screen.getByText("另一個").closest("li") as HTMLElement;
+    expect(within(other).queryByText("標記回報的人")).toBeNull();
   });
 });
 

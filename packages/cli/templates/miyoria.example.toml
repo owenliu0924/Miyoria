@@ -231,6 +231,7 @@ token = "${MIYORIA_API_TOKEN:-}"
 # rate_per_minute = 60             # 每個訪客每分鐘的請求數(Cloudflare tunnel 後面看 CF-Connecting-IP)
 # rate_total_per_minute = 3000     # 所有訪客加起來每分鐘的請求數
 # utc_offset_minutes = 480         # 「今天」從哪個時區的午夜開始算
+# client_ip_header = "cf-connecting-ip"  # 這台電腦上的反向代理用哪個標頭帶訪客的位址(只信從本機來的連線)。nginx / Caddy 用 "x-real-ip" 或 "x-forwarded-for"(取最後一個),而且代理要自己設這個標頭、不要照轉訪客送的;空字串 = 不讀任何標頭
 
 # 每台電腦的管家(hostd)連進來的控制連線:回報這台有哪些服務、位址和健康。預設開著;
 # 埠被占用時這個模組會失敗,Core 照常執行。
@@ -1292,14 +1293,22 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # 問題回報:成員跟她說哪裡壞了,她用 report_problem 記成一份草稿,在面板的「回報」頁審核;
 # 核准才在 GitHub 開 issue(也可以改成加到已有的 #N、標成重複或拒絕)。成員說的內容先清過:
 # 網址、@、#數字、名字和 id 都拿掉,誰回報的只留在 Core 裡。issue 關掉(做完)時她會記得跟回報的人說一聲。
-# token 只要那一個 repo 的 Issues 讀寫:fine-grained personal access token 只選那個 repo、
-# 權限只開「Issues: Read and write」(GitHub 會自動加上 Metadata 唯讀)。放在 .env,這裡只引用。
-# GitHub App 的 installation token 一小時就過期,現在還不能用。
-# 沒有 token 或 repo 時她看不到這個工具。
+# 建議用 GitHub App(issue 會以 App 的 bot 開):Repository permissions 只開「Issues: Read and write」
+# (Metadata 唯讀會自動帶上),不用 webhook,只裝在那一個 repo。成員要能在會員頁連結自己的 GitHub 帳號
+# (核准時在 issue 最後一行標記他,他自己可以關),App 的 Callback URL 填 link_redirect_uri,
+# 「Request user authorization (OAuth) during installation」不用勾。完整步驟在 packages/brain/report/src/config.ts 開頭。
+# 沒有 App 時可以用 fine-grained personal access token(只選那個 repo、只開 Issues 讀寫)。
+# 所有祕密放在 .env,這裡只引用。App 或 token 都沒設好時她看不到這個工具。
 # [modules.report]
 # enabled = true
-# token = "${MIYORIA_GITHUB_ISSUES_TOKEN:-}"
 # repo = "owner/name"          # 開 issue 的 repo
+# app_id = "${MIYORIA_GITHUB_APP_ID:-}"
+# installation_id = "${MIYORIA_GITHUB_APP_INSTALLATION_ID:-}"   # 留空 = 從 repo 查
+# private_key = "${MIYORIA_GITHUB_APP_PRIVATE_KEY:-}"           # PEM;寫成一行、用 \n 分行也可以
+# client_id = "${MIYORIA_GITHUB_APP_CLIENT_ID:-}"               # 成員連結 GitHub 用;不填就不能連結
+# client_secret = "${MIYORIA_GITHUB_APP_CLIENT_SECRET:-}"
+# link_redirect_uri = ""        # 例如 "https://miyoria.example.com/api/member/github/callback",和 App 的 Callback URL 一字不差
+# token = "${MIYORIA_GITHUB_ISSUES_TOKEN:-}"   # 備用:App 沒設好時才用
 # labels = []                   # 每個 issue 加的標籤(repo 上要先有)
 # per_person_daily = 3          # 一個人 24 小時內最多回報幾次
 # global_daily = 20             # 所有人 24 小時內最多幾次

@@ -31,6 +31,7 @@ import { economy, peopleEconomy } from "./economy.js";
 import { evalRoutes } from "./eval.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
+import { githubLink } from "./github-link.js";
 import { self, world } from "./inner.js";
 import { karaoke, karaokeAdmin } from "./karaoke.js";
 import { karaokeRooms } from "./karaoke-rooms.js";
@@ -357,6 +358,12 @@ export {
   type IssuedFortune,
   IssuedFortuneSchema,
 } from "./fortune.js";
+export {
+  type GithubLinkView,
+  GithubLinkViewSchema,
+  type GithubMentionRequest,
+  GithubMentionRequestSchema,
+} from "./github-link.js";
 export {
   type AgendaItem,
   AgendaItemSchema,
@@ -878,6 +885,8 @@ export {
   ReportDuplicateRequestSchema,
   type ReportList,
   ReportListSchema,
+  type ReportMentionRequest,
+  ReportMentionRequestSchema,
   type ReportRejectRequest,
   ReportRejectRequestSchema,
   type ReportStatus,
@@ -1098,6 +1107,7 @@ export const contract = {
   karaokeAdmin,
   karaokeRooms,
   reports,
+  githubLink,
   eval: evalRoutes,
 };
 

@@ -12,7 +12,6 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { safeName } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
-import { clientKey } from "./public.js";
 import type { ApiState } from "./state.js";
 
 const log = getLogger("api.board");
@@ -61,7 +60,7 @@ export const boardRpc = {
   board: os.public.board.handler(async ({ context }) => {
     const { state, c } = context;
     const side = state.publicSide;
-    const wait = side.admit(clientKey(c));
+    const wait = side.admit(side.client(c));
     if (wait !== null) throw ApiError.tooMany(wait);
     context.resHeaders?.set(
       "cache-control",

@@ -95,6 +95,7 @@ import { Monitor } from "../src/monitor.js";
 import { cardVersion } from "../src/og.js";
 import {
   clientKey,
+  DEFAULT_CLIENT_IP_HEADER,
   PUBLIC_DAYS,
   PUBLIC_STATS_KEY,
   PublicConfigSchema,
@@ -537,13 +538,22 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
   const base = api.url() ?? "";
 
   const loginResult = async (code: string) => {
-    const start = await fetch(`${base}/api/auth/oauth/login`, { redirect: "manual" });
+    // From a browser on the redirect's host, so the login is not sent over to it first.
+    const start = await fetch(`${base}/api/auth/oauth/login`, {
+      redirect: "manual",
+      headers: { "x-forwarded-host": new URL(REDIRECT).host },
+    });
     await start.arrayBuffer();
     const authorize = new URL(start.headers.get("location") ?? "");
     const url = new URL(`${base}/api/auth/oauth/callback`);
     url.searchParams.append("code", code);
     url.searchParams.append("state", authorize.searchParams.get("state") ?? "");
-    const done = await fetch(url, { redirect: "manual" });
+    // The browser sends back the cookie its login started with.
+    const held = /miyoria_login=([^;]+)/.exec(start.headers.get("set-cookie") ?? "")?.[1] ?? "";
+    const done = await fetch(url, {
+      redirect: "manual",
+      headers: { cookie: `miyoria_login=${held}` },
+    });
     await done.arrayBuffer();
     const set = done.headers.get("set-cookie");
     return {
@@ -726,6 +736,9 @@ describe("the route table", () => {
       "GET /api/member/danmaku",
       "GET /api/member/export",
       "GET /api/member/fortune",
+      "GET /api/member/github",
+      "GET /api/member/github/callback",
+      "GET /api/member/github/link",
       "GET /api/member/karaoke",
       "GET /api/member/karaoke/edit/:song/backing",
       "GET /api/member/karaoke/files/:session/:name",
@@ -752,6 +765,8 @@ describe("the route table", () => {
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
+      "POST /api/member/github/mention",
+      "POST /api/member/github/unlink",
       "POST /api/member/karaoke/rooms",
       "POST /api/member/karaoke/rooms/:code/audio",
       "POST /api/member/karaoke/rooms/:code/cheer",
@@ -1100,14 +1115,78 @@ describe("rate limits", () => {
         env: peer === undefined ? undefined : { incoming: { socket: { remoteAddress: peer } } },
         req: { header: () => header },
       }) as never;
-    expect(clientKey(ctx("127.0.0.1", "203.0.113.7"))).toBe("203.0.113.7");
-    expect(clientKey(ctx("::ffff:127.0.0.1", "203.0.113.7"))).toBe("203.0.113.7");
-    expect(clientKey(ctx("198.51.100.9", "203.0.113.7"))).toBe("198.51.100.9");
-    expect(clientKey(ctx("127.0.0.1", undefined))).toBe("local");
+    const key = (peer: string | undefined, header: string | undefined) =>
+      clientKey(ctx(peer, header), DEFAULT_CLIENT_IP_HEADER);
+    expect(key("127.0.0.1", "203.0.113.7")).toBe("203.0.113.7");
+    expect(key("::ffff:127.0.0.1", "203.0.113.7")).toBe("203.0.113.7");
+    expect(key("198.51.100.9", "203.0.113.7")).toBe("198.51.100.9");
+    expect(key("127.0.0.1", undefined)).toBe("local");
+    // No socket to ask: nobody is known to be this machine, so the header is nobody's word.
+    expect(key(undefined, "203.0.113.7")).toBe("local");
     // One IPv6 client holds a /64.
-    expect(clientKey(ctx("127.0.0.1", "2001:db8:1:2:3:4:5:6"))).toBe(
-      clientKey(ctx("127.0.0.1", "2001:db8:1:2:aaaa:bbbb:cccc:dddd")),
+    expect(key("127.0.0.1", "2001:db8:1:2:3:4:5:6")).toBe(
+      key("127.0.0.1", "2001:db8:1:2:aaaa:bbbb:cccc:dddd"),
     );
+  });
+
+  it("reads the header the proxy on this machine uses (client_ip_header)", () => {
+    const ctx = (peer: string, headers: Record<string, string>) =>
+      ({
+        env: { incoming: { socket: { remoteAddress: peer } } },
+        req: { header: (name: string) => headers[name] },
+      }) as never;
+    const sent = {
+      "cf-connecting-ip": "203.0.113.7",
+      "x-forwarded-for": "198.51.100.1, 203.0.113.9",
+    };
+    // Of a list, the entry the proxy added itself: the first is the visitor's own word.
+    expect(clientKey(ctx("127.0.0.1", sent), "X-Forwarded-For")).toBe("203.0.113.9");
+    expect(clientKey(ctx("::1", sent), "x-forwarded-for")).toBe("203.0.113.9");
+    expect(clientKey(ctx("127.0.0.1", sent), "x-real-ip")).toBe("local");
+    // No header at all: whatever the visitor sends, nothing of it counts.
+    expect(clientKey(ctx("127.0.0.1", sent), "")).toBe("local");
+    // From anywhere but this machine the header is never read, whichever it is.
+    expect(clientKey(ctx("198.51.100.9", sent), "x-forwarded-for")).toBe("198.51.100.9");
+    expect(clientKey(ctx("198.51.100.9", sent), "cf-connecting-ip")).toBe("198.51.100.9");
+  });
+
+  it("every limited route counts visitors by the configured header", async () => {
+    const r = await rig({ client_ip_header: "x-forwarded-for", rate_per_minute: 30 });
+    let sent = 0;
+    const from = (last: string) => ({
+      "x-forwarded-for": `198.51.100.1, ${last}`,
+      // What a visitor sends through a proxy that passes it on: a new one each time, never counted.
+      "cf-connecting-ip": `192.0.2.${++sent % 250}`,
+    });
+    const statuses: number[] = [];
+    for (let i = 0; i < 31; i++) {
+      statuses.push((await r.get("/api/public/status", undefined, from("203.0.113.60"))).status);
+    }
+    expect(statuses.slice(0, 30).every((s) => s === 200)).toBe(true);
+    expect(statuses.at(-1)).toBe(429);
+    expect((await r.get("/api/public/status", undefined, from("203.0.113.61"))).status).toBe(200);
+
+    // Card checks (`card.ts`) and logins (`server.ts`) have limits of their own, by the same key.
+    const check = (last: string) =>
+      r.get("/api/public/card/MYR-0000-0000-0000", undefined, from(last));
+    const checks: number[] = [];
+    for (let i = 0; i < 21; i++) checks.push((await check("203.0.113.70")).status);
+    expect(checks.slice(0, 20).every((s) => s === 404)).toBe(true);
+    expect(checks.at(-1)).toBe(429);
+    expect((await check("203.0.113.71")).status).toBe(404);
+    const logins: number[] = [];
+    for (let i = 0; i < 21; i++) {
+      const res = await raw(r.base, "GET", "/api/auth/oauth/login", {
+        headers: from("203.0.113.80"),
+      });
+      logins.push(res.status);
+    }
+    expect(logins.at(0)).toBe(302);
+    expect(logins.at(-1)).toBe(429);
+    const other = await raw(r.base, "GET", "/api/auth/oauth/login", {
+      headers: from("203.0.113.81"),
+    });
+    expect(other.status).toBe(302);
   });
 
   it("does not grow without bound when addresses keep changing", () => {

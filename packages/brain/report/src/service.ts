@@ -28,10 +28,11 @@ import {
 } from "@miyoria/types";
 import type { ReportConfig } from "./config.js";
 import { type IssueMatch, likelyDuplicate, searchTerms } from "./duplicates.js";
-import { GitHubError, type IssueTracker } from "./github.js";
+import { GitHubError, type IssueTracker, LOGIN } from "./github.js";
+import type { GitHubLinker } from "./link.js";
 import { LIMITS, markdownText, normalizeTitle, plainText } from "./sanitize.js";
 import type { ReportStatus } from "./schema.js";
-import type { ReportRow, ReportTables } from "./store.js";
+import type { GithubLink, ReportRow, ReportTables } from "./store.js";
 
 /** What a report is about. */
 export const REPORT_AREAS = [
@@ -112,6 +113,21 @@ export interface Reporter {
   names: readonly string[];
 }
 
+/**
+ * Why an approval would or would not name the reporter: `on`; `anonymous` (no person),
+ * `not_linked`, `member_off` (their switch is off), `owner_off` (taken off this draft).
+ */
+export type MentionWhy = "on" | "anonymous" | "not_linked" | "member_off" | "owner_off";
+
+/**
+ * The last line of an issue whose reporter linked their GitHub account and lets it be named.
+ * `login` comes from GitHub for the linked numeric id, never from anything anyone typed.
+ */
+export function mentionLine(login: string): string {
+  if (!LOGIN.test(login)) throw new Error("not a GitHub login");
+  return `回報的人:@${login}`;
+}
+
 /** What tells a reporter their problem was fixed. */
 export interface FixedNotice {
   person: PersonId;
@@ -144,6 +160,8 @@ export interface ReportServiceDeps {
   /** The person behind an account, when she knows them. */
   reporter?(account: AccountRef): Promise<Reporter | null>;
   notifier?(): ReportNotifier | null;
+  /** Members linking their GitHub account; `null`: the App's user authorisation is not set. */
+  linker?: GitHubLinker | null;
   log?: {
     warn(obj: object, msg?: string): void;
     info(obj: object, msg?: string): void;
@@ -208,9 +226,25 @@ export class ReportService {
     return this.#deps.config;
   }
 
-  /** Whether reports can go to GitHub (a token and a repo). */
+  /** Whether reports can go to GitHub (the App or a token, and a repo). */
   get ready(): boolean {
     return this.#deps.tracker !== null;
+  }
+
+  /** How GitHub is reached: as the App, with the token, or not at all. */
+  get auth(): "app" | "token" | null {
+    const tracker = this.#deps.tracker;
+    return tracker === null ? null : (tracker.kind ?? "token");
+  }
+
+  /** Members linking their GitHub account, when the App's user authorisation is set. */
+  get linker(): GitHubLinker | null {
+    return this.#deps.linker ?? null;
+  }
+
+  /** Never a secret: the config holds the key, the token and the client secret. */
+  toJSON(): Record<string, unknown> {
+    return { repo: this.#deps.config.repo, ready: this.ready, linking: this.linker !== null };
   }
 
   #now(): Timestamp {
@@ -341,7 +375,66 @@ export class ReportService {
   }
 
   #tracker(): IssueTracker | Refusal {
-    return this.#deps.tracker ?? refuse(503, "沒有設定 GitHub token 或 repo,不能寫到 GitHub");
+    return this.#deps.tracker ?? refuse(503, "沒有設定 GitHub App 或 token,不能寫到 GitHub");
+  }
+
+  /** The member's switch for being named on their reports' issues; `false` without a link. */
+  setLinkMention(person: PersonId, on: boolean): boolean {
+    return this.#deps.store.setMention(person, on);
+  }
+
+  /** Removes the member's link; `false` when there was none. */
+  unlink(person: PersonId): boolean {
+    return this.#deps.store.unlink(person);
+  }
+
+  /** The reporter's linked account, when they have one. */
+  linkOf(person: PersonId): GithubLink | null {
+    return this.#deps.store.linkOf(person);
+  }
+
+  /**
+   * Whether an approval of `row` would name its reporter, as far as is known before GitHub is
+   * asked again: `login` is the name last read (`null`: no link).
+   */
+  mentionFor(row: ReportRow): { login: string | null; will_add: boolean; why: MentionWhy } {
+    if (row.person_id === null) return { login: null, will_add: false, why: "anonymous" };
+    const link = this.#deps.store.linkOf(row.person_id);
+    if (link === null) return { login: null, will_add: false, why: "not_linked" };
+    if (!link.mention) return { login: link.login, will_add: false, why: "member_off" };
+    if (row.no_mention) return { login: link.login, will_add: false, why: "owner_off" };
+    return { login: link.login, will_add: true, why: "on" };
+  }
+
+  /** The owner's switch for one draft: `false` takes the reporter's mention off it. */
+  setMention(id: string, on: boolean, actor: string): Decided {
+    const row = this.#draft(id);
+    if ("ok" in row) return row;
+    const done = this.#deps.store.move(id, "draft", { no_mention: !on });
+    if (done === null) return refuse(409, "這份回報剛剛被處理了");
+    this.#deps.log?.info({ id, mention: on, actor }, "report: the mention was switched");
+    return { ok: true, row: done };
+  }
+
+  /**
+   * The reporter's login as GitHub has it now, for a draft that would name them; `null` (no line)
+   * when it would not, when the account is gone, or when GitHub cannot say.
+   */
+  async #mentionLogin(row: ReportRow, tracker: IssueTracker): Promise<string | null> {
+    const { will_add } = this.mentionFor(row);
+    if (!will_add || row.person_id === null || tracker.login === undefined) return null;
+    const link = this.#deps.store.linkOf(row.person_id);
+    if (link === null) return null;
+    let login: string | null;
+    try {
+      login = await tracker.login(link.github_id);
+    } catch (error) {
+      this.#deps.log?.warn({ id: row.id, err: errorText(error) }, "report: cannot read the login");
+      return null;
+    }
+    if (login === null || !LOGIN.test(login)) return null;
+    if (login !== link.login) this.#deps.store.relogin(row.person_id, login);
+    return login;
   }
 
   /** Opens the issue; `edits` replace the title or the body the report would get. */
@@ -367,11 +460,15 @@ export class ReportService {
     });
     if (held === null) return refuse(409, "這份回報剛剛被處理了");
     try {
-      const opened = await tracker.open({ title, body, labels: this.#deps.config.labels });
+      // The reporter's own verified link, read again now: the only mention that is not inert.
+      const login = await this.#mentionLogin(held, tracker);
+      const sent = login === null ? body : `${body}\n\n${mentionLine(login)}`;
+      const opened = await tracker.open({ title, body: sent, labels: this.#deps.config.labels });
       const done = store.move(id, "opening", {
         status: "opened",
         issue_number: opened.number,
         issue_url: opened.url,
+        issue_body: sent,
       });
       this.#deps.log?.info({ id, issue: opened.number, actor }, "report: an issue was opened");
       return { ok: true, row: done ?? held };

@@ -6,6 +6,7 @@ import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { dataRoutes } from "./data.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
+import { githubLinkRoutes } from "./github-link.js";
 import { karaokeRoutes } from "./karaoke-routes.js";
 import { liveRoutes } from "./live.js";
 import { memberRoutes } from "./member.js";
@@ -13,7 +14,7 @@ import { metricsRoutes } from "./metrics.js";
 import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
 import { servePanel } from "./panel.js";
-import { clientKey, tooMany } from "./public.js";
+import { tooMany } from "./public.js";
 import type { Route } from "./route.js";
 import { type ResponseCheck, rpcRoutes } from "./rpc.js";
 import {
@@ -96,7 +97,7 @@ function publicRoutes(state: ApiState): Route[] {
       method: "GET",
       path: "/api/auth/oauth/login",
       handler: (c) => {
-        const wait = state.publicSide.admitLogin(clientKey(c));
+        const wait = state.publicSide.admitLogin(state.publicSide.client(c));
         return wait !== null ? tooMany(wait) : oauth.login(state, c);
       },
     },
@@ -122,6 +123,7 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...karaokeRoutes(state),
     ...dataRoutes(state),
     ...liveRoutes(state),
+    ...githubLinkRoutes(state),
 
     ...metricsRoutes(state, { public: options.metricsPublic ?? false }),
 

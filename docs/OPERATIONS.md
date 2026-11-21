@@ -579,7 +579,8 @@ Stage 要直接碰 VTube Studio / OBS / 遊戲,所以原生在直播機執行,�
 公開頁(`[modules.api.public]`,預設開):
 
 - 根網址對沒登入的人顯示她現在在做什麼、歌單和今天的統計,API 在 `/api/public/*`;登入的成員多看到她眼中的自己、下載資料、請她忘記、點歌,API 在 `/api/member/*`。管理用的 token 表單在 `#/login`,頁面上沒有連結。
-- 放在 Cloudflare tunnel 後面時,請求都從本機進來,速率限制看 `CF-Connecting-IP`。Core 綁在 `127.0.0.1` 才能信這個標頭;綁到其他位址時,非本機的連線一律用連線位址。
+- 放在 Cloudflare tunnel 後面時,請求都從本機進來,速率限制看 `CF-Connecting-IP`。Core 綁在 `127.0.0.1` 才能信這個標頭;綁到其他位址時,非本機的連線一律用連線位址,不管設定的是哪個標頭。
+- 前面換成這台電腦上別的反向代理(nginx、Caddy)時,用 `[modules.api.public] client_ip_header` 指定它帶訪客位址的標頭:`x-real-ip`,或 `x-forwarded-for`(取最後一個,也就是代理自己加上的那個)。代理要自己設這個標頭,不能照轉訪客送來的,否則訪客可以自己挑速率限制看的位址。沒設定時照預設讀 `CF-Connecting-IP`,而 nginx 預設會把訪客送的這個標頭原樣轉進來:用 nginx 或 Caddy 一定要設 `client_ip_header`,或在代理把 `CF-Connecting-IP` 清掉(nginx:`proxy_set_header CF-Connecting-IP "";`)。設成空字串就不讀任何標頭,所有從本機來的請求算同一個人。
 - `identify` 不能證明對方是伺服器成員:任何 Discord 帳號都能登入成員頁,但什麼資料都沒有,而且她不認識的帳號不能點歌。
 - 公開頁會把 `apps/panel/dist` 裡的預設背景圖傳給所有訪客。那張圖是遊戲 CG,對外開放前先確認授權,或把 `public/background.local.jpg` 拿掉後重新建置面板(`pnpm build:web`),面板會退回暮色漸層。
 

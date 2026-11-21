@@ -13,9 +13,21 @@ import {
 import type { AccountRef, ContextKey, PersonId, Timestamp } from "@miyoria/types";
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull } from "drizzle-orm";
 import { reportSchema } from "./migrations.js";
-import { type ReportDraftRow, type ReportStatus, reportDrafts } from "./schema.js";
+import {
+  type ReportDraftRow,
+  type ReportGithubLinkRow,
+  type ReportStatus,
+  reportDrafts,
+  reportGithubLinks,
+} from "./schema.js";
 
 export type ReportRow = ReportDraftRow;
+export type GithubLink = ReportGithubLinkRow;
+
+/** What linking an account did: `taken` when it is linked to someone else already. */
+export type LinkOutcome =
+  | { ok: true; link: GithubLink; replaced: boolean }
+  | { ok: false; why: "taken" };
 
 /** A cleaned report, ready to be written. */
 export interface NewReport {
@@ -58,6 +70,7 @@ export type Decision = Partial<
     | "decided_at"
     | "reason"
     | "last_error"
+    | "no_mention"
   >
 >;
 
@@ -203,11 +216,84 @@ export class ReportTables {
     return changed.changes > 0;
   }
 
+  // ---- the GitHub account a member linked ----------------------------------------------------
+
+  /** The account `person` linked, if any. */
+  linkOf(person: PersonId): GithubLink | null {
+    return (
+      this.#db.orm
+        .select()
+        .from(reportGithubLinks)
+        .where(eq(reportGithubLinks.person_id, person))
+        .get() ?? null
+    );
+  }
+
+  /**
+   * Links GitHub account `githubId` to `person`, replacing the account they had linked before.
+   * An account linked to someone else is refused (`taken`): it never moves on its own.
+   */
+  link(
+    person: PersonId,
+    githubId: number,
+    login: string,
+    mention: boolean,
+    at: Timestamp,
+  ): LinkOutcome {
+    return this.#db.tx((): LinkOutcome => {
+      const holder = this.#db.orm
+        .select()
+        .from(reportGithubLinks)
+        .where(eq(reportGithubLinks.github_id, githubId))
+        .get();
+      if (holder !== undefined && holder.person_id !== person) return { ok: false, why: "taken" };
+      const replaced = this.unlink(person);
+      this.#db.orm
+        .insert(reportGithubLinks)
+        .values({ person_id: person, github_id: githubId, login, mention, linked_at: at })
+        .run();
+      return { ok: true, link: this.linkOf(person) as GithubLink, replaced };
+    });
+  }
+
+  unlink(person: PersonId): boolean {
+    const removed = this.#db.orm
+      .delete(reportGithubLinks)
+      .where(eq(reportGithubLinks.person_id, person))
+      .run();
+    return removed.changes > 0;
+  }
+
+  /** The member's switch; `false` when they have no link. */
+  setMention(person: PersonId, on: boolean): boolean {
+    const changed = this.#db.orm
+      .update(reportGithubLinks)
+      .set({ mention: on })
+      .where(eq(reportGithubLinks.person_id, person))
+      .run();
+    return changed.changes > 0;
+  }
+
+  /** The login GitHub gave for the linked id just now. */
+  relogin(person: PersonId, login: string): void {
+    this.#db.orm
+      .update(reportGithubLinks)
+      .set({ login })
+      .where(eq(reportGithubLinks.person_id, person))
+      .run();
+  }
+
   /** Forgets who reported: the report itself stays, nobody's. */
   forget(ids: readonly PersonId[], accounts: readonly AccountRef[]): number {
     return this.#db.tx(() => {
       const keys = [...ids, ...accounts.map((a) => `account:${a.platform}:${a.id}`)];
       if (keys.length === 0) return 0;
+      if (ids.length > 0) {
+        this.#db.orm
+          .delete(reportGithubLinks)
+          .where(inArray(reportGithubLinks.person_id, [...ids]))
+          .run();
+      }
       const changed = this.#db.orm
         .update(reportDrafts)
         .set({ reporter: null, person_id: null, account: null, context: null })
@@ -238,7 +324,24 @@ export class ReportTables {
         .set({ person_id: keep })
         .where(eq(reportDrafts.person_id, absorb))
         .run().changes;
-      return { counts: { report_drafts: Math.max(Number(reporters), Number(persons)) } };
+      // One link per person: the one kept wins, the other goes.
+      const links =
+        this.linkOf(keep) === null
+          ? this.#db.orm
+              .update(reportGithubLinks)
+              .set({ person_id: keep })
+              .where(eq(reportGithubLinks.person_id, absorb))
+              .run().changes
+          : this.#db.orm
+              .delete(reportGithubLinks)
+              .where(eq(reportGithubLinks.person_id, absorb))
+              .run().changes;
+      return {
+        counts: {
+          report_drafts: Math.max(Number(reporters), Number(persons)),
+          report_github_links: Number(links),
+        },
+      };
     });
   }
 }
@@ -268,6 +371,26 @@ const reportData: readonly CategoryData[] = [
         close_reason: "text",
         notified_at: "ts",
       }),
+    ],
+  },
+  {
+    // Who someone is on GitHub, when they linked it themselves.
+    category: "people",
+    parts: [
+      tablePart(
+        "report_github_links",
+        "report_github_links",
+        "node",
+        "linked_at",
+        "linked_at, person_id",
+        {
+          person_id: "text",
+          github_id: "num",
+          login: "text",
+          mention: "bool",
+          linked_at: "ts",
+        },
+      ),
     ],
   },
 ];

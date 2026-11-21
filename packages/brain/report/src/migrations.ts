@@ -50,8 +50,28 @@ CREATE INDEX \`report_drafts_created_idx\` ON \`report_drafts\` (\`created_at\`)
 CREATE INDEX \`report_drafts_issue_idx\` ON \`report_drafts\` (\`closed_at\`,\`issue_number\`);
 `;
 
+/**
+ * Version 2: the GitHub account a member linked (one per person, one person per account), and the
+ * owner's switch that takes the reporter's mention off one report. Additive.
+ */
+const GITHUB_LINKS = `ALTER TABLE \`report_drafts\` ADD \`no_mention\` integer DEFAULT false NOT NULL;
+
+CREATE TABLE \`report_github_links\` (
+	\`person_id\` text PRIMARY KEY,
+	\`github_id\` integer NOT NULL,
+	\`login\` text NOT NULL,
+	\`mention\` integer DEFAULT true NOT NULL,
+	\`linked_at\` integer NOT NULL
+) STRICT;
+
+CREATE UNIQUE INDEX \`report_github_links_github_idx\` ON \`report_github_links\` (\`github_id\`);
+`;
+
 /** Problem reports members made through her, and the issues they became. */
 export const reportSchema: PluginSchema = {
   plugin: "report",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "github_links", sql: GITHUB_LINKS },
+  ],
 };

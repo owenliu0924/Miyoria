@@ -79,6 +79,9 @@ const HEAVY_PER_HOUR = 6;
 /** Card checks per client and minute, on top of the public limit: serials are not for guessing. */
 const CARD_CHECKS_PER_MINUTE = 20;
 
+/** The visitor's address as a Cloudflare tunnel gives it. */
+export const DEFAULT_CLIENT_IP_HEADER = "cf-connecting-ip";
+
 /**
  * `[modules.api.public]`.
  *
@@ -101,6 +104,17 @@ export const PublicConfigSchema = z.object({
   rate_total_per_minute: z.number().int().positive().default(3000),
   /** Where "today" starts, in minutes from UTC. */
   utc_offset_minutes: z.number().int().min(-840).max(840).default(480),
+  /**
+   * The header in which the reverse proxy on this machine names the visitor's address, read only
+   * for requests that arrive from this machine. `CF-Connecting-IP` for a Cloudflare tunnel;
+   * `X-Real-IP` or `X-Forwarded-For` (its last entry) for nginx or Caddy, which must set it
+   * themselves and not pass on what the visitor sent. Empty: no header is read.
+   */
+  client_ip_header: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9-]*$/)
+    .default(DEFAULT_CLIENT_IP_HEADER),
 });
 export type PublicConfig = z.output<typeof PublicConfigSchema>;
 
@@ -156,13 +170,20 @@ function network(address: string): string {
  * Who a public request comes from. Behind the Cloudflare tunnel every request arrives from
  * `cloudflared` on this machine, so the socket says nothing and `CF-Connecting-IP` is the visitor;
  * Cloudflare overwrites that header, so nobody out there can choose it. From any other peer the
- * header is the client's own word and the socket address counts.
+ * header is the client's own word and the socket address counts; with no socket to ask, nobody
+ * is known to be this machine, so the header counts for nothing either.
+ *
+ * `header`: the header the proxy on this machine uses (`client_ip_header`, normally through
+ * `PublicSide.client`); of a list (`X-Forwarded-For`) the last entry counts, the one that proxy
+ * added itself. Empty: none.
  */
-export function clientKey(c: ApiContext): string {
+export function clientKey(c: ApiContext, header: string): string {
   const env = c.env as { incoming?: { socket?: { remoteAddress?: string } } } | undefined;
   const peer = env?.incoming?.socket?.remoteAddress ?? null;
   if (peer !== null && !isLoopbackPeer(peer)) return network(peer);
-  return network(c.req.header("cf-connecting-ip")?.trim() || "local");
+  const name = header.trim().toLowerCase();
+  const said = peer === null || name === "" ? undefined : c.req.header(name);
+  return network(said?.split(",").at(-1)?.trim() || "local");
 }
 
 /** Throws `429` when the member behind `c` has been asking too much. */
@@ -358,6 +379,11 @@ export class PublicSide {
     this.#everyone = new RateWindow(config.rate_total_per_minute, MINUTE_MS, 1);
   }
 
+  /** Who the request behind `c` comes from, for the limits (`clientKey`). */
+  client(c: ApiContext): string {
+    return clientKey(c, this.config.client_ip_header);
+  }
+
   /** How many ms a public request must wait, `null` when it may go ahead. */
   admit(client: string): number | null {
     const now = this.#now();
@@ -519,7 +545,7 @@ export function publicSongs(state: ApiState): PublicSongs {
 export function servePublic<T>(context: RpcContext, key: string, build: () => T): T {
   const { state, c } = context;
   const side = state.publicSide;
-  const wait = side.admit(clientKey(c));
+  const wait = side.admit(side.client(c));
   if (wait !== null) throw ApiError.tooMany(wait);
   context.resHeaders?.set("cache-control", `public, max-age=${Math.ceil(side.config.cache_secs)}`);
   context.resHeaders?.set("x-content-type-options", "nosniff");
