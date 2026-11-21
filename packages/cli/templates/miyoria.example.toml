@@ -1289,7 +1289,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # 核准才在 GitHub 開 issue(也可以改成加到已有的 #N、標成重複或拒絕)。成員說的內容先清過:
 # 網址、@、#數字、名字和 id 都拿掉,誰回報的只留在 Core 裡。issue 關掉(做完)時她會記得跟回報的人說一聲。
 # token 只要那一個 repo 的 Issues 讀寫:fine-grained personal access token 只選那個 repo、
-# 權限只開「Issues: Read and write」,或只裝在那個 repo、同樣權限的 GitHub App。放在 .env,這裡只引用。
+# 權限只開「Issues: Read and write」(GitHub 會自動加上 Metadata 唯讀)。放在 .env,這裡只引用。
+# GitHub App 的 installation token 一小時就過期,現在還不能用。
 # 沒有 token 或 repo 時她看不到這個工具。
 # [modules.report]
 # enabled = true

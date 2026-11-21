@@ -4,8 +4,10 @@
 // The token is a secret: it comes from the environment through `${VAR}` in `miyoria.toml`, never
 // as plain text in the file. It needs nothing but issues on the one repository: a fine-grained
 // personal access token limited to that repository with "Issues: Read and write" (GitHub adds
-// "Metadata: Read" on its own), or a GitHub App installed on that repository only with the same
-// permission. Making that token or app is the owner's job.
+// "Metadata: Read" on its own). Making that token is the owner's job. A GitHub App installed on
+// that repository only, with the same permission, is the other way GitHub offers, but its
+// installation tokens expire within the hour and minting them from the App's key is not built: a
+// static token is all this reads.
 
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
 import { z } from "zod";
