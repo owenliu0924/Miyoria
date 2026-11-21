@@ -359,6 +359,9 @@ function loopbackUrl(url: string): boolean {
 
 const seconds = (ms: number) => Math.round(ms / 100) / 10;
 
+/** The key under which `#speechHosts` says Core's own machine carries her voice. */
+const CORE_MACHINE = "\u0000core-machine";
+
 export class EndpointRegistry {
   readonly #hosts = new Map<string, HostEntry>();
   readonly #order: Readonly<Record<string, readonly string[]>>;
@@ -981,6 +984,10 @@ export class EndpointRegistry {
         const list = out.get(name) ?? [];
         list.push(service.name);
         out.set(name, list);
+        // Core's own machine carries her voice: a static entry at a loopback address (an address
+        // key of the config, not a host) is on that machine too.
+        if (entry.local === true)
+          out.set(CORE_MACHINE, [...(out.get(CORE_MACHINE) ?? []), service.name]);
       }
     }
     return out;
@@ -1082,7 +1089,10 @@ export class EndpointRegistry {
     if (this.#excluded(capability, host)) return "被排除在這個能力之外";
     const drained = this.#drained(host);
     if (drained !== null) return drained;
-    const carrying = speech.get(host);
+    // A static entry has no host of its own: on a loopback address it is Core's machine.
+    const carrying =
+      speech.get(host) ??
+      (r.routing === null && r.local === true ? speech.get(CORE_MACHINE) : undefined);
     if (carrying !== undefined) {
       const mode = this.#speechMode(capability);
       const voice = carrying.join("、");
