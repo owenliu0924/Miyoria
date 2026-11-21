@@ -555,6 +555,6 @@ PR 7 的方向(顯示規則改寫成行為、去掉公式、情緒帶程度)和�
 
 ## 18. 參考
 
-- 前幾版:[v2-architecture.md](v2-architecture.md)、[v3-architecture.md](v3-architecture.md)、[v3-research.md](v3-research.md)
+- 前幾版:[v2-architecture.md](v2-architecture.md)、[v3-architecture.md](v3-architecture.md)
 - 相關設計:[autonomy.md](autonomy.md)、[economy.md](economy.md)、[cards.md](cards.md)、[minecraft-findings.md](minecraft-findings.md)、[backlog.md](backlog.md)
 - 外部(2026-11-10 查):[Neuro Game SDK](https://github.com/VedalAI/neuro-game-sdk)、[moeru-ai/airi](https://github.com/moeru-ai/airi)(v0.15 的觸碰反應)、[萌娘百科 DeepSeek娘](https://zh.moegirl.org.cn/DeepSeek%E5%A8%98)、[Cloudflare Stream WebRTC](https://developers.cloudflare.com/stream/webrtc/)
