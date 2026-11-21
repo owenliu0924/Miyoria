@@ -783,6 +783,39 @@ describe("一起唱: opening a room", () => {
   });
 });
 
+describe("一起唱: when she is not in voice yet", () => {
+  it("says why 開一間房 cannot be pressed, and lets it be pressed within seconds of her joining, without a reload", async () => {
+    window.history.replaceState(null, "", "/karaoke");
+    let inVoice = false;
+    let asked = 0;
+    mockFetch((method, url) => {
+      const path = url.pathname;
+      if (path === "/api/member/karaoke") return { body: overview() };
+      if (path === "/api/member/karaoke/rooms" && method === "GET") {
+        asked++;
+        return {
+          body: inVoice
+            ? { available: true, reason: null, terms: TERMS, balance: 50, mine: null }
+            : { available: false, reason: "她要在語音頻道裡才能開房間", terms: TERMS, balance: 50, mine: null },
+        };
+      }
+      return undefined;
+    });
+    renderPage(<KaraokePage member={MEMBER as never} home="/" />);
+    const block = await screen.findByRole("region", { name: "一起唱" });
+    const open = await within(block).findByRole("button", { name: "開一間房" });
+    // The page was loaded before she joined: the button is off and says why and what happens next.
+    expect(open).toBeDisabled();
+    expect(open).toHaveAccessibleDescription(/她要在語音頻道裡才能開房間。她進語音頻道後,這裡一兩秒內就能按,不用重新整理/);
+    const before = asked;
+    // She joins. Nothing on the page is touched: no reload, no focus change.
+    inVoice = true;
+    await waitFor(() => expect(within(block).getByRole("button", { name: "開一間房" })).toBeEnabled(), { timeout: 3_000 });
+    expect(asked).toBeGreaterThan(before);
+    window.history.replaceState(null, "", "/");
+  });
+});
+
 describe("唱歌 while it is closed", () => {
   it("is closed to members, and open to an admin with a quiet line", async () => {
     mockFetch((_m, url) => (url.pathname === "/api/member/karaoke" ? { body: overview({ open: false }) } : undefined));

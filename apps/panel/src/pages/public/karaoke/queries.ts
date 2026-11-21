@@ -53,6 +53,14 @@ export function usePreparing(song: KaraokeSongView) {
 
 export const ROOMS = [...KARAOKE, "rooms"] as const;
 
+/**
+ * How often whether a room can be opened is asked again: often while it cannot (she joining a
+ * voice channel must enable 開一間房 within a second or two, not on the next reload), seldom
+ * while it can (she leaving is said by Core when someone tries). Only while the page is in view.
+ */
+export const ROOMS_WAIT_POLL_MS = 1_500;
+export const ROOMS_POLL_MS = 15_000;
+
 /** Whether a room can be opened now, its price, the balance and the room they are in. */
 export function useRooms(enabled = true) {
   const api = useApi();
@@ -61,5 +69,8 @@ export function useRooms(enabled = true) {
     queryFn: ({ signal }) => api.rpc.karaokeRooms.overview(undefined, { signal }),
     retry: retryUnlessOff,
     enabled,
+    staleTime: 0,
+    refetchInterval: (q) =>
+      q.state.error ? false : q.state.data && !q.state.data.available ? ROOMS_WAIT_POLL_MS : ROOMS_POLL_MS,
   });
 }
