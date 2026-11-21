@@ -1,6 +1,6 @@
 # 互動經濟:貨幣與餵食
 
-狀態:後端已實作(§11),§9.1 是先用的答案;面板、overlay、Discord 另外做。
+狀態:已實作並上線(§11 起)。§9.1 是先用的答案。會員頁的錢包(`apps/panel/src/pages/public/Wallet.tsx`)、面板的經濟頁和人物側欄的魚幣區塊、overlay 的禮物和留言(`apps/overlay/src/feed.ts`)、Discord 的 `/me wallet` 等指令(`packages/economy/src/commands.ts`)都已經有了。V5 之後新增和拿掉的(預測、每日任務、成就、彈幕、拿掉的約定和委託等)以 [v5-play.md](v5-play.md) 為準。
 
 ## 0. 一句話結論
 
@@ -163,7 +163,7 @@ CREATE INDEX ... ON coin_ledger (profile_id, author_platform, author_id, ts);
 
 ## 11. 實作了什麼
 
-A、B 階段的後端和 C 的卡框做好了;面板、直播 overlay 和 Discord `/me i` 的錢包區塊另外做。
+A、B 階段的後端和 C 的卡框做好了;面板、直播 overlay 和 Discord 的錢包也做好了(見開頭的狀態;Discord 是 `/me wallet`,不是當初寫的 `/me i`)。
 
 - **模組**:`packages/economy`(`[modules.economy]`,預設值就是 §3 的數字)。提供 `EconomyKey`,面板路由和 Discord 指令都用它,同一本帳、同一組每日上限。
 - **帳本**:migration 0011 的 `coin_ledger`(只增不改,退錢也是一筆)和 `coin_wallets`(選了哪個卡框)。一個人連在一起的帳號是同一個錢包;冪等鍵、每日上限和餘額檢查都在同一個交易裡。資料頁放在「關係」分類,和 `member_cards` 一樣;「請她忘記我」不碰它。
@@ -187,7 +187,7 @@ A、B 階段的後端和 C 的卡框做好了;面板、直播 overlay 和 Discor
 
 ## 13. 更多能花的地方(2026-11-08)
 
-一個人一天大約賺 55,原本只能花在餵食和卡框。這一節加上卡片、點歌、直播、她自己的錢和人與人之間的東西。owner 決定:轉帳和排行榜要做,原則 1(不能轉給別人)和 5(沒有排行榜)照下面的限制改;競猜(押注)不做。
+一個人一天大約賺 55,原本只能花在餵食和卡框。這一節加上卡片、點歌、直播、她自己的錢和人與人之間的東西。owner 決定:轉帳和排行榜要做,原則 1(不能轉給別人)和 5(沒有排行榜)照下面的限制改;競猜(押注)當時不做(後來改了,見本節最後)。
 
 **共用的收費**:別的部分賣的東西都走 `Economy.purchase(account, item, key, ref)`:扣 `[modules.economy]` 同名的價格、檢查同名 `*_per_day` 的每日上限(退錢的不算)、冪等鍵、稽核;`Economy.refund(account, entry_id)` 退一次。買到的東西是賣的那邊的事,經濟只管錢。`*_per_day = 0` 就是下架。
 
@@ -198,6 +198,8 @@ A、B 階段的後端和 C 的卡框做好了;面板、直播 overlay 和 Discor
 | 閃卡加工 `card_foil` | 50 | 5 | 卡片 | 這張卡加一層箔,純外觀 |
 | 留言上大螢幕 `screen_message` | 30 | 10 | 直播 | 開台時 overlay 顯示 60 字內的留言;過審查;每人每 10 分鐘一則;她看得到,有空可能念 |
 | 今日籤詩 `fortune` | 10 | 1 | 籤詩 | 只能在每日簽到時加買(2026-11-17 起,不再有單獨的指令、工具和路由):她現寫一張籤(籤等、四句、幾個欄位),可以下載;寫不出來就退錢,簽到照算 |
+
+抽卡重製券和指定立繪後來拿掉了(設定 `card_reroll`、`card_rerolls_per_day`、`card_pose`、`card_poses_per_day` 列在 `packages/core/src/removed-config.ts`;`/me card` 現在是再發一張、閃卡和卡片池的那幾個動作,見 [cards.md](cards.md))。
 
 overlay 的新東西走 `economy.screen`(`ScreenEvent` 只有 `name` 和 `text`:一則付費留言)。
 
@@ -224,7 +226,7 @@ overlay 的新東西走 `economy.screen`(`ScreenEvent` 只有 `name` 和 `text`:
   - 排行榜 `Economy.board` / `setOnBoard`:退出記在 `coin_wallets.off_board`(migration 0015,舊的 `on_board` 不再讀),連在一起的帳號任一個退出就退出,`setOnBoard` 一次寫整個錢包;一個人一行、帳號的花費加總。算 `BOARD_REASONS`:`feed`、`letter`、`expression`、`frame`、全部 `PAID_ITEMS`(`card_reroll`、`card_pose`、`card_foil`、`song_ticket`、`dedication`、`screen_message`、`fortune`)、`goal_pledge`,以及已經放給她的預付約定(`deal_escrow` 且約定 `settled`);退回的不算(目標沒達成退回的投入也不算);`transfer_out`、懸賞託管、`purse_gift` 不算;`board_days`(30)天內。同額同名次。入口:Discord `/me board [join]`、`POST /api/member/board {on}`、`GET /api/public/board`(只有名字和數字)。
   - 籤詩:`fortunes` 表,一人一天一張;`GET /api/member/fortune` 看今天的那張;要抽就在簽到時加買:`POST /api/member/checkin { fortune: true }`(答案多 `fortune`、`fortune_charged`,寫不出來是 `fortune_note`,簽到照算),Discord 是 `/me checkin fortune:true`(`/me fortune` 沒了)。已經簽到過的那天也能只買籤詩(`gained` 0,沒有第二份簽到獎勵,同價、同 `fortunes_per_day`),直到今天的籤詩存在;面板在簽到旁有開關,簽過到就變成「買今日籤詩」按鈕。Discord 的答案只說「抽好了」,籤詩本身用只有買的人看得到的 follow-up 送出(籤詩有她寫的私人一句);送不出去就請他到會員頁看。她寫 {籤等、題、四句、最多三個欄位、一句話},籤等不在六種之內就依權重抽(大吉 10、吉 30、中吉 25、小吉 20、末吉 10、凶 5),每段文字過和卡片一樣的篩;寫不出來就退錢、回 503。匯出有 `fortunes`,「請她忘記我」會刪。
 
-**不做**:競猜、押注,或任何拿魚幣賭結果的東西。
+**押注(後來改了)**:這一節寫的時候(2026-11-08)決定不做競猜和押注。之後經濟 2.0 加了預測下注([v4-plan.md](v4-plan.md) §10),V5 第 5 期留下來,改成由遊戲和直播的事件自動結算、有人猜中時從獎池抽 `prediction_rake`(預設 5%)燒掉([v5-play.md](v5-play.md) §4.2、§11.8;`packages/economy/src/predictions.ts`、`prediction-watch.ts`)。
 
 ## 14. 管理員手動調整(2026-11-08)
 
@@ -240,6 +242,6 @@ overlay 的新東西走 `economy.screen`(`ScreenEvent` 只有 `name` 和 `text`:
 
 有人問「我有多少魚幣」「魚幣能買什麼」,她以前只能猜(看截圖、亂列商店、答應「等下給」)。現在有唯讀工具 `economy.look`(`check_coins`,風險低、不需權限、不需同意):只回正在跟她說話的人自己的餘額和今天還能賺的(沿用 `wallet`),加上整個商店(`EconomyService.shop()` 或錢包裡的 `shop`,分成送她東西/直播/卡片/其他,買不了的附原因),以及商店以外的花法和 `/me` 指令。沒有「查誰」的參數(§2 第 5 點);不是對著某個人說話、陌生人或被封鎖的人,只給商店(不標買得了買不了)。選填 `about: "me" | "shop"` 只給其中一半。
 
-它取代原本只查餘額的 `economy.wallet`(`wallet_of_speaker`):兩個重疊的工具讓她更容易都不用。「說了沒做」的檢查(`agent/src/claims.ts`)改看 `check_coins`。
+它取代原本只查餘額的 `economy.wallet`(`wallet_of_speaker`):兩個重疊的工具讓她更容易都不用。當時「說了沒做」的檢查(`agent/src/claims.ts`)改看 `check_coins`;那個檢查已經跟著舊的回合一起拿掉了(V5 階段 3,commit `17f5c02e`),現在沒有這一層。
 
 **她會餓**:原本每回一句話 `hunger` −0.03(`[modules.self.satisfy] turn_hunger`),自己上升卻只有每小時剩餘差距的 0.05,伺服器一熱鬧她就一直是 0、一直吃飽,所有餵食都被擋。現在說話不算吃(`turn_hunger = 0`),`[modules.self.rise_per_hour] hunger = 0.25`:從吃飽到再想吃(`full_below` 0.15)約 40 分鐘。
