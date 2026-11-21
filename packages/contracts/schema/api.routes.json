@@ -769,8 +769,8 @@
           "errorMap": {},
           "meta": {
             "audience": "admin",
-            "permission": "admin.cluster.update",
-            "refusal": "更新電腦需要 admin.cluster.update 權限"
+            "permission": "owner.cluster.update",
+            "refusal": "更新電腦需要 owner.cluster.update 權限(預設只有擁有者有)"
           },
           "route": {
             "inputStructure": "detailed",
@@ -784,8 +784,8 @@
           "errorMap": {},
           "meta": {
             "audience": "admin",
-            "permission": "admin.cluster.update",
-            "refusal": "更新電腦需要 admin.cluster.update 權限"
+            "permission": "owner.cluster.update",
+            "refusal": "更新電腦需要 owner.cluster.update 權限(預設只有擁有者有)"
           },
           "route": {
             "inputStructure": "detailed",

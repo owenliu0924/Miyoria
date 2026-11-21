@@ -11,7 +11,7 @@
 // * `GET /api/cluster/endpoints`: the registry's candidates, never a header
 // * `GET /api/cluster/checkout`: Core's own checkout; `POST /api/cluster/upgrade` `{ hosts, wait_s? }`
 //   asks each host to update itself to Core's commit, `POST /api/cluster/hosts/{name}/upgrade/cancel`
-//   cancels one that still waits (v5-hostd §14). Both need `admin.cluster.update` and are audited
+//   cancels one that still waits (v5-hostd §14). Both need `owner.cluster.update` and are audited
 //   per host.
 // * `POST /api/cluster/join` `{ code, name, platform?, version? }`: no session, the code is the
 //   credential; every bad code is the same 403 and an address gets 5 tries a minute

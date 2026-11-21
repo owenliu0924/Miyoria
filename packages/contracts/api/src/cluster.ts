@@ -211,8 +211,12 @@ export const ClusterUpgradeCancelResultSchema = z
   .meta({ id: "ApiClusterUpgradeCancelResult" });
 export type ClusterUpgradeCancelResult = z.output<typeof ClusterUpgradeCancelResultSchema>;
 
-/** The node an admin's account must hold to update hosts from the panel. */
-export const CLUSTER_UPDATE_PERMISSION = "admin.cluster.update";
+/**
+ * The node an account must hold to update hosts from the panel. An `owner.*` node: the owner role
+ * has it through `*`, the admin role's `admin.*` does not cover it, and the owner may grant it to
+ * someone by name. Hosts take updates unless they opt out, so this stays the owner's by default.
+ */
+export const CLUSTER_UPDATE_PERMISSION = "owner.cluster.update";
 
 const HostParams = z.object({ name: z.string() });
 const ServiceParams = z.object({ name: z.string(), service: z.string(), action: z.string() });
@@ -272,14 +276,14 @@ export const cluster = {
     .output(ClusterCoreCheckoutSchema),
   /**
    * Asks each host to update itself to Core's commit (v5-hostd §14). `409` when Core has no
-   * checkout. Each host's refusal (not opted in, not connected, Core's own machine, a changed
+   * checkout. Each host's refusal (opted out, not connected, Core's own machine, a changed
    * tree) is one result with its reason; each is in the audit log.
    */
   upgrade: route
     .meta({
       audience: "admin",
       permission: CLUSTER_UPDATE_PERMISSION,
-      refusal: "更新電腦需要 admin.cluster.update 權限",
+      refusal: "更新電腦需要 owner.cluster.update 權限(預設只有擁有者有)",
     })
     .route({ method: "POST", path: "/api/cluster/upgrade" })
     .input(z.object({ body: ClusterUpgradeRequestSchema }))
@@ -289,7 +293,7 @@ export const cluster = {
     .meta({
       audience: "admin",
       permission: CLUSTER_UPDATE_PERMISSION,
-      refusal: "更新電腦需要 admin.cluster.update 權限",
+      refusal: "更新電腦需要 owner.cluster.update 權限(預設只有擁有者有)",
     })
     .route({ method: "POST", path: "/api/cluster/hosts/{name}/upgrade/cancel" })
     .input(z.object({ params: HostParams, body: z.object({}) }))

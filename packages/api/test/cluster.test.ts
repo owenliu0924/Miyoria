@@ -3,6 +3,7 @@
 // registry with a link that is a table of connected hosts.
 
 import { request } from "node:http";
+import { builtinRoles, matches } from "@miyoria/auth";
 import {
   type CheckoutSource,
   ClusterKey,
@@ -619,10 +620,21 @@ describe("remote updates", () => {
     started_at: T0,
   });
 
-  it("needs admin.cluster.update", () => {
+  it("needs owner.cluster.update, which only the owner role holds by default", () => {
+    const node = "owner.cluster.update";
     for (const name of ["upgrade", "upgradeCancel"]) {
-      expect(routeMeta(contract, ["cluster", name])?.permission, name).toBe("admin.cluster.update");
+      expect(routeMeta(contract, ["cluster", name])?.permission, name).toBe(node);
     }
+    const holds = (role: string) => {
+      const r = builtinRoles().find((x) => x.name === role);
+      if (r === undefined) throw new Error(`no role ${role}`);
+      return !r.denies.some((p) => matches(p, node)) && r.grants.some((p) => matches(p, node));
+    };
+    expect(holds("owner")).toBe(true);
+    expect(holds("admin")).toBe(false);
+    expect(holds("moderator")).toBe(false);
+    // A role made by the owner may hold it by name.
+    expect(matches(node, node)).toBe(true);
     expect(routeMeta(contract, ["cluster", "checkout"])?.permission).toBeNull();
   });
 
