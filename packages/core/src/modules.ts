@@ -5,7 +5,7 @@
 // which is there before anything can say a word): llm, cluster, speech, voice.link, voice, scheduler, agent, commands,
 // auth, actions, directive, activity, heart, world, self, memory, arbiter, mind, knowledge, conversation,
 // reflect, queue, game, game.chat, sing, mcp,
-// stage.link, economy, cards, market, web, sandbox (opt-in), imagegen (opt-in), party, eval, Discord bot, Admin API, terminal chat, then the
+// stage.link, economy, cards, market, web, sandbox (opt-in), imagegen (opt-in), party, eval, report (opt-in), Discord bot, Admin API, terminal chat, then the
 // extension host and one `ext.<id>` per extension. `facts` also writes the raw record (chat lines,
 // her decisions, how each turn ended) from the bus.
 
@@ -17,6 +17,7 @@ import { ActivityModule } from "@miyoria/brain/activity";
 import { AgentModule, PersonaHandleKey } from "@miyoria/brain/agent";
 import { ArbiterConfigSchema, ArbiterModule, type LocalTime } from "@miyoria/brain/arbiter";
 import { DirectiveModule } from "@miyoria/brain/directive";
+import { ReportModule } from "@miyoria/brain/report";
 import { initiativeFromConfig, ScheduleRemindersKey, selfHost } from "@miyoria/brain/selfhost";
 import { ClusterModule } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
@@ -226,6 +227,8 @@ async function coreModules({
     new LiveModule({ names: profile.names() }),
     new PartyModule(),
     new EvalModule({ baseDir }),
+    // Problem reports members make through her, for GitHub issues (opt-in).
+    new ReportModule(),
   ];
 }
 
