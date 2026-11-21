@@ -2992,8 +2992,7 @@
           "errorMap": {},
           "meta": {
             "audience": "member",
-            "permission": null,
-            "limited": true
+            "permission": null
           },
           "route": {
             "inputStructure": "detailed",
@@ -3052,7 +3051,8 @@
           "errorMap": {},
           "meta": {
             "audience": "member",
-            "permission": null
+            "permission": null,
+            "limited": true
           },
           "route": {
             "inputStructure": "detailed",
