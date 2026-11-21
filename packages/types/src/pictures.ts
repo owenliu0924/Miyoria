@@ -189,6 +189,84 @@ export interface AuctionPictureData {
   history: { amount: number; name: string; at: string }[];
 }
 
+// ---- the deep-sea exchange (docs/design/exchange.md §7), filled by `@miyoria/play/exchange` ----
+
+/** One company's quote: its price, the day's move and the last two weeks as a line. */
+export interface ExchangeQuotePicture {
+  code: string;
+  name: string;
+  /** The sector's word (`AI`, `民生`, ...). */
+  sector: string;
+  blurb: string;
+  currency: string;
+  /** Prices are in cents (10000 = 100.00). */
+  price: number;
+  ref: number;
+  /** From the reference, as a fraction. */
+  change: number;
+  limit: "up" | "down" | null;
+  /** Held rounds' prices, oldest first. */
+  series: number[];
+  /** What `series` covers (`11/8 – 11/21`); `null`: nothing yet. */
+  range: string | null;
+  /** The newest news about it, newest first (her headline or the plain one). */
+  news: { headline: string; direction: "up" | "down" }[];
+  /** `YYYY-MM-DD HH:00` of the last round. */
+  as_of: string;
+}
+
+/** A member's own holdings: only ever drawn for them. */
+export interface ExchangePortfolioPicture {
+  name: string;
+  currency: string;
+  balance: number | null;
+  /** Wallet plus holdings at market value. */
+  worth: number | null;
+  holdings: { code: string; qty: string; cost: number; value: number }[];
+  leveraged: {
+    code: string;
+    margin: number;
+    equity: number;
+    ratio: number;
+    price: number;
+    line_price: number;
+  }[];
+  as_of: string;
+}
+
+/** The day's market: the index, every company's move, the totals, her closing line. */
+export interface ExchangeDayPicture {
+  date: string;
+  currency: string;
+  fish: number;
+  fish_ref: number;
+  level: number | null;
+  vault: number;
+  volume: number;
+  burned: number;
+  halted: boolean;
+  companies: {
+    code: string;
+    name: string;
+    price: number;
+    change: number;
+    limit: "up" | "down" | null;
+  }[];
+  /** The index through the day's held rounds. */
+  series: number[];
+  her: string | null;
+}
+
+/** The rich list or the week's volume table (people who hide are not on it). */
+export interface ExchangeBoardPicture {
+  currency: string;
+  /** The Monday the week started (the volume table); `null` for the rich list. */
+  week_start: string | null;
+  rows: { rank: number; name: string; value: number; extra: string | null }[];
+  /** The viewer's own place, when the picture is for someone (`null`: off the table or hidden). */
+  me: { rank: number | null; hidden: boolean } | null;
+}
+
 /** Every template and its data. */
 export interface PictureDataMap {
   wallet: WalletPictureData;
@@ -198,6 +276,11 @@ export interface PictureDataMap {
   odds: OddsPictureData;
   lottery: LotteryPictureData;
   auction: AuctionPictureData;
+  exchange_quote: ExchangeQuotePicture;
+  exchange_portfolio: ExchangePortfolioPicture;
+  exchange_day: ExchangeDayPicture;
+  exchange_rich: ExchangeBoardPicture;
+  exchange_volume: ExchangeBoardPicture;
 }
 
 export type PictureKind = keyof PictureDataMap;
