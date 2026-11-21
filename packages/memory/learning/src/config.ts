@@ -129,6 +129,27 @@ export const DiaryConfigSchema = z.object({
 export type DiaryConfig = z.output<typeof DiaryConfigSchema>;
 
 /**
+ * `[modules.reflect.tidy]`: the nightly tidy of her notes (`notes/src/tidy.ts`), after the daily
+ * reflection and the pass on people, in a quiet moment, under the same nightly figure. It merges
+ * and shortens lines only within one scope; what it replaces stays in the history.
+ */
+export const TidyConfigSchema = z.object({
+  /** Off by default until the owner turns it on. */
+  enabled: z.boolean().default(false),
+  /** Documents a night at most (the fullest, most repetitive, longest untidied first). */
+  documents_per_night: count().default(20),
+  /** A group of one scope with fewer lines in use than this is left as it is. */
+  min_group_lines: z.number().int().min(2).default(6),
+  /** What one night's tidy may spend (USD), apart from the nightly figure it also counts in. */
+  budget_usd: z.number().nonnegative().default(0.1),
+  /** The same in tokens, for a model with no price. */
+  budget_tokens: count().default(300_000),
+  /** Most tokens of one reply. */
+  max_tokens: count().default(3000),
+});
+export type TidyNightConfig = z.output<typeof TidyConfigSchema>;
+
+/**
  * `[modules.reflect]`: feedback signals, lessons and her reflections.
  *
  * ```toml
@@ -191,6 +212,7 @@ export const ReflectConfigSchema = z.object({
   /** Characters of lessons in a turn's prompt. */
   prompt_chars: count().default(600),
   diary: DiaryConfigSchema.prefault({}),
+  tidy: TidyConfigSchema.prefault({}),
 });
 export type ReflectConfig = z.output<typeof ReflectConfigSchema>;
 

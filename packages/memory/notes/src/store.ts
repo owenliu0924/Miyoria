@@ -59,6 +59,7 @@ import {
   identityResolver,
   type NotesReader,
   type ScopeResolver,
+  sameScope,
   scopeId,
   scopeOf,
   visibleTo,
@@ -72,6 +73,7 @@ import type {
   EvidenceInput,
   HistoryEntry,
   LineInput,
+  MergeInput,
   NoteDocument,
   NoteEvidence,
   NoteLine,
@@ -1151,6 +1153,75 @@ export class NotesStore {
       lenient: false,
     });
     return this.#applied(result);
+  }
+
+  /**
+   * Puts fewer lines in the place of more as one change set (the nightly tidy, `tidy.ts`): every
+   * line a merge names in `from` is marked outdated with `reason` and points at the merge's new
+   * line. A line named must be in use in this document, be named once, and have the very scope of
+   * its merge's new line: a merge never carries text from one scope into another. The outdates go
+   * first, so the limits count the lines that stay. All or nothing; a call that merges nothing
+   * gets no version.
+   */
+  merge(
+    subject: string,
+    merges: readonly MergeInput[],
+    meta: Omit<ChangeMeta, "lenient">,
+    reason = "tidied",
+  ): ChangeResult {
+    const result = this.#merge(subject, merges, meta, reason);
+    this.#tell(result.applied.filter((a) => a.op === "add").map((a) => a.line));
+    return result;
+  }
+
+  #merge(
+    subject: string,
+    merges: readonly MergeInput[],
+    meta: Omit<ChangeMeta, "lenient">,
+    reason: string,
+  ): ChangeResult {
+    return this.#db.tx(() => {
+      const doc = this.#need(subject);
+      if (merges.length === 0) return { document: doc, version: null, applied: [], refused: [] };
+      const now = this.#now();
+      const version = doc.version + 1;
+      const change: ChangeMeta = { ...meta, lenient: false };
+      const named = new Set<string>();
+      const rows = merges.map((m) => {
+        if (m.from.length === 0)
+          throw new NotesError("empty", "a merge names the lines it replaces");
+        return m.from.map((ref) => {
+          const row = this.#find(doc, ref);
+          if (named.has(row.id)) {
+            throw new NotesError("duplicate", `line ${shortLineId(row.id)} is merged twice`);
+          }
+          named.add(row.id);
+          const scope = scopeOf(row.scope, row.scope_id);
+          if (scope === null || !sameScope(scope, m.line.scope)) {
+            throw new NotesError(
+              "bad_scope",
+              `line ${shortLineId(row.id)} is not of the scope of the line it would merge into`,
+            );
+          }
+          return row;
+        });
+      });
+      const applied: AppliedOp[] = [];
+      rows.forEach((list, index) => {
+        for (const row of list) {
+          this.#markOutdated(doc, row, reason, change, version, now);
+          applied.push({ index, op: "outdate", line: row.id, replaced: null });
+        }
+      });
+      merges.forEach((m, index) => {
+        const line = this.#add(doc, m.line, change, version, now);
+        const replaced = rows[index]?.map((r) => r.id) ?? [];
+        this.#db.orm.update(L).set({ replaced_by: line }).where(inArray(L.id, replaced)).run();
+        applied.push({ index, op: "add", line, replaced: null });
+      });
+      this.#db.orm.update(D).set({ version, updated_at: now }).where(eq(D.id, doc.id)).run();
+      return { document: { ...doc, version, updated_at: now }, version, applied, refused: [] };
+    });
   }
 
   #applied(result: ChangeResult): NoteLine {
