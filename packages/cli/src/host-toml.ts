@@ -27,6 +27,19 @@ export interface HostTomlPlan {
 const HEADER =
   "# This machine's services for hostd. Written by `miyoria init`; `miyoria add` and `remove` edit it.\n";
 
+/**
+ * At the end of a new file: how to let an admin update this machine from Core's panel
+ * (docs/design/v5-hostd.md §14). Off unless the two lines are uncommented.
+ */
+const UPDATE_HINT = [
+  "",
+  "# Let an admin update this machine from Core's panel: fast-forward to Core's commit on the",
+  "# branch this checkout tracks, install, restart what changed. Never downloads models.",
+  "# [update]",
+  "# allow_remote = true",
+  "",
+].join("\n");
+
 /** The services a file has enabled; `[]` for a file that is not there or cannot be read. */
 export function enabledServices(file: string): string[] {
   if (!existsSync(file)) return [];
@@ -58,7 +71,7 @@ export function planHostToml(file: string, services: readonly string[]): HostTom
     added.push(service);
   }
   const body = doc.toString();
-  const text = exists ? body : `${HEADER}${body}`;
+  const text = exists ? body : `${HEADER}${body}${UPDATE_HINT}`;
   parseHostConfig(file, text); // what is written must load
   return { file, exists, text, name, added };
 }

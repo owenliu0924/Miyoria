@@ -61,6 +61,17 @@ export const HostConfigSchema = z
       })
       .strict()
       .default({ reserve_mb: 0, arbiter: "worker" }),
+    update: z
+      .object({
+        /**
+         * Core may ask this host to update itself (`host.upgrade`): fast-forward its checkout to a
+         * commit of the branch it tracks, install, restart. Off by default; a host that is off
+         * still reports its version.
+         */
+        allow_remote: z.boolean().default(false),
+      })
+      .strict()
+      .default({ allow_remote: false }),
     services: z.record(z.string(), HostServiceConfigSchema).default({}),
   })
   .strict()

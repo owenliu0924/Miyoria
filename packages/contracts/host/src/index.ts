@@ -11,3 +11,4 @@ export * from "./methods.js";
 export * from "./protocol.js";
 export * from "./relay.js";
 export * from "./service.js";
+export * from "./upgrade.js";

@@ -17,6 +17,8 @@ import {
   HostServiceRemoveSchema,
   HostServiceSchema,
   HostServiceStatusSchema,
+  HostUpgradeJobSchema,
+  HostUpgradeSchema,
 } from "../src/index.js";
 
 const full = {
@@ -177,8 +179,13 @@ describe("HostConfigSchema", () => {
       paths: { state: "data/host" },
       network: { bind: "127.0.0.1" },
       gpu: { reserve_mb: 0, arbiter: "worker" },
+      update: { allow_remote: false },
       services: {},
     });
+    expect(HostConfigSchema.parse({ name: "m", update: { allow_remote: true } }).update).toEqual({
+      allow_remote: true,
+    });
+    expect(HostConfigSchema.safeParse({ name: "m", update: { allow: true } }).success).toBe(false);
     expect(HostConfigSchema.parse({ name: "m", services: { a: {} } }).services.a).toEqual({
       enabled: true,
       env: {},
@@ -278,6 +285,36 @@ describe("methods and constants", () => {
     expect(HostFetchSchema.safeParse({ ...fetch, path: "asr" }).success).toBe(false);
     expect(HostFetchSchema.safeParse({ ...fetch, path: "//evil/asr" }).success).toBe(false);
     expect(HostFetchSchema.safeParse({ ...fetch, method: "post" }).success).toBe(false);
+  });
+
+  it("reads an update request and job, and an old report without them", () => {
+    const sha = "a".repeat(40);
+    expect(HostUpgradeSchema.parse({ commit: sha })).toEqual({ commit: sha });
+    expect(HostUpgradeSchema.safeParse({ commit: "abc123" }).success).toBe(false);
+    expect(HostUpgradeSchema.safeParse({ commit: sha.toUpperCase() }).success).toBe(false);
+    expect(HostUpgradeSchema.safeParse({ commit: sha, wait_s: -1 }).success).toBe(false);
+    const job = HostUpgradeJobSchema.parse({
+      id: "u1",
+      target: sha,
+      from: null,
+      state: "waiting",
+      step: "wait",
+      steps: [{ step: "check", state: "done", at: 1 }],
+      waiting_for: "sing 正在做歌",
+      started_at: 1,
+    });
+    expect(job.state).toBe("waiting");
+    const old = {
+      name: "m",
+      version: "0",
+      platform: "linux",
+      protocol: 1,
+      gpu: null,
+      services: [],
+    };
+    const parsed = HostInfoSchema.parse(old);
+    expect(parsed.checkout).toBeUndefined();
+    expect(parsed.remote_update).toBeUndefined();
   });
 
   it("reads cluster.links: each link optional, a port in range", () => {

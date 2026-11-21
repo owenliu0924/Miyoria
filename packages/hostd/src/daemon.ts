@@ -13,12 +13,14 @@ import {
   HOST_FETCH_LIMITS,
   HOST_METHOD,
   HOST_PROTOCOL_VERSION,
+  type HostCheckout,
   type HostClusterContext,
   type HostGuardState,
   type HostInfo,
   type HostLinkState,
   type HostLinks,
   type HostRelinkResult,
+  type HostRemoteUpdate,
   type HostReport,
   type HostServiceControlResult,
   HostServiceControlSchema,
@@ -34,6 +36,9 @@ import {
   HostShutdownSchema,
   type HostUpdateResult,
   HostUpdateSchema,
+  type HostUpgradeCancelResult,
+  type HostUpgradeMissing,
+  HostUpgradeSchema,
 } from "@miyoria/contracts/host";
 import { type Logger, pino } from "pino";
 import type { RotatingFileStream } from "rotating-file-stream";
@@ -51,7 +56,14 @@ import { CardReader, cudaIndex, freeOf, GpuCache, type GpuReader, type GpuSample
 import { type ArbiterService, GPU_PROFILE_FILE, GpuArbitration } from "./gpu-arbiter.js";
 import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
 import { type LoadedHostConfig, loadHostConfig } from "./host-config.js";
-import { type InstallDeps, installService, removeService } from "./install/index.js";
+import {
+  type CommandRunner,
+  execaRunner,
+  type InstallDeps,
+  inspectService,
+  installService,
+  removeService,
+} from "./install/index.js";
 import { CoreLink, type CoreLinkOptions, type CoreLinkState } from "./link/index.js";
 import { linkValues } from "./links.js";
 import { rotatingLog, ServiceLog } from "./logs.js";
@@ -72,6 +84,8 @@ import {
 } from "./run-file.js";
 import { createLocalApi, JSON_RPC } from "./server.js";
 import { DEFAULT_TIMING, ManagedService, type ServiceHost, type Timing } from "./service.js";
+import { readCheckout } from "./upgrade/git.js";
+import { type UpgradeHost, Upgrader } from "./upgrade/upgrader.js";
 
 export interface DaemonOptions {
   /** `host.toml`; its folder is the workspace. */
@@ -105,6 +119,24 @@ export interface DaemonOptions {
   installDeps?: Omit<InstallDeps, "root">;
   /** Makes the control link (tests). Default a `CoreLink`. */
   linkFactory?: (api: HostApi, options: CoreLinkOptions) => LinkHandle;
+  /** What reading the checkout and a remote update (`host.upgrade`) use; tests replace these. */
+  upgrade?: UpgradeOptions;
+}
+
+/** The seams of the checkout reading and of `host.upgrade`. */
+export interface UpgradeOptions {
+  /** Runs git and pnpm (default the installer's runner, else execa). */
+  runner?: CommandRunner;
+  /** Asks a service's health for `busy` (default `fetch`). */
+  fetch?: typeof fetch;
+  /** How often the checkout is read again for the report. Default 60 s. */
+  checkoutEveryMs?: number;
+  /** How often a waiting update asks whether the host is idle. Default 5 s. */
+  pollMs?: number;
+  /** How long restarted services have to become healthy. Default 10 minutes. */
+  healthyMs?: number;
+  /** The pnpm program. */
+  pnpm?: string;
 }
 
 /** What the daemon needs of its control link; `CoreLink` is one. */
@@ -163,7 +195,15 @@ const SERVED: ReadonlySet<string> = new Set([
   HOST_METHOD.GpuRelease,
   HOST_METHOD.GpuBusy,
   HOST_METHOD.GpuState,
+  HOST_METHOD.HostUpgrade,
+  HOST_METHOD.HostUpgradeCancel,
 ]);
+
+/**
+ * Methods only Core may call: the operator on this machine updates with `miyoria update`, which
+ * asks before it downloads and shows everything it does.
+ */
+const CORE_ONLY: ReadonlySet<string> = new Set([HOST_METHOD.HostUpgrade]);
 
 /** The lease methods: a holder service's only (`gpu.state` may be read by the operator and Core). */
 const GPU_LEASE: ReadonlySet<string> = new Set([
@@ -204,7 +244,7 @@ const OPERATOR_ONLY: ReadonlySet<string> = new Set([
 function allowed(caller: Caller, method: string): boolean {
   switch (caller.kind) {
     case "operator":
-      return !GPU_LEASE.has(method);
+      return !GPU_LEASE.has(method) && !CORE_ONLY.has(method);
     case "core":
       return !OPERATOR_ONLY.has(method) && !FORWARDED.has(method) && !GPU_LEASE.has(method);
     case "service":
@@ -272,6 +312,14 @@ export class Daemon implements HostApi {
   #links: HostLinks["links"] = {};
   /** Serialises the restarts new link values cause. */
   #linkChecks: Promise<unknown> = Promise.resolve();
+  /** The checkout as last read; `null` when it is not one, `undefined` before the first read. */
+  #checkout: HostCheckout | null | undefined = undefined;
+  #checkoutTimer: ReturnType<typeof setInterval> | null = null;
+  #checkoutReading: Promise<void> | null = null;
+  /** `host.toml [update] allow_remote`, read at start and with each checkout reading. */
+  #allowRemote = false;
+  /** `host.upgrade` (v5-hostd §14); made at start. */
+  #upgrader: Upgrader | null = null;
 
   constructor(options: DaemonOptions) {
     this.#options = options;
@@ -439,6 +487,26 @@ export class Daemon implements HostApi {
     });
 
     for (const service of this.#services.values()) service.watchExternal();
+    this.#allowRemote = host.config.update.allow_remote;
+    this.#upgrader = new Upgrader({
+      root: this.#options.catalogRoot,
+      runner: this.#upgradeRunner(),
+      env: ctx.env,
+      platform: ctx.platform,
+      host: this.#upgradeHost(),
+      ...(this.#options.upgrade?.pollMs !== undefined
+        ? { pollMs: this.#options.upgrade.pollMs }
+        : {}),
+      ...(this.#options.upgrade?.healthyMs !== undefined
+        ? { healthyMs: this.#options.upgrade.healthyMs }
+        : {}),
+      ...(this.#options.upgrade?.pnpm !== undefined ? { pnpm: this.#options.upgrade.pnpm } : {}),
+    });
+    // The first reading before the link's first report, so Core sees the version at once.
+    await this.#readCheckout();
+    const every = this.#options.upgrade?.checkoutEveryMs ?? 60_000;
+    this.#checkoutTimer = setInterval(() => void this.#readCheckout(), every);
+    this.#checkoutTimer.unref();
     this.#startLink(host);
     void this.#gpu.read();
     if (this.#arbitration.mode === "hostd") await this.#arbitration.ensure();
@@ -463,6 +531,10 @@ export class Daemon implements HostApi {
   }
 
   async #stop(): Promise<void> {
+    if (this.#checkoutTimer !== null) clearInterval(this.#checkoutTimer);
+    this.#checkoutTimer = null;
+    // An update still waiting goes away; one that changed something already finishes its step.
+    this.#upgrader?.cancel();
     // Before the services: a holder stopping now gives nothing back by itself.
     this.#arbitration?.close();
     await this.#stopServices();
@@ -666,6 +738,9 @@ export class Daemon implements HostApi {
       services: [...this.#services.values()].map((s) => s.status(withTokens)),
       link: this.linkState,
       ...(this.#arbitration === null ? {} : { arbiter: this.#arbitration.status() }),
+      ...(this.#checkout === undefined ? {} : { checkout: this.#checkout }),
+      remote_update: this.remoteUpdate(),
+      upgrade: this.#upgrader?.job ?? null,
     };
   }
 
@@ -834,6 +909,15 @@ export class Daemon implements HostApi {
       }
       case HOST_METHOD.HostRelink:
         return await this.relink();
+      case HOST_METHOD.HostUpgrade:
+        return await this.#upgrade(params);
+      case HOST_METHOD.HostUpgradeCancel: {
+        const upgrader = this.#upgrader;
+        return {
+          cancelled: upgrader?.cancel() ?? false,
+          job: upgrader?.job ?? null,
+        } satisfies HostUpgradeCancelResult;
+      }
       case HOST_METHOD.ClusterResolve:
       case HOST_METHOD.ClusterLlm:
       case HOST_METHOD.ClusterFetch:
@@ -1144,6 +1228,276 @@ export class Daemon implements HostApi {
       );
     }
     return entry;
+  }
+
+  // ---- the checkout and remote updates (v5-hostd §14) ----------------------------------------
+
+  /**
+   * Whether this host takes `host.upgrade` now, and why not. Core's own machine never does: an
+   * update there restarts Core and rebuilds the panel under it, which `miyoria update` on that
+   * machine does with a person watching.
+   */
+  remoteUpdate(): HostRemoteUpdate {
+    if (!this.#allowRemote) {
+      return {
+        allowed: false,
+        reason: "這台沒有開放遠端更新(host.toml 的 [update] allow_remote 是 false)",
+      };
+    }
+    const core = this.#services.get("core");
+    // Core started by hand beside this daemon is still Core's machine: its link is local.
+    if (
+      (core?.plan.override.enabled && core.plan.entry !== null) ||
+      isLoopbackUrl(this.#host?.config.cluster?.url)
+    ) {
+      return {
+        allowed: false,
+        reason: "這台跑著 Core,不能從面板更新;請在這台執行 miyoria update",
+      };
+    }
+    if (this.#checkout === null) {
+      return { allowed: false, reason: "這台不是從 git checkout 執行的,不能遠端更新" };
+    }
+    return { allowed: true };
+  }
+
+  /** The runner of git and pnpm. */
+  #upgradeRunner(): CommandRunner {
+    return this.#options.upgrade?.runner ?? this.#options.installDeps?.runner ?? execaRunner;
+  }
+
+  /** Reads `[update]` of host.toml and the checkout again; reports when either changed. */
+  #readCheckout(): Promise<void> {
+    this.#checkoutReading ??= (async () => {
+      const host = this.#host;
+      if (host !== null) {
+        try {
+          this.#allowRemote = loadHostConfig(host.file).config.update.allow_remote;
+        } catch {
+          // A host.toml that does not load keeps the value read before.
+        }
+      }
+      let next: HostCheckout | null;
+      try {
+        next = await readCheckout({
+          root: this.#options.catalogRoot,
+          runner: this.#upgradeRunner(),
+          env: this.#ctx?.env ?? process.env,
+          now: () => Date.now(),
+          platform: this.#ctx?.platform ?? process.platform,
+        });
+      } catch (error) {
+        this.#log.warn({ err: error }, "cannot read the checkout");
+        next = null;
+      }
+      const before = this.#checkout;
+      this.#checkout = next;
+      const same =
+        before !== undefined &&
+        before?.commit === next?.commit &&
+        before?.branch === next?.branch &&
+        before?.dirty === next?.dirty &&
+        before?.behind === next?.behind &&
+        before?.ahead === next?.ahead;
+      if (!same) this.#serviceHost?.changed();
+    })().finally(() => {
+      this.#checkoutReading = null;
+    });
+    return this.#checkoutReading;
+  }
+
+  async #upgrade(params: unknown): Promise<unknown> {
+    const upgrader = this.#upgrader;
+    if (upgrader === null || this.#stopping !== null) {
+      throw new HostRpcError(HOST_ERROR_CODE.Busy, "the daemon is not running");
+    }
+    const parsed = parseParams(HostUpgradeSchema, params);
+    // The file decides at the moment of asking, not what the last report said.
+    await this.#readCheckout();
+    const remote = this.remoteUpdate();
+    if (!remote.allowed) {
+      throw new HostRpcError(HOST_ERROR_CODE.NotAllowed, remote.reason ?? "不能遠端更新");
+    }
+    this.#log.info({ target: parsed.commit, by: parsed.by }, "Core asked for an update");
+    return await upgrader.begin(parsed);
+  }
+
+  /** What `Upgrader` needs of this daemon. */
+  #upgradeHost(): UpgradeHost {
+    const RUNNING = new Set(["running", "starting", "backoff"]);
+    return {
+      services: () =>
+        [...this.#services.values()].map((s) => ({
+          name: s.name,
+          entry: s.plan.entry,
+          running: RUNNING.has(s.state),
+        })),
+      busy: (signal) => this.#busyReasons(signal),
+      reload: () => {
+        this.#reload();
+      },
+      staleEnvs: () => {
+        const host = this.#host;
+        const catalog = this.#catalog;
+        if (host === null || catalog === null) return [];
+        const out: string[] = [];
+        for (const [name, override] of Object.entries(host.config.services)) {
+          const entry = catalog.services.get(name);
+          if (!override.enabled || entry === undefined) continue;
+          if (entry.descriptor.install.runtime !== "python") continue;
+          const inspected = inspectService(entry, host, this.#installDeps());
+          if (inspected.runtime.kind !== "managed") continue;
+          if (inspected.runtime.state?.state !== "ready") out.push(name);
+        }
+        return out;
+      },
+      sync: (name, signal, onLine) =>
+        this.#exclusive(async () => {
+          const result = await this.#install(
+            { service: name, only_stale: true, no_files: true },
+            signal,
+            onLine,
+          );
+          return {
+            ok: result.ok,
+            ...(result.runtime.detail !== undefined ? { detail: result.runtime.detail } : {}),
+          };
+        }),
+      stop: async (name) => {
+        await this.#services.get(name)?.stop();
+      },
+      start: async (name) => {
+        const managed = this.#service(name);
+        const fresh = this.#replan([name]) ?? managed;
+        await fresh.start();
+      },
+      restart: async (name) => {
+        const managed = this.#service(name);
+        await managed.stop();
+        const fresh = this.#replan([name]) ?? managed;
+        await fresh.start();
+      },
+      healthy: (names, timeoutMs, signal) => this.#waitHealthy(names, timeoutMs, signal),
+      missing: () => this.#missingForUpgrade(),
+      changed: () => {
+        this.#serviceHost?.changed();
+        if (this.#upgrader !== null && !this.#upgrader.busy) void this.#readCheckout();
+      },
+      log: this.#log,
+    };
+  }
+
+  /**
+   * Why this host is not idle, in words: a GPU lease, a guarded state Core reports for a service
+   * that guards it (or Core cannot be asked), or a running service whose health says `busy` or a
+   * queue (the song worker's `/health`).
+   */
+  async #busyReasons(signal: AbortSignal): Promise<string[]> {
+    const reasons: string[] = [];
+    for (const lease of this.#arbitration?.status().leases ?? []) {
+      reasons.push(`${lease.holder} 正在用顯卡(${lease.stage})`);
+    }
+    const guarded = new Set<HostGuardState>();
+    for (const service of this.#services.values()) {
+      if (!service.active) continue;
+      for (const state of service.plan.entry?.descriptor.run?.guard ?? []) guarded.add(state);
+    }
+    if (guarded.size > 0) {
+      try {
+        const states = await (this.#guard ?? this.#defaultGuard).states(
+          AbortSignal.any([signal, AbortSignal.timeout(4000)]),
+        );
+        if (states.includes("singing") && guarded.has("singing")) reasons.push("她正在唱歌");
+        if (states.includes("live") && guarded.has("live")) reasons.push("她正在直播");
+      } catch {
+        reasons.push("問不到 Core 她現在忙不忙");
+      }
+    }
+    const fetchImpl = this.#options.upgrade?.fetch ?? fetch;
+    for (const service of this.#services.values()) {
+      if (service.state !== "running") continue;
+      const path = service.plan.entry?.descriptor.run?.health.http;
+      const target = this.target(service.name);
+      if (path === undefined || target === null) continue;
+      try {
+        const res = await fetchImpl(`${target.url}${path}`, {
+          headers: target.headers,
+          signal: AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+        });
+        const body: unknown = await res.json();
+        if (typeof body !== "object" || body === null) continue;
+        const { busy, queued } = body as { busy?: unknown; queued?: unknown };
+        if (busy === true) reasons.push(`${service.name} 正在處理工作`);
+        else if (typeof queued === "number" && queued > 0) {
+          reasons.push(`${service.name} 還有 ${queued} 個工作在排隊`);
+        }
+      } catch {
+        // A health answer that is not JSON says nothing about work.
+      }
+    }
+    return reasons;
+  }
+
+  /** Waits until each named service runs healthy; the rest with why, at the deadline. */
+  async #waitHealthy(
+    names: readonly string[],
+    timeoutMs: number,
+    signal: AbortSignal,
+  ): Promise<Array<{ service: string; reason: string }>> {
+    const deadline = Date.now() + timeoutMs;
+    const pending = new Set(names);
+    const out: Array<{ service: string; reason: string }> = [];
+    while (pending.size > 0) {
+      for (const name of [...pending]) {
+        const s = this.#services.get(name);
+        if (s === undefined) {
+          pending.delete(name);
+          out.push({ service: name, reason: "這台已經沒有這個服務" });
+          continue;
+        }
+        const status = s.status(false);
+        if (status.state === "running" && status.healthy) pending.delete(name);
+        else if (
+          status.state === "failed" ||
+          status.state === "disabled" ||
+          status.state === "stopped"
+        ) {
+          pending.delete(name);
+          out.push({ service: name, reason: status.reason ?? status.state });
+        }
+      }
+      if (pending.size === 0 || signal.aborted) break;
+      if (Date.now() >= deadline) {
+        for (const name of pending) out.push({ service: name, reason: "時間內沒有變成健康" });
+        break;
+      }
+      await new Promise((done) => setTimeout(done, Math.min(1000, this.#timing.pollMs * 5)));
+    }
+    return out;
+  }
+
+  /** What the enabled services lack that an update never fetches. */
+  #missingForUpgrade(): HostUpgradeMissing[] {
+    const host = this.#host;
+    const catalog = this.#catalog;
+    if (host === null || catalog === null) return [];
+    const out: HostUpgradeMissing[] = [];
+    for (const [name, override] of Object.entries(host.config.services)) {
+      const entry = catalog.services.get(name);
+      if (!override.enabled || entry === undefined) continue;
+      const inspected = inspectService(entry, host, this.#installDeps());
+      for (const file of inspected.files) {
+        if (file.optional || file.state === "verified" || file.state === "present") continue;
+        out.push({ service: name, kind: "file", what: file.path });
+      }
+      for (const model of inspected.models) {
+        if (!model.present) out.push({ service: name, kind: "model", what: model.repo });
+      }
+      for (const item of inspected.manual) {
+        if (!item.present) out.push({ service: name, kind: "manual", what: item.what });
+      }
+    }
+    return out;
   }
 
   // ---- helpers ---------------------------------------------------------------------------------
