@@ -31,7 +31,7 @@ import {
   originOf,
   pageMeta,
 } from "./meta.js";
-import { clientKey, tooMany } from "./public.js";
+import { tooMany } from "./public.js";
 import { param, type Route } from "./route.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -382,7 +382,7 @@ async function cardImage(state: ApiState, c: ApiContext): Promise<Response> {
   if (card === null) return defaultImage(state, SHORT_CACHE);
   const version = cardVersion(card);
   if (!cacheOf(state).get(`${card.serial}:${version}`)) {
-    const wait = state.publicSide.admitCardCheck(clientKey(c));
+    const wait = state.publicSide.admitCardCheck(state.publicSide.client(c));
     if (wait !== null) return tooMany(wait);
   }
   let png: Buffer;
@@ -412,7 +412,7 @@ async function artImage(state: ApiState, c: ApiContext): Promise<Response> {
   if (card === null) return missing();
   let art = artCacheOf(state).get(card.serial) ?? null;
   if (art === null) {
-    const wait = state.publicSide.admitCardCheck(clientKey(c));
+    const wait = state.publicSide.admitCardCheck(state.publicSide.client(c));
     if (wait !== null) return tooMany(wait);
     try {
       art = await oneAtATime(state, () => artOf(state, card));

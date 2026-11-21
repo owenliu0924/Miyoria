@@ -54,7 +54,6 @@ import type { CardWords } from "./card-words.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { heartRows } from "./heart-rows.js";
-import { clientKey } from "./public.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
 
@@ -489,7 +488,7 @@ function shownTitles(state: ApiState, serial: string): string[] {
 
 /** `GET /api/public/card/{serial}`: the card, and its holder's public titles. */
 async function checkCard(state: ApiState, c: ApiContext, input: string): Promise<PublicCard> {
-  const wait = state.publicSide.admitCardCheck(clientKey(c));
+  const wait = state.publicSide.admitCardCheck(state.publicSide.client(c));
   if (wait !== null) throw ApiError.tooMany(wait);
   const missing = () => new ApiError(404, NO_SUCH_CARD, CHECK_HEADERS);
   const serial = normalizeSerial(input);

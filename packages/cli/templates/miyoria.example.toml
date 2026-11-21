@@ -231,6 +231,7 @@ token = "${MIYORIA_API_TOKEN:-}"
 # rate_per_minute = 60             # 每個訪客每分鐘的請求數(Cloudflare tunnel 後面看 CF-Connecting-IP)
 # rate_total_per_minute = 3000     # 所有訪客加起來每分鐘的請求數
 # utc_offset_minutes = 480         # 「今天」從哪個時區的午夜開始算
+# client_ip_header = "cf-connecting-ip"  # 這台電腦上的反向代理用哪個標頭帶訪客的位址(只信從本機來的連線)。nginx / Caddy 用 "x-real-ip" 或 "x-forwarded-for"(取最後一個),而且代理要自己設這個標頭、不要照轉訪客送的;空字串 = 不讀任何標頭
 
 # 每台電腦的管家(hostd)連進來的控制連線:回報這台有哪些服務、位址和健康。預設開著;
 # 埠被占用時這個模組會失敗,Core 照常執行。
