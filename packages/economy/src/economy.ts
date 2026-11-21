@@ -199,6 +199,10 @@ const EXCHANGE_LABEL: Readonly<Record<string, string>> = {
   [EXCHANGE_REASONS.out]: "交易所:賣出或退回",
   [EXCHANGE_REASONS.fee]: "交易所:手續費和稅(燒掉)",
   [EXCHANGE_REASONS.feeBack]: "交易所:沒成交,手續費退回",
+  [EXCHANGE_REASONS.burn]: "交易所:買進(真實行情)",
+  [EXCHANGE_REASONS.burnBack]: "交易所:沒成交,退回",
+  [EXCHANGE_REASONS.mint]: "交易所:賣出(真實行情)",
+  [EXCHANGE_REASONS.loss]: "交易所:槓桿賠超過保證金的部分",
 };
 
 /** What karaoke rooms' rows say (docs/design/karaoke.md 「做了什麼第四步」). */
@@ -802,6 +806,10 @@ export class EconomyService implements Economy {
       case EXCHANGE_REASONS.out:
       case EXCHANGE_REASONS.fee:
       case EXCHANGE_REASONS.feeBack:
+      case EXCHANGE_REASONS.burn:
+      case EXCHANGE_REASONS.burnBack:
+      case EXCHANGE_REASONS.mint:
+      case EXCHANGE_REASONS.loss:
         return EXCHANGE_LABEL[r.reason] ?? r.reason;
       case KARAOKE_REASONS.room:
       case KARAOKE_REASONS.roomRefund:

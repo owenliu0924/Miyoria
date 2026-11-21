@@ -66,7 +66,9 @@ export interface EngineParams {
 }
 
 export const DEFAULT_LEVERAGE: LeverageParams = {
-  enabled: true,
+  // Off on the local companies (owner 2026-11-21: leverage is for real instruments, cross margin);
+  // the machinery stays and the simulation still runs it.
+  enabled: false,
   max: 2,
   line: 0.2,
   warn_half: 0.5,

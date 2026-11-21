@@ -302,7 +302,7 @@ describe("leverage", () => {
     const { p, book } = crash();
     const newId = ids();
     // A plain holder keeps the vault able to pay.
-    placeBuy(book, buy(book, "plain", "b", "GOGL", 200, 1, p));
+    placeBuy(book, buy(book, "plain", "b", "WHLE", 200, 1, p));
     const order = buy(book, "lev", "a", "DPSK", 155, 2, p);
     placeBuy(book, order);
     step(book, "c", newId, p);

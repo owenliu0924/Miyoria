@@ -9,6 +9,7 @@ import {
   checkBuy,
   checkSell,
   coinsOf,
+  DEFAULT_LEVERAGE,
   DEFAULT_RULES,
   type EngineParams,
   params as engineParams,
@@ -149,7 +150,9 @@ export function defaultAgents(): SimAgent[] {
 }
 
 export function runSim(options: SimOptions): SimResult {
-  const p = options.params ?? engineParams();
+  // The local leverage machinery is off in the market (real instruments use cross margin) but the
+  // simulation keeps running it, so it stays tested.
+  const p = options.params ?? engineParams({ leverage: { ...DEFAULT_LEVERAGE, enabled: true } });
   const rules: Rules = { ...DEFAULT_RULES, enabled: true, ...(options.rules ?? {}) };
   const agents = options.agents ?? defaultAgents();
   const start = options.start ?? 1000;

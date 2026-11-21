@@ -194,7 +194,7 @@ afterEach(() => {
   dbs = [];
 });
 
-export const OPEN: Partial<ExchangeConfig> = { open: true };
+export const OPEN: Partial<ExchangeConfig> = { open: true, leverage: true };
 
 export async function rig(config: Partial<ExchangeConfig> = OPEN): Promise<Rig> {
   const clock = { at: T0 };

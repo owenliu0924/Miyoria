@@ -135,7 +135,7 @@ describe("a buy and a sale", () => {
     r.wallet.fund(MALLORY, 300);
     r.service.store.openAccount("p-mallory", new Date(T0).toISOString() as never);
     await opened(r, BOB);
-    await r.service.place(BOB, { side: "buy", company: "GOGL", coins: 200 }, "b");
+    await r.service.place(BOB, { side: "buy", company: "WHLE", coins: 200 }, "b");
     await r.at(local(0, 12, 1));
     const book = r.store.book()?.book;
     if (!book) throw new Error("no book");
@@ -157,7 +157,7 @@ describe("a buy and a sale", () => {
     });
     await r.runTo(local(1, 11, 30));
     expect(
-      await r.service.place(MALLORY, { side: "sell", company: "GOGL", all: true }, "m1"),
+      await r.service.place(MALLORY, { side: "sell", company: "WHLE", all: true }, "m1"),
     ).toMatchObject({ ok: true });
     await r.at(local(1, 12, 1));
     expect(r.wallet.balanceOf("p-mallory")).toBeGreaterThan(300);
@@ -333,7 +333,7 @@ describe("leverage", () => {
       Math.ceil(((77 + 0.2 * 77) * 100_000) / Math.floor((154 * 100_000) / q.quote.price)),
     );
     await r.service.place(ALICE, { side: "buy", company: "DPSK", coins: 80, leverage: 2 }, "l2");
-    await r.service.place(BOB, { side: "buy", company: "GOGL", coins: 200 }, "b");
+    await r.service.place(BOB, { side: "buy", company: "WHLE", coins: 200 }, "b");
     await r.at(local(0, 12, 1));
     expect((await r.service.portfolio(ALICE))?.leveraged).toHaveLength(1);
     // Push DPSK's hidden value far down so it falls the limit every round and day.
@@ -437,7 +437,7 @@ describe("the books over many days", () => {
     let n = 0;
     for (let h = 0; h < 24 * 6; h++) {
       const who = people[h % 3] ?? ALICE;
-      const codes = ["DPSK", "RICE", "NAPS", "GOGL"];
+      const codes = ["DPSK", "RICE", "NAPS", "WHLE"];
       const code = codes[(h * 7) % codes.length] ?? "DPSK";
       if (h % 2 === 0)
         await r.service.place(

@@ -1,5 +1,6 @@
-// The eight listed companies (docs/design/exchange.md §2.1). Every one is made up: the names are
-// parodies, and nothing here is a real company's mark, logo or data. Their character is only in
+// The local companies (docs/design/exchange.md §2.1, owner 2026-11-21): the five tied to her, priced
+// by the simulator and nudged by the real things they stand for. Every one is made up; nothing here
+// is a real company's mark, logo or data. Real stocks and crypto are `real/` instruments instead. Their character is only in
 // these numbers: how much they follow the market (`beta`), how much they move on their own each
 // round (`sigma`), and how many coins of net buying move them about one percent (`depth`).
 
@@ -39,36 +40,6 @@ export const COMPANIES: readonly CompanySpec[] = [
     sigma: 0.006,
     depth: 1500,
     start: 10000,
-  },
-  {
-    code: "CLSD",
-    name: "ClosedAI",
-    sector: "ai",
-    blurb: "波動大,董事會常出事",
-    beta: 1.3,
-    sigma: 0.006,
-    depth: 1500,
-    start: 12000,
-  },
-  {
-    code: "GOGL",
-    name: "Goggle",
-    sector: "ai",
-    blurb: "大型股,比較穩,常收掉產品",
-    beta: 1.0,
-    sigma: 0.004,
-    depth: 2500,
-    start: 15000,
-  },
-  {
-    code: "NVDY",
-    name: "Envydia",
-    sector: "ai",
-    blurb: "漲最兇也跌最兇",
-    beta: 1.5,
-    sigma: 0.007,
-    depth: 1500,
-    start: 20000,
   },
   {
     code: "RICE",

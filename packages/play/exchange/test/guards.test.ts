@@ -6,6 +6,7 @@ import {
   checkLeverageOptIn,
   checkOpen,
   checkSell,
+  DEFAULT_LEVERAGE,
   DEFAULT_RULES,
   limitsFor,
   params,
@@ -14,7 +15,7 @@ import {
 } from "../src/engine/index.js";
 
 const RULES: Rules = { ...DEFAULT_RULES, enabled: true };
-const P = params();
+const P = params({ leverage: { ...DEFAULT_LEVERAGE, enabled: true } });
 const TRADER: Trader = {
   known_days: 10,
   tier: 0,

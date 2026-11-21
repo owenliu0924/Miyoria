@@ -23,6 +23,14 @@ export const EXCHANGE_REASONS = {
   fee: "exchange_fee",
   /** The fee of a buy that did not fill, given back. */
   feeBack: "exchange_fee_back",
+  /** Real instruments (the house is the counterparty): coins burned into a position by a buy. */
+  burn: "exchange_burn",
+  /** The burn of a real buy that did not fill, given back. */
+  burnBack: "exchange_burn_back",
+  /** Coins minted back by a real sale, a payout, what a liquidation left. */
+  mint: "exchange_mint",
+  /** A leveraged loss past its margin, taken from the wallet (cross margin). */
+  loss: "exchange_loss",
 } as const;
 
 export type ExchangeReason = (typeof EXCHANGE_REASONS)[keyof typeof EXCHANGE_REASONS];

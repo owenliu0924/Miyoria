@@ -165,6 +165,7 @@ export function simulate(runs: number, weeks: number, prefix = "sim", p?: Engine
 export function stressParams(p: EngineParams): EngineParams {
   return {
     ...p,
+    leverage: { ...p.leverage, enabled: true },
     market_sigma: p.market_sigma * 3,
     companies: p.companies.map((c) => ({ ...c, sigma: c.sigma * 2 })),
     event_rate: p.event_rate * 3,
