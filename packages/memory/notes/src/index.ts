@@ -101,6 +101,7 @@ export {
   readChatLines,
   rebuildEpisodeSink,
   rebuildVectors,
+  THINKING_REPLY_TOKENS,
   type VectorReport,
 } from "./rebuild.js";
 export {
