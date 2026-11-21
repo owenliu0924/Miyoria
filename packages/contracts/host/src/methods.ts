@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { HostGpuArbitrationSchema } from "./gpu.js";
+import { HostServiceLoadSchema, HostServiceRoutingSchema } from "./routing.js";
 import { HostGpuPolicySchema, HostGuardStateSchema } from "./service.js";
 import { HostCheckoutSchema, HostRemoteUpdateSchema, HostUpgradeJobSchema } from "./upgrade.js";
 
@@ -81,6 +82,10 @@ export const HostServiceStatusSchema = z
         leased: z.boolean(),
       })
       .optional(),
+    /** Its `[routing]` as it applies here (v5-hostd §15); older daemons leave it out. */
+    routing: HostServiceRoutingSchema.optional(),
+    /** Its last load reading, for a service that reports one (`[routing] queue`). */
+    load: HostServiceLoadSchema.optional(),
   })
   .meta({ id: "HostServiceStatus" });
 export type HostServiceStatus = z.output<typeof HostServiceStatusSchema>;

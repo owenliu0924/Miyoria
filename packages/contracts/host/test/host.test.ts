@@ -11,6 +11,7 @@ import {
   HostInfoSchema,
   HostLinksSchema,
   HostLlmSchema,
+  HostRoutingSchema,
   HostServiceInstallResultSchema,
   HostServiceInstallSchema,
   HostServiceLogsSchema,
@@ -329,5 +330,68 @@ describe("methods and constants", () => {
       false,
     );
     expect(HostLinksSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("routing (v5-hostd §15)", () => {
+  const status = {
+    name: "sing",
+    kind: "worker",
+    provides: ["sing"],
+    state: "running",
+    since: 1,
+    healthy: true,
+    restarts: 0,
+  };
+
+  it("takes [routing] in a descriptor with its defaults, and refuses an unknown key", () => {
+    const base = { name: "sing", kind: "worker", run: { command: ["x"] } };
+    const parsed = HostServiceSchema.parse({ ...base, routing: { class: "job" } });
+    expect(parsed.routing).toEqual({
+      class: "job",
+      latency: "interactive",
+      concurrency: 1,
+      queue: false,
+      needs: { files: [] },
+      yields_to: [],
+    });
+    expect(HostServiceSchema.parse(base).routing).toBeUndefined();
+    expect(
+      HostServiceSchema.safeParse({ ...base, routing: { class: "job", weight: 2 } }).success,
+    ).toBe(false);
+    expect(HostRoutingSchema.safeParse({ class: "pool" }).success).toBe(false);
+  });
+
+  it("reads a status with routing and load, and one from an older hostd without them", () => {
+    const routing = {
+      class: "job",
+      latency: "batch",
+      concurrency: 1,
+      queue: true,
+      yields_to: ["tts", "asr"],
+      ready: true,
+      variant: "0123456789abcdef",
+      accept: true,
+    };
+    const load = { running: 1, queued: 2, age_ms: 300 };
+    const parsed = HostServiceStatusSchema.parse({ ...status, routing, load });
+    expect(parsed.routing).toEqual(routing);
+    expect(parsed.load).toEqual(load);
+    const old = HostServiceStatusSchema.parse(status);
+    expect(old.routing).toBeUndefined();
+    expect(old.load).toBeUndefined();
+  });
+
+  it("keeps a host.toml without accept and concurrency as before", () => {
+    const parsed = HostConfigSchema.parse({ name: "h", services: { sing: { enabled: true } } });
+    expect(parsed.services.sing?.accept).toBeUndefined();
+    const limited = HostConfigSchema.parse({
+      name: "h",
+      services: { sing: { accept: false, concurrency: 1 } },
+    });
+    expect(limited.services.sing).toMatchObject({ accept: false, concurrency: 1 });
+    expect(
+      HostConfigSchema.safeParse({ name: "h", services: { sing: { concurrency: 0 } } }).success,
+    ).toBe(false);
   });
 });

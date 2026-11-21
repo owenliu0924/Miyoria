@@ -74,6 +74,7 @@ import {
   type ResolveContext,
   type ServicePlan,
 } from "./resolve.js";
+import { serviceRouting, VariantHasher } from "./routing.js";
 import {
   pidAlive,
   type RunInfo,
@@ -323,6 +324,8 @@ export class Daemon implements HostApi {
   #allowRemote = false;
   /** `host.upgrade` (v5-hostd §14); made at start. */
   #upgrader: Upgrader | null = null;
+  /** The variant hashes of `[routing]` (v5-hostd §15), with what they read cached. */
+  readonly #variants = new VariantHasher();
 
   constructor(options: DaemonOptions) {
     this.#options = options;
@@ -431,6 +434,8 @@ export class Daemon implements HostApi {
       spawned: (name) => {
         if (!this.#spawnOrder.includes(name)) this.#spawnOrder.push(name);
       },
+      routing: (service) => this.#routingOf(service),
+      outside: (name) => this.#outside(name),
     };
     this.#ctx = ctx;
     this.#serviceHost = serviceHost;
@@ -982,6 +987,36 @@ export class Daemon implements HostApi {
       signal,
       FORWARD_TIMEOUT_MS[method],
     );
+  }
+
+  // ---- routing (v5-hostd §15) ------------------------------------------------------------------
+
+  /** A service's `[routing]` as it applies here: readiness, variant, the owner's limits. */
+  #routingOf(service: ManagedService) {
+    const host = this.#host;
+    const ctx = this.#ctx;
+    if (host === null || ctx === null) return undefined;
+    const plan = service.plan;
+    return serviceRouting(plan.entry, plan.override, {
+      paths: {
+        root: this.#options.catalogRoot,
+        workspace: host.workspace,
+        state: host.state.root,
+        models: host.state.models,
+      },
+      env: (name) =>
+        plan.override.env[name] ?? plan.entry?.descriptor.run?.env[name] ?? ctx.env[name],
+      gpuTotalMb: () => this.#gpu.last?.total_mb ?? null,
+      hasher: this.#variants,
+    });
+  }
+
+  /** Why a service that uses the card is held up from outside: another service holds a lease. */
+  #outside(name: string): string | undefined {
+    const service = this.#services.get(name);
+    if (service?.plan.gpuPolicy === undefined) return undefined;
+    const other = this.#arbitration?.status().leases.find((lease) => lease.holder !== name);
+    return other === undefined ? undefined : `${other.holder} 正在用顯卡(${other.stage})`;
   }
 
   // ---- GPU arbitration (H7) --------------------------------------------------------------------
