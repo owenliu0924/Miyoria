@@ -1,41 +1,34 @@
-// Real instruments with the house as the counterparty (owner 2026-11-21). A closed vault cannot hold
-// when prices come from outside, so: a buy burns its coins into a position; a sale mints the
-// position's value back. What bounds inflation is in config:
+// Real Taiwan and US stocks with the house as the counterparty (owner 2026-11-21, v1: paper trading
+// with fish coins). A buy burns its coins into a position; a sale mints the position's value back.
+// One fee on every trade, burned. One inflation guard: a market-wide cap on the NET coins the house
+// pays out per local day (net = minted − burned). When a sale takes the day to the cap, the sale is
+// still paid in full and new buys stop for the rest of the day (the waiting ones go back with their
+// fee); nobody's coins are ever held back. Plus the owner's master switch and the daily report.
 //
-// - Fees and the tax are burned, as on the local market.
-// - A cap on the NET coins the house pays out per local day, per instrument and market-wide (net =
-//   minted − burned). A sale over it still executes: what fits is paid now, the rest is queued and
-//   paid first thing the next local day, and new buys of real instruments stop for the rest of the
-//   day (so nobody can cycle coins through the cap). A queued payout is owed and always paid the next
-//   day, whatever that day's cap says: the cap never traps a member's coins for longer than a night.
-// - An automatic halt of real buys when the net minted over a rolling window passes a threshold; it
-//   lifts by itself under three quarters of it. Sales never stop.
-//
-// Leverage is cross margin (owner's updated decision): up to the instrument class's maximum, and a
-// member MAY lose more than the margin. A position is sold by the rule when the margin left falls to
-// the line, at the quote that crossed it; with no daily limit a gap can take it past zero. Then the
-// shortfall is taken, in this order, from: the wallet; the coins held by their open buy orders; their
-// other real holdings (largest value first); their other leveraged positions; their local holdings
-// (the module's callback). What still remains is written off by the house (a recorded line), every
-// position is closed, and they are bankrupt (破產) for the cooling-off period. Never a negative
-// balance, never a debt.
+// Leverage is 1x or 2x, cross margin: a member MAY lose more than the margin. A position is sold by
+// the rule when the margin left falls to the line, at the quote that crossed it; a gap can take it
+// past zero. The shortfall is then taken, in this order, from: the wallet; the coins held by their
+// open buys; their other holdings (plain first, largest value first, at the latest price known);
+// their other leveraged positions. What still remains is written off by the house (a recorded
+// line), every position is closed, and they are bankrupt (破產) for the cooling-off period. Never
+// a negative balance, never a debt.
 //
 // Every coin is a ledger posting with its own keys and also a house line; the two always agree to
 // the coin (`netOfPostings` against `netOfLines`). Pure: no clock, no store, no network.
 
 import { feeOn, MILLI } from "../engine/money.js";
-import type { RealInstrument, VolClass } from "./instruments.js";
+import type { RealInstrument } from "./instruments.js";
 import type { Quote } from "./provider.js";
 
-/** Millionths of a unit in a unit: a coin buys a sliver of a coin. */
+/** Millionths of a share in a share: ten coins buy a sliver of a share. */
 export const QTY_REAL = 1_000_000;
 
 /** The ledger reasons of the house side (the health table reads them). */
 export const HOUSE_REASON = {
-  /** Coins burned into a real position (a buy's margin); `burn_back` when the buy did not fill. */
+  /** Coins burned into a position (a buy's margin); `burn_back` when the buy did not fill. */
   burn: "exchange_burn",
   burnBack: "exchange_burn_back",
-  /** Coins minted back by a sale, a payout, what a liquidation left. */
+  /** Coins minted back by a sale, or what a liquidation left. */
   mint: "exchange_mint",
   /** A loss past the margin, taken from the wallet. */
   loss: "exchange_loss",
@@ -44,46 +37,34 @@ export const HOUSE_REASON = {
 } as const;
 
 export interface HouseParams {
-  fee_buy: number;
-  fee_sell: number;
-  tax_sell: number;
+  /** The one fee on every buy and sale, burned (rounded up, at least `fee_min`). */
+  fee: number;
   fee_min: number;
-  /** Net coins the house may pay out per local day, in all and per instrument. */
+  /** Net coins the house may pay out per local day, market-wide. */
   cap_daily: number;
-  cap_instrument: number;
-  /** Real buys stop when the net minted over this many local days passes `halt_net`. */
-  halt_window_days: number;
-  halt_net: number;
-  /** The most leverage by class (1: none). */
-  leverage_max: Readonly<Record<VolClass, number>>;
+  /** 1 or 2: the most leverage (1: none). */
+  leverage_max: number;
   line: number;
   warn_half: number;
   warn_near: number;
+  /** Burned per day as a share of what is borrowed (0: none). */
   carry_daily: number;
-  /** A real holding can be sold this long after it was bought. */
+  /** A holding can be sold this long after it was bought (the one anti-churn rule). */
   min_hold_ms: number;
-  /** An order that found no valid quote this long goes back. */
-  order_ttl_ms: number;
   /** How long a bankrupt member waits before trading again. */
   cooling_ms: number;
 }
 
 export const DEFAULT_HOUSE: HouseParams = {
-  fee_buy: 0.015,
-  fee_sell: 0.015,
-  tax_sell: 0.03,
+  fee: 0.01,
   fee_min: 1,
   cap_daily: 1500,
-  cap_instrument: 500,
-  halt_window_days: 7,
-  halt_net: 4000,
-  leverage_max: { low: 2, mid: 2, high: 1.5, crypto: 1.5 },
+  leverage_max: 2,
   line: 0.2,
   warn_half: 0.5,
   warn_near: 0.35,
-  carry_daily: 0.002,
-  min_hold_ms: 60 * 60_000,
-  order_ttl_ms: 30 * 60_000,
+  carry_daily: 0,
+  min_hold_ms: 10 * 60_000,
   cooling_ms: 7 * 86_400_000,
 };
 
@@ -92,9 +73,9 @@ export interface RealPosition {
   person: string;
   code: string;
   leverage: number;
-  /** Millionths of a unit. */
+  /** Millionths of a share. */
   qty: number;
-  /** The exposure bought, in coins (what counts toward the holding limits). */
+  /** The exposure bought, in coins (what counts toward the holding cap). */
   cost: number;
   margin: number;
   loan: number;
@@ -105,52 +86,44 @@ export interface RealPosition {
   warned_near: number | null;
 }
 
+/** A market order: it fills at the first valid quote later than it was placed. */
 export interface RealOrder {
   id: string;
   person: string;
   code: string;
   side: "buy" | "sell";
-  /** Coins per unit; `null`: at the next valid quote. */
+  /** Always `null` in v1 (market orders only); kept for later. */
   limit: number | null;
   coins: number;
   margin: number;
   exposure: number;
   fee: number;
   leverage: number;
-  /** A sale: millionths of a unit. */
+  /** A sale: millionths of a share. */
   qty: number;
   position: string | null;
   placed_at: number;
+  /** Not used in v1: an order waits for the open until it fills or is cancelled. */
   expires_at: number;
-}
-
-export interface Payout {
-  id: string;
-  person: string;
-  code: string;
-  amount: number;
-  /** The local day it was queued. */
-  day: number;
 }
 
 export interface HouseDay {
   day: number;
-  /** Coins burned: buys that filled (margin and fee), sale fees and tax, carry, losses taken. */
+  /** Coins burned: buys that filled (margin and fee), sale fees, carry, losses taken. */
   burned: number;
   /** Coins minted to wallets. */
   minted: number;
   /** What the house wrote off for bankruptcies (no wallet moved). */
   written_off: number;
   by: Record<string, { burned: number; minted: number }>;
-  /** The cap was reached: no new real buys today. */
+  /** The cap was reached: no new buys today. */
   buys_halted: boolean;
 }
 
 export interface HouseState {
   today: HouseDay;
+  /** The days before, newest last (the daily report). */
   history: HouseDay[];
-  auto_halted: boolean;
-  payouts: Payout[];
   /** Bankrupt members and until when (epoch ms). */
   bankrupt: Record<string, { since: number; until: number; written_off: number }>;
 }
@@ -184,7 +157,7 @@ export type LineKind =
   | "release"
   | "writeoff";
 
-/** The house's own record of a coin movement (`writeoff`: none moved). */
+/** The house's own record of a coin movement. */
 export interface HouseLine {
   kind: LineKind;
   person: string;
@@ -199,7 +172,7 @@ export interface RealFill {
   person: string;
   code: string;
   side: "buy" | "sell";
-  kind: "order" | "liquidation" | "shortfall" | "bankruptcy" | "admin";
+  kind: "order" | "liquidation" | "shortfall" | "admin";
   position: string | null;
   leverage: number;
   qty: number;
@@ -208,23 +181,14 @@ export interface RealFill {
   fee: number;
   tax: number;
   carry: number;
-  /** Coins credited now. */
+  /** Coins credited. */
   paid: number;
-  /** Coins queued for the next day. */
-  queued: number;
   /** A loss past the margin this fill left (taken from elsewhere). */
   shortfall: number;
   at: number;
 }
 
-export type RealNoticeKind =
-  | "warn_half"
-  | "warn_near"
-  | "liquidated"
-  | "shortfall"
-  | "bankrupt"
-  | "queued"
-  | "refunded";
+export type RealNoticeKind = "warn_half" | "warn_near" | "liquidated" | "shortfall" | "bankrupt";
 
 export interface RealNotice {
   kind: RealNoticeKind;
@@ -241,20 +205,13 @@ export interface RealNotice {
 
 export interface HouseOutcome {
   fills: RealFill[];
-  ended: {
-    order: RealOrder;
-    status: "filled" | "cancelled" | "expired";
-    why: string;
-    refunded: boolean;
-  }[];
+  ended: { order: RealOrder; status: "filled" | "cancelled"; why: string; refunded: boolean }[];
   opened: RealPosition[];
   changed: RealPosition[];
   closed: { position: RealPosition; status: "closed" | "liquidated" }[];
   postings: Posting[];
   lines: HouseLine[];
   notices: RealNotice[];
-  payouts_added: Payout[];
-  payouts_paid: Payout[];
   bankrupt: string[];
 }
 
@@ -268,8 +225,6 @@ export function emptyHouseOutcome(): HouseOutcome {
     postings: [],
     lines: [],
     notices: [],
-    payouts_added: [],
-    payouts_paid: [],
     bankrupt: [],
   };
 }
@@ -279,14 +234,10 @@ export function newDay(day: number): HouseDay {
 }
 
 export function newHouse(day: number): HouseBook {
-  return {
-    positions: [],
-    orders: [],
-    state: { today: newDay(day), history: [], auto_halted: false, payouts: [], bankrupt: {} },
-  };
+  return { positions: [], orders: [], state: { today: newDay(day), history: [], bankrupt: {} } };
 }
 
-/** What the module gives a step: time, ids, the rules, wallets, the latest quotes. */
+/** What the module gives a step: time, ids, the rules, wallets, the latest prices. */
 export interface HouseContext {
   now: number;
   day: number;
@@ -295,12 +246,10 @@ export interface HouseContext {
   instruments: readonly RealInstrument[];
   /** Wallet balances as read before the step (a loss is taken from these). */
   balance: (person: string) => number;
-  /** The latest accepted, fresh quote of an instrument whose market is open; `null` otherwise. */
+  /** The latest valid quote of an instrument (fresh, in its session); `null` otherwise. */
   latest: (code: string) => Quote | null;
   /** The last accepted quote however old (a closed market's last price): what a loss is covered at. */
   lastKnown?: (code: string) => Quote | null;
-  /** Sells the person's local holdings for a loss; the coins it covered. */
-  sellLocal?: (person: string, need: number) => number;
 }
 
 // ---- reading ------------------------------------------------------------------------------------
@@ -315,15 +264,15 @@ export function ratioOf(p: RealPosition, price: number): number {
   return p.margin > 0 ? equityOf(p, price) / p.margin : 1;
 }
 
-/** Coins per unit at which a leveraged position is sold: the margin left at `at` of the margin. */
+/** Coins per share at which the margin left is `at` of the margin (`line`: where it is sold). */
 export function priceAtRatio(p: RealPosition, at: number): number {
   if (p.qty <= 0) return 0;
   return ((p.loan + p.carry / MILLI + at * p.margin) * QTY_REAL) / p.qty;
 }
 
-/** The most leverage an instrument allows. */
-export function maxLeverage(inst: RealInstrument, params: HouseParams): number {
-  return Math.max(1, params.leverage_max[inst.vol] ?? 1);
+/** The most leverage (v1: the same for every stock, 1 or 2). */
+export function maxLeverage(_inst: RealInstrument, params: HouseParams): number {
+  return Math.max(1, Math.min(2, params.leverage_max));
 }
 
 export function isBankrupt(state: HouseState, person: string, now: number): boolean {
@@ -332,13 +281,17 @@ export function isBankrupt(state: HouseState, person: string, now: number): bool
 }
 
 export function buysHalted(state: HouseState): boolean {
-  return state.today.buys_halted || state.auto_halted;
+  return state.today.buys_halted;
 }
 
-/** The net coins minted over the rolling window (history and today). */
-export function rollingNet(state: HouseState, days: number): number {
-  const recent = [...state.history.slice(-(days - 1)), state.today];
-  return recent.reduce((t, d) => t + d.minted - d.burned, 0);
+/** Net coins minted today (minted − burned). */
+export function netToday(state: HouseState): number {
+  return state.today.minted - state.today.burned;
+}
+
+/** A position's value to its owner now (leveraged: equity, floored at zero). */
+export function worthOf(p: RealPosition, price: number): number {
+  return p.leverage > 1 ? Math.max(0, equityOf(p, price)) : valueAt(p.qty, price);
 }
 
 /** What a buy of `coins` (fee included) at `leverage` puts up. */
@@ -349,13 +302,13 @@ export function splitRealBuy(
 ): { margin: number; exposure: number; fee: number } | null {
   if (!Number.isSafeInteger(coins) || coins <= 0) return null;
   const x = Math.max(1, leverage);
-  const cost = (m: number) => m + feeOn(Math.floor(m * x), p.fee_buy, p.fee_min);
-  let m = Math.floor(coins / (1 + x * p.fee_buy));
+  const cost = (m: number) => m + feeOn(Math.floor(m * x), p.fee, p.fee_min);
+  let m = Math.floor(coins / (1 + x * p.fee));
   while (m > 0 && cost(m) > coins) m--;
   while (cost(m + 1) <= coins) m++;
   if (m <= 0) return null;
   const exposure = Math.floor(m * x);
-  return { margin: m, exposure, fee: feeOn(exposure, p.fee_buy, p.fee_min) };
+  return { margin: m, exposure, fee: feeOn(exposure, p.fee, p.fee_min) };
 }
 
 // ---- the ledger and the house's lines ---------------------------------------------------------
@@ -393,12 +346,12 @@ function post(
   if (e.length > 0) out.postings.push({ key, person, ref, entries: e, covered });
 }
 
-/** The net coins the postings move (wallets' view). */
+/** The net coins the postings move (the wallets' view). */
 export function netOfPostings(postings: readonly Posting[]): number {
   return postings.reduce((t, p) => t + p.entries.reduce((s, e) => s + e.delta, 0), 0);
 }
 
-/** The net coins the house's lines move (its own view): mint and refund in, the rest out. */
+/** The net coins the house's lines move (its own view): mint, refund and release in, the rest out. */
 export function netOfLines(lines: readonly HouseLine[]): number {
   let n = 0;
   for (const l of lines) {
@@ -409,7 +362,7 @@ export function netOfLines(lines: readonly HouseLine[]): number {
   return n;
 }
 
-/** A buy into the book: the posting burns its margin and fee from the wallet (refused below zero). */
+/** A buy into the book: the posting takes its margin and fee from the wallet (refused below zero). */
 export function placeRealBuy(book: HouseBook, order: RealOrder): HouseOutcome {
   const out = emptyHouseOutcome();
   book.orders.push(order);
@@ -436,7 +389,7 @@ function endOrder(
   book: HouseBook,
   out: HouseOutcome,
   order: RealOrder,
-  status: "filled" | "cancelled" | "expired",
+  status: "filled" | "cancelled",
   why: string,
 ): void {
   const at = book.orders.indexOf(order);
@@ -465,9 +418,26 @@ export function cancelRealOrder(
   return out;
 }
 
-// ---- paying out under the cap -----------------------------------------------------------------
+/** Every open order of instruments no longer traded goes back (a buy with its fee). */
+export function cancelOrdersOf(
+  book: HouseBook,
+  codes: readonly string[],
+  why: string,
+): HouseOutcome {
+  const out = emptyHouseOutcome();
+  for (const o of [...book.orders])
+    if (codes.includes(o.code)) endOrder(book, out, o, "cancelled", why);
+  return out;
+}
 
-/** Pays `amount` (net of burns already counted) under the caps; the rest is queued. */
+/** The day's net payout reached the cap: no new buy today, and the waiting ones go back. */
+function haltBuys(book: HouseBook, out: HouseOutcome): void {
+  book.state.today.buys_halted = true;
+  for (const o of book.orders.filter((x) => x.side === "buy"))
+    endOrder(book, out, o, "cancelled", "cap");
+}
+
+/** Pays `amount` in full; reaching the day's cap stops new buys, never this payment. */
 function payOut(
   book: HouseBook,
   out: HouseOutcome,
@@ -476,63 +446,28 @@ function payOut(
   code: string,
   amount: number,
   ref: string,
-): { paid: number; queued: number } {
-  if (amount <= 0) return { paid: 0, queued: 0 };
-  const t = book.state.today;
-  const p = ctx.params;
-  const byCode = t.by[code] ?? { burned: 0, minted: 0 };
-  const room = Math.max(
-    0,
-    Math.min(
-      p.cap_daily - (t.minted - t.burned),
-      p.cap_instrument - (byCode.minted - byCode.burned),
-    ),
-  );
-  const paid = Math.min(amount, Math.floor(room));
-  const queued = amount - paid;
-  if (paid > 0) {
-    post(out, `exchange:mint:${ref}`, person, ref, [[HOUSE_REASON.mint, paid]]);
-    line(out, "mint", person, code, paid, ref);
-    count(book.state, code, 0, paid);
-  }
-  if (queued > 0) {
-    const payout: Payout = { id: ctx.newId(), person, code, amount: queued, day: ctx.day };
-    book.state.payouts.push(payout);
-    out.payouts_added.push(payout);
-    out.notices.push({
-      kind: "queued",
-      person,
-      code,
-      position: null,
-      price: 0,
-      line_price: 0,
-      ratio: 0,
-      amount: queued,
-    });
-    haltBuys(book, out, "cap");
-  }
-  return { paid, queued };
-}
-
-/** The day's cap was reached: no new real buy today, and the waiting ones go back. */
-function haltBuys(book: HouseBook, out: HouseOutcome, why: string): void {
-  book.state.today.buys_halted = true;
-  for (const o of book.orders.filter((x) => x.side === "buy"))
-    endOrder(book, out, o, "cancelled", why);
+): number {
+  if (amount <= 0) return 0;
+  post(out, `exchange:mint:${ref}`, person, ref, [[HOUSE_REASON.mint, amount]]);
+  line(out, "mint", person, code, amount, ref);
+  count(book.state, code, 0, amount);
+  if (netToday(book.state) >= ctx.params.cap_daily && !book.state.today.buys_halted)
+    haltBuys(book, out);
+  return amount;
 }
 
 // ---- selling ------------------------------------------------------------------------------------
 
-/** The fee and tax of a sale that brought in `gross`; never more than it. */
-function burnsOf(gross: number, p: HouseParams): { fee: number; tax: number } {
-  const fee = Math.min(Math.max(0, gross), feeOn(gross, p.fee_sell, p.fee_min));
-  const tax = Math.min(Math.max(0, gross - fee), feeOn(gross, p.tax_sell, p.fee_min));
-  return { fee, tax };
+/** The fee of a sale that brought in `gross`; never more than it. */
+function feeOf(gross: number, p: HouseParams): number {
+  return Math.min(Math.max(0, gross), feeOn(gross, p.fee, p.fee_min));
 }
 
+const carryCoins = (p: RealPosition) => Math.ceil(p.carry / MILLI - 1e-9);
+
 /**
- * Closes `pos` at `price`: what it brings is minted (under the caps) after its burns; a loss past
- * zero is the shortfall the caller covers. Answers the fill.
+ * Closes `pos` at `price`: what it brings is minted after its fee; a loss past zero is the
+ * shortfall the caller covers. Answers the fill.
  */
 function closeAt(
   book: HouseBook,
@@ -546,17 +481,14 @@ function closeAt(
 ): RealFill {
   const gross = Math.floor(valueAt(pos.qty, price));
   const owedBack = gross - pos.loan;
-  const burns = burnsOf(Math.max(0, owedBack), ctx.params);
-  const carry = Math.min(
-    Math.max(0, owedBack - burns.fee - burns.tax),
-    Math.ceil(pos.carry / MILLI - 1e-9),
-  );
-  const burned = burns.fee + burns.tax + carry;
+  const fee = feeOf(Math.max(0, owedBack), ctx.params);
+  const carry = Math.min(Math.max(0, owedBack - fee), carryCoins(pos));
+  const burned = fee + carry;
   // Negative: what the position lost past everything it put up.
-  const net = owedBack - burned - (owedBack < 0 ? Math.ceil(pos.carry / MILLI - 1e-9) : 0);
+  const net = owedBack - burned - (owedBack < 0 ? carryCoins(pos) : 0);
   const id = ctx.newId();
   if (burned > 0) {
-    // The burns come out of what the sale minted: one posting of both.
+    // The fee comes out of what the sale minted: one posting of both.
     post(out, `exchange:fill:${id}`, pos.person, id, [
       [HOUSE_REASON.mint, burned],
       [HOUSE_REASON.fee, -burned],
@@ -565,8 +497,7 @@ function closeAt(
     line(out, "fee", pos.person, pos.code, burned, id);
     count(book.state, pos.code, burned, burned);
   }
-  const { paid, queued } =
-    net > 0 ? payOut(book, out, ctx, pos.person, pos.code, net, id) : { paid: 0, queued: 0 };
+  const paid = net > 0 ? payOut(book, out, ctx, pos.person, pos.code, net, id) : 0;
   const fill: RealFill = {
     id,
     order,
@@ -579,11 +510,10 @@ function closeAt(
     qty: pos.qty,
     price,
     gross,
-    fee: burns.fee,
-    tax: burns.tax,
+    fee,
+    tax: 0,
     carry,
     paid,
-    queued,
     shortfall: net < 0 ? -net : 0,
     at: ctx.now,
   };
@@ -598,8 +528,8 @@ function closeAt(
 
 /**
  * A loss of `need` coins past a position's margin: from the wallet, the coins of open buys, other
- * real holdings, other leveraged positions, local holdings; the rest is written off and the person
- * is bankrupt. Answers what was written off.
+ * holdings, other leveraged positions; the rest is written off and the person is bankrupt.
+ * Answers what was written off.
  */
 function cover(
   book: HouseBook,
@@ -611,7 +541,7 @@ function cover(
   ref: string,
 ): number {
   let left = need;
-  // 1. The wallet, as read before this step less what this step already took from it.
+  // 1. The wallet, as read before this step, less what this step already took from it.
   const taken = out.postings
     .filter(
       (p) =>
@@ -621,7 +551,7 @@ function cover(
   const wallet = Math.max(0, ctx.balance(person) - taken);
   const fromWallet = Math.min(left, wallet);
   if (fromWallet > 0) {
-    post(out, `exchange:loss:${ref}:wallet`, person, ref, [[HOUSE_REASON.loss, -fromWallet]], true);
+    post(out, `exchange:loss:${ref}`, person, ref, [[HOUSE_REASON.loss, -fromWallet]], true);
     line(out, "loss", person, code, fromWallet, ref);
     count(book.state, code, fromWallet, 0);
     left -= fromWallet;
@@ -629,20 +559,18 @@ function cover(
   // 2. Open buys: their coins are theirs, and go to the loss instead of back.
   for (const o of book.orders.filter((x) => x.person === person && x.side === "buy")) {
     if (left <= 0) break;
-    const at = book.orders.indexOf(o);
-    book.orders.splice(at, 1);
+    book.orders.splice(book.orders.indexOf(o), 1);
     out.ended.push({ order: o, status: "cancelled", why: "shortfall", refunded: false });
     const held = o.margin + o.fee;
     const use = Math.min(left, held);
     left -= use;
-    // The rest of what it held goes back; the used part was already out of the wallet (escrow).
     post(out, `exchange:refund:${o.id}`, person, o.id, [[HOUSE_REASON.burnBack, held - use]]);
     line(out, "refund", person, o.code, held - use, o.id);
     line(out, "release", person, o.code, use, `${o.id}:escrow`);
     line(out, "loss", person, code, use, o.id);
     count(book.state, code, use, 0);
   }
-  // 3 and 4. Other real holdings, plain first (largest value first), then leveraged ones.
+  // 3 and 4. Other holdings, plain first (largest value first), then leveraged ones.
   const others = book.positions
     .filter((p) => p.person === person)
     .map((p) => ({ p, q: ctx.latest(p.code) ?? ctx.lastKnown?.(p.code) ?? null }))
@@ -656,15 +584,12 @@ function cover(
     if (left <= 0) break;
     const gross = Math.floor(valueAt(p.qty, q.price));
     const owedBack = gross - p.loan;
-    const burns = burnsOf(Math.max(0, owedBack), ctx.params);
-    const value = owedBack - burns.fee - burns.tax - Math.ceil(p.carry / MILLI - 1e-9);
+    const fee = feeOf(Math.max(0, owedBack), ctx.params);
+    const value = owedBack - fee - carryCoins(p);
     const id = ctx.newId();
     const used = Math.max(0, Math.min(left, value));
     const extra = Math.max(0, value - used);
-    // Its burns are burned; what covers the loss never reaches the wallet; the rest is paid out.
-    const burned = Math.max(0, burns.fee + burns.tax);
-    if (burned > 0) count(book.state, p.code, burned, burned);
-    line(out, "writeoff", person, p.code, 0, id);
+    if (fee > 0) count(book.state, p.code, fee, fee);
     left -= used;
     if (value < 0) left += -value;
     const fill: RealFill = {
@@ -679,30 +604,17 @@ function cover(
       qty: p.qty,
       price: q.price,
       gross,
-      fee: burns.fee,
-      tax: burns.tax,
+      fee,
+      tax: 0,
       carry: 0,
       paid: 0,
-      queued: 0,
       shortfall: 0,
       at: ctx.now,
     };
-    if (extra > 0) {
-      const r = payOut(book, out, ctx, person, p.code, extra, id);
-      fill.paid = r.paid;
-      fill.queued = r.queued;
-    }
+    if (extra > 0) fill.paid = payOut(book, out, ctx, person, p.code, extra, id);
     out.fills.push(fill);
     book.positions.splice(book.positions.indexOf(p), 1);
     out.closed.push({ position: p, status: "liquidated" });
-  }
-  // 5. Local holdings, through the module.
-  if (left > 0 && ctx.sellLocal) {
-    const got = Math.max(0, Math.min(left, ctx.sellLocal(person, left)));
-    if (got > 0) {
-      line(out, "writeoff", person, code, 0, `${ref}:local`);
-      left -= got;
-    }
   }
   if (left <= 0) {
     out.notices.push({
@@ -743,7 +655,7 @@ function cover(
   return left;
 }
 
-// ---- a quote comes in -------------------------------------------------------------------------
+// ---- a quote comes in ---------------------------------------------------------------------------
 
 /** Re-arms a warning once the margin left is well above it again. */
 function rearm(p: RealPosition, ratio: number, params: HouseParams): boolean {
@@ -779,8 +691,9 @@ function notice(
 }
 
 /**
- * A new accepted quote of `inst` (the market open, the quote fresh): orders placed before the quote
- * fill at it, then every leveraged position on it is checked (a warning, or a sale at the line).
+ * A new valid quote of `inst`: market orders placed before the quote fill at it (an order placed
+ * while the market was closed waits for the first quote after the open), then every leveraged
+ * position on it is checked (a warning, or a sale at the line).
  */
 export function onQuote(
   book: HouseBook,
@@ -801,7 +714,6 @@ export function onQuote(
         endOrder(book, out, o, "cancelled", "halted");
         continue;
       }
-      if (o.limit !== null && price > o.limit) continue;
       const qty = Math.floor((o.exposure * QTY_REAL) / price);
       if (qty <= 0) {
         endOrder(book, out, o, "cancelled", "too_small");
@@ -844,20 +756,19 @@ export function onQuote(
         tax: 0,
         carry: 0,
         paid: 0,
-        queued: 0,
         shortfall: 0,
         at: ctx.now,
       });
       endOrder(book, out, o, "filled", "filled");
       continue;
     }
-    if (o.limit !== null && price < o.limit) continue;
     if (o.position !== null) {
       const pos = book.positions.find((x) => x.id === o.position && x.person === o.person);
       if (!pos) {
         endOrder(book, out, o, "cancelled", "no_holding");
         continue;
       }
+      if (pos.opened_at + p.min_hold_ms > quote.at) continue; // still within the hold time: it waits
       const fill = closeAt(book, out, ctx, pos, price, "order", o.id, "closed");
       if (fill.shortfall > 0) cover(book, out, ctx, o.person, o.code, fill.shortfall, fill.id);
       endOrder(book, out, o, "filled", "filled");
@@ -878,6 +789,9 @@ export function onQuote(
       lots.reduce((t, l) => t + l.qty, 0),
     );
     if (left <= 0) {
+      // A holding still within its hold time: the sale waits for a later quote.
+      if (book.positions.some((x) => x.person === o.person && x.code === o.code && x.leverage <= 1))
+        continue;
       endOrder(book, out, o, "cancelled", "no_holding");
       continue;
     }
@@ -916,7 +830,7 @@ export function onQuote(
       const warned = pos.warned_near !== null || pos.warned_half !== null;
       const fill = closeAt(book, out, ctx, pos, price, "liquidation", null, "liquidated");
       out.notices.push({
-        ...notice("liquidated", pos, price, p, fill.paid + fill.queued),
+        ...notice("liquidated", pos, price, p, fill.paid),
         ratio: Math.round(ratio * 1000) / 1000,
         warned,
       });
@@ -934,69 +848,52 @@ export function onQuote(
       out.notices.push(notice("warn_half", pos, price, p));
     }
   }
-  updateHalt(book, ctx);
   return out;
 }
 
-/** Orders that found no valid quote in time go back. */
-export function expireOrders(book: HouseBook, now: number): HouseOutcome {
-  const out = emptyHouseOutcome();
-  for (const o of [...book.orders])
-    if (o.expires_at <= now) endOrder(book, out, o, "expired", "expired");
-  return out;
-}
-
-function updateHalt(book: HouseBook, ctx: HouseContext): void {
-  const net = rollingNet(book.state, ctx.params.halt_window_days);
-  if (!book.state.auto_halted && net > ctx.params.halt_net) book.state.auto_halted = true;
-  else if (book.state.auto_halted && net < 0.75 * ctx.params.halt_net)
-    book.state.auto_halted = false;
-}
-
-/**
- * A new local day: yesterday goes into the history, the carry fee is charged to leveraged
- * positions, and the payouts queued yesterday are paid first, whatever today's cap.
- */
+/** A new local day: yesterday goes into the history (the daily report); the carry, if any, is charged. */
 export function rollDay(book: HouseBook, ctx: HouseContext): HouseOutcome {
   const out = emptyHouseOutcome();
   const s = book.state;
   if (s.today.day === ctx.day) return out;
   s.history.push(s.today);
-  if (s.history.length > 60) s.history.splice(0, s.history.length - 60);
+  if (s.history.length > 90) s.history.splice(0, s.history.length - 90);
   s.today = newDay(ctx.day);
-  for (const pos of book.positions) {
-    if (pos.leverage <= 1 || pos.loan <= 0) continue;
-    pos.carry += Math.ceil(pos.loan * ctx.params.carry_daily * MILLI - 1e-9);
-    out.changed.push(pos);
+  if (ctx.params.carry_daily > 0) {
+    for (const pos of book.positions) {
+      if (pos.leverage <= 1 || pos.loan <= 0) continue;
+      pos.carry += Math.ceil(pos.loan * ctx.params.carry_daily * MILLI - 1e-9);
+      out.changed.push(pos);
+    }
   }
-  for (const payout of s.payouts.splice(0)) {
-    post(out, `exchange:payout:${payout.id}`, payout.person, payout.id, [
-      [HOUSE_REASON.mint, payout.amount],
-    ]);
-    line(out, "mint", payout.person, payout.code, payout.amount, payout.id);
-    count(s, payout.code, 0, payout.amount);
-    out.payouts_paid.push(payout);
-  }
-  updateHalt(book, ctx);
   return out;
 }
 
-/** Sells a real position now for the owner at its latest quote (no fee); `null` without a quote. */
+/** Sells a position now for the owner at its latest price (no fee); `null` without one. */
 export function adminSellReal(
   book: HouseBook,
   pos: RealPosition,
   ctx: HouseContext,
 ): HouseOutcome | null {
-  const q = ctx.latest(pos.code);
+  const q = ctx.latest(pos.code) ?? ctx.lastKnown?.(pos.code) ?? null;
   if (!q) return null;
   const out = emptyHouseOutcome();
-  const free = { ...ctx, params: { ...ctx.params, fee_sell: 0, tax_sell: 0, fee_min: 0 } };
+  const free = { ...ctx, params: { ...ctx.params, fee: 0, fee_min: 0 } };
   const fill = closeAt(book, out, free, pos, q.price, "admin", null, "closed");
   if (fill.shortfall > 0) cover(book, out, free, pos.person, pos.code, fill.shortfall, fill.id);
   return out;
 }
 
-/** A position's value to its owner now at `price` (leveraged: equity, floored at zero). */
-export function worthOf(p: RealPosition, price: number): number {
-  return p.leverage > 1 ? Math.max(0, equityOf(p, price)) : valueAt(p.qty, price);
+/** Closes `pos` at `price` for the owner's settlement of a suspended ticker (no fee; a loss is covered as always). */
+export function settleAt(
+  book: HouseBook,
+  pos: RealPosition,
+  price: number,
+  ctx: HouseContext,
+): HouseOutcome {
+  const out = emptyHouseOutcome();
+  const free = { ...ctx, params: { ...ctx.params, fee: 0, fee_min: 0 } };
+  const fill = closeAt(book, out, free, pos, price, "admin", null, "closed");
+  if (fill.shortfall > 0) cover(book, out, free, pos.person, pos.code, fill.shortfall, fill.id);
+  return out;
 }

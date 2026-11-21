@@ -13,7 +13,7 @@
 // old, and a jump bigger than the instrument's class believes only when a second, later fetch
 // confirms it. Provider text never reaches a prompt: only the numbers are kept.
 
-import type { RealInstrument, VolClass } from "./instruments.js";
+import type { MarketKind, RealInstrument } from "./instruments.js";
 
 /** One quote as a provider gave it. `price` is in the quote's own currency. */
 export interface RawQuote {
@@ -258,23 +258,25 @@ export class HttpJsonProvider implements QuoteProvider {
 
 // ---- checking what came back ----------------------------------------------------------------
 
-/** How big a move between two accepted quotes is believed at once, by class (log move). */
-export const JUMP_BY_CLASS: Readonly<Record<VolClass, number>> = {
-  low: 0.15,
-  mid: 0.25,
-  high: 0.35,
+/**
+ * How big a move between two accepted quotes is believed at once, by market (log move): Taiwan has
+ * a ±10% daily limit, so more than that is a bad number until a second fetch confirms it.
+ */
+export const JUMP_BY_MARKET: Readonly<Record<MarketKind, number>> = {
+  tw: 0.12,
+  us: 0.3,
   crypto: 0.4,
 };
 
 export interface GuardLimits {
   /** Older than this (ms) is stale. */
   max_age_ms: number;
-  jump: Readonly<Record<VolClass, number>>;
+  jump: Readonly<Record<MarketKind, number>>;
   /** A confirming quote is within this share of the suspect one. */
   confirm_within: number;
 }
 
-/** An accepted quote: a price in coins per unit, and when it is from. */
+/** An accepted quote: a price in the instrument's own currency, and when it is from. */
 export interface Quote {
   code: string;
   price: number;
@@ -302,6 +304,11 @@ export class QuoteGuard {
     return this.#state.get(code)?.good ?? null;
   }
 
+  /** Forgets an instrument's last quote (a confirmed split starts it again). */
+  forget(code: string): void {
+    this.#state.delete(code);
+  }
+
   /** Seeds the last accepted quote (a restart reads it back from the store). */
   seed(q: Quote): void {
     this.#state.set(q.code, { good: q, suspect: null });
@@ -312,19 +319,19 @@ export class QuoteGuard {
     this.#state.set(inst.code, st);
     if (!Number.isFinite(raw.price) || !Number.isFinite(raw.at))
       return { ok: false, why: "number" };
-    const price = raw.price * inst.coins_per_unit;
+    const price = raw.price;
     if (!(price > 0) || price > 1e9) return { ok: false, why: "range" };
     if (raw.at > now + 60_000) return { ok: false, why: "future" };
     if (now - raw.at > this.limits.max_age_ms) return { ok: false, why: "stale" };
     if (st.good && raw.at < st.good.at) return { ok: false, why: "old" };
     const prev =
       raw.prev_close !== undefined && Number.isFinite(raw.prev_close) && raw.prev_close > 0
-        ? raw.prev_close * inst.coins_per_unit
+        ? raw.prev_close
         : null;
     const quote: Quote = { code: inst.code, price, at: raw.at, prev_close: prev };
     if (st.good) {
       const move = Math.abs(Math.log(price / st.good.price));
-      if (move > this.limits.jump[inst.vol]) {
+      if (move > this.limits.jump[inst.market]) {
         const s = st.suspect;
         if (s && raw.at > s.at && Math.abs(price / s.price - 1) <= this.limits.confirm_within) {
           st.good = quote;

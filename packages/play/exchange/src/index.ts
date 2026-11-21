@@ -19,6 +19,7 @@ export {
   tierIndex,
 } from "./config.js";
 export * from "./engine/index.js";
+export { HER_RULES, herNote } from "./her.js";
 export { exchangeSchema } from "./migrations.js";
 export { ExchangeKey, ExchangeModule, type ExchangeModuleOptions, TICK_MS } from "./module.js";
 export {
@@ -29,6 +30,36 @@ export {
   quotePictureData,
   withPicture,
 } from "./pictures.js";
+export {
+  type Asker,
+  DISCLAIMER,
+  LEVERAGE_WARNING,
+  NO_EXCHANGE_RULE,
+  noticeText as realNoticeText,
+  RealDesk,
+  type RealHolding,
+  type RealLine,
+  type RealMarketView,
+  type RealOrderLine,
+  type RealOrderRequest,
+  type RealPortfolio,
+  type RealQuote,
+  type RealReport,
+} from "./real/desk.js";
+export {
+  DEFAULT_HOUSE,
+  HOUSE_REASON,
+  type HouseBook,
+  type HouseParams,
+  netOfLines,
+  netOfPostings,
+  QTY_REAL,
+  type RealPosition,
+} from "./real/house.js";
+export * from "./real/instruments.js";
+export * from "./real/provider.js";
+export { RealStore } from "./real/store.js";
+export * from "./real/yahoo.js";
 export * from "./service.js";
 export { STRATEGY_LABEL, type StrategyName } from "./sim/agents.js";
 export { defaultAgents, runSim, type SimOptions, type SimResult } from "./sim/run.js";
@@ -41,4 +72,3 @@ export {
 } from "./sim/summary.js";
 export * from "./store.js";
 export { CURRENCY, END_WHY, hourOf, noticeText, refundText } from "./texts.js";
-export { draftOf, HerDesk, type HerDeskDeps, plainLine, plainRating } from "./words.js";

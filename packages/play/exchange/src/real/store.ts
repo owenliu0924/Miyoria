@@ -15,15 +15,18 @@ import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
 import {
   exchangeHouse,
   exchangeHouseLines,
+  exchangeInstruments,
   exchangeNotices,
   exchangePostings,
   exchangeQuotes,
+  exchangeQuoteTicks,
   exchangeRealFills,
   exchangeRealOrders,
   exchangeRealPositions,
 } from "../schema.js";
 import type {
   HouseBook,
+  HouseLine,
   HouseOutcome,
   HouseState,
   RealFill,
@@ -310,7 +313,6 @@ export class RealStore {
         tax: f.tax,
         carry: f.carry,
         paid: f.paid,
-        queued: f.queued,
         shortfall: f.shortfall,
         by,
         created_at: ts(now),
@@ -495,7 +497,7 @@ export class RealStore {
     return this.#db.orm
       .select({
         person: exchangeRealFills.person_id,
-        result: sql<number>`SUM(CASE WHEN ${exchangeRealFills.side} = 'sell' THEN ${exchangeRealFills.paid} + ${exchangeRealFills.queued} - ${exchangeRealFills.shortfall} ELSE -(${exchangeRealFills.gross} / ${exchangeRealFills.leverage}) - ${exchangeRealFills.fee} END)`,
+        result: sql<number>`SUM(CASE WHEN ${exchangeRealFills.side} = 'sell' THEN ${exchangeRealFills.paid} - ${exchangeRealFills.shortfall} ELSE -(${exchangeRealFills.gross} / ${exchangeRealFills.leverage}) - ${exchangeRealFills.fee} END)`,
       })
       .from(exchangeRealFills)
       .where(gte(exchangeRealFills.created_at, ts(since)))
@@ -591,6 +593,159 @@ export class RealStore {
     });
   }
 
+  // ---- the instruments people looked up ----------------------------------------------------
+
+  instrument(code: string): InstrumentRecord | null {
+    this.#db.ensureOpen();
+    const r = this.#db.orm
+      .select()
+      .from(exchangeInstruments)
+      .where(eq(exchangeInstruments.code, code))
+      .get();
+    return r ? instrumentOf(r) : null;
+  }
+
+  instrumentList(): InstrumentRecord[] {
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select()
+      .from(exchangeInstruments)
+      .orderBy(asc(exchangeInstruments.code))
+      .all()
+      .map(instrumentOf);
+  }
+
+  addInstrument(
+    i: Omit<InstrumentRecord, "missing_days" | "last_quote_at" | "last_viewed_at" | "reason">,
+    now: number,
+  ): InstrumentRecord {
+    this.#write(() => {
+      this.#db.orm
+        .insert(exchangeInstruments)
+        .values({
+          code: i.code,
+          market: i.market,
+          name: i.name,
+          exchange: i.exchange,
+          type: i.type,
+          currency: i.currency,
+          provider: i.provider,
+          status: i.status,
+          added_at: ts(i.added_at),
+          added_by: i.added_by,
+          updated_at: ts(now),
+        })
+        .onConflictDoNothing()
+        .run();
+    });
+    return this.instrument(i.code) as InstrumentRecord;
+  }
+
+  setInstrument(
+    code: string,
+    patch: {
+      status?: InstrumentRecord["status"];
+      reason?: string | null;
+      missing_days?: number;
+      last_quote_at?: number;
+      last_viewed_at?: number;
+    },
+    now: number,
+  ): void {
+    const set: Record<string, unknown> = { updated_at: ts(now) };
+    if (patch.status !== undefined) set.status = patch.status;
+    if (patch.reason !== undefined) set.reason = patch.reason;
+    if (patch.missing_days !== undefined) set.missing_days = patch.missing_days;
+    if (patch.last_quote_at !== undefined) set.last_quote_at = ts(patch.last_quote_at);
+    if (patch.last_viewed_at !== undefined) set.last_viewed_at = ts(patch.last_viewed_at);
+    this.#write(() => {
+      this.#db.orm
+        .update(exchangeInstruments)
+        .set(set)
+        .where(eq(exchangeInstruments.code, code))
+        .run();
+    });
+  }
+
+  /** A confirmed split or reverse split: every open position and waiting sale of `code` gets `ratio` times the shares. */
+  adjustShares(code: string, ratio: number): number {
+    return this.#write(() => {
+      const n = Number(
+        this.#db.orm
+          .update(exchangeRealPositions)
+          .set({ qty: sql`CAST(${exchangeRealPositions.qty} * ${ratio} AS INTEGER)` })
+          .where(
+            and(eq(exchangeRealPositions.code, code), eq(exchangeRealPositions.status, "open")),
+          )
+          .run().changes,
+      );
+      this.#db.orm
+        .update(exchangeRealOrders)
+        .set({ qty: sql`CAST(${exchangeRealOrders.qty} * ${ratio} AS INTEGER)` })
+        .where(
+          and(
+            eq(exchangeRealOrders.code, code),
+            eq(exchangeRealOrders.status, "open"),
+            eq(exchangeRealOrders.side, "sell"),
+          ),
+        )
+        .run();
+      this.#db.orm.delete(exchangeQuotes).where(eq(exchangeQuotes.code, code)).run();
+      return n;
+    });
+  }
+
+  /** A chart point, at most one per `every` ms per instrument. */
+  tick(code: string, at: number, price: number, every: number): void {
+    this.#db.ensureOpen();
+    const last = this.#db.orm
+      .select({ at: exchangeQuoteTicks.at })
+      .from(exchangeQuoteTicks)
+      .where(eq(exchangeQuoteTicks.code, code))
+      .orderBy(desc(exchangeQuoteTicks.at))
+      .limit(1)
+      .get();
+    if (last && at - Date.parse(last.at) < every) return;
+    this.#write(() => {
+      this.#db.orm
+        .insert(exchangeQuoteTicks)
+        .values({ code, at: ts(at), price })
+        .onConflictDoNothing()
+        .run();
+    });
+  }
+
+  ticks(code: string, since: number): { at: number; price: number }[] {
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select()
+      .from(exchangeQuoteTicks)
+      .where(and(eq(exchangeQuoteTicks.code, code), gte(exchangeQuoteTicks.at, ts(since))))
+      .orderBy(asc(exchangeQuoteTicks.at))
+      .all()
+      .map((r) => ({ at: Date.parse(r.at), price: r.price }));
+  }
+
+  /** The house's lines of a step written on their own (a buy's charge, once it went through). */
+  lines(lines: readonly HouseLine[], day: number, now: number): void {
+    this.#write(() => {
+      for (const l of lines) {
+        this.#db.orm
+          .insert(exchangeHouseLines)
+          .values({
+            day,
+            kind: l.kind,
+            person_id: l.person,
+            code: l.code,
+            amount: l.amount,
+            ref: l.ref,
+            at: ts(now),
+          })
+          .run();
+      }
+    });
+  }
+
   /** The house's lines summed by kind, from local day `from` on: the books' other side. */
   lineTotals(from = 0): Record<string, number> {
     this.#db.ensureOpen();
@@ -635,7 +790,6 @@ export class RealStore {
         const k = state.bankrupt[keep];
         if (a && (!k || a.until > k.until)) state.bankrupt[keep] = a;
         delete state.bankrupt[absorb];
-        for (const p of state.payouts) if (p.person === absorb) p.person = keep;
         orm
           .update(exchangeHouse)
           .set({ state: JSON.stringify(state) })
@@ -667,5 +821,43 @@ function strip(o: RealOrderRecord): RealOrder {
     position: o.position,
     placed_at: o.placed_at,
     expires_at: o.expires_at,
+  };
+}
+
+export type InstrumentStatus = "active" | "blocked" | "paused" | "suspended" | "removed";
+
+export interface InstrumentRecord {
+  code: string;
+  market: "tw" | "us" | "crypto";
+  name: string;
+  exchange: string;
+  type: string;
+  currency: string;
+  provider: string;
+  status: InstrumentStatus;
+  reason: string | null;
+  added_at: number;
+  added_by: string | null;
+  last_quote_at: number | null;
+  missing_days: number;
+  last_viewed_at: number | null;
+}
+
+function instrumentOf(r: typeof exchangeInstruments.$inferSelect): InstrumentRecord {
+  return {
+    code: r.code,
+    market: r.market as InstrumentRecord["market"],
+    name: r.name,
+    exchange: r.exchange,
+    type: r.type,
+    currency: r.currency,
+    provider: r.provider,
+    status: r.status as InstrumentStatus,
+    reason: r.reason,
+    added_at: Date.parse(r.added_at),
+    added_by: r.added_by,
+    last_quote_at: ms(r.last_quote_at),
+    missing_days: r.missing_days,
+    last_viewed_at: ms(r.last_viewed_at),
   };
 }

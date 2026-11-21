@@ -18,6 +18,7 @@ import {
 import { afterEach } from "vitest";
 import { type ExchangeConfig, exchangeConfig } from "../src/config.js";
 import { exchangeSchema } from "../src/migrations.js";
+import type { QuoteProvider } from "../src/real/provider.js";
 import { ExchangeService, type TraderInfo, type Traders } from "../src/service.js";
 import { ExchangeStore } from "../src/store.js";
 
@@ -194,9 +195,17 @@ afterEach(() => {
   dbs = [];
 });
 
-export const OPEN: Partial<ExchangeConfig> = { open: true, leverage: true };
+export const OPEN: Partial<ExchangeConfig> = {
+  open: true,
+  leverage: true,
+  local_enabled: true,
+  local_leverage: true,
+};
 
-export async function rig(config: Partial<ExchangeConfig> = OPEN): Promise<Rig> {
+export async function rig(
+  config: Partial<ExchangeConfig> = OPEN,
+  providers?: ReadonlyMap<string, QuoteProvider>,
+): Promise<Rig> {
   const clock = { at: T0 };
   const raw = openTestDb({
     identity: true,
@@ -236,6 +245,7 @@ export async function rig(config: Partial<ExchangeConfig> = OPEN): Promise<Rig> 
         },
         audit: (action, target, detail, by) => audits.push({ action, target, detail, by }),
         seed: "test-seed",
+        ...(providers ? { providers } : {}),
       });
       return r.service;
     },

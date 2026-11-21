@@ -25,6 +25,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   real,
   sqliteTable,
   text,
@@ -447,7 +448,6 @@ export const exchangeRealFills = sqliteTable(
     tax: integer().notNull(),
     carry: integer().notNull(),
     paid: integer().notNull(),
-    queued: integer().notNull(),
     shortfall: integer().notNull(),
     by: text(),
     created_at: micros().notNull(),
@@ -455,11 +455,19 @@ export const exchangeRealFills = sqliteTable(
   (t) => [
     index("exchange_real_fills_person_idx").on(t.person_id, t.created_at),
     index("exchange_real_fills_created_idx").on(t.created_at),
-    check(
-      "exchange_real_fills_paid_check",
-      sql`${t.paid} >= 0 AND ${t.queued} >= 0 AND ${t.shortfall} >= 0`,
-    ),
+    check("exchange_real_fills_paid_check", sql`${t.paid} >= 0 AND ${t.shortfall} >= 0`),
   ],
+);
+
+/** Accepted quotes over time (thinned): what a company page's chart and the quote card draw. */
+export const exchangeQuoteTicks = sqliteTable(
+  "exchange_quote_ticks",
+  {
+    code: text().notNull(),
+    at: micros().notNull(),
+    price: real().notNull(),
+  },
+  (t) => [primaryKey({ name: "exchange_quote_ticks_pk", columns: [t.code, t.at] })],
 );
 
 /** The house's own record of every coin it moved (and every write-off), append-only. */
@@ -481,5 +489,42 @@ export const exchangeHouseLines = sqliteTable(
       "exchange_house_lines_kind_check",
       sql`${t.kind} IN ('burn', 'mint', 'fee', 'loss', 'refund', 'escrow', 'release', 'writeoff')`,
     ),
+  ],
+);
+
+/**
+ * The instruments people have looked up (owner 2026-11-21: an open universe): the first request for
+ * a ticker validates it through the provider and adds it here; later requests read this row.
+ */
+export const exchangeInstruments = sqliteTable(
+  "exchange_instruments",
+  {
+    /** The provider's symbol, also what people see (`2330.TW`, `6488.TWO`, `AAPL`). */
+    code: text().primaryKey(),
+    market: text().notNull(),
+    name: text().notNull(),
+    /** As the provider reports them (`TAI`, `TWO`, `NMS`; `EQUITY`, `ETF`). */
+    exchange: text().notNull(),
+    type: text().notNull(),
+    currency: text().notNull(),
+    provider: text().notNull(),
+    /** `active`, `blocked` (sell only), `paused` (a split-like jump waits for the owner), `suspended` (gone for days). */
+    status: text().notNull(),
+    reason: text(),
+    added_at: micros().notNull(),
+    added_by: text(),
+    last_quote_at: micros(),
+    /** Trading days in a row it had no valid quote. */
+    missing_days: integer().notNull().default(0),
+    last_viewed_at: micros(),
+    updated_at: micros().notNull(),
+  },
+  (t) => [
+    index("exchange_instruments_status_idx").on(t.status),
+    check(
+      "exchange_instruments_status_check",
+      sql`${t.status} IN ('active', 'blocked', 'paused', 'suspended', 'removed')`,
+    ),
+    check("exchange_instruments_market_check", sql`${t.market} IN ('tw', 'us', 'crypto')`),
   ],
 );

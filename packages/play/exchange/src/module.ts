@@ -35,10 +35,12 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { registerCommands, unregisterCommands } from "./commands.js";
-import { ExchangeConfigSchema } from "./config.js";
+import { type ExchangeConfig, ExchangeConfigSchema } from "./config.js";
+import { herNote } from "./her.js";
+import { HttpJsonProvider, type QuoteProvider } from "./real/provider.js";
+import { YahooProvider } from "./real/yahoo.js";
 import { ExchangeService, type Traders } from "./service.js";
 import { exchangeTables } from "./store.js";
-import { HerDesk } from "./words.js";
 
 export const ExchangeKey = serviceKey<ExchangeService>("Exchange");
 
@@ -53,6 +55,8 @@ export interface ExchangeModuleOptions {
   tickMs?: number;
   /** The seed of a new market (tests). */
   seed?: string;
+  /** Quote providers in place of the configured ones (tests). */
+  providers?: ReadonlyMap<string, QuoteProvider>;
 }
 
 export class ExchangeModule implements Module {
@@ -131,18 +135,10 @@ export class ExchangeModule implements Module {
           .catch(() => undefined);
       },
       ...(this.#options.seed === undefined ? {} : { seed: this.#options.seed }),
+      providers: this.#options.providers ?? providersOf(config),
     });
     ctx.provide(ExchangeKey, service);
     this.#running = { service, clock };
-    const desk = new HerDesk({
-      service,
-      words: () => ctx.services.get(ExchangeWordsKey) ?? null,
-      pictures: () => ctx.services.get(PicturesKey) ?? null,
-      post: (channel, reply) => post(ctx, channel, reply),
-      tell: (summary, key) => tell(ctx, summary, key),
-      log: ctx.log,
-      now: () => clock.now(),
-    });
     this.#mount = new CommandMount(
       "exchange",
       (registry) =>
@@ -154,12 +150,18 @@ export class ExchangeModule implements Module {
       unregisterCommands,
     );
     this.#mount.attach(ctx);
-    const every = this.#options.tickMs ?? TICK_MS;
+    const every = this.#options.tickMs ?? Math.max(10, config.quote_poll_seconds) * 1000;
+    let lastNote: string | null = null;
     ctx.spawn("pass", async (signal) => {
       const pass = async () => {
         try {
           await service.tick();
-          await desk.run();
+          // What she may know of it: facts of people who did not hide, as a quiet note, when they change.
+          const note = await herNote(service);
+          if (note !== null && note !== lastNote) {
+            lastNote = note;
+            tell(ctx, note, "exchange:facts");
+          }
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "exchange: the pass failed");
         }
@@ -257,4 +259,12 @@ function tell(ctx: ModuleContext, summary: string, key: string): void {
       ],
     },
   );
+}
+
+/** The providers the config names: `yahoo` always, and every JSON endpoint listed. */
+export function providersOf(config: ExchangeConfig): Map<string, QuoteProvider> {
+  const out = new Map<string, QuoteProvider>();
+  out.set("yahoo", new YahooProvider(config.yahoo));
+  for (const p of config.providers) out.set(p.id, new HttpJsonProvider(p));
+  return out;
 }

@@ -64,6 +64,8 @@ import {
   warnPrice,
   weekOf,
 } from "./engine/index.js";
+import { type Asker, RealDesk } from "./real/desk.js";
+import type { QuoteProvider } from "./real/provider.js";
 import {
   type AccountRecord,
   type ExchangeStore,
@@ -110,6 +112,8 @@ export interface ExchangeDeps {
   audit?: (action: string, target: string, detail: Record<string, unknown>, by: string) => void;
   /** The seed of a new market (tests); a random one otherwise. */
   seed?: string;
+  /** The quote providers by id (v1: real stocks). */
+  providers?: ReadonlyMap<string, QuoteProvider>;
 }
 
 export type Refusal = { ok: false; status: number; code: string; message: string };
@@ -401,14 +405,54 @@ export class ExchangeService {
   readonly #d: ExchangeDeps;
   readonly #turns = new SerialQueue();
   readonly params: EngineParams;
+  /** v1: real Taiwan and US stocks, the house as the counterparty. */
+  readonly real: RealDesk;
 
   constructor(deps: ExchangeDeps) {
     this.#d = deps;
     this.params = engineParams(deps.config);
+    this.real = new RealDesk({
+      config: deps.config,
+      store: deps.store,
+      wallet: deps.wallet,
+      providers: deps.providers ?? new Map(),
+      now: deps.now,
+      log: deps.log,
+      ask: (account) => this.#ask(account),
+    });
+  }
+
+  /** Who is asking, for the real desk: their person, trader facts and the rules. */
+  async #ask(account: AccountRef): Promise<Asker | null> {
+    const who = await this.#who(account);
+    if (!who) return null;
+    this.#ensure();
+    const acct = this.#d.store.account(who.person);
+    const trader = await this.#trader(account, who, acct);
+    if (acct && this.real.isBankrupt(who.person)) trader.blocked = who.blocked;
+    return {
+      person: who.person,
+      name: who.name,
+      trader,
+      rules: this.#rules(this.#d.store.state()?.paused ?? false),
+    };
   }
 
   get config(): ExchangeConfig {
     return this.#d.config;
+  }
+
+  /** The engine's numbers with leverage as v1 offers it (2x on real stocks, `leverage`). */
+  #leverageParams(): EngineParams {
+    return {
+      ...this.params,
+      leverage: { ...this.params.leverage, enabled: this.#d.config.leverage },
+    };
+  }
+
+  /** A person's display name (the boards, her note). */
+  nameOf(person: PersonId): Promise<string | null> {
+    return this.#d.traders.name(person);
   }
 
   get currency(): string {
@@ -452,6 +496,12 @@ export class ExchangeService {
    * wallets are paid what they are owed, and the notices go out. Off: the open orders go back.
    */
   async tick(): Promise<void> {
+    await this.real.tick();
+    if (!this.#d.config.local_enabled) {
+      await this.flush();
+      await this.#sendNotices();
+      return;
+    }
     await this.#turns.run(async () => {
       if (!this.#d.config.open) {
         await this.#recoverCharging();
@@ -1002,7 +1052,9 @@ export class ExchangeService {
     const acct = this.#d.store.account(who.person);
     const t = await this.#trader(account, who, acct);
     const rules = this.#rules(loaded.state.paused);
-    const counted = this.#d.store.countedToday(who.person, this.#dayStartMs(this.#today()));
+    const counted = this.#d.config.local_enabled
+      ? this.#d.store.countedToday(who.person, this.#dayStartMs(this.#today()))
+      : this.#d.store.real.countedToday(who.person, this.#dayStartMs(this.#today()));
     const wallet = this.#d.wallet();
     const balance = wallet ? await wallet.balance(who.person) : null;
     const transferred = wallet
@@ -1011,7 +1063,7 @@ export class ExchangeService {
           toTimestamp(this.#now() - rules.transfer_lock_hours * HOUR_MS),
         )
       : 0;
-    const lev = checkLeverageOptIn(rules, this.params, t);
+    const lev = checkLeverageOptIn(rules, this.#leverageParams(), t);
     return {
       currency: this.currency,
       known: !who.blocked,
@@ -1069,7 +1121,7 @@ export class ExchangeService {
       if (acct.leverage_at) return null;
       const no = checkLeverageOptIn(
         this.#rules(state.paused),
-        this.params,
+        this.#leverageParams(),
         await this.#trader(account, who, acct),
       );
       if (no) return refuse(403, no.code, no.message);
@@ -1641,7 +1693,12 @@ export class ExchangeService {
     for (const a of accounts) {
       const balance = wallet ? await wallet.balance(a.person) : 0;
       const held = new Map<string, number>();
-      for (const p of book.positions) {
+      const real = this.real.worth(a.person);
+      if (real.held > 0 || real.escrow > 0) {
+        for (const code of real.codes) held.set(code, 0);
+        held.set(real.codes[0] ?? "-", real.held);
+      }
+      for (const p of this.#d.config.local_enabled ? book.positions : []) {
         if (p.person !== a.person) continue;
         const price = priceOf(book, p.company);
         const v = p.leverage > 1 ? Math.max(0, equityOf(p, price)) : exactValue(p.qty, price);
@@ -1650,7 +1707,7 @@ export class ExchangeService {
       const escrow = book.orders
         .filter((o) => o.person === a.person && o.side === "buy")
         .reduce((t, o) => t + o.coins, 0);
-      const total = balance + escrow + [...held.values()].reduce((t, v) => t + v, 0);
+      const total = balance + escrow + real.escrow + [...held.values()].reduce((t, v) => t + v, 0);
       worth.push({
         person: a.person,
         worth: Math.floor(total),

@@ -24,12 +24,13 @@ import {
   type RealOrder,
   rollDay,
   splitRealBuy,
+  valueAt,
 } from "../src/real/house.js";
 import { DEFAULT_SESSIONS, isOpenAt, type RealInstrument } from "../src/real/instruments.js";
 import {
   FixtureProvider,
   HttpJsonProvider,
-  JUMP_BY_CLASS,
+  JUMP_BY_MARKET,
   type Quote,
   QuoteGuard,
 } from "../src/real/provider.js";
@@ -40,18 +41,14 @@ const STOCK: RealInstrument = {
   market: "us",
   provider: "fx",
   symbol: "ACME",
-  vol: "mid",
-  coins_per_unit: 1,
   enabled: true,
 };
 const COIN: RealInstrument = {
   code: "XCOIN",
   name: "某幣",
-  market: "crypto",
+  market: "us",
   provider: "fx",
   symbol: "XCOIN",
-  vol: "crypto",
-  coins_per_unit: 1,
   enabled: true,
 };
 const OTHER: RealInstrument = { ...STOCK, code: "BETA", symbol: "BETA", name: "Beta 公司" };
@@ -143,7 +140,7 @@ describe("providers and the guard", () => {
   });
 
   it("refuse stale, future, absurd and unconfirmed jumping quotes", () => {
-    const g = new QuoteGuard({ max_age_ms: 5 * MIN, jump: JUMP_BY_CLASS, confirm_within: 0.02 });
+    const g = new QuoteGuard({ max_age_ms: 5 * MIN, jump: JUMP_BY_MARKET, confirm_within: 0.02 });
     expect(g.check(STOCK, { symbol: "ACME", price: 100, at: T0 - 10 * MIN }, T0)).toEqual({
       ok: false,
       why: "stale",
@@ -254,7 +251,7 @@ function buy(
     qty: 0,
     position: null,
     placed_at: w.now,
-    expires_at: w.now + w.params.order_ttl_ms,
+    expires_at: Number.MAX_SAFE_INTEGER,
   };
   apply(w, placeRealBuy(w.book, order));
   return order;
@@ -281,7 +278,7 @@ function sell(
     qty,
     position,
     placed_at: w.now,
-    expires_at: w.now + w.params.order_ttl_ms,
+    expires_at: Number.MAX_SAFE_INTEGER,
   });
 }
 
@@ -295,29 +292,26 @@ function quote(w: World, inst: RealInstrument, price: number, after = MIN): Hous
 }
 
 describe("the house as the counterparty", () => {
-  it("burns a buy into a position at the next quote, holds it an hour, mints the sale back", () => {
+  it("burns a buy into a position at the next quote, holds it, mints the sale back with one fee", () => {
     const w = world();
     buy(w, "a", "ACME", 100);
     expect(w.wallets.get("a")).toBe(900);
     const filled = quote(w, STOCK, 50);
-    expect(filled.fills[0]).toMatchObject({ side: "buy", price: 50 });
+    expect(filled.fills[0]).toMatchObject({ side: "buy", price: 50, fee: 1 });
     const pos = w.book.positions[0];
-    expect(pos?.qty).toBe(Math.floor((98 * QTY_REAL) / 50));
+    expect(pos?.qty).toBe(Math.floor((99 * QTY_REAL) / 50));
+    // Within the hold time a sale waits; after it, it fills.
     sell(w, "a", "ACME", pos?.qty ?? 0);
-    const early = quote(w, STOCK, 55);
-    expect(early.ended[0]?.why).toBe("no_holding");
-    sell(w, "a", "ACME", pos?.qty ?? 0);
-    const sold = quote(w, STOCK, 55, HOUR);
+    expect(quote(w, STOCK, 55).fills).toHaveLength(0);
+    const sold = quote(w, STOCK, 55, 10 * MIN);
     const fill = sold.fills.find((f) => f.side === "sell");
-    expect(fill?.gross).toBe(107);
-    expect(fill?.fee).toBe(2);
-    expect(fill?.tax).toBe(4);
-    expect(w.wallets.get("a")).toBe(900 + 101);
-    expect(w.book.state.today.minted - w.book.state.today.burned).toBe(1);
+    expect(fill).toMatchObject({ gross: 108, fee: 2, tax: 0, paid: 106 });
+    expect(w.wallets.get("a")).toBe(900 + 106);
+    expect(w.book.state.today.minted - w.book.state.today.burned).toBe(6);
   });
 
-  it("pays a sale over the day's cap in part, queues the rest for tomorrow, and stops buys until then", () => {
-    const w = world({ cap_daily: 50, cap_instrument: 50 });
+  it("pays a sale past the day's cap in full and stops new buys for the rest of the day", () => {
+    const w = world({ cap_daily: 50 });
     buy(w, "a", "ACME", 200);
     quote(w, STOCK, 10);
     const pos = w.book.positions[0];
@@ -325,30 +319,15 @@ describe("the house as the counterparty", () => {
     buy(w, "b", "BETA", 100);
     const doubled = quote(w, STOCK, 20, HOUR);
     const fill = doubled.fills.find((f) => f.side === "sell");
-    expect(fill?.queued).toBeGreaterThan(0);
+    expect(fill?.paid).toBe(Math.floor(valueAt(pos?.qty ?? 0, 20)) - fill!.fee);
     expect(w.book.state.today.buys_halted).toBe(true);
     // Bob's waiting buy went back with its fee.
     expect(doubled.ended.find((e) => e.order.person === "b")).toMatchObject({ refunded: true });
     expect(w.wallets.get("b")).toBe(1000);
-    const before = w.wallets.get("a") ?? 0;
     w.day = 1;
-    const next = rollDay(w.book, ctx(w));
-    apply(w, next);
-    expect(w.wallets.get("a")).toBe(before + (fill?.queued ?? 0));
-    expect(w.book.state.payouts).toHaveLength(0);
+    apply(w, rollDay(w.book, ctx(w)));
     expect(w.book.state.today.buys_halted).toBe(false);
-  });
-
-  it("halts buys by itself when the rolling net minted passes the threshold", () => {
-    const w = world({ halt_net: 30, cap_daily: 10_000, cap_instrument: 10_000 });
-    buy(w, "a", "ACME", 200);
-    quote(w, STOCK, 10);
-    sell(w, "a", "ACME", w.book.positions[0]?.qty ?? 0);
-    quote(w, STOCK, 14, HOUR);
-    expect(w.book.state.auto_halted).toBe(true);
-    buy(w, "b", "ACME", 50);
-    const out = quote(w, STOCK, 14);
-    expect(out.ended[0]).toMatchObject({ why: "halted", refunded: true });
+    expect(w.book.state.history.at(-1)?.buys_halted).toBe(true);
   });
 });
 
@@ -372,7 +351,7 @@ describe("cross-margin leverage", () => {
     w.wallets.set("a", 300);
     buy(w, "a", "BETA", 100);
     quote(w, OTHER, 10);
-    buy(w, "a", "XCOIN", 155, 1.5);
+    buy(w, "a", "XCOIN", 155, 2);
     quote(w, COIN, 100);
     expect(w.wallets.get("a")).toBe(45);
     // The coin gaps from 100 to 5 at one quote: worth 7.5 against a loan of 50.
@@ -389,7 +368,7 @@ describe("cross-margin leverage", () => {
   it("goes bankrupt cleanly when nothing is left: everything closed, the rest written off, a cooling-off period", () => {
     const w = world();
     w.wallets.set("a", 160);
-    buy(w, "a", "XCOIN", 155, 1.5);
+    buy(w, "a", "XCOIN", 155, 2);
     quote(w, COIN, 100);
     buy(w, "a", "ACME", 5);
     const gap = quote(w, COIN, 1, HOUR);
@@ -408,7 +387,7 @@ describe("cross-margin leverage", () => {
   });
 
   it("keeps the postings and the house's lines equal to the coin over a long random run", () => {
-    const w = world({ cap_daily: 300, cap_instrument: 150 });
+    const w = world({ cap_daily: 60 });
     let price = 100;
     let coin = 100;
     let seed = 7;
@@ -420,7 +399,7 @@ describe("cross-margin leverage", () => {
       const who = rnd() < 0.5 ? "a" : "b";
       const r = rnd();
       if (r < 0.2) buy(w, who, "ACME", 10 + Math.floor(rnd() * 100), rnd() < 0.3 ? 2 : 1);
-      else if (r < 0.3) buy(w, who, "XCOIN", 10 + Math.floor(rnd() * 80), rnd() < 0.3 ? 1.5 : 1);
+      else if (r < 0.3) buy(w, who, "XCOIN", 10 + Math.floor(rnd() * 80), rnd() < 0.3 ? 2 : 1);
       else if (r < 0.34)
         for (const p of w.book.positions.filter((x) => x.person === who))
           sell(w, who, p.code, p.qty, p.leverage > 1 ? p.id : null);
@@ -441,14 +420,14 @@ describe("cross-margin leverage", () => {
         if ((w.wallets.get("a") ?? 0) < 50) w.wallets.set("a", (w.wallets.get("a") ?? 0) + 500);
         if ((w.wallets.get("b") ?? 0) < 50) w.wallets.set("b", (w.wallets.get("b") ?? 0) + 500);
       }
-      // The day's net payout never passes the cap by more than yesterday's queue.
+      // Past the cap no buy fills for the rest of the day.
       const t = w.book.state.today;
-      expect(t.minted - t.burned).toBeLessThanOrEqual(w.params.cap_daily + 1000);
+      if (t.buys_halted) expect(w.all.at(-1)?.fills.some((f) => f.side === "buy")).toBe(false);
     }
-    // The run went through liquidations, a loss past the margin and the payout queue.
+    // The run went through liquidations, a loss past the margin and the payout cap.
     expect(w.all.some((o) => o.fills.some((f) => f.kind === "liquidation"))).toBe(true);
     expect(w.all.some((o) => o.fills.some((f) => f.shortfall > 0))).toBe(true);
-    expect(w.all.some((o) => o.payouts_added.length > 0)).toBe(true);
+    expect([...w.book.state.history, w.book.state.today].some((d) => d.buys_halted)).toBe(true);
     const all = w.all.flatMap((o) => o.postings);
     expect(netOfPostings(all)).toBe(netOfLines(w.all.flatMap((o) => o.lines)));
     const owner = w.book.positions[0];

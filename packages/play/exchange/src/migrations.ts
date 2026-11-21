@@ -222,8 +222,9 @@ CREATE INDEX \`exchange_words_day_idx\` ON \`exchange_words\` (\`day\`);
 `;
 
 /**
- * Version 2 (owner 2026-11-21, real prices): the house's state, the last good quotes, the real
- * orders, positions and fills, and the house's own lines. Written the way drizzle-kit generates new
+ * Version 2 (owner 2026-11-21, real prices): the house's state, the last good quotes and their
+ * history, the instruments people looked up, the real orders, positions and fills, and the
+ * house's own lines. Written the way drizzle-kit generates new
  * tables (`createSql` over these tables alone: `schema:sql` asks to confirm new tables of a plugin
  * that has migrations); the drift test checks it.
  */
@@ -244,6 +245,33 @@ CREATE TABLE \`exchange_house_lines\` (
 	\`ref\` text NOT NULL,
 	\`at\` integer NOT NULL,
 	CONSTRAINT "exchange_house_lines_kind_check" CHECK("kind" IN ('burn', 'mint', 'fee', 'loss', 'refund', 'escrow', 'release', 'writeoff'))
+) STRICT;
+
+CREATE TABLE \`exchange_instruments\` (
+	\`code\` text PRIMARY KEY,
+	\`market\` text NOT NULL,
+	\`name\` text NOT NULL,
+	\`exchange\` text NOT NULL,
+	\`type\` text NOT NULL,
+	\`currency\` text NOT NULL,
+	\`provider\` text NOT NULL,
+	\`status\` text NOT NULL,
+	\`reason\` text,
+	\`added_at\` integer NOT NULL,
+	\`added_by\` text,
+	\`last_quote_at\` integer,
+	\`missing_days\` integer DEFAULT 0 NOT NULL,
+	\`last_viewed_at\` integer,
+	\`updated_at\` integer NOT NULL,
+	CONSTRAINT "exchange_instruments_status_check" CHECK("status" IN ('active', 'blocked', 'paused', 'suspended', 'removed')),
+	CONSTRAINT "exchange_instruments_market_check" CHECK("market" IN ('tw', 'us', 'crypto'))
+) STRICT;
+
+CREATE TABLE \`exchange_quote_ticks\` (
+	\`code\` text NOT NULL,
+	\`at\` integer NOT NULL,
+	\`price\` real NOT NULL,
+	CONSTRAINT \`exchange_quote_ticks_pk\` PRIMARY KEY(\`code\`, \`at\`)
 ) STRICT;
 
 CREATE TABLE \`exchange_quotes\` (
@@ -272,11 +300,10 @@ CREATE TABLE \`exchange_real_fills\` (
 	\`tax\` integer NOT NULL,
 	\`carry\` integer NOT NULL,
 	\`paid\` integer NOT NULL,
-	\`queued\` integer NOT NULL,
 	\`shortfall\` integer NOT NULL,
 	\`by\` text,
 	\`created_at\` integer NOT NULL,
-	CONSTRAINT "exchange_real_fills_paid_check" CHECK("paid" >= 0 AND "queued" >= 0 AND "shortfall" >= 0)
+	CONSTRAINT "exchange_real_fills_paid_check" CHECK("paid" >= 0 AND "shortfall" >= 0)
 ) STRICT;
 
 CREATE TABLE \`exchange_real_orders\` (
@@ -325,6 +352,8 @@ CREATE TABLE \`exchange_real_positions\` (
 ) STRICT;
 
 CREATE INDEX \`exchange_house_lines_day_idx\` ON \`exchange_house_lines\` (\`day\`,\`kind\`);
+
+CREATE INDEX \`exchange_instruments_status_idx\` ON \`exchange_instruments\` (\`status\`);
 
 CREATE INDEX \`exchange_real_fills_person_idx\` ON \`exchange_real_fills\` (\`person_id\`,\`created_at\`);
 

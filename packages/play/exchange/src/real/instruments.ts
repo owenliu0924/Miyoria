@@ -1,11 +1,11 @@
-// Real instruments (owner 2026-11-21): stocks and crypto whose price is a provider's quote. The list
-// is config (`[[modules.exchange.instruments]]`): adding or removing a ticker needs no code. Each
-// names its market (which hours it trades), its provider and the provider's symbol, its display
-// name, a volatility class (which sets the most leverage it allows and how big a jump is believed
-// without a second look) and how many coins one unit of its quote currency is worth.
+// Real instruments (owner 2026-11-21, v1: Taiwan and US stocks; an ETF is a ticker like any other):
+// the price is a provider's quote, in the instrument's own currency (TWD or USD), turned into fish
+// coins by two fixed rates in config (`rates.ts`). The list is config
+// (`[[modules.exchange.instruments]]`): adding or removing a ticker needs no code. Each names its
+// market (which hours it trades), its provider and the provider's symbol (Yahoo: `2330.TW`,
+// `6488.TWO`, `AAPL`) and its display name. `crypto` stays a market kind for later; v1 lists none.
 
 export type MarketKind = "us" | "tw" | "crypto";
-export type VolClass = "low" | "mid" | "high" | "crypto";
 
 export interface RealInstrument {
   /** What people type: 2 to 10 capital letters or digits (`AAPL`, `2330`, `BTC`). */
@@ -15,9 +15,6 @@ export interface RealInstrument {
   /** The provider's id (`[modules.exchange.providers]`) and its symbol for this instrument. */
   provider: string;
   symbol: string;
-  vol: VolClass;
-  /** Coins per unit of the quote's currency (1: one US dollar is one coin). */
-  coins_per_unit: number;
   /** Off: no new order; holdings stay and can be sold. */
   enabled: boolean;
 }
@@ -109,4 +106,23 @@ export function isOpenAt(session: Session, ms: number): boolean {
 /** The trading date of `ms` in the session's zone (for the day's reference price). */
 export function tradingDate(session: Session, ms: number): string {
   return zonedParts(ms, session.zone).date;
+}
+
+/** The currency a market quotes in. */
+export function currencyOf(market: MarketKind): "TWD" | "USD" {
+  return market === "tw" ? "TWD" : "USD";
+}
+
+/** Fixed rates (owner 2026-11-21): never fetched, never floating. */
+export interface Rates {
+  /** NT dollars per fish coin. */
+  twd_per_coin: number;
+  /** NT dollars per US dollar. */
+  twd_per_usd: number;
+}
+
+/** A quoted price in coins: TWD ÷ twd_per_coin; USD × twd_per_usd ÷ twd_per_coin. */
+export function toCoins(price: number, market: MarketKind, r: Rates): number {
+  const twd = market === "tw" ? price : price * r.twd_per_usd;
+  return twd / r.twd_per_coin;
 }
