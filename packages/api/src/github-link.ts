@@ -103,6 +103,8 @@ async function callback(state: ApiState, c: ApiContext): Promise<Response> {
 }
 
 export function githubLinkRoutes(state: ApiState): Route[] {
+  // Member pages, so they go with the public side's switch like the others.
+  if (!state.publicSide.config.enabled) return [];
   const routes: Route[] = [
     { method: "GET", path: "/api/member/github/link", handler: (c) => start(state, c) },
     { method: "GET", path: "/api/member/github/callback", handler: (c) => callback(state, c) },
