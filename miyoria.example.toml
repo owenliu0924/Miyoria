@@ -1111,7 +1111,7 @@ boredom_per_hour = 0.15          # 沒事做時無聊上升的速度
 # 筆記本:她自己的長期記憶,像一個資料夾(`人/Owen`、`主題/Minecraft 建築`)。索引放在 prompt,內容用工具讀寫
 # [modules.memory.notebook]
 # enabled = true
-# max_pages = 300                # 最多幾頁(超過就拒絕寫入,要她先整理)
+# max_pages = 300                # 她自己寫的頁最多幾頁(滿了就不能開新頁,舊頁還能改寫和刪;系統整理出來的不算)
 # page_chars = 4000              # 一頁字數上限
 # path_chars = 60                # 路徑(頁名)字數上限
 # read_chars = 2000              # 一次讀回幾字(長的分段讀)

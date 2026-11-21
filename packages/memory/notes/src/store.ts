@@ -559,6 +559,16 @@ export class NotesStore {
       .filter((entry) => reader === "owner" || entry.lines > 0);
   }
 
+  /** How many documents have a line in use that `author` wrote. */
+  writtenBy(author: NoteAuthor): number {
+    const row = this.#db.orm
+      .select({ n: sql<number>`count(DISTINCT ${L.document_id})` })
+      .from(L)
+      .where(and(eq(L.author, author), isNull(L.outdated_at), isNull(L.redacted_at)))
+      .get();
+    return row?.n ?? 0;
+  }
+
   /**
    * The documents `reader` may see lines of, with their sections' line counts, characters and last
    * change, most recently changed first. One query, for a listing that runs every turn.
