@@ -111,9 +111,12 @@ describe("hours, symbols, rates", () => {
   });
 
   it("turn TWD and USD into coins at the fixed rates", () => {
-    const r = { twd_per_coin: 100, twd_per_usd: 30 };
-    expect(toCoins(2000, "tw", r)).toBe(20);
-    expect(toCoins(342.56, "us", r)).toBeCloseTo(102.768);
+    // The default: one coin is NT$1.
+    const r = { twd_per_coin: 1, twd_per_usd: 30 };
+    expect(toCoins(2000, "tw", r)).toBe(2000);
+    expect(toCoins(342.56, "us", r)).toBeCloseTo(10_276.8);
+    expect(toCoins(120, "local", r)).toBe(120);
+    expect(toCoins(2000, "tw", { twd_per_coin: 2, twd_per_usd: 30 })).toBe(1000);
   });
 });
 
@@ -177,7 +180,7 @@ describe("v1 trading", () => {
     p.set("2330.TW", 2000, TW_OPEN);
     expect(await r.service.real.lookup(ALICE, "2330")).toMatchObject({
       ok: true,
-      instrument: { code: "2330.TW", currency: "TWD", coin_price: 20 },
+      instrument: { code: "2330.TW", currency: "TWD", coin_price: 2000 },
     });
     p.set("TSLA", 300, TW_OPEN, { type: "OPTION" });
     expect(await r.service.real.lookup(ALICE, "tsla")).toMatchObject({
@@ -280,26 +283,39 @@ describe("v1 trading", () => {
     p.set("2330.TW", 2000, r.clock.at - 10_000);
     await r.service.tick();
     const before = r.service.real.portfolio("p-alice").holdings[0]?.value ?? 0;
-    r.restart({ open: true, twd_per_coin: 50 } as never);
+    // The owner doubles NT$ per coin: every TWD holding is worth half as many coins, shares unchanged.
+    const qty = r.store.real.openPositions("p-alice")[0]?.qty;
+    r.wallet.twdPerCoin = 2;
     const after = r.service.real.portfolio("p-alice").holdings[0]?.value ?? 0;
-    expect(after).toBeCloseTo(before * 2, 5);
+    expect(after).toBeCloseTo(before / 2, 5);
+    expect(r.store.real.openPositions("p-alice")[0]?.qty).toBe(qty);
   });
 
   it("allows 2x only above the minimum price, blocks a ticker for buying and still lets it be sold", async () => {
-    const { r, p } = await desk({ leverage_min_coin_price: 30, blocked: ["AAPL"] });
+    // The default minimum is 50 coins a share: NT$20 is under it at one coin = NT$1.
+    const { r, p } = await desk({ blocked: ["AAPL"] });
     r.clock.at = TW_OPEN;
+    p.set("2888.TW", 20, TW_OPEN);
     p.set("2330.TW", 2000, TW_OPEN);
     p.set("AAPL", 340, TW_OPEN);
+    await r.service.real.lookup(ALICE, "2888");
     await r.service.real.lookup(ALICE, "2330");
     await r.service.real.lookup(ALICE, "AAPL");
     await r.service.optInLeverage(ALICE, true);
     expect(
       await r.service.real.place(
         ALICE,
-        { side: "buy", code: "2330.TW", coins: 60, leverage: 2 },
+        { side: "buy", code: "2888.TW", coins: 60, leverage: 2 },
         "l",
       ),
     ).toMatchObject({ code: "leverage_ticker" });
+    expect(
+      await r.service.real.place(
+        ALICE,
+        { side: "buy", code: "2330.TW", coins: 60, leverage: 2 },
+        "l2",
+      ),
+    ).toMatchObject({ ok: true });
     expect(
       await r.service.real.place(ALICE, { side: "buy", code: "AAPL", coins: 60 }, "b"),
     ).toMatchObject({ code: "blocked" });

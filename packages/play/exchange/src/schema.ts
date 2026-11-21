@@ -525,6 +525,6 @@ export const exchangeInstruments = sqliteTable(
       "exchange_instruments_status_check",
       sql`${t.status} IN ('active', 'blocked', 'paused', 'suspended', 'removed')`,
     ),
-    check("exchange_instruments_market_check", sql`${t.market} IN ('tw', 'us', 'crypto')`),
+    check("exchange_instruments_market_check", sql`${t.market} IN ('tw', 'us', 'crypto', 'local')`),
   ],
 );

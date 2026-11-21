@@ -24,10 +24,10 @@ export { exchangeSchema } from "./migrations.js";
 export { ExchangeKey, ExchangeModule, type ExchangeModuleOptions, TICK_MS } from "./module.js";
 export {
   boardPictureData,
-  dayPictureData,
   drawPicture,
   portfolioPictureData,
   quotePictureData,
+  sharesText,
   withPicture,
 } from "./pictures.js";
 export {
@@ -57,6 +57,7 @@ export {
   type RealPosition,
 } from "./real/house.js";
 export * from "./real/instruments.js";
+export * from "./real/local.js";
 export * from "./real/provider.js";
 export { RealStore } from "./real/store.js";
 export * from "./real/yahoo.js";

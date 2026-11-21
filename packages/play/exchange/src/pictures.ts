@@ -1,135 +1,132 @@
-// The exchange's picture messages (owner 2026-11-21: more commands that answer with a picture):
-// a company's quote with its line, a member's own portfolio (only ever drawn for them), the day's
-// market, the rich list and the week's volume table, as templates of `PicturesKey`. A picture goes
-// above the text card with its one-line summary as the alt text; the text card is all there is
-// when the renderer is absent, slow or answers `null`. Drawing never decides anything.
+// The exchange's picture messages (v1): a ticker's quote with its line, a member's own holdings
+// (only ever drawn for them), and the rich list, as templates of `PicturesKey`. Each carries the
+// exchange's small print at the bottom. A picture goes above the text card with its one-line
+// summary as the alt text; the text card is all there is when the renderer is absent, slow or
+// answers `null`. Drawing never decides anything.
 
 import { type CommandReply, pictureParts } from "@miyoria/commands";
-import type {
-  ExchangeBoardPicture,
-  ExchangeDayPicture,
-  ExchangePortfolioPicture,
-  ExchangeQuotePicture,
-  PictureDataMap,
-  PictureFile,
-  PictureKind,
-  Pictures,
+import {
+  type ExchangeBoardPicture,
+  type ExchangePortfolioPicture,
+  type ExchangeQuotePicture,
+  exchangeSmallPrint,
+  type PictureDataMap,
+  type PictureFile,
+  type PictureKind,
+  type Pictures,
 } from "@miyoria/types";
-import { qtyText, roundSlot, SECTOR_LABEL, type Sector } from "./engine/index.js";
-import type { BoardsView, CompanyView, ExchangeService, PortfolioView } from "./service.js";
+import type { RealLine, RealPortfolio } from "./real/desk.js";
+import { QTY_REAL } from "./real/house.js";
+import type { BoardsView, ExchangeService } from "./service.js";
 
 /** Longest wait for a picture before the answer goes out with its text alone. */
 export const PICTURE_TIMEOUT_MS = 8_000;
 
-function asOf(service: ExchangeService): string {
-  const last = service.store.rounds({ limit: 1, held: true })[0];
-  if (!last) return "還沒有開盤";
-  const hour = service.params.first_hour + roundSlot(last.round, service.params);
-  return `${dateOfDay(last.day)} ${String(hour).padStart(2, "0")}:00`;
+const MARKET_WORD: Readonly<Record<string, string>> = {
+  tw: "台股",
+  us: "美股",
+  local: "這裡獨家",
+  crypto: "加密",
+};
+
+/** Cents of a price, as the templates draw them (two decimals). */
+const cents = (x: number) => Math.round(x * 100);
+
+function shortDate(iso: string, offsetMinutes: number): string {
+  const d = new Date(Date.parse(iso) + offsetMinutes * 60_000);
+  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
-function dateOfDay(day: number): string {
-  return new Date(day * 86_400_000).toISOString().slice(0, 10);
+function quoteTime(iso: string | null, offsetMinutes: number): string {
+  if (iso === null) return "還沒有報價";
+  const d = new Date(Date.parse(iso) + offsetMinutes * 60_000).toISOString();
+  return `${d.slice(0, 10)} ${d.slice(11, 16)} 的報價`;
+}
+
+/** A share count as drawn: whole shares plainly, a fraction to four places. */
+export function sharesText(qty: number): string {
+  const shares = qty / QTY_REAL;
+  return Number.isInteger(shares) ? String(shares) : shares.toFixed(4);
 }
 
 export function quotePictureData(
   service: ExchangeService,
-  view: CompanyView,
+  h: { line: RealLine; points: { at: string; price: number }[] },
 ): ExchangeQuotePicture {
-  const c = view.company;
-  const first = view.history[0];
-  const last = view.history.at(-1);
+  const l = h.line;
   const offset = service.config.utc_offset_minutes;
-  const range =
-    first && last ? `${shortDate(first.at, offset)} – ${shortDate(last.at, offset)}` : null;
+  const first = h.points[0];
+  const last = h.points.at(-1);
+  const price = l.price ?? last?.price ?? 0;
+  const ref = l.change === null ? price : price / (1 + l.change);
+  const local = l.local !== null;
+  const coin = l.currency === "COIN";
   return {
-    code: c.code,
-    name: c.name,
-    sector: SECTOR_LABEL[c.sector as Sector] ?? c.sector,
-    blurb: c.blurb,
-    currency: service.currency,
-    price: c.price,
-    ref: c.ref,
-    change: c.change,
-    limit: c.limit,
-    series: view.history.map((h) => h.price),
-    range,
-    news: view.news.slice(0, 3).map((n) => ({ headline: n.headline, direction: n.direction })),
-    as_of: asOf(service),
+    code: l.code,
+    name: l.name,
+    sector: MARKET_WORD[l.market] ?? l.market,
+    blurb: local ? (l.local?.what_moves ?? "") : `約 ${l.coin_price ?? "—"} 魚幣一股・${l.source}`,
+    currency: coin ? "魚幣" : l.currency,
+    price: cents(price),
+    ref: cents(ref),
+    change: l.change ?? 0,
+    limit: null,
+    series: h.points.map((p) => cents(p.price)),
+    range: first && last ? `${shortDate(first.at, offset)} – ${shortDate(last.at, offset)}` : null,
+    news: [],
+    as_of: quoteTime(l.at, offset),
+    small_print: exchangeSmallPrint({ real: !local }),
   };
 }
 
 export function portfolioPictureData(
   service: ExchangeService,
   name: string,
-  p: PortfolioView,
+  p: RealPortfolio,
+  balance: number | null,
 ): ExchangePortfolioPicture {
+  const leverage = p.holdings.some((h) => h.leverage > 1);
   return {
     name,
     currency: service.currency,
-    balance: p.account.balance,
-    worth: p.totals.worth === null ? null : Math.floor(p.totals.worth),
-    holdings: p.holdings.map((h) => ({
-      code: h.code,
-      qty: qtyText(h.qty),
-      cost: h.cost,
-      value: Math.floor(h.value),
-    })),
-    leveraged: p.leveraged.map((l) => ({
-      code: l.code,
-      margin: l.margin,
-      equity: Math.floor(l.equity),
-      ratio: l.ratio,
-      price: l.price,
-      line_price: l.line_price,
-    })),
-    as_of: asOf(service),
+    balance,
+    worth: balance === null ? null : Math.floor(balance + p.totals.value),
+    holdings: p.holdings
+      .filter((h) => h.leverage <= 1)
+      .map((h) => ({
+        code: h.code,
+        qty: sharesText(h.qty),
+        cost: h.cost,
+        value: Math.floor(h.value ?? 0),
+      })),
+    leveraged: p.holdings
+      .filter((h) => h.leverage > 1)
+      .map((h) => ({
+        code: h.code,
+        margin: h.margin,
+        equity: Math.floor(h.equity ?? 0),
+        ratio: h.ratio ?? 0,
+        price: cents(h.price ?? 0),
+        line_price: cents(h.line_price ?? 0),
+      })),
+    as_of: p.bankrupt ? "破產冷靜期中" : "以最新報價計算",
+    small_print: exchangeSmallPrint({ real: true, leverage }),
   };
 }
 
-export function dayPictureData(service: ExchangeService, her: string | null): ExchangeDayPicture {
-  const s = service.summary();
-  const m = service.market();
-  const rounds = service.store.rounds({ from: s.day * service.params.rounds_per_day, held: true });
+export function boardPictureData(b: BoardsView): ExchangeBoardPicture {
   return {
-    date: s.date,
-    currency: service.currency,
-    fish: s.fish,
-    fish_ref: s.fish_ref,
-    level: s.level,
-    vault: m.vault,
-    volume: s.volume,
-    burned: s.burned,
-    halted: s.halted,
-    companies: s.companies,
-    series: rounds.map((r) => r.fish),
-    her,
+    currency: b.currency,
+    week_start: null,
+    rows: b.rich.map((r) => ({
+      rank: r.rank,
+      name: r.name,
+      value: r.worth,
+      extra: r.holdings === null ? null : r.holdings.map((h) => h.code).join(" "),
+    })),
+    me: b.me === null ? null : { rank: b.me.rich, hidden: b.me.hidden },
+    small_print: exchangeSmallPrint({ real: true }),
   };
-}
-
-export function boardPictureData(kind: "rich" | "volume", b: BoardsView): ExchangeBoardPicture {
-  const rows =
-    kind === "rich"
-      ? b.rich.map((r) => ({
-          rank: r.rank,
-          name: r.name,
-          value: r.worth,
-          extra: r.holdings === null ? null : r.holdings.map((h) => h.code).join(" "),
-        }))
-      : b.volume.map((r) => ({
-          rank: r.rank,
-          name: r.name,
-          value: r.volume,
-          extra: `${r.trades} 筆`,
-        }));
-  const me =
-    b.me === null ? null : { rank: kind === "rich" ? b.me.rich : b.me.volume, hidden: b.me.hidden };
-  return { currency: b.currency, week_start: kind === "volume" ? b.week_start : null, rows, me };
-}
-
-function shortDate(iso: string, offsetMinutes: number): string {
-  const d = new Date(Date.parse(iso) + offsetMinutes * 60_000);
-  return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`;
 }
 
 /** Draws `kind`, or `null`: no renderer, a failure, or too slow. Never throws. */

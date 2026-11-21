@@ -5,7 +5,7 @@
 // market (which hours it trades), its provider and the provider's symbol (Yahoo: `2330.TW`,
 // `6488.TWO`, `AAPL`) and its display name. `crypto` stays a market kind for later; v1 lists none.
 
-export type MarketKind = "us" | "tw" | "crypto";
+export type MarketKind = "us" | "tw" | "crypto" | "local";
 
 export interface RealInstrument {
   /** What people type: 2 to 10 capital letters or digits (`AAPL`, `2330`, `BTC`). */
@@ -47,6 +47,15 @@ export const DEFAULT_SESSIONS: Readonly<Record<MarketKind, Session>> = {
     open: "09:00",
     close: "13:30",
     days: [1, 2, 3, 4, 5],
+    holidays: [],
+    always: false,
+  },
+  // The five local stocks tied to her: one tick an hour from 12:00 to 23:00 Taipei, every day.
+  local: {
+    zone: "Asia/Taipei",
+    open: "12:00",
+    close: "23:01",
+    days: [0, 1, 2, 3, 4, 5, 6],
     holidays: [],
     always: false,
   },
@@ -109,8 +118,8 @@ export function tradingDate(session: Session, ms: number): string {
 }
 
 /** The currency a market quotes in. */
-export function currencyOf(market: MarketKind): "TWD" | "USD" {
-  return market === "tw" ? "TWD" : "USD";
+export function currencyOf(market: MarketKind): "TWD" | "USD" | "COIN" {
+  return market === "tw" ? "TWD" : market === "local" ? "COIN" : "USD";
 }
 
 /** Fixed rates (owner 2026-11-21): never fetched, never floating. */
@@ -123,6 +132,7 @@ export interface Rates {
 
 /** A quoted price in coins: TWD ÷ twd_per_coin; USD × twd_per_usd ÷ twd_per_coin. */
 export function toCoins(price: number, market: MarketKind, r: Rates): number {
+  if (market === "local") return price;
   const twd = market === "tw" ? price : price * r.twd_per_usd;
   return twd / r.twd_per_coin;
 }

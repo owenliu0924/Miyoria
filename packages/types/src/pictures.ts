@@ -231,6 +231,8 @@ export interface ExchangeQuotePicture {
   news: { headline: string; direction: "up" | "down" }[];
   /** `YYYY-MM-DD HH:00` of the last round. */
   as_of: string;
+  /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
+  small_print: string;
 }
 
 /** A member's own holdings: only ever drawn for them. */
@@ -250,6 +252,8 @@ export interface ExchangePortfolioPicture {
     line_price: number;
   }[];
   as_of: string;
+  /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
+  small_print: string;
 }
 
 /** The day's market: the index, every company's move, the totals, her closing line. */
@@ -273,6 +277,8 @@ export interface ExchangeDayPicture {
   /** The index through the day's held rounds. */
   series: number[];
   her: string | null;
+  /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
+  small_print: string;
 }
 
 /** The rich list or the week's volume table (people who hide are not on it). */
@@ -283,6 +289,8 @@ export interface ExchangeBoardPicture {
   rows: { rank: number; name: string; value: number; extra: string | null }[];
   /** The viewer's own place, when the picture is for someone (`null`: off the table or hidden). */
   me: { rank: number | null; hidden: boolean } | null;
+  /** The exchange's small print (`exchangeSmallPrint`), drawn at the bottom. */
+  small_print: string;
 }
 
 /** Every template and its data. */

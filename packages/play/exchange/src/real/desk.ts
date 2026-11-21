@@ -24,6 +24,7 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { type ExchangeConfig, houseParams, sessionsOf } from "../config.js";
+import { companyOf } from "../engine/companies.js";
 import {
   checkOpen,
   type GuardRefusal,
@@ -31,6 +32,7 @@ import {
   type Rules,
   type Trader,
 } from "../engine/guards.js";
+import { feeOn } from "../engine/money.js";
 import type { ExchangeStore } from "../store.js";
 import {
   adminSellReal,
@@ -65,6 +67,13 @@ import {
   type Session,
   toCoins,
 } from "./instruments.js";
+import {
+  LOCAL_CODES,
+  LOCAL_WHAT_MOVES,
+  type LocalCode,
+  LocalProvider,
+  type LocalSignals,
+} from "./local.js";
 import {
   QuoteGuard as Guard,
   JUMP_BY_MARKET,
@@ -110,6 +119,8 @@ export interface RealDeskDeps {
   providers: ReadonlyMap<string, QuoteProvider>;
   now: () => number;
   log: Logger;
+  /** Yesterday's counts of her real things, for the local stocks (`null`: none). */
+  signals?: LocalSignals;
   /** The account layer: who is asking, their trader facts and the rules; `null` for a stranger. */
   ask: (account: AccountRef) => Promise<Asker | null>;
   newId?: () => string;
@@ -121,7 +132,9 @@ export interface RealLine {
   market: MarketKind;
   /** The quote in the instrument's own currency (`TWD`, `USD`); `null` before the first one. */
   price: number | null;
-  currency: "TWD" | "USD";
+  currency: "TWD" | "USD" | "COIN";
+  /** One of the five local stocks tied to her (新手推薦 · 這裡獨家): what moves it, in one sentence. */
+  local: { what_moves: string } | null;
   /** The same in fish coins at today's fixed rates. */
   coin_price: number | null;
   /** How old the quote is, in minutes (the source states no delay; its own time is shown). */
@@ -255,7 +268,10 @@ export interface RealOrderRequest {
   side: "buy" | "sell";
   code: string;
   coins?: number;
-  /** A sale of a plain holding: shares (six decimals) or all of it. */
+  /**
+   * Shares (six decimals): a sale of a plain holding, or a 1x buy by shares (priced at the latest
+   * quote, fee included, rounded up to whole coins) when `coins` is not given.
+   */
   shares?: number;
   all?: boolean;
   /** 1 or 2. */
@@ -296,16 +312,20 @@ export interface RealReport {
   books: { postings: number; lines: number; pending: number };
 }
 
+/** A local stock's tick stands for an hour, and a few minutes more for the poll. */
+const LOCAL_MAX_AGE_MS = 65 * 60_000;
+
 const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10);
 
 export class RealDesk {
   readonly #d: RealDeskDeps;
   readonly #turns = new SerialQueue();
-  readonly #guards: Record<"intraday" | "close", QuoteGuard>;
+  readonly #guards: Record<"intraday" | "close" | "hourly", QuoteGuard>;
   readonly params: HouseParams;
   readonly sessions: Record<MarketKind, Session>;
   #seeded = false;
   #nextPoll = 0;
+  #local: LocalProvider | null = null;
   /** Symbols that did not validate, until when (a cache so junk cannot spend the budget). */
   readonly #negative = new Map<string, { until: number; why: string }>();
   /** Lookups per person in the current hour. */
@@ -323,6 +343,12 @@ export class RealDesk {
         confirm_within: 0.02,
       }),
       close: new Guard({ max_age_ms: 4 * DAY_MS, jump: JUMP_BY_MARKET, confirm_within: 0.02 }),
+      // The local stocks tick once an hour: their last tick is good until the next.
+      hourly: new Guard({
+        max_age_ms: LOCAL_MAX_AGE_MS,
+        jump: JUMP_BY_MARKET,
+        confirm_within: 0.02,
+      }),
     };
   }
 
@@ -371,6 +397,7 @@ export class RealDesk {
     const used = new Set([...book.positions.map((p) => p.code), ...book.orders.map((o) => o.code)]);
     const viewed = this.#d.config.view_minutes * 60_000;
     return this.instruments().filter((i) => {
+      if (i.market === "local") return this.#d.config.local_stocks;
       const st = this.#status(i.code);
       if (st === "paused" || st === "suspended") return used.has(i.code);
       const row = this.#d.store.real.instrument(i.code);
@@ -398,8 +425,53 @@ export class RealDesk {
     return Math.max(c.quote_poll_seconds, Math.ceil((batches / Math.max(perMinute, 0.001)) * 60));
   }
 
+  /** The providers, with the local stocks' own. */
+  #provider(id: string): QuoteProvider | undefined {
+    if (id === "local" && !this.#d.providers.has("local")) {
+      this.#local ??= new LocalProvider(
+        this.#d.store.state()?.seed ?? "local",
+        this.#d.signals ?? (() => null),
+        (code) => this.#d.config.local_anchors[code],
+        (code) => {
+          const q = this.#d.store.real.quotes().get(code);
+          return q ? { price: q.price, at: q.at, prev_close: q.prev_close } : null;
+        },
+      );
+      return this.#local;
+    }
+    return this.#d.providers.get(id);
+  }
+
+  /** The five local stocks are always listed (unless switched off). */
+  #ensureLocal(): void {
+    if (!this.#d.config.local_stocks) return;
+    const now = this.#now();
+    for (const code of LOCAL_CODES) {
+      if (this.#d.store.real.instrument(code)) continue;
+      const spec = companyOf(code);
+      this.#d.store.real.addInstrument(
+        {
+          code,
+          market: "local",
+          name: spec?.name ?? code,
+          exchange: "LOCAL",
+          type: "LOCAL",
+          currency: "COIN",
+          provider: "local",
+          status: "active",
+          added_at: now,
+          added_by: null,
+        },
+        now,
+      );
+    }
+  }
+
   get rates(): Rates {
-    return { twd_per_coin: this.#d.config.twd_per_coin, twd_per_usd: this.#d.config.twd_per_usd };
+    return {
+      twd_per_coin: this.#d.wallet()?.twdPerCoin ?? 1,
+      twd_per_usd: this.#d.config.twd_per_usd,
+    };
   }
 
   /** A native quote in coins at today's fixed rates. */
@@ -436,7 +508,12 @@ export class RealDesk {
   }
 
   #guard(inst: RealInstrument): QuoteGuard {
-    return this.#guards[this.#mode(inst.market)];
+    return inst.market === "local" ? this.#guards.hourly : this.#guards[this.#mode(inst.market)];
+  }
+
+  /** How old a quote of `market` may be and still be traded at. */
+  #maxAge(market: MarketKind): number {
+    return market === "local" ? LOCAL_MAX_AGE_MS : this.#d.config.quote_max_age_seconds * 1000;
   }
 
   #seed(): void {
@@ -460,10 +537,7 @@ export class RealDesk {
     if (!inst) return null;
     const q = this.#guard(inst).last(code);
     if (!q || !this.#inSession(inst, q.at)) return null;
-    if (
-      this.#mode(inst.market) === "intraday" &&
-      this.#now() - q.at > this.#d.config.quote_max_age_seconds * 1000
-    )
+    if (this.#mode(inst.market) === "intraday" && this.#now() - q.at > this.#maxAge(inst.market))
       return null;
     return this.#coins(inst, q);
   }
@@ -519,6 +593,7 @@ export class RealDesk {
   /** A new day, the buys left half charged, the quotes of every market in session. */
   async tick(): Promise<void> {
     await this.#turns.run(async () => {
+      this.#ensureLocal();
       this.#seed();
       await this.#recoverCharging();
       const book = this.#book();
@@ -556,7 +631,7 @@ export class RealDesk {
       byProvider.set(inst.provider, [...(byProvider.get(inst.provider) ?? []), inst]);
     }
     for (const [id, list] of byProvider) {
-      const provider = this.#d.providers.get(id);
+      const provider = this.#provider(id);
       if (!provider) continue;
       const quotes = new Map<
         string,
@@ -724,7 +799,16 @@ export class RealDesk {
             ? Math.round(toCoins(q.price, i.market, this.rates) * 10_000) / 10_000
             : null,
           age_minutes: q ? Math.max(0, Math.round((now - q.at) / 60_000)) : null,
-          source: i.provider === "yahoo" ? "資料來源:Yahoo Finance" : `資料來源:${i.provider}`,
+          source:
+            i.provider === "yahoo"
+              ? "資料來源:Yahoo Finance"
+              : i.provider === "local"
+                ? "這裡獨家:價格由程式模擬"
+                : `資料來源:${i.provider}`,
+          local:
+            i.market === "local"
+              ? { what_moves: LOCAL_WHAT_MOVES[i.code as LocalCode] ?? "" }
+              : null,
           change: q && ref ? Math.round((q.price / ref - 1) * 10_000) / 10_000 : null,
           at: q ? toTimestamp(q.at) : null,
           open,
@@ -732,7 +816,7 @@ export class RealDesk {
             q !== null &&
             open &&
             this.#mode(i.market) === "intraday" &&
-            now - q.at > c.quote_max_age_seconds * 1000,
+            now - q.at > this.#maxAge(i.market),
           quotes: this.#mode(i.market),
         };
       }),
@@ -866,7 +950,18 @@ export class RealDesk {
         );
       if (buysHalted(book.state) && book.state.today.day === this.#day())
         return refuse(409, "cap", "今天交易所發出的魚幣到上限了,今天停止買進(賣出照常)");
-      const coins = req.coins ?? 0;
+      // A buy by shares (the local stocks' ticket default): what those shares cost now, fee
+      // included, in whole coins. It still fills at the next valid quote, so the shares may differ
+      // a little; 1x only.
+      let coins = req.coins ?? 0;
+      if (req.coins === undefined && req.shares !== undefined) {
+        const px = latest?.price ?? null;
+        if (px === null) return refuse(409, "no_quote", "還沒有報價,請用魚幣金額下單");
+        if (!(req.shares > 0) || (req.leverage ?? 1) !== 1)
+          return refuse(409, "qty", "照股數買只能 1 倍、股數要大於 0");
+        const exposure = Math.ceil(req.shares * px - 1e-9);
+        coins = exposure + feeOn(exposure, c.fee, c.fee_min);
+      }
       if (!Number.isSafeInteger(coins) || coins < c.order_min || coins > c.order_max)
         return refuse(409, "size", `一筆買進是 ${c.order_min} 到 ${c.order_max} 魚幣`);
       const leverage = req.leverage === 2 ? 2 : 1;
@@ -874,6 +969,8 @@ export class RealDesk {
         return refuse(409, "leverage", "槓桿只有 1 倍或 2 倍");
       if (leverage > 1) {
         if (!c.leverage) return refuse(409, "leverage_off", "槓桿現在沒有開放");
+        if (inst.market === "local")
+          return refuse(409, "leverage_local", "新手推薦的獨家股票不開放槓桿,只能 1 倍");
         const q = this.#lastKnown(inst.code);
         if (!q || q.prev_close === null || q.price < c.leverage_min_coin_price) {
           return refuse(
@@ -916,6 +1013,10 @@ export class RealDesk {
       }
       const split = splitRealBuy(coins, leverage, this.params);
       if (!split) return refuse(409, "size", "這筆太小了");
+      const at = latest?.price ?? null;
+      if (at !== null && Math.floor((split.exposure * QTY_REAL) / at) <= 0) {
+        return refuse(409, "too_small", "金額太小,這檔一股太貴,連 0.000001 股都買不到");
+      }
       const held = this.#holdingsCost(book, asker.person);
       const cap = limitsFor(asker.rules, t).total;
       if (held.cost + split.exposure > cap)
@@ -968,7 +1069,7 @@ export class RealDesk {
           sentence:
             leverage > 1
               ? `付 ${split.margin + split.fee} 魚幣(保證金 ${split.margin}、手續費 ${split.fee}),買 2 倍的部位 ${split.exposure};${when}。${line ? `跌到約 ${line.toFixed(2)} 會依規則自動賣出。` : ""}`
-              : `付 ${split.margin + split.fee} 魚幣(含手續費 ${split.fee}),${when}。買進後 ${c.min_hold_minutes} 分鐘才能賣。`,
+              : `付 ${split.margin + split.fee} 魚幣(含手續費 ${split.fee}),照現價約 ${(qty / QTY_REAL).toFixed(4)} 股,${when}。買進後 ${c.min_hold_minutes} 分鐘才能賣。`,
           warning: leverage > 1 ? LEVERAGE_WARNING : null,
         },
       };
@@ -1173,7 +1274,7 @@ export class RealDesk {
   /** The owner confirms a split (or reverse split): every holding's shares times `ratio`; the ticker trades again. */
   confirmSplit(code: string, ratio: number): { ok: true; positions: number } | Refusal {
     const row = this.#d.store.real.instrument(code);
-    if (!row || row.status !== "paused") return refuse(409, "not_paused", "這檔沒有在等分割確認");
+    if (row?.status !== "paused") return refuse(409, "not_paused", "這檔沒有在等分割確認");
     if (!(ratio > 0) || ratio > 50 || ratio < 1 / 50) return refuse(400, "ratio", "比例不合理");
     const n = this.#d.store.real.adjustShares(code, ratio);
     const inst = this.#inst(code);
@@ -1190,7 +1291,7 @@ export class RealDesk {
   ): Promise<{ ok: true; paid: number } | Refusal> {
     return this.#turns.run(async () => {
       const row = this.#d.store.real.instrument(code);
-      if (!row || row.status !== "suspended") return refuse(409, "not_suspended", "這檔沒有暫停");
+      if (row?.status !== "suspended") return refuse(409, "not_suspended", "這檔沒有暫停");
       const last = this.#lastKnown(code);
       const price = at === "zero" ? 0 : (last?.price ?? 0);
       const book = this.#book();
@@ -1439,22 +1540,20 @@ export class RealDesk {
     return {
       holdings,
       orders: this.#d.store.real.orders(person, { limit: 30 }).map(orderLine),
-      fills: this.#d.store.real
-        .fills(person, 30)
-        .map((f) => ({
-          id: f.id,
-          code: f.code,
-          side: f.side,
-          kind: f.kind,
-          qty: f.qty,
-          price: f.price,
-          gross: f.gross,
-          fee: f.fee,
-          paid: f.paid,
-          shortfall: f.shortfall,
-          leverage: f.leverage,
-          at: f.created_at,
-        })),
+      fills: this.#d.store.real.fills(person, 30).map((f) => ({
+        id: f.id,
+        code: f.code,
+        side: f.side,
+        kind: f.kind,
+        qty: f.qty,
+        price: f.price,
+        gross: f.gross,
+        fee: f.fee,
+        paid: f.paid,
+        shortfall: f.shortfall,
+        leverage: f.leverage,
+        at: f.created_at,
+      })),
       notices: this.#d.store
         .notices(person, 20)
         .map((n) => ({ id: n.id, kind: n.kind, text: n.text, at: n.created_at })),

@@ -37,6 +37,11 @@ export class EconomyExchangeWallet implements ExchangeWallet {
     return this.e.config.currency;
   }
 
+  /** The economy's one fixed rate; the exchange reads it here and defines none of its own. */
+  get twdPerCoin(): number {
+    return this.e.config.twd_per_coin;
+  }
+
   async member(account: AccountRef): Promise<ExchangePerson | null> {
     try {
       const who = await this.e.member(account);

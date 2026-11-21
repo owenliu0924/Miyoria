@@ -34,6 +34,9 @@ const date = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
  * symbol = "2330"
  * ```
  */
+/** A local stock's anchor price in coins. */
+const localAnchor = (d: number) => z.number().min(10).max(1000).default(d);
+
 export const ExchangeConfigSchema = z
   .object({
     /** The master switch. Off: nothing is traded, open orders go back, holdings stay. */
@@ -81,23 +84,11 @@ export const ExchangeConfigSchema = z
     /** Trading days without a valid quote before a held ticker is suspended (the owner settles it). */
     suspend_after_days: z.number().int().min(1).max(30).default(3),
     /**
-     * Fixed exchange rates to fish coins (owner 2026-11-21): never fetched, never floating. A coin
-     * price is TWD ÷ `twd_per_coin`, or USD × `twd_per_usd` ÷ `twd_per_coin`. Holdings are shares,
-     * so changing a rate re-values everyone's holdings the same way at once.
+     * Fixed exchange rates (owner 2026-11-21): never fetched, never floating. NT$ per coin is the
+     * economy's one rate (`[modules.economy] twd_per_coin`, default 1: a coin is about NT$1, a bowl
+     * of rice is 10); this is NT$ per US$. A coin price is TWD ÷ twd_per_coin, or USD × twd_per_usd ÷
+     * twd_per_coin. Holdings are shares, so changing a rate re-values everyone's holdings at once.
      */
-    twd_per_coin: z
-      .number()
-      .positive()
-      .default(100)
-      .meta(
-        setting({
-          kind: "number",
-          label: "一魚幣等於幾台幣",
-          help: "固定匯率;改了之後每個人的持股都照新的匯率重新估值",
-          danger: "改匯率會讓所有人的持股市值一起變動(股數不變)。確定要改嗎?",
-          group: "market",
-        }),
-      ),
     twd_per_usd: z
       .number()
       .positive()
@@ -273,7 +264,7 @@ export const ExchangeConfigSchema = z
     /** Burned per day from a leveraged position, as a share of what is borrowed (0: none). */
     leverage_carry_daily: ratio(0, 0.05),
     /** 2x only on a ticker at least this many coins a share, with a previous close. */
-    leverage_min_coin_price: z.number().min(0).default(1.5),
+    leverage_min_coin_price: z.number().min(0).default(50),
     leverage_min_days: z
       .number()
       .int()
@@ -295,7 +286,34 @@ export const ExchangeConfigSchema = z
       .default(7)
       .meta(setting({ kind: "number", label: "破產後幾天不能交易", group: "leverage" })),
 
-    // ---- the local market: off, no panel (docs/design/exchange.md, later) ----
+    /** The five local stocks tied to her (新手推薦 · 這裡獨家), priced by the simulator in coins, 1x only. */
+    local_stocks: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "新手推薦的獨家股票",
+          help: "她的五家公司:價格由程式模擬,跟她的生活有關,不開放槓桿",
+          group: "market",
+        }),
+      ),
+
+    /**
+     * Each local stock's anchor in coins: its first price and the level its walk returns to (owner
+     * 2026-11-21: cheap, about 100 a share). Soft bounds keep it within 0.5×–2× of the anchor.
+     */
+    local_anchors: z
+      .object({
+        RICE: localAnchor(100),
+        WHLE: localAnchor(108),
+        NAPS: localAnchor(88),
+        CUBE: localAnchor(116),
+        DPSK: localAnchor(94),
+      })
+      .default({ RICE: 100, WHLE: 108, NAPS: 88, CUBE: 116, DPSK: 94 }),
+
+    // ---- the old local market (closed vault, rounds): off, no panel ----
     local_enabled: z.boolean().default(false),
     round_grace_minutes: z.number().int().min(1).max(59).default(10),
     limit_company: coins(DEFAULT_RULES.limit_company),
@@ -432,5 +450,6 @@ export function sessionsOf(c: ExchangeConfig): Record<MarketKind, Session> {
     us: { ...DEFAULT_SESSIONS.us, holidays: c.holidays_us },
     tw: { ...DEFAULT_SESSIONS.tw, holidays: c.holidays_tw },
     crypto: DEFAULT_SESSIONS.crypto,
+    local: DEFAULT_SESSIONS.local,
   };
 }

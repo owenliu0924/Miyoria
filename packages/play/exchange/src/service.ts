@@ -455,6 +455,11 @@ export class ExchangeService {
     return this.#d.traders.name(person);
   }
 
+  /** The person behind `account`, or `null` when the wallet does not know them. */
+  async personOf(account: AccountRef): Promise<PersonId | null> {
+    return (await this.#who(account))?.person ?? null;
+  }
+
   get currency(): string {
     return this.#d.wallet()?.currency ?? CURRENCY;
   }

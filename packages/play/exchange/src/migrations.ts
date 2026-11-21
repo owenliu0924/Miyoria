@@ -264,7 +264,7 @@ CREATE TABLE \`exchange_instruments\` (
 	\`last_viewed_at\` integer,
 	\`updated_at\` integer NOT NULL,
 	CONSTRAINT "exchange_instruments_status_check" CHECK("status" IN ('active', 'blocked', 'paused', 'suspended', 'removed')),
-	CONSTRAINT "exchange_instruments_market_check" CHECK("market" IN ('tw', 'us', 'crypto'))
+	CONSTRAINT "exchange_instruments_market_check" CHECK("market" IN ('tw', 'us', 'crypto', 'local'))
 ) STRICT;
 
 CREATE TABLE \`exchange_quote_ticks\` (

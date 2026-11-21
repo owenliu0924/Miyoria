@@ -57,6 +57,8 @@ export type ExchangePost =
 export interface ExchangeWallet {
   /** What the coins are called (`魚幣`). */
   readonly currency: string;
+  /** NT dollars per coin: the economy's one fixed rate (`[modules.economy] twd_per_coin`). */
+  readonly twdPerCoin?: number;
   /** The person behind `account` when they may buy: she knows them and has not blocked them. */
   member(account: AccountRef): Promise<ExchangePerson | null>;
   /** The person behind `account` when she knows them, blocked or not: they may still sell. */
@@ -81,65 +83,23 @@ export interface ExchangeWallet {
 
 export const ExchangeWalletKey = serviceKey<ExchangeWallet>("ExchangeWallet");
 
-// ---- her words (docs/design/exchange.md §7) -----------------------------------------------------
+// ---- the small print (owner 2026-11-21): one wording, under every exchange surface -------------
 
-/** What she may know of a trading day: public numbers and totals, never anyone's holdings. */
-export interface ExchangeDayFacts {
-  /** `YYYY-MM-DD`. */
-  date: string;
-  /** The index now and at the previous close. */
-  fish: number;
-  fish_ref: number;
-  /** Vault over holdings; `null` while too small to say. */
-  level: number | null;
-  /** Coins traded and burned today. */
-  volume: number;
-  burned: number;
-  /** The breaker stopped the day. */
-  halted: boolean;
-  companies: { code: string; name: string; change: number; limit: "up" | "down" | null }[];
-  /** Today's news as the program drew it. */
-  news: { company: string | null; kind: string; direction: string; size: string }[];
+/** Under every exchange surface: Discord cards, pictures, panel sections, the opt-in. */
+export const EXCHANGE_DISCLAIMER =
+  "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。";
+/** Added on surfaces with real stocks. */
+export const EXCHANGE_DISCLAIMER_REAL = "資料來源:Yahoo Finance,報價可能延遲。";
+/** Added on surfaces with leverage. */
+export const EXCHANGE_DISCLAIMER_LEVERAGE = "槓桿可能讓你賠光錢包和其他持股。";
+
+/** The small print for a surface: always the base line, the others when they apply. */
+export function exchangeSmallPrint(o: { real?: boolean; leverage?: boolean } = {}): string {
+  return [
+    EXCHANGE_DISCLAIMER,
+    o.real ? EXCHANGE_DISCLAIMER_REAL : null,
+    o.leverage ? EXCHANGE_DISCLAIMER_LEVERAGE : null,
+  ]
+    .filter((x) => x !== null)
+    .join("");
 }
-
-/** A piece of news the program drew, for her to word: who, which way, how big; never a number. */
-export interface ExchangeNewsDraft {
-  /** `null`: the whole market. */
-  company: { code: string; name: string; blurb: string } | null;
-  kind: "event" | "earnings";
-  direction: "up" | "down";
-  size: "small" | "medium" | "large";
-}
-
-export interface ExchangeRatingItem {
-  code: string;
-  rating: "買進" | "持有" | "賣出";
-  reason: string;
-}
-
-/**
- * Her words for the exchange (the api provides it with her persona). Every call answers `null`
- * when she cannot now (no model, no answer in time, words that do not pass); the exchange then
- * uses its plain words. Her words are never an input to a price.
- */
-export interface ExchangeWords {
-  /** One line for the opening or the closing of a day. */
-  line(
-    kind: "open" | "close",
-    facts: ExchangeDayFacts,
-    signal?: AbortSignal,
-  ): Promise<string | null>;
-  /** A headline (at most 30 characters) and a body (two or three sentences) for one draft. */
-  news(
-    draft: ExchangeNewsDraft,
-    signal?: AbortSignal,
-  ): Promise<{ headline: string; body: string } | null>;
-  /** The weekly rating of every company, from the week's public news and prices. */
-  rating(
-    facts: ExchangeDayFacts,
-    week: ExchangeNewsDraft[],
-    signal?: AbortSignal,
-  ): Promise<ExchangeRatingItem[] | null>;
-}
-
-export const ExchangeWordsKey = serviceKey<ExchangeWords>("ExchangeWords");

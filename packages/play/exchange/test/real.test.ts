@@ -319,7 +319,7 @@ describe("the house as the counterparty", () => {
     buy(w, "b", "BETA", 100);
     const doubled = quote(w, STOCK, 20, HOUR);
     const fill = doubled.fills.find((f) => f.side === "sell");
-    expect(fill?.paid).toBe(Math.floor(valueAt(pos?.qty ?? 0, 20)) - fill!.fee);
+    expect(fill?.paid).toBe(Math.floor(valueAt(pos?.qty ?? 0, 20)) - (fill?.fee ?? 0));
     expect(w.book.state.today.buys_halted).toBe(true);
     // Bob's waiting buy went back with its fee.
     expect(doubled.ended.find((e) => e.order.person === "b")).toMatchObject({ refunded: true });

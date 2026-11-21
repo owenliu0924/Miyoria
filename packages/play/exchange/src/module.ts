@@ -4,11 +4,13 @@
 // `ExchangeWalletKey`, which the economy provides; without it nothing that costs anything goes
 // through, and nothing is paid out until it is back.
 //
-// One pass at start and every `TICK_MS`: the rounds due are handled in order, the wallets are paid,
-// a member's margin warnings and liquidations go to them by DM (`ReplySink.sendDirect`, a neutral
-// card; their page has them too). The market is off until the owner turns `enabled` on.
+// v1: paper trading of real Taiwan and US stocks (quoted by Yahoo Finance) and the five local stocks
+// tied to her, with fish coins, the house as counterparty. One pass at start and every poll: quotes
+// of what is held, ordered or viewed are fetched, waiting orders fill, margins are checked, the
+// wallets are paid; a member's notices go to them by DM (`ReplySink.sendDirect`, a neutral card with
+// the small print; their page has them too). The market is off until the owner turns `open` on.
 
-import { CommandMount, type CommandReply, cardReply, ReplySinkKey } from "@miyoria/commands";
+import { CommandMount, ReplySinkKey } from "@miyoria/commands";
 import { heartTables, labelOf, PeopleDirectoryKey } from "@miyoria/heart/person";
 import {
   defineManifest,
@@ -23,10 +25,8 @@ import {
   AuthorizerKey,
   BOND_LADDER,
   type Clock,
-  type ContextKey,
   EventLogKey,
   ExchangeWalletKey,
-  ExchangeWordsKey,
   isOwnerAccount,
   newId,
   type PersonId,
@@ -34,7 +34,7 @@ import {
   serviceKey,
   toTimestamp,
 } from "@miyoria/types";
-import { registerCommands, unregisterCommands } from "./commands.js";
+import { card, registerCommands, unregisterCommands } from "./commands.js";
 import { type ExchangeConfig, ExchangeConfigSchema } from "./config.js";
 import { herNote } from "./her.js";
 import { HttpJsonProvider, type QuoteProvider } from "./real/provider.js";
@@ -65,7 +65,7 @@ export class ExchangeModule implements Module {
     icon: "chart-candlestick",
     category: "play",
     description:
-      "The deep-sea exchange: eight made-up companies priced by a seeded engine, a closed vault, fees burned, leverage with isolated margin, the boards",
+      "The deep-sea exchange: paper trading of real Taiwan and US stocks and five local ones with fish coins, the house as counterparty, a daily payout cap, optional 2x with cross margin, the rich list",
     optional: ["economy", "heart", "commands"],
     configSchema: ExchangeConfigSchema,
   });
@@ -174,16 +174,16 @@ export class ExchangeModule implements Module {
   async card(): Promise<ModuleCard> {
     const running = this.#running;
     if (running === null) return { facts: [] };
-    const m = running.service.market();
+    const v = running.service.real.view();
+    const stale = v.sessions.filter((s) => s.stale).map((s) => s.market);
     return {
       facts: [
-        { label: "狀態", value: !m.enabled ? "關" : m.paused ? "暫停" : m.halted ? "熔斷" : "開" },
-        { label: "FISH", value: m.fish },
-        { label: "金庫", value: m.vault, unit: m.currency },
-        { label: "水位", value: m.level === null ? "—" : m.level.toFixed(2) },
-        { label: "本週燒掉", value: m.burned_week, unit: m.currency },
+        { label: "狀態", value: !v.enabled ? "關" : v.house.buys_halted ? "今日停止買進" : "開" },
+        { label: "今日淨支出", value: v.house.net_today, unit: v.currency },
+        { label: "上限", value: v.house.cap_daily, unit: v.currency },
+        { label: "股票", value: v.instruments.length },
+        { label: "報價", value: stale.length === 0 ? "正常" : `停滯:${stale.join("、")}` },
       ],
-      ...(m.next_round_at === null ? {} : { next: { label: "下一盤", at: m.next_round_at } }),
     };
   }
 
@@ -205,31 +205,15 @@ async function dm(ctx: ModuleContext, person: PersonId, text: string): Promise<b
     ?.accounts.find((a) => a.account.platform === sink.platform)?.account;
   if (!account) return false;
   try {
+    // Every notice carries the small print; the ones about leverage add its line.
     await sink.sendDirect(
       account,
-      cardReply([{ type: "text", text }], { accent: "neutral", title: "深海交易所" }),
+      card("深海交易所", [text], { real: true, leverage: /槓桿|保證金|斷頭|破產/.test(text) }),
     );
     return true;
   } catch (error) {
     ctx.log.info({ err: errorMessage(error) }, "exchange: cannot send a DM");
     return false;
-  }
-}
-
-/** Posts a card in a Discord channel; its message id, or `null` when it could not. */
-async function post(
-  ctx: ModuleContext,
-  channel: string,
-  reply: CommandReply,
-): Promise<string | null> {
-  const sink = ctx.services.get(ReplySinkKey);
-  const context: ContextKey = { platform: "discord", scope: null, channel, kind: "channel" };
-  if (!sink?.sendCard || sink.platform !== context.platform) return null;
-  try {
-    return (await sink.sendCard(context, reply)).id;
-  } catch (error) {
-    ctx.log.warn({ err: errorMessage(error), channel }, "exchange: cannot post");
-    return null;
   }
 }
 

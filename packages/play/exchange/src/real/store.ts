@@ -828,7 +828,7 @@ export type InstrumentStatus = "active" | "blocked" | "paused" | "suspended" | "
 
 export interface InstrumentRecord {
   code: string;
-  market: "tw" | "us" | "crypto";
+  market: "tw" | "us" | "crypto" | "local";
   name: string;
   exchange: string;
   type: string;

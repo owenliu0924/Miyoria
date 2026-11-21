@@ -266,6 +266,7 @@ export const JUMP_BY_MARKET: Readonly<Record<MarketKind, number>> = {
   tw: 0.12,
   us: 0.3,
   crypto: 0.4,
+  local: 0.12,
 };
 
 export interface GuardLimits {

@@ -159,6 +159,7 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     ],
   },
   exchange_quote: {
+    small_print: "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。資料來源:Yahoo Finance,報價可能延遲。",
     code: "DPSK",
     name: "DipSick AI",
     sector: "AI",
@@ -177,6 +178,7 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     as_of: "2026-11-22 15:00",
   },
   exchange_portfolio: {
+    small_print: "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。資料來源:Yahoo Finance,報價可能延遲。",
     name: "小魚乾",
     currency: "魚幣",
     balance: 812,
@@ -189,6 +191,7 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     as_of: "2026-11-22 15:00",
   },
   exchange_day: {
+    small_print: "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。資料來源:Yahoo Finance,報價可能延遲。",
     date: "2026-11-22",
     currency: "魚幣",
     fish: 1_012.4,
@@ -212,6 +215,7 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     her: "今天 Envydia 一路漲停,方塊礦業跌停。大家喝口水,明天見。",
   },
   exchange_rich: {
+    small_print: "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。資料來源:Yahoo Finance,報價可能延遲。",
     currency: "魚幣",
     week_start: null,
     rows: [
@@ -222,6 +226,7 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     me: { rank: 2, hidden: false },
   },
   exchange_volume: {
+    small_print: "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。資料來源:Yahoo Finance,報價可能延遲。",
     currency: "魚幣",
     week_start: "2026-11-16",
     rows: [

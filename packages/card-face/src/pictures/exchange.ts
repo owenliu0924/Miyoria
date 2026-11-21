@@ -33,6 +33,12 @@ import { textWidth } from "./measure.js";
 
 type Out = { drawn: ReturnType<typeof finish>; alt: string };
 
+/** The small print at the bottom of every exchange picture (legible at Discord's preview size). */
+function smallPrint(c: Canvas, y: number, text: string): number {
+  c.hairline(X0, y + 10, CONTENT);
+  return paragraph(c, y + 20, text, 4, { size: TYPE.label, fill: T.sheetMuted });
+}
+
 const UP = T.chart1;
 const DOWN = T.chart2;
 
@@ -148,6 +154,7 @@ export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
   y += 10;
   y = paragraph(c, y, d.blurb, 2, { fill: T.sheetMuted, size: TYPE.label });
   const alt = `${d.code} ${d.name}:${price(d.price)}(${change(d.change)}${word === "" ? "" : `,${word}`}),參考價 ${price(d.ref)}${d.news[0] ? `;最新消息:${d.news[0].headline}` : ""}。`;
+  y = smallPrint(c, y, d.small_print);
   return { drawn: finish(c, y), alt };
 }
 
@@ -197,6 +204,7 @@ export function exchangePortfolioPicture(d: ExchangePortfolioPicture): Out {
     }
   }
   const alt = `${d.name}的持股:總資產 ${d.worth === null ? "—" : num(d.worth)} ${d.currency},持股市值 ${num(held)}、成本 ${num(cost)}${d.leveraged.length > 0 ? `;${d.leveraged.length} 個槓桿部位,${d.leveraged.map((l) => `${l.code} 跌到 ${price(l.line_price)} 自動賣出`).join("、")}` : ""}。`;
+  y = smallPrint(c, y, d.small_print);
   return { drawn: finish(c, y), alt };
 }
 
@@ -223,6 +231,7 @@ export function exchangeDayPicture(d: ExchangeDayPicture): Out {
   const best = sorted[0];
   const worst = sorted.at(-1);
   const alt = `今天的行情:FISH ${d.fish.toFixed(0)}(${change(delta)}),成交 ${num(d.volume)} ${d.currency},燒掉 ${num(d.burned)}${best && worst ? `;漲最多 ${best.code} ${change(best.change)},跌最多 ${worst.code} ${change(worst.change)}` : ""}${d.halted ? ";今天熔斷過" : ""}。`;
+  y = smallPrint(c, y, d.small_print);
   return { drawn: finish(c, y), alt };
 }
 

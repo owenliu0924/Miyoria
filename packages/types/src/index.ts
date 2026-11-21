@@ -645,18 +645,17 @@ export {
   TurnSilencerKey,
 } from "./emergency.js";
 export {
+  EXCHANGE_DISCLAIMER,
+  EXCHANGE_DISCLAIMER_LEVERAGE,
+  EXCHANGE_DISCLAIMER_REAL,
   EXCHANGE_REASONS,
-  type ExchangeDayFacts,
   type ExchangeEntry,
-  type ExchangeNewsDraft,
   type ExchangePerson,
   type ExchangePost,
-  type ExchangeRatingItem,
   type ExchangeReason,
   type ExchangeWallet,
   ExchangeWalletKey,
-  type ExchangeWords,
-  ExchangeWordsKey,
+  exchangeSmallPrint,
 } from "./exchange.js";
 export { type GameTaskOutcome, parseGameOutcome } from "./game-outcome.js";
 export {

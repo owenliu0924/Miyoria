@@ -73,6 +73,8 @@ interface Row {
 
 export class FakeWallet implements ExchangeWallet {
   readonly currency = "魚幣";
+  /** The shared economy rate (`[modules.economy] twd_per_coin`): NT$ per coin. */
+  twdPerCoin = 1;
   readonly rows: Row[] = [];
   /** While set, every call throws (the economy is down). */
   down = false;

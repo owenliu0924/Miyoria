@@ -1,14 +1,13 @@
-// `/me market …` (owner 2026-11-21: no new top-level command; a group under `/me`): every answer
-// is a picture with a neutral text card under it, the card alone when no picture can be drawn.
+// `/me market …` (owner 2026-11-21: no new top-level command; a group under `/me`). v1: real Taiwan
+// and US stocks and the five local ones. Every answer is a neutral card with the exchange's small
+// print, and a picture above it when one can be drawn.
 //
-// - `/me market quote code:` a company's quote with its two-week line and its newest news.
-// - `/me market day`: today's market: the index, every company's move, the totals, her closing line.
-// - `/me market mine`: their own holdings and leveraged positions; only they see it.
-// - `/me market rich`, `/me market volume`: the rich list and the week's volume table (people who
-//   hide are not on them; the viewer's own place is said to them only).
+// - `/me market overview`: the five local stocks first (新手推薦 · 這裡獨家), then what is in use.
+// - `/me market quote code:` a ticker's price in its currency and in coins, its quote time, its line.
+// - `/me market mine`: their own holdings; only they see it.
+// - `/me market rich`: the rich list (people who hide are not on it).
 //
-// Buying and selling stay on the member page, where the order ticket shows its confirmation in
-// plain numbers before anything is placed.
+// Buying and selling stay on the member page, where the order ticket shows its confirmation.
 
 import {
   ArgKind,
@@ -19,40 +18,53 @@ import {
   commandSpec,
   notice,
 } from "@miyoria/commands";
-import type { Pictures } from "@miyoria/types";
-import { COMPANY_CODES, priceText, qtyText } from "./engine/index.js";
+import { exchangeSmallPrint, type Pictures } from "@miyoria/types";
 import {
   boardPictureData,
-  dayPictureData,
   portfolioPictureData,
   quotePictureData,
+  sharesText,
   withPicture,
 } from "./pictures.js";
+import type { RealLine } from "./real/desk.js";
 import type { ExchangeService } from "./service.js";
 
 export const PATHS = [
+  "me market overview",
   "me market quote",
-  "me market day",
   "me market mine",
   "me market rich",
-  "me market volume",
 ] as const;
 
 /** The wallet's node: a role without it, like `blocked`, cannot take part. */
 const NODE = "me.wallet";
 const OFF = "交易所現在沒有開";
 
-const pct = (x: number) => {
+const pct = (x: number | null) => {
+  if (x === null) return "";
   const v = Math.round(x * 1000) / 10;
   return v > 0 ? `+${v.toFixed(1)}%` : v < 0 ? `−${Math.abs(v).toFixed(1)}%` : "0.0%";
 };
-const limitWord = (l: "up" | "down" | null) => (l === "up" ? " 漲停" : l === "down" ? " 跌停" : "");
 
-function card(title: string, lines: string[], muted: string | null = null): CommandReply {
+/** A line of one ticker: its price in its currency and in coins, its change, its quote time. */
+export function lineText(l: RealLine): string {
+  if (l.price === null) return `${l.code} ${l.name}:還沒有報價`;
+  const native =
+    l.currency === "COIN" ? `${l.price} 魚幣` : `${l.currency} ${l.price}(${l.coin_price} 魚幣)`;
+  const age = l.age_minutes === null ? "" : `,${l.age_minutes} 分鐘前的報價`;
+  return `${l.code} ${l.name}:${native} ${pct(l.change)}${age}`;
+}
+
+/** A neutral card with the small print under it, always. */
+export function card(
+  title: string,
+  lines: string[],
+  o: { real?: boolean; leverage?: boolean } = {},
+): CommandReply {
   return cardReply(
     [
       { type: "text", text: lines.join("\n") },
-      ...(muted ? [{ type: "muted" as const, text: muted }] : []),
+      { type: "muted", text: exchangeSmallPrint(o) },
     ],
     { accent: "neutral", title },
   );
@@ -63,52 +75,57 @@ export function registerCommands(
   service: () => ExchangeService | null,
   pictures: () => Pictures | null,
 ): void {
-  registry.setGroupDescription("me market", "深海交易所：行情、個股、你的持股、富人榜與交易量");
+  registry.setGroupDescription("me market", "深海交易所:新手推薦、台股美股行情、你的持股、富人榜");
   const run = async (fn: (x: ExchangeService) => Promise<CommandReply>): Promise<CommandReply> => {
     const x = service();
-    if (x === null || !x.config.open) return notice("info", OFF);
+    if (x === null || !x.config.open) return card("深海交易所", [OFF]);
     return fn(x);
   };
 
   registry.register(
-    commandSpec("me market quote", "深海交易所:一家公司的走勢和最新消息(圖)", {
-      args: [argSpec("code", "公司代號", ArgKind.choice(COMPANY_CODES))],
+    commandSpec("me market overview", "深海交易所:新手推薦的獨家股票和大家在看的行情", {
+      permission: NODE,
+    }),
+    () =>
+      run(async (x) => {
+        const v = x.real.view();
+        const local = v.instruments.filter((i) => i.local !== null);
+        const real = v.instruments.filter((i) => i.local === null && i.price !== null).slice(0, 10);
+        const lines = [
+          "新手推薦 · 這裡獨家(波動較小、單日漲跌 ±10%、不開放槓桿):",
+          ...local.map((l) => `${lineText(l)} — ${l.local?.what_moves ?? ""}`),
+          ...(real.length > 0 ? ["", "台股和美股:", ...real.map(lineText)] : []),
+        ];
+        return card("深海交易所", lines, { real: real.length > 0 });
+      }),
+  );
+
+  registry.register(
+    commandSpec("me market quote", "深海交易所:一檔股票的報價和走勢(圖)", {
+      args: [argSpec("code", "代號:台股 2330、0050,美股 AAPL,或獨家的 RICE", ArgKind.string)],
       permission: NODE,
     }),
     (inv) =>
       run(async (x) => {
-        const code = inv.str("code") ?? "";
-        const view = await x.company(code, null);
-        if (!view) return notice("info", "沒有這家公司");
-        const c = view.company;
-        const text = card(`${c.code} ${c.name}`, [
-          `現價 ${priceText(c.price)}(${pct(c.change)}${limitWord(c.limit)}),參考價 ${priceText(c.ref)}`,
-          ...view.news
-            .slice(0, 2)
-            .map((n) => `${n.direction === "up" ? "利多" : "利空"}:${n.headline}`),
-        ]);
-        return withPicture(pictures(), "exchange_quote", quotePictureData(x, view), text);
+        const typed = (inv.str("code") ?? "").trim().toUpperCase();
+        let line = x.real.view().instruments.find((i) => i.code === typed) ?? null;
+        if (!line) {
+          const found = await x.real.lookup(inv.invoker, typed);
+          if (!found.ok) return card("深海交易所", [found.message]);
+          line = found.instrument;
+        }
+        const history = x.real.history(line.code);
+        const text = card(`${line.code} ${line.name}`, [lineText(line), line.source], {
+          real: line.local === null,
+        });
+        return history
+          ? withPicture(pictures(), "exchange_quote", quotePictureData(x, history), text)
+          : text;
       }),
   );
 
   registry.register(
-    commandSpec("me market day", "深海交易所:今天的行情(圖)", { permission: NODE }),
-    () =>
-      run(async (x) => {
-        const s = x.summary();
-        const her = x.store.words(`close:${s.day}`)?.text ?? null;
-        const delta = s.fish_ref > 0 ? s.fish / s.fish_ref - 1 : 0;
-        const sorted = [...s.companies].sort((a, b) => b.change - a.change);
-        const text = card("今天的行情", [
-          `FISH ${s.fish.toFixed(0)}(${pct(delta)}),成交 ${s.volume},燒掉 ${s.burned}${s.halted ? ",今天熔斷過" : ""}`,
-          sorted.map((c) => `${c.code} ${pct(c.change)}${limitWord(c.limit)}`).join("・"),
-        ]);
-        return withPicture(pictures(), "exchange_day", dayPictureData(x, her), text);
-      }),
-  );
-
-  registry.register(
-    commandSpec("me market mine", "深海交易所:你的持股和槓桿部位(只有你看得到)", {
+    commandSpec("me market mine", "深海交易所:你的持股(只有你看得到)", {
       permission: NODE,
       ephemeral: true,
     }),
@@ -116,58 +133,49 @@ export function registerCommands(
       run(async (x) => {
         const p = await x.portfolio(inv.invoker);
         if (!p) return notice("info", "她還不認識你,先和她說說話吧");
-        if (!p.account.opened) return notice("info", "還沒開戶:會員頁的「深海交易所」可以開戶");
-        const lines = [
-          `總資產 ${p.totals.worth === null ? "—" : Math.floor(p.totals.worth)}(錢包 ${p.account.balance ?? "—"})`,
-          ...p.holdings.map(
-            (h) => `${h.code} ${qtyText(h.qty)} 股,成本 ${h.cost},市值 ${Math.floor(h.value)}`,
-          ),
-          ...p.leveraged.map(
-            (l) =>
-              `${l.code} ${l.leverage} 倍,保證金 ${l.margin},剩 ${Math.max(0, Math.floor(l.equity))},跌到 ${priceText(l.line_price)} 自動賣出`,
-          ),
-        ];
-        if (p.holdings.length === 0 && p.leveraged.length === 0) lines.push("沒有持股");
+        if (!p.account.opened)
+          return {
+            ...card("你的持股", ["還沒開戶:會員頁的「深海交易所」可以開戶"]),
+            ephemeral: true,
+          };
+        const real = x.real.portfolio((await x.personOf(inv.invoker)) ?? "");
+        const lines = real.holdings.map(
+          (h) =>
+            `${h.code} ${sharesText(h.qty)} 股${h.leverage > 1 ? "・2 倍" : ""}:市值 ${h.value === null ? "—" : Math.floor(h.value)} 魚幣`,
+        );
+        if (real.bankrupt) lines.unshift("破產冷靜期中");
+        if (lines.length === 0) lines.push("沒有持股");
+        const leverage = real.holdings.some((h) => h.leverage > 1);
         const text = {
-          ...card("你的持股", lines, "只有你看得到;她也看不到任何人的持股。"),
+          ...card("你的持股", [...lines, "只有你看得到;她也看不到任何人的持股。"], {
+            real: true,
+            leverage,
+          }),
           ephemeral: true,
         };
         return withPicture(
           pictures(),
           "exchange_portfolio",
-          portfolioPictureData(x, inv.invoker_display_name, p),
+          portfolioPictureData(x, inv.invoker_display_name, real, p.account.balance),
           text,
         );
       }),
   );
 
-  for (const kind of ["rich", "volume"] as const) {
-    const title = kind === "rich" ? "富人榜" : "本週交易量";
-    registry.register(
-      commandSpec(`me market ${kind}`, `深海交易所:${title}(圖)`, { permission: NODE }),
-      (inv) =>
-        run(async (x) => {
-          const b = await x.boards(inv.invoker);
-          const rows =
-            kind === "rich"
-              ? b.rich.slice(0, 10).map((r) => `${r.rank}. ${r.name} ${r.worth}`)
-              : b.volume.slice(0, 10).map((r) => `${r.rank}. ${r.name} ${r.volume}`);
-          const text = card(
-            title,
-            rows.length === 0 ? ["還沒有人上榜"] : rows,
-            "預設會上榜;會員頁可以設定不上榜。",
-          );
-          // The board is posted where anyone sees it: nobody's own place is on the picture.
-          const data = { ...boardPictureData(kind, b), me: null };
-          return withPicture(
-            pictures(),
-            kind === "rich" ? "exchange_rich" : "exchange_volume",
-            data,
-            text,
-          );
-        }),
-    );
-  }
+  registry.register(
+    commandSpec("me market rich", "深海交易所:富人榜(圖)", { permission: NODE }),
+    (inv) =>
+      run(async (x) => {
+        const b = await x.boards(inv.invoker);
+        const rows = b.rich.slice(0, 10).map((r) => `${r.rank}. ${r.name} ${r.worth}`);
+        const text = card("富人榜", [
+          ...(rows.length === 0 ? ["還沒有人上榜"] : rows),
+          "預設會上榜;會員頁可以設定不上榜。",
+        ]);
+        // The board is posted where anyone sees it: nobody's own place is on the picture.
+        return withPicture(pictures(), "exchange_rich", { ...boardPictureData(b), me: null }, text);
+      }),
+  );
 }
 
 export function unregisterCommands(registry: CommandRegistry): void {
