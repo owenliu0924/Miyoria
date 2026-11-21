@@ -173,8 +173,14 @@ function privately(x: ExchangeService, reply: CommandReply): CommandReply {
 
 // ---- the overview: lists and tickers ---------------------------------------------------------
 
-/** The select of lists, with the three heat maps after them; `current` is shown chosen. */
-function listSelect(s: Stamp, current: ListKind | MapKind): CardBlock {
+/**
+ * The select of lists, with the three heat maps after them; `current` is shown chosen. A list and
+ * a map may share a name (`tw`, `us`), so which of the two it is has to be said: Discord refuses a
+ * select with two chosen options.
+ */
+function listSelect(s: Stamp, current: { list: ListKind } | { map: MapKind }): CardBlock {
+  const list = "list" in current ? current.list : null;
+  const map = "map" in current ? current.map : null;
   return {
     type: "select",
     select: {
@@ -185,14 +191,14 @@ function listSelect(s: Stamp, current: ListKind | MapKind): CardBlock {
           label: LIST_LABEL[k],
           value: k,
           ...(k === "local" ? { description: "新手先看這裡" } : {}),
-          default: k === current,
+          default: k === list,
         })),
         ...MAP_KINDS.map((k) => ({
           label: `熱力圖:${MAP_TITLE[k]}`,
           value: `${MAP_PREFIX}${k}`,
           description:
             k === "holdings" ? "大家持有多少(不顯示是誰),今天的漲跌" : "預設權重,今天的漲跌",
-          default: k === current,
+          default: k === map,
         })),
       ],
     },
@@ -214,7 +220,10 @@ async function mapCard(
     ...top.map((t) => `${t.code} ${t.name}・${t.sector} ${pct(t.change) || "—"}`),
     map.footnote,
   ];
-  const reply = privately(x, card("深海交易所", lines, { real: true }, [listSelect(s, kind)]));
+  const reply = privately(
+    x,
+    card("深海交易所", lines, { real: true }, [listSelect(s, { map: kind })]),
+  );
   return withPicture(pictures, "exchange_map", mapPictureData(x, map, x.nowMs()), reply);
 }
 
@@ -244,7 +253,7 @@ async function overview(
     ...p.items.slice(0, 5).map(lineText),
     ...(p.items.length > 5 ? [`……還有 ${rows.length - 5} 檔,在下面選`] : []),
   ];
-  const blocks: CardBlock[] = [listSelect(s, list)];
+  const blocks: CardBlock[] = [listSelect(s, { list })];
   if (p.items.length > 0)
     blocks.push({
       type: "select",
