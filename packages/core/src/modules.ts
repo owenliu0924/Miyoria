@@ -11,6 +11,7 @@
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ApiModule, avatarEmotions, EvalModule } from "@miyoria/api";
 import { AuthConfigSchema, AuthModule } from "@miyoria/auth";
 import { ActivityModule } from "@miyoria/brain/activity";
@@ -19,7 +20,7 @@ import { ArbiterConfigSchema, ArbiterModule, type LocalTime } from "@miyoria/bra
 import { DirectiveModule } from "@miyoria/brain/directive";
 import { ReportModule } from "@miyoria/brain/report";
 import { initiativeFromConfig, ScheduleRemindersKey, selfHost } from "@miyoria/brain/selfhost";
-import { ClusterModule } from "@miyoria/cluster";
+import { ClusterModule, execGit, findCheckoutRoot, gitCheckout } from "@miyoria/cluster";
 import { CommandsModule } from "@miyoria/commands";
 import { DiscordBotModule } from "@miyoria/discord";
 import { EconomyModule } from "@miyoria/economy";
@@ -146,6 +147,15 @@ export function arbiterClock(config: Config): LocalTime | null {
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * The checkout Core's own code runs from, for the commit a remote update of a host names
+ * (v5-hostd §14); `null` for a packaged install, which has none.
+ */
+function coreCheckout() {
+  const root = findCheckoutRoot(dirname(fileURLToPath(import.meta.url)));
+  return root === null ? null : gitCheckout({ exec: execGit(root) });
+}
+
 async function coreModules({
   config,
   profile,
@@ -164,7 +174,12 @@ async function coreModules({
     new ModerationModule(),
     llmModule(config, profile, baseDir),
     // Before the modules that will ask its registry where their services are.
-    new ClusterModule({ guards: CLUSTER_GUARDS, complete: clusterComplete, links: () => links }),
+    new ClusterModule({
+      guards: CLUSTER_GUARDS,
+      complete: clusterComplete,
+      links: () => links,
+      checkout: coreCheckout(),
+    }),
     SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema), { endpoints }),
     new VoiceLinkModule(),
     new VoiceModule(profileId, profile.voice, profile.names(), { endpoints }),

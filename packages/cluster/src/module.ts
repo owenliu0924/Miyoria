@@ -38,6 +38,7 @@ import {
   type ClusterRateLimit,
   type ClusterUses,
 } from "./calls.js";
+import type { CheckoutSource } from "./checkout.js";
 import { ClusterConfigSchema } from "./config.js";
 import { GuardRegistry, type GuardSourceFn } from "./guards.js";
 import { ClusterLink, type HostConnection } from "./link.js";
@@ -94,6 +95,11 @@ export interface ClusterService {
    * before H7 leave it out.
    */
   context?(context: HostClusterContext): void;
+  /**
+   * Core's own checkout: the commit a remote update names, and how a host's commit stands to it
+   * (v5-hostd §14). `null` or absent when Core does not run from a git checkout.
+   */
+  readonly checkout?: CheckoutSource | null;
 }
 
 export const ClusterKey = serviceKey<ClusterService>("Cluster");
@@ -137,6 +143,8 @@ export interface ClusterModuleOptions {
    * connects or is approved, and on `refreshLinks`. Without it hosts are told nothing.
    */
   links?: ClusterLinksSource;
+  /** Core's own checkout, for remote updates of the hosts. Without it hosts cannot be updated. */
+  checkout?: CheckoutSource | null;
 }
 
 /** `host:port` / `[v6]:port`. */
@@ -325,6 +333,7 @@ export class ClusterModule implements Module {
       address: addr,
       publicUrl: config.public_url ?? null,
       context: (context) => link.sendContext(context),
+      checkout: this.#options.checkout ?? null,
     });
 
     ctx.spawn("server", async (signal) => {

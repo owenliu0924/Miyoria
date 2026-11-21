@@ -750,6 +750,50 @@
           }
         }
       },
+      "checkout": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/cluster/checkout"
+          }
+        }
+      },
+      "upgrade": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.cluster.update",
+            "refusal": "更新電腦需要 admin.cluster.update 權限"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/cluster/upgrade"
+          }
+        }
+      },
+      "upgradeCancel": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.cluster.update",
+            "refusal": "更新電腦需要 admin.cluster.update 權限"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/cluster/hosts/{name}/upgrade/cancel"
+          }
+        }
+      },
       "join": {
         "~orpc": {
           "errorMap": {},

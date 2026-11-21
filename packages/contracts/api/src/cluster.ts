@@ -8,9 +8,12 @@
 
 import { z } from "zod";
 import {
+  HostCheckoutSchema,
   HostGpuReadingSchema,
   HostLinkStateSchema,
+  HostRemoteUpdateSchema,
   HostServiceStatusSchema,
+  HostUpgradeJobSchema,
 } from "../../host/src/index.js";
 import { TimestampSchema } from "../../wire/src/index.js";
 import { route } from "./route.js";
@@ -30,6 +33,23 @@ export const ClusterHostViewSchema = z
     /** Its control link is up now. */
     connected: z.boolean(),
     connected_since: TimestampSchema.nullable(),
+    /**
+     * Its git checkout, from its last report while connected. `null`: it does not run from one;
+     * absent: not connected, or its hostd is older than remote updates (version unknown).
+     */
+    checkout: HostCheckoutSchema.nullable().optional(),
+    /** How its commit stands to Core's (absent without both checkouts). */
+    relation: z
+      .object({
+        relation: z.enum(["same", "behind", "ahead", "diverged", "unknown"]),
+        /** Commits between the two, for `behind` and `ahead`. */
+        count: z.number().int().nonnegative().optional(),
+      })
+      .optional(),
+    /** Whether it takes an update from the panel; absent from an older hostd (it does not). */
+    remote_update: HostRemoteUpdateSchema.optional(),
+    /** Its running or last update; `null` before the first. */
+    upgrade: HostUpgradeJobSchema.nullable().optional(),
   })
   .meta({ id: "ApiClusterHostView" });
 export type ClusterHostView = z.output<typeof ClusterHostViewSchema>;
@@ -90,6 +110,9 @@ export const ClusterHostInfoSchema = z
     gpu: HostGpuReadingSchema.nullable(),
     services: z.array(ClusterServiceStatusSchema),
     link: HostLinkStateSchema.optional(),
+    checkout: HostCheckoutSchema.nullable().optional(),
+    remote_update: HostRemoteUpdateSchema.optional(),
+    upgrade: HostUpgradeJobSchema.nullable().optional(),
   })
   .meta({ id: "ApiClusterHostInfo" });
 export type ClusterHostInfo = z.output<typeof ClusterHostInfoSchema>;
@@ -146,6 +169,51 @@ export const ClusterJoinResultSchema = z
   .meta({ id: "ApiClusterJoinResult" });
 export type ClusterJoinResult = z.output<typeof ClusterJoinResultSchema>;
 
+/** Core's own checkout: the commit an update from the panel names. */
+export const ClusterCoreCheckoutSchema = z
+  .object({
+    /** `null` when Core does not run from a git checkout: then no host can be updated from here. */
+    checkout: HostCheckoutSchema.nullable(),
+  })
+  .meta({ id: "ApiClusterCoreCheckout" });
+export type ClusterCoreCheckout = z.output<typeof ClusterCoreCheckoutSchema>;
+
+/** Body of `POST /api/cluster/upgrade`: the hosts to bring to Core's commit. */
+export const ClusterUpgradeRequestSchema = z
+  .object({
+    hosts: z.array(z.string().min(1).max(64)).min(1).max(32),
+    /** How long each host may wait for a running job before it gives up. Default 1800. */
+    wait_s: z.number().int().min(0).max(21_600).optional(),
+  })
+  .meta({ id: "ApiClusterUpgradeRequest" });
+export type ClusterUpgradeRequest = z.input<typeof ClusterUpgradeRequestSchema>;
+
+/** What each host said to the request. A refusal is a result, with the host's reason. */
+export const ClusterUpgradeResultSchema = z
+  .object({
+    /** The commit asked for (Core's `HEAD`). */
+    commit: z.string(),
+    results: z.array(
+      z.object({
+        host: z.string(),
+        ok: z.boolean(),
+        job: HostUpgradeJobSchema.optional(),
+        error: z.string().optional(),
+      }),
+    ),
+  })
+  .meta({ id: "ApiClusterUpgradeResult" });
+export type ClusterUpgradeResult = z.output<typeof ClusterUpgradeResultSchema>;
+
+/** What a host answered to the cancel of its waiting update. */
+export const ClusterUpgradeCancelResultSchema = z
+  .object({ cancelled: z.boolean(), job: HostUpgradeJobSchema.nullable() })
+  .meta({ id: "ApiClusterUpgradeCancelResult" });
+export type ClusterUpgradeCancelResult = z.output<typeof ClusterUpgradeCancelResultSchema>;
+
+/** The node an admin's account must hold to update hosts from the panel. */
+export const CLUSTER_UPDATE_PERMISSION = "admin.cluster.update";
+
 const HostParams = z.object({ name: z.string() });
 const ServiceParams = z.object({ name: z.string(), service: z.string(), action: z.string() });
 
@@ -197,6 +265,35 @@ export const cluster = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/cluster/endpoints" })
     .output(ClusterEndpointsSchema),
+  /** Core's own checkout. */
+  checkout: route
+    .meta({ audience: "admin", permission: null })
+    .route({ method: "GET", path: "/api/cluster/checkout" })
+    .output(ClusterCoreCheckoutSchema),
+  /**
+   * Asks each host to update itself to Core's commit (v5-hostd §14). `409` when Core has no
+   * checkout. Each host's refusal (not opted in, not connected, Core's own machine, a changed
+   * tree) is one result with its reason; each is in the audit log.
+   */
+  upgrade: route
+    .meta({
+      audience: "admin",
+      permission: CLUSTER_UPDATE_PERMISSION,
+      refusal: "更新電腦需要 admin.cluster.update 權限",
+    })
+    .route({ method: "POST", path: "/api/cluster/upgrade" })
+    .input(z.object({ body: ClusterUpgradeRequestSchema }))
+    .output(ClusterUpgradeResultSchema),
+  /** Cancels a host's update that still waits. `409` while the host is not connected. */
+  upgradeCancel: route
+    .meta({
+      audience: "admin",
+      permission: CLUSTER_UPDATE_PERMISSION,
+      refusal: "更新電腦需要 admin.cluster.update 權限",
+    })
+    .route({ method: "POST", path: "/api/cluster/hosts/{name}/upgrade/cancel" })
+    .input(z.object({ params: HostParams, body: z.object({}) }))
+    .output(ClusterUpgradeCancelResultSchema),
   /**
    * No session: the code is the credential. A code that is unknown, used or expired is always the
    * same `403`. At most 5 attempts a minute per address (`429`).
