@@ -837,7 +837,10 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/rooms\/:code(\/queue\/:entry)?/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
-          .replace(/^\/api\/member\/exchange\/(ticker\/:code|candles\/:code|list\/:kind|map\/:kind)$/, "")
+          .replace(
+            /^\/api\/member\/exchange\/(ticker\/:code|candles\/:code|list\/:kind|map\/:kind)$/,
+            "",
+          )
           .replace(/^\/api\/member\/gifts\/:id\/(confirm|cancel|picture)$/, "")
           .includes(":"),
     );
