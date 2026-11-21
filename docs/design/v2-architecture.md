@@ -1,3 +1,7 @@
+> **歷史文件**:這一代的設計已被 V5([v5-architecture.md](v5-architecture.md))取代,不再更新。
+> 檔案保留是因為程式碼註解仍引用它的章節編號,而那些章節描述的模組現在還在;編號與位置都不要動。
+> 現況請看 V5 文件與 [backlog.md](backlog.md)。
+
 # 架構檢討與 v2 方案(草案)
 
 > 狀態:**階段 0–5 已實作,階段 6 已實作任務契約**(2026-11-06;Minecraft 換方法仍待討論,見 §7)。原本的 review 與方案保留如下。前半是現況 review(程式碼 + 本機資料庫實際紀錄),後半是重整方案與分階段計畫。參考了 [AIRI](https://airi.moeru.ai/docs/en/)、Generative Agents(記憶流 / 反思 / 計畫)、Mindcraft / Voyager(Minecraft 代理)的做法。現有設計見 [autonomy.md](autonomy.md)、[ARCHITECTURE.md](../ARCHITECTURE.md)。

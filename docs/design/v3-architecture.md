@@ -1,3 +1,7 @@
+> **歷史文件**:這一代的設計已被 V5([v5-architecture.md](v5-architecture.md))取代,不再更新。
+> 檔案保留是因為程式碼註解仍引用它的章節編號,而那些章節描述的模組現在還在;編號與位置都不要動。
+> 現況請看 V5 文件與 [backlog.md](backlog.md)。
+
 # V3 架構設計
 
 > 狀態:**階段 0 到 7 的程式已完成,尚未在真實環境驗收**(2026-11-07)。依據:各家 AI VTuber、開源專案、語音、agent harness、Discord 的調查(原報告已移除)、2026-11-07 第一次在真實環境跑 V2 的紀錄。前一版見 [v2-architecture.md](v2-architecture.md)。
