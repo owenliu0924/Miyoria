@@ -26,7 +26,7 @@ const line = (code: string, name: string, chg: number | null, more: Partial<Exch
   market: "local",
   price: 100,
   currency: "COIN",
-  local: { what_moves: "大家多餵她,白飯食品就容易漲" },
+  local: { what_moves: "大家多餵她,白飯食品就容易漲", today: "昨天她被餵了 14 次,比平常多 → 今天開盤 +1.8%" },
   coin_price: 100,
   age_minutes: 3,
   source: "這裡獨家:價格由程式模擬",
@@ -197,6 +197,8 @@ describe("深海交易所 on the member page", () => {
     await userEvent.type(await screen.findByLabelText(/找股票/), "ri");
     await userEvent.click(await screen.findByRole("button", { name: "RICE 白飯食品" }));
     expect(await screen.findByRole("button", { name: "加入觀察" })).toBeInTheDocument();
+    // What moved today's open, from her day, in numbers.
+    expect(screen.getByText("昨天她被餵了 14 次,比平常多 → 今天開盤 +1.8%")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "加入觀察" }));
     await waitFor(() => expect(posts).toContainEqual(expect.objectContaining({ path: "/api/member/exchange/watch", body: { code: "RICE", on: true } })));
     // A local stock: the ticket starts in shares and has no 2x.

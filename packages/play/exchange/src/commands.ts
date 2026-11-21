@@ -273,7 +273,9 @@ async function quoteCard(
     ...(note === null ? [] : [note, ""]),
     lineText(line),
     marketLine(line),
-    ...(line.local ? [line.local.what_moves] : [line.source]),
+    ...(line.local
+      ? [line.local.what_moves, ...(line.local.today ? [line.local.today] : [])]
+      : [line.source]),
     ...held.map(
       (h) =>
         `你持有 ${sharesText(h.qty)} 股${h.leverage > 1 ? "(2 倍)" : ""}:市值 ${h.value === null ? "—" : coinText(h.value)} 魚幣`,

@@ -33,6 +33,20 @@ const date = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 /** A local stock's anchor price in coins. */
 const localAnchor = (d: number) => z.number().min(10).max(1000).default(d);
 
+/**
+ * How one local stock's count becomes its signal (`real/signals.ts`): a full signal (the whole
+ * ±3% gap) needs the day at least `floor` above or below the usual count, and the signal is held
+ * within `up` and `down` (shares of the full one).
+ */
+const localMapping = (floor: number) =>
+  z
+    .object({
+      floor: z.number().positive().max(1000).default(floor),
+      up: ratio(1),
+      down: ratio(1),
+    })
+    .prefault({});
+
 export const ExchangeConfigSchema = z
   .object({
     /** The master switch. Off: nothing is traded, open orders go back, holdings stay. */
@@ -308,6 +322,43 @@ export const ExchangeConfigSchema = z
         DPSK: localAnchor(94),
       })
       .default({ RICE: 100, WHLE: 108, NAPS: 88, CUBE: 116, DPSK: 94 }),
+
+    /**
+     * How her real things move the local stocks (`real/signals.ts`, docs/design/exchange.md §9).
+     * Each day's count is compared with the same company's previous `baseline_days` completed
+     * days: their median, and their spread (the median distance from it, ×1.4826). The day's
+     * distance from the median, over the larger of `spread` spreads, `relative` × the median and
+     * the company's `floor`, is its signal, held within [-1, 1] and the company's `up` / `down`:
+     * a full signal is the whole ±3% gap at the next day's 12:00 tick. Fewer than
+     * `min_history_days` days on record (a new instance), or no record of the day: no signal.
+     *
+     * Directions are fixed in code: more feedings, songs, silent hours, goals (fewer deaths) push
+     * RICE, WHLE, NAPS, CUBE up; more model errors and slow calls push DPSK down, and never up (a
+     * quiet day gives it nothing), with its fall held below one round trip's fees (`fee` × 2), so
+     * nobody gains by causing errors and buying the dip. The floors are the anti-gaming numbers:
+     * `test/signals.test.ts` shows that feeding her as much as the caps allow, buying RICE before
+     * the day ends and selling after the next open loses money once the feedings and fees count.
+     */
+    local_signals: z
+      .object({
+        baseline_days: z.number().int().min(3).max(60).default(14),
+        min_history_days: z.number().int().min(1).max(60).default(7),
+        spread: z.number().min(0).max(20).default(3),
+        relative: z.number().min(0).max(10).default(0.5),
+        /** DPSK: a call that answered but took longer than this counts as slow. */
+        slow_call_seconds: z.number().min(1).max(600).default(30),
+        /** Feedings (fixed foods by bowl, and food or drink gifts she took). */
+        RICE: localMapping(10),
+        /** Songs she sang to the end. */
+        WHLE: localMapping(3),
+        /** Hours of the Taipei day with no line of hers delivered and no failed model call. */
+        NAPS: localMapping(3),
+        /** Game goals reached less deaths. */
+        CUBE: localMapping(3),
+        /** Failed model calls plus slow ones; `up` is ignored (always 0). */
+        DPSK: localMapping(10),
+      })
+      .prefault({}),
 
     /** Which colour means up on every chart (one for the whole product), stated in a legend. */
     colors: z

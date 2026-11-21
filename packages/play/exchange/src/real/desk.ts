@@ -73,7 +73,7 @@ import {
   LOCAL_WHAT_MOVES,
   type LocalCode,
   LocalProvider,
-  type LocalSignals,
+  type LocalSignalFeed,
 } from "./local.js";
 import {
   QuoteGuard as Guard,
@@ -123,8 +123,8 @@ export interface RealDeskDeps {
   providers: ReadonlyMap<string, QuoteProvider>;
   now: () => number;
   log: Logger;
-  /** Yesterday's counts of her real things, for the local stocks (`null`: none). */
-  signals?: LocalSignals;
+  /** Her real things' daily signals for the local stocks (none: they walk alone). */
+  signals?: LocalSignalFeed;
   /** The account layer: who is asking, their trader facts and the rules; `null` for a stranger. */
   ask: (account: AccountRef) => Promise<Asker | null>;
   newId?: () => string;
@@ -137,8 +137,11 @@ export interface RealLine {
   /** The quote in the instrument's own currency (`TWD`, `USD`); `null` before the first one. */
   price: number | null;
   currency: "TWD" | "USD" | "COIN";
-  /** One of the five local stocks tied to her (新手推薦 · 這裡獨家): what moves it, in one sentence. */
-  local: { what_moves: string } | null;
+  /**
+   * One of the five local stocks tied to her (新手推薦 · 這裡獨家): what moves it, in one sentence,
+   * and what moved today's open, in numbers from her day (`null`: nothing known yet).
+   */
+  local: { what_moves: string; today: string | null } | null;
   /** The same in fish coins at today's fixed rates. */
   coin_price: number | null;
   /** How old the quote is, in minutes (the source states no delay; its own time is shown). */
@@ -439,14 +442,16 @@ export class RealDesk {
   /** The providers, with the local stocks' own. */
   #provider(id: string): QuoteProvider | undefined {
     if (id === "local" && !this.#d.providers.has("local")) {
+      const feed = this.#d.signals;
       this.#local ??= new LocalProvider(
         this.#d.store.state()?.seed ?? "local",
-        this.#d.signals ?? (() => null),
+        feed ? (code, day) => feed.signal(code, day) : () => null,
         (code) => this.#d.config.local_anchors[code],
         (code) => {
           const q = this.#d.store.real.quotes().get(code);
           return q ? { price: q.price, at: q.at, prev_close: q.prev_close } : null;
         },
+        feed ? (days, now) => feed.prepare(days, now) : undefined,
       );
       return this.#local;
     }
@@ -820,7 +825,10 @@ export class RealDesk {
                 : `資料來源:${i.provider}`,
           local:
             i.market === "local"
-              ? { what_moves: LOCAL_WHAT_MOVES[i.code as LocalCode] ?? "" }
+              ? {
+                  what_moves: LOCAL_WHAT_MOVES[i.code as LocalCode] ?? "",
+                  today: this.#d.signals?.line(i.code as LocalCode, now) ?? null,
+                }
               : null,
           change: q && ref ? Math.round((q.price / ref - 1) * 10_000) / 10_000 : null,
           at: q ? toTimestamp(q.at) : null,

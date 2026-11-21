@@ -307,6 +307,7 @@ function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: 
           </dl>
           {t.line.stale && <p className="text-[13px] text-muted-foreground">報價太舊,暫停成交;持股不會因為沒有報價被賣出。</p>}
           <p className="text-[13px] text-muted-foreground">{t.line.local ? t.line.local.what_moves : t.line.source}</p>
+          {t.line.local?.today && <p className="text-[13px] tabular-nums">{t.line.local.today}</p>}
           <OrderPart m={m} line={t.line} />
           <SmallPrint m={m} real={t.line.local === null} />
         </div>

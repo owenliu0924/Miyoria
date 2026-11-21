@@ -66,7 +66,7 @@ import {
 } from "./engine/index.js";
 import { type Asker, RealDesk } from "./real/desk.js";
 import { MarketLists } from "./real/lists.js";
-import type { LocalSignals } from "./real/local.js";
+import type { LocalSignalFeed } from "./real/local.js";
 import type { QuoteProvider } from "./real/provider.js";
 import {
   type AccountRecord,
@@ -116,8 +116,11 @@ export interface ExchangeDeps {
   seed?: string;
   /** The quote providers by id (v1: real stocks). */
   providers?: ReadonlyMap<string, QuoteProvider>;
-  /** Yesterday's counts of her real things for the local stocks (none wired yet: they walk alone). */
-  signals?: LocalSignals;
+  /**
+   * Her real things' daily signals for the local stocks (`LocalSignalBook`, which the module builds
+   * over the event log); without it they walk alone.
+   */
+  signals?: LocalSignalFeed;
 }
 
 export type Refusal = { ok: false; status: number; code: string; message: string };

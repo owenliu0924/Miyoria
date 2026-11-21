@@ -9,9 +9,16 @@
 // of what is held, ordered or viewed are fetched, waiting orders fill, margins are checked, the
 // wallets are paid; a member's notices go to them by DM (`ReplySink.sendDirect`, a neutral card with
 // the small print; their page has them too). The market is off until the owner turns `open` on.
+//
+// The local stocks' signals (`real/signals.ts`) are built here from the event log
+// (`real/sources.ts`): each company's module is looked up by a service key it provides (the
+// economy's wallet, the song tickets, the delivery ledger, the game's resume, the model router), so
+// nothing here imports another module. A source that is missing is a neutral open and one log line
+// at start. She hears her companies' opens as a quiet note of facts (escaped data, no names).
 
 import { CommandMount, ReplySinkKey } from "@miyoria/commands";
 import { heartTables, labelOf, PeopleDirectoryKey } from "@miyoria/heart/person";
+import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
   errorMessage,
@@ -20,24 +27,31 @@ import {
   type ModuleCard,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { AuditLogKey, PeopleStoreKey, StoreKey } from "@miyoria/store";
+import { AuditLogKey, PeopleStoreKey, type Store, StoreKey } from "@miyoria/store";
 import {
   AuthorizerKey,
   BOND_LADDER,
   type Clock,
+  DeliveryLedgerKey,
   EventLogKey,
   ExchangeWalletKey,
+  GameResumeKey,
   isOwnerAccount,
   newId,
   type PersonId,
   PicturesKey,
+  SongTicketsKey,
   serviceKey,
   toTimestamp,
 } from "@miyoria/types";
 import { card, registerCommands, unregisterCommands } from "./commands.js";
 import { type ExchangeConfig, ExchangeConfigSchema } from "./config.js";
-import { herNote } from "./her.js";
+import { companyOf } from "./engine/companies.js";
+import { HER_RULES, herNote } from "./her.js";
+import { LOCAL_CODES, taipeiDay } from "./real/local.js";
 import { HttpJsonProvider, type QuoteProvider } from "./real/provider.js";
+import { LocalSignalBook, type LocalSources } from "./real/signals.js";
+import { DEFAULT_KEEPING, eventLogSources } from "./real/sources.js";
 import { YahooProvider } from "./real/yahoo.js";
 import { ExchangeService, type Traders } from "./service.js";
 import { exchangeTables } from "./store.js";
@@ -57,6 +71,13 @@ export interface ExchangeModuleOptions {
   seed?: string;
   /** Quote providers in place of the configured ones (tests). */
   providers?: ReadonlyMap<string, QuoteProvider>;
+  /** The local stocks' count sources in place of the event log's (tests). */
+  sources?: LocalSources;
+  /**
+   * Days ambient observations stay whole on the event log (`[modules.facts] fold_after_days`,
+   * which Core passes): songs are counted from them.
+   */
+  ambientDays?: number;
 }
 
 export class ExchangeModule implements Module {
@@ -87,6 +108,11 @@ export class ExchangeModule implements Module {
     const tables = store.plugin(exchangeTables);
     const heart = store.plugin(heartTables).people;
     const clock = this.#options.clock ?? ctx.clock;
+    const book = new LocalSignalBook({
+      sources: this.#options.sources ?? this.#sources(ctx, store, config),
+      config: () => config,
+    });
+    this.#logMissing(ctx, book);
     let names: { at: number; map: Map<string, string> } | null = null;
     const traders: Traders = {
       about: async (account, person) => {
@@ -136,6 +162,7 @@ export class ExchangeModule implements Module {
       },
       ...(this.#options.seed === undefined ? {} : { seed: this.#options.seed }),
       providers: this.#options.providers ?? providersOf(config),
+      signals: book,
     });
     ctx.provide(ExchangeKey, service);
     this.#running = { service, clock };
@@ -152,6 +179,7 @@ export class ExchangeModule implements Module {
     this.#mount.attach(ctx);
     const every = this.#options.tickMs ?? Math.max(10, config.quote_poll_seconds) * 1000;
     let lastNote: string | null = null;
+    let lastLocal: string | null = null;
     ctx.spawn("pass", async (signal) => {
       const pass = async () => {
         try {
@@ -162,6 +190,19 @@ export class ExchangeModule implements Module {
             lastNote = note;
             tell(ctx, note, "exchange:facts");
           }
+          // Her own companies: what moved today's opens, from her day (numbers, never names).
+          if (config.local_stocks) {
+            const now = clock.now();
+            await book.prepare([taipeiDay(now) - 1], now);
+            const local = book.herNote((code) => companyOf(code)?.name ?? code, now);
+            if (local !== null && local !== lastLocal) {
+              lastLocal = local;
+              tell(ctx, `你的五家公司今天開盤:${local}。${HER_RULES}`, "exchange:local", {
+                writer: "exchange.local",
+                untrusted: true,
+              });
+            }
+          }
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "exchange: the pass failed");
         }
@@ -169,6 +210,40 @@ export class ExchangeModule implements Module {
       await pass();
       for await (const _ of interval(every, signal)) await pass();
     });
+  }
+
+  /** The five sources over the event log, each module found by a key it provides. */
+  #sources(ctx: ModuleContext, store: Store, config: ExchangeConfig): LocalSources {
+    return eventLogSources({
+      events: () => store.events ?? null,
+      present: {
+        RICE: () => ctx.services.get(ExchangeWalletKey) !== undefined,
+        WHLE: () => ctx.services.get(SongTicketsKey) !== undefined,
+        NAPS: () => ctx.services.get(DeliveryLedgerKey) !== undefined,
+        CUBE: () => ctx.services.get(GameResumeKey) !== undefined,
+        DPSK: () => ctx.services.get(LlmRouterKey) !== undefined,
+      },
+      slowMs: () => config.local_signals.slow_call_seconds * 1000,
+      keeping: {
+        ...DEFAULT_KEEPING,
+        ambient: this.#options.ambientDays ?? DEFAULT_KEEPING.ambient,
+      },
+    });
+  }
+
+  /** One line at start naming the local stocks whose source is missing (their opens stay neutral). */
+  #logMissing(ctx: ModuleContext, book: LocalSignalBook): void {
+    const missing = Object.fromEntries(
+      LOCAL_CODES.flatMap((code) => {
+        const why = book.missing(code);
+        return why === null ? [] : [[code, why]];
+      }),
+    );
+    if (Object.keys(missing).length > 0)
+      ctx.log.info(
+        { missing },
+        "exchange: no source for some local stocks; their opens stay neutral",
+      );
   }
 
   async card(): Promise<ModuleCard> {
@@ -218,7 +293,12 @@ async function dm(ctx: ModuleContext, person: PersonId, text: string): Promise<b
 }
 
 /** Something she hears about the market (totals only), as a quiet note. */
-function tell(ctx: ModuleContext, summary: string, key: string): void {
+function tell(
+  ctx: ModuleContext,
+  summary: string,
+  key: string,
+  { writer = "exchange", untrusted = false }: { writer?: string; untrusted?: boolean } = {},
+): void {
   ctx.services.get(EventLogKey)?.observe(
     {
       source: "exchange",
@@ -235,9 +315,9 @@ function tell(ctx: ModuleContext, summary: string, key: string): void {
       buckets: [
         {
           op: "append-self",
-          writer: "exchange",
+          writer,
           owner: ExchangeModule.ID,
-          untrusted: false,
+          untrusted,
           max_entries: 3,
         },
       ],

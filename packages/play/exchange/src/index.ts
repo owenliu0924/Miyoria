@@ -54,6 +54,8 @@ export * from "./real/instruments.js";
 export * from "./real/lists.js";
 export * from "./real/local.js";
 export * from "./real/provider.js";
+export * from "./real/signals.js";
+export * from "./real/sources.js";
 export { RealStore } from "./real/store.js";
 export * from "./real/yahoo.js";
 export * from "./service.js";

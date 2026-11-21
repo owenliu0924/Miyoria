@@ -5438,10 +5438,17 @@
               "properties": {
                 "what_moves": {
                   "type": "string"
+                },
+                "today": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
                 }
               },
               "required": [
-                "what_moves"
+                "what_moves",
+                "today"
               ]
             },
             {
@@ -5573,10 +5580,17 @@
                     "properties": {
                       "what_moves": {
                         "type": "string"
+                      },
+                      "today": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
                       }
                     },
                     "required": [
-                      "what_moves"
+                      "what_moves",
+                      "today"
                     ]
                   },
                   {

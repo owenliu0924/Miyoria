@@ -12,12 +12,14 @@
 // pennies or to thousands (the simulated year in `test/local.test.ts` shows the range).
 //
 // Her real things (feedings for RICE, songs finished for WHLE, silent hours for NAPS, game goals
-// for CUBE, her model API errors for DPSK) move it by at most ±3% a day: the signal is the LAST
-// COMPLETED day's count against its own recent average, and the whole move lands as a gap at the
-// day's first tick (12:00). Every order placed before then fills at a price that already has it, so
-// nothing a member does today can be traded on at a known price today. The offline check
-// (`test/local.test.ts`) shows that feeding her to push RICE, buying and selling does not beat the
-// fee. No leverage on these, no treasury, no rounds, no news deck.
+// and deaths for CUBE, her model API errors and slow calls for DPSK) move it by at most ±3% a day:
+// the signal is the LAST COMPLETED Taipei day's count against that company's own trailing
+// baseline (`signals.ts`, counted from the event log by `sources.ts`), and the whole move lands as
+// a gap at the day's first tick (12:00). Every order placed before then fills at a price that
+// already has it, so nothing a member does today can be traded on at a known price today. The
+// offline checks (`test/local.test.ts`, `test/signals.test.ts`) show that feeding her to push
+// RICE, buying and selling loses money once the feedings and the fee are counted, and that causing
+// model errors never pays. No leverage on these, no treasury, no rounds, no news deck.
 
 import { rngFor } from "../engine/rng.js";
 import { DEFAULT_SESSIONS, isOpenAt, zonedParts } from "./instruments.js";
@@ -36,13 +38,12 @@ export const LOCAL_WHAT_MOVES: Readonly<Record<LocalCode, string>> = {
 };
 
 /** A temperament: the walk's noise per tick and how fast it returns to its base. */
-const TEMPER: Readonly<Record<LocalCode, { sigma: number; reversion: number; sign: 1 | -1 }>> = {
-  RICE: { sigma: 0.004, reversion: 0.03, sign: 1 },
-  NAPS: { sigma: 0.003, reversion: 0.03, sign: 1 },
-  WHLE: { sigma: 0.007, reversion: 0.02, sign: 1 },
-  CUBE: { sigma: 0.008, reversion: 0.02, sign: 1 },
-  // More model errors are bad news for her old home.
-  DPSK: { sigma: 0.012, reversion: 0.015, sign: -1 },
+export const TEMPER: Readonly<Record<LocalCode, { sigma: number; reversion: number }>> = {
+  RICE: { sigma: 0.004, reversion: 0.03 },
+  NAPS: { sigma: 0.003, reversion: 0.03 },
+  WHLE: { sigma: 0.007, reversion: 0.02 },
+  CUBE: { sigma: 0.008, reversion: 0.02 },
+  DPSK: { sigma: 0.012, reversion: 0.015 },
 };
 
 /** Outside this band around the anchor the pull back is stronger; the outer one is a hard stop. */
@@ -55,20 +56,32 @@ const SOFT_PULL = 0.15;
 export const SIGNAL_MAX = 0.03;
 export const DAILY_LIMIT = 0.1;
 
-/** A day's count of a real thing, and its recent average. */
+/**
+ * A completed day's signal of a company: in [-1, 1], already in the company's direction (+1 is the
+ * full +`SIGNAL_MAX` gap; more model errors give DPSK a negative one). `signals.ts` makes it from
+ * the day's count and the company's own baseline.
+ */
 export interface LocalSignal {
-  count: number;
-  average: number;
+  signal: number;
 }
 
-/** The last completed local day's signal of a company (`null`: none). */
+/** The signal of a company for the completed Taipei day `day` (`null`: none, a neutral open). */
 export type LocalSignals = (code: LocalCode, day: number) => LocalSignal | null;
 
-/** The day's move from yesterday's count: ±`SIGNAL_MAX` at most. */
-export function signalMove(s: LocalSignal | null, sign: 1 | -1): number {
-  if (!s) return 0;
-  const dev = (s.count - s.average) / Math.max(s.average, 1);
-  return sign * SIGNAL_MAX * Math.max(-1, Math.min(1, dev));
+/** Where the local stocks' signals come from (`signals.ts`'s `LocalSignalBook`). */
+export interface LocalSignalFeed {
+  /** The signal of a completed day, at once (`null`: neutral). */
+  signal(code: LocalCode, day: number): LocalSignal | null;
+  /** Readies the signals of these completed Taipei days. */
+  prepare(days: readonly number[], now: number): Promise<void>;
+  /** The card's plain line: what moved today's open of `code` (`null`: nothing known yet). */
+  line(code: LocalCode, now: number): string | null;
+}
+
+/** The day's move from yesterday's signal: ±`SIGNAL_MAX` at most. */
+export function signalMove(s: LocalSignal | null): number {
+  if (!s || !Number.isFinite(s.signal)) return 0;
+  return SIGNAL_MAX * Math.max(-1, Math.min(1, s.signal));
 }
 
 const HOUR = 3_600_000;
@@ -80,8 +93,14 @@ export function lastTick(ms: number): number | null {
   return Math.floor(ms / HOUR) * HOUR;
 }
 
-/** The Taipei day number of `ms` (Taipei has no daylight saving). */
-const taipeiDay = (ms: number) => Math.floor((ms + 8 * HOUR) / DAY);
+/** The Taipei day number of `ms` (Taipei has no daylight saving): the local stocks' day. */
+export const taipeiDay = (ms: number): number => Math.floor((ms + 8 * HOUR) / DAY);
+
+/** The epoch ms window [start, end) of Taipei day `day`. */
+export function taipeiDayWindow(day: number): { start: number; end: number } {
+  const start = day * DAY - 8 * HOUR;
+  return { start, end: start + DAY };
+}
 
 export interface LocalState {
   /** The last tick's price (coins) and time per company, and the previous day's close. */
@@ -117,7 +136,7 @@ export function nextPrice(
   const hi = base + Math.log(SOFT_BAND.hi);
   if (ln < lo) ln += SOFT_PULL * (lo - ln);
   if (ln > hi) ln -= SOFT_PULL * (ln - hi);
-  if (first) ln += signalMove(signals(code, taipeiDay(t) - 1), temper.sign);
+  if (first) ln += signalMove(signals(code, taipeiDay(t) - 1));
   const floor = Math.max(ref * (1 - DAILY_LIMIT), anchor * HARD_BAND.lo);
   const ceiling = Math.min(ref * (1 + DAILY_LIMIT), anchor * HARD_BAND.hi);
   const price = Math.round(Math.min(ceiling, Math.max(floor, Math.exp(ln))) * 100) / 100;
@@ -138,6 +157,12 @@ export class LocalProvider implements QuoteProvider {
     private readonly stored: (
       code: string,
     ) => { price: number; at: number; prev_close: number | null } | null,
+    /**
+     * Readies the signals of these completed Taipei days before the ticks that read them are
+     * priced (the counts come from the event log, which is asynchronous). Optional: without it a
+     * signal is whatever `signals` already has.
+     */
+    private readonly prepare?: (days: readonly number[], now: number) => Promise<void>,
   ) {}
 
   async quotes(symbols: readonly string[], now: number): Promise<Map<string, RawQuote>> {
@@ -149,6 +174,18 @@ export class LocalProvider implements QuoteProvider {
       const code = symbol as LocalCode;
       let st = this.#state.get(code) ?? this.#fromStore(code);
       if (st.at === 0) st = { ...st, at: t - HOUR };
+      if (this.prepare && st.at < t) {
+        // The first tick of each Taipei day from the one after the last priced tick to this one
+        // reads the day before it.
+        const days: number[] = [];
+        for (let d = Math.max(taipeiDay(st.at) + 1, taipeiDay(t) - 14); d <= taipeiDay(t); d++)
+          days.push(d - 1);
+        try {
+          if (days.length > 0) await this.prepare(days, now);
+        } catch {
+          // A source that cannot answer is a neutral open, never a failed quote.
+        }
+      }
       // Every tick missed since the last one, in order (they are reproducible from the seed).
       let guard = 0;
       while (st.at < t && guard++ < 24 * 14) {

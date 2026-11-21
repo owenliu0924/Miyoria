@@ -30,7 +30,8 @@ export const ExchangeLineSchema = z
     market: Market,
     price: z.number().nullable(),
     currency: z.enum(["TWD", "USD", "COIN"]),
-    local: z.object({ what_moves: z.string() }).nullable(),
+    /** A local stock: what moves it, and what moved today's open in numbers from her day. */
+    local: z.object({ what_moves: z.string(), today: z.string().nullable() }).nullable(),
     coin_price: z.number().nullable(),
     age_minutes: z.number().int().nullable(),
     source: z.string(),
