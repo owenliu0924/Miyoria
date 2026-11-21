@@ -51,8 +51,8 @@ export const GoalEndSchema = z
   .object({
     game: z.string(),
     goal: z.string(),
-    /** Who set it: `director`, `command`, `queue` or `survival`. */
-    source: z.enum(["director", "command", "queue", "survival"]),
+    /** Who set it: `director`, `command`, `queue`, `survival` or `idle` (what she started herself when nothing else was decided). */
+    source: z.enum(["director", "command", "queue", "survival", "idle"]),
     status: z.enum(["done", "failed"]),
     code: GoalEndCodeSchema,
     /** The goal's last task, if it had one. */

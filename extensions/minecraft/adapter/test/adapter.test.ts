@@ -166,6 +166,7 @@ describe("MinecraftAdapter", () => {
       "mine",
       "follow",
       "explore",
+      "idle",
       "farm",
       "build",
       "obtain",

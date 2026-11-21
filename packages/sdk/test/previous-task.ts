@@ -41,6 +41,7 @@ export const TASK_FAILURE_CODES = [
   "disconnected",
   "crashed",
   "died",
+  "stuck",
   "denied",
   "internal",
 ] as const;

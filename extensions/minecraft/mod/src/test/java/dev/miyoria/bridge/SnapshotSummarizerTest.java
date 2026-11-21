@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.miyoria.bridge.model.Models.BlockInfo;
 import dev.miyoria.bridge.model.Models.EntityInfo;
+import dev.miyoria.bridge.model.Models.Pos;
 import dev.miyoria.bridge.model.Models.StackInfo;
 import dev.miyoria.bridge.model.RawObservation;
 import dev.miyoria.bridge.model.RawObservation.AltoState;
@@ -125,7 +126,7 @@ class SnapshotSummarizerTest {
         RawObservation r = base();
         r.entities = new ArrayList<>(List.of(
                 new EntityInfo("cow", null, 12.0, false),
-                new EntityInfo("zombie", null, 3.04, true),
+                new EntityInfo("zombie", null, 3.04, true, new Pos(5, 64, -2)),
                 new EntityInfo("player", "Steve", 8.0, false),
                 new EntityInfo("skeleton", null, 20.0, true)));
         JsonObject o = SnapshotSummarizer.summarize(r, new SnapshotSummarizer.Options(3, 20));
@@ -135,6 +136,12 @@ class SnapshotSummarizerTest {
         assertEquals(3.0, ents.get(0).getAsJsonObject().get("distance").getAsDouble());
         assertTrue(ents.get(0).getAsJsonObject().get("hostile").getAsBoolean());
         assertFalse(ents.get(0).getAsJsonObject().has("name"));
+        JsonObject at = ents.get(0).getAsJsonObject().getAsJsonObject("position");
+        assertEquals(5, at.get("x").getAsInt());
+        assertEquals(64, at.get("y").getAsInt());
+        assertEquals(-2, at.get("z").getAsInt());
+        // Without a position (an older observer) the field is left out.
+        assertFalse(ents.get(1).getAsJsonObject().has("position"));
         assertEquals("Steve", ents.get(1).getAsJsonObject().get("name").getAsString());
         assertEquals("cow", ents.get(2).getAsJsonObject().get("type").getAsString());
         assertEquals(4, o.get("nearby_entities_total").getAsInt());

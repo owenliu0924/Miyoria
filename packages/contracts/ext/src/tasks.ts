@@ -32,6 +32,8 @@ export const EXT_TASK_FAILURE_CODES = [
   "crashed",
   /** In a game: she died or lost while doing it. */
   "died",
+  /** It was running but made no progress for a while (did not move, gained nothing). */
+  "stuck",
   /** The gate or a policy refused it. */
   "denied",
   /** Anything else (see `detail`). */

@@ -1291,6 +1291,7 @@
         "disconnected",
         "crashed",
         "died",
+        "stuck",
         "denied",
         "internal"
       ]
