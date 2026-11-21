@@ -135,6 +135,11 @@ interface Conn {
   contextSent: boolean;
 }
 
+/** Whether a socket's remote address is this machine. */
+export function isLoopbackAddress(address: string): boolean {
+  return address === "::1" || address.startsWith("127.") || address.startsWith("::ffff:127.");
+}
+
 /** Starts the close handshake; drops the socket if the other side does not answer in time. */
 export function closeSocket(ws: WebSocket, code: number, reason: string): void {
   if (ws.readyState === WebSocket.CLOSED) return;
@@ -311,8 +316,11 @@ export class ClusterLink {
     }
   }
 
-  /** Runs the protocol on a freshly upgraded socket. */
-  serve(ws: WebSocket): void {
+  /**
+   * Runs the protocol on a freshly upgraded socket. `remote`: the address it came from, which
+   * tells a host on Core's own machine from one elsewhere (v5-hostd §15).
+   */
+  serve(ws: WebSocket, from: { remote?: string | undefined } = {}): void {
     const o = this.#o;
     let phase: "hello" | "open" | "done" = "hello";
     const helloTimer = setTimeout(
@@ -346,7 +354,7 @@ export class ClusterLink {
       }
       phase = "open";
       endHello();
-      this.#open(ws, outcome.hello, outcome.host);
+      this.#open(ws, outcome.hello, outcome.host, from.remote);
     };
     const onEarlyClose = () => {
       if (phase !== "hello") return;
@@ -391,7 +399,7 @@ export class ClusterLink {
     return { ok: true, hello, host };
   }
 
-  #open(ws: WebSocket, hello: HostHello, host: HostRecord): void {
+  #open(ws: WebSocket, hello: HostHello, host: HostRecord, remote: string | undefined): void {
     const o = this.#o;
     const approved = host.status === "approved";
     const welcome: HostWelcome = {
@@ -463,6 +471,7 @@ export class ClusterLink {
       this.#shutdown(old, HOST_LINK_CLOSE.REPLACED, "replaced by a newer connection");
     }
     o.registry.setHost(host.name, approved ? host.capabilities : null);
+    if (remote !== undefined) o.registry.setLink(host.name, { local: isLoopbackAddress(remote) });
     o.log.info({ host: host.name, approved, platform: hello.platform }, "host connected");
     o.publish(Events.ClusterHostConnected, {
       host: host.name,
@@ -504,9 +513,19 @@ export class ClusterLink {
       }, o.config.peer_timeout_secs * 1000);
     };
     bump();
+    // The round trip of each ping, for the hosts nearest Core (v5-hostd §15).
+    let pingAt: number | null = null;
     const ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.ping();
+      if (ws.readyState !== WebSocket.OPEN) return;
+      pingAt = o.now();
+      ws.ping();
     }, o.config.ping_secs * 1000);
+    const onPong = () => {
+      if (pingAt === null) return;
+      o.registry.setLink(conn.name, { rttMs: Math.max(0, o.now() - pingAt) });
+      pingAt = null;
+    };
+    ws.on("pong", onPong);
     const onAbort = () => this.#shutdown(conn, HOST_LINK_CLOSE.GOING_AWAY, "core shutting down");
     o.signal.addEventListener("abort", onAbort, { once: true });
     // Any traffic, control frames too, shows the host is alive.
@@ -520,6 +539,7 @@ export class ClusterLink {
       ws.off("message", bump);
       ws.off("ping", bump);
       ws.off("pong", bump);
+      ws.off("pong", onPong);
     };
   }
 

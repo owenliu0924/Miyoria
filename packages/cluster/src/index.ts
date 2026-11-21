@@ -2,6 +2,7 @@
 // each host's hostd dials, the hosts that joined (`cluster_hosts`, `cluster_invites`), the
 // registry of service endpoints, and the guarded states hosts ask about.
 
+export { ACTIVITY_EVENTS, ActivityTracker } from "./activity.js";
 export {
   type CallerHost,
   ClusterCalls,
@@ -28,11 +29,31 @@ export {
   type ClusterConfig,
   ClusterConfigSchema,
   DEFAULT_CLUSTER_BIND,
+  type RoutingCapabilityConfig,
+  RoutingCapabilityConfigSchema,
+  type RoutingConfig,
+  RoutingConfigSchema,
+  SPEECH_HOST_MODES,
+  type SpeechHostMode,
   type StaticEndpointConfig,
   StaticEndpointConfigSchema,
 } from "./config.js";
+export {
+  ALPHA,
+  ANY_HOST,
+  type EstimateRow,
+  type EstimateStore,
+  Estimates,
+  memoryEstimateStore,
+} from "./estimates.js";
 export { GuardRegistry, type GuardSourceFn } from "./guards.js";
-export { ClusterLink, type ClusterLinkOptions, closeSocket, type HostConnection } from "./link.js";
+export {
+  ClusterLink,
+  type ClusterLinkOptions,
+  closeSocket,
+  type HostConnection,
+  isLoopbackAddress,
+} from "./link.js";
 export { clusterSchema } from "./migrations.js";
 export {
   type ClusterComplete,
@@ -42,15 +63,26 @@ export {
   type ClusterLinksSource,
   ClusterModule,
   type ClusterModuleOptions,
+  type ClusterRouting,
   type ClusterService,
+  type RoutingControlInput,
+  type RoutingSnapshot,
 } from "./module.js";
 export {
+  type CapabilityRouting,
+  type ClusterActivity,
+  type DispatchDecision,
+  type DispatchedUnit,
   type Endpoint,
   EndpointRegistry,
   type EndpointRegistryOptions,
+  type EndpointRouting,
   type LinkRelay,
+  NO_PANEL_CONTROLS,
+  type PanelControls,
   type PickOptions,
   RelayUnavailableError,
+  type ScoreParts,
 } from "./registry.js";
 export {
   ClusterRelay,
@@ -62,8 +94,14 @@ export {
   type RelayOptions,
 } from "./relay.js";
 export {
+  type ClusterControlRow,
+  type ClusterEstimateRow,
   type ClusterHostRow,
   type ClusterInviteRow,
+  CONTROL_KINDS,
+  type ControlKind,
+  clusterControls,
+  clusterEstimates,
   clusterHosts,
   clusterInvites,
   HOST_STATUSES,
@@ -72,8 +110,11 @@ export {
 export {
   ClusterError,
   ClusterTables,
+  type ControlRecord,
+  Controls,
   clusterTables,
   DEFAULT_INVITE_TTL_S,
+  EstimateTable,
   type HostRecord,
   Hosts,
   InviteError,
