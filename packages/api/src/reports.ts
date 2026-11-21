@@ -1,7 +1,8 @@
-// Problem reports (`reports` group), over `ReportKey`: `GET /api/reports` and the owner's four
-// decisions on a draft (`approve`, `comment`, `duplicate`, `reject`). Each decision is written to
-// the audit log, refused or not; a refusal is its status and the service's sentence. Without the
-// `report` module every route is a `503` that names it.
+// Problem reports (`reports` group), over `ReportKey`: `GET /api/reports`, the owner's four
+// decisions on a draft (`approve`, `comment`, `duplicate`, `reject`), and the reporter's GitHub
+// mention on one draft (`mention`). Each is written to the audit log, refused or not; a refusal is
+// its status and the service's sentence. Without the `report` module every route is a `503` that
+// names it.
 
 import {
   commentBody,
@@ -23,7 +24,7 @@ function service(state: ApiState): ReportService {
 }
 
 /** One report as the owner sees it: the cleaned fields and what became of it, no account. */
-export function draftView(row: ReportRow): ReportDraftView {
+export function draftView(row: ReportRow, reports: ReportService): ReportDraftView {
   return {
     id: row.id,
     status: row.status,
@@ -64,6 +65,7 @@ export function draftView(row: ReportRow): ReportDraftView {
     closed_at: row.closed_at,
     close_reason: row.close_reason,
     notified_at: row.notified_at,
+    mention: reports.mentionFor(row),
   };
 }
 
@@ -84,7 +86,7 @@ async function decided(
     result.ok,
   );
   if (!result.ok) throw new ApiError(result.status, result.message);
-  return draftView(result.row);
+  return draftView(result.row, service(state));
 }
 
 export const reportsRpc = {
@@ -94,11 +96,13 @@ export const reportsRpc = {
     return {
       repo: config.repo,
       ready: reports.ready,
+      auth: reports.auth,
+      linking: reports.linker !== null,
       auto_open: config.auto_open,
       per_person_daily: config.per_person_daily,
       global_daily: config.global_daily,
       today: reports.today(),
-      drafts: reports.list(null, 200).map(draftView),
+      drafts: reports.list(null, 200).map((row) => draftView(row, reports)),
     };
   }),
   approve: os.reports.approve.handler(async ({ input, context: { state, c } }) => {
@@ -132,6 +136,11 @@ export const reportsRpc = {
     const { issue } = input.body;
     const result = await service(state).duplicate(input.params.id, actorOf(c), issue);
     return decided(state, c, "duplicate", input.params.id, { issue }, result);
+  }),
+  mention: os.reports.mention.handler(async ({ input, context: { state, c } }) => {
+    const { on } = input.body;
+    const result = service(state).setMention(input.params.id, on, actorOf(c));
+    return decided(state, c, "mention", input.params.id, { on: on ? 1 : 0 }, result);
   }),
   reject: os.reports.reject.handler(async ({ input, context: { state, c } }) => {
     const result = service(state).reject(input.params.id, actorOf(c), input.body.reason);

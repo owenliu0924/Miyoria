@@ -65,6 +65,7 @@ import { evalRpc } from "./eval/route.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
+import { githubLinkRpc } from "./github-link.js";
 import { selfRpc, worldRpc } from "./inner.js";
 import { karaokeAdminRpc, karaokeRefusals, karaokeRoomsRpc, karaokeRpc } from "./karaoke-routes.js";
 import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
@@ -134,6 +135,7 @@ export const router = os.router({
   karaokeAdmin: karaokeAdminRpc,
   karaokeRooms: karaokeRoomsRpc,
   reports: reportsRpc,
+  githubLink: githubLinkRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
   // The settings routes before `POST /api/modules/{id}/{action}` (see the contract).
@@ -181,6 +183,7 @@ const PUBLIC_SIDE = new Set([
   "market",
   "karaoke",
   "karaokeRooms",
+  "githubLink",
 ]);
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */

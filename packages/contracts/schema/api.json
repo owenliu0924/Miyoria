@@ -4431,6 +4431,55 @@
         }
       }
     },
+    "ApiGithubLinkView": {
+      "type": "object",
+      "properties": {
+        "available": {
+          "type": "boolean"
+        },
+        "linked": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "login": {
+                  "type": "string"
+                },
+                "mention": {
+                  "type": "boolean"
+                },
+                "linked_at": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "login",
+                "mention",
+                "linked_at"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "available",
+        "linked"
+      ]
+    },
+    "ApiGithubMentionRequest": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on"
+      ]
+    },
     "ApiGoLiveRequest": {
       "type": "object",
       "properties": {
@@ -14537,6 +14586,35 @@
             "string",
             "null"
           ]
+        },
+        "mention": {
+          "type": "object",
+          "properties": {
+            "login": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "will_add": {
+              "type": "boolean"
+            },
+            "why": {
+              "type": "string",
+              "enum": [
+                "on",
+                "anonymous",
+                "not_linked",
+                "member_off",
+                "owner_off"
+              ]
+            }
+          },
+          "required": [
+            "login",
+            "will_add",
+            "why"
+          ]
         }
       },
       "required": [
@@ -14561,7 +14639,8 @@
         "last_error",
         "closed_at",
         "close_reason",
-        "notified_at"
+        "notified_at",
+        "mention"
       ]
     },
     "ApiReportDuplicateRequest": {
@@ -14584,6 +14663,23 @@
           "type": "string"
         },
         "ready": {
+          "type": "boolean"
+        },
+        "auth": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "app",
+                "token"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "linking": {
           "type": "boolean"
         },
         "auto_open": {
@@ -14614,11 +14710,24 @@
       "required": [
         "repo",
         "ready",
+        "auth",
+        "linking",
         "auto_open",
         "per_person_daily",
         "global_daily",
         "today",
         "drafts"
+      ]
+    },
+    "ApiReportMentionRequest": {
+      "type": "object",
+      "properties": {
+        "on": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "on"
       ]
     },
     "ApiReportRejectRequest": {

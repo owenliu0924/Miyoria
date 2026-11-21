@@ -231,6 +231,12 @@ export class ReportService {
     return this.#deps.tracker !== null;
   }
 
+  /** How GitHub is reached: as the App, with the token, or not at all. */
+  get auth(): "app" | "token" | null {
+    const tracker = this.#deps.tracker;
+    return tracker === null ? null : (tracker.kind ?? "token");
+  }
+
   /** Members linking their GitHub account, when the App's user authorisation is set. */
   get linker(): GitHubLinker | null {
     return this.#deps.linker ?? null;
@@ -370,6 +376,16 @@ export class ReportService {
 
   #tracker(): IssueTracker | Refusal {
     return this.#deps.tracker ?? refuse(503, "沒有設定 GitHub App 或 token,不能寫到 GitHub");
+  }
+
+  /** The member's switch for being named on their reports' issues; `false` without a link. */
+  setLinkMention(person: PersonId, on: boolean): boolean {
+    return this.#deps.store.setMention(person, on);
+  }
+
+  /** Removes the member's link; `false` when there was none. */
+  unlink(person: PersonId): boolean {
+    return this.#deps.store.unlink(person);
   }
 
   /** The reporter's linked account, when they have one. */

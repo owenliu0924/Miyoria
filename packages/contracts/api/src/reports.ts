@@ -55,6 +55,17 @@ export const ReportDraftViewSchema = z
     closed_at: z.string().nullable(),
     close_reason: z.string().nullable(),
     notified_at: z.string().nullable(),
+    /**
+     * Whether an approval names the reporter as `@login` on the issue's last line: only for a
+     * reporter who linked their GitHub account and allows it, unless the owner took it off this
+     * draft. `login` is the name last read (GitHub is asked again at approval); `why`: `on`,
+     * `anonymous`, `not_linked`, `member_off`, `owner_off`.
+     */
+    mention: z.object({
+      login: z.string().nullable(),
+      will_add: z.boolean(),
+      why: z.enum(["on", "anonymous", "not_linked", "member_off", "owner_off"]),
+    }),
   })
   .meta({ id: "ApiReportDraftView" });
 export type ReportDraftView = z.output<typeof ReportDraftViewSchema>;
@@ -64,8 +75,12 @@ export const ReportListSchema = z
   .object({
     /** `owner/name`; empty when none is set. */
     repo: z.string(),
-    /** A token and a repo: approvals can reach GitHub, and she is offered the tool. */
+    /** The GitHub App (or a token) and a repo: approvals can reach GitHub, and she is offered the tool. */
     ready: z.boolean(),
+    /** How Core reaches GitHub: as the App (recommended), with the fallback token, or not at all. */
+    auth: z.enum(["app", "token"]).nullable(),
+    /** Members can link their GitHub account on the member page. */
+    linking: z.boolean(),
     auto_open: z.boolean(),
     per_person_daily: z.number().int(),
     global_daily: z.number().int(),
@@ -104,6 +119,12 @@ export const ReportCommentRequestSchema = z
   .meta({ id: "ApiReportCommentRequest" });
 export type ReportCommentRequest = z.input<typeof ReportCommentRequestSchema>;
 
+/** Body of `POST /api/reports/{id}/mention`: `false` takes the reporter's mention off this draft. */
+export const ReportMentionRequestSchema = z
+  .object({ on: z.boolean() })
+  .meta({ id: "ApiReportMentionRequest" });
+export type ReportMentionRequest = z.input<typeof ReportMentionRequestSchema>;
+
 const ReportParams = z.object({ id: z.string().min(1).max(64) });
 
 export const reports = {
@@ -128,6 +149,12 @@ export const reports = {
     .meta(meta)
     .route({ method: "POST", path: "/api/reports/{id}/duplicate" })
     .input(z.object({ params: ReportParams, body: ReportDuplicateRequestSchema }))
+    .output(ReportDraftViewSchema),
+  /** The reporter's mention on this draft's issue, on or off; `409` once it is decided. */
+  mention: route
+    .meta(meta)
+    .route({ method: "POST", path: "/api/reports/{id}/mention" })
+    .input(z.object({ params: ReportParams, body: ReportMentionRequestSchema }))
     .output(ReportDraftViewSchema),
   reject: route
     .meta(meta)

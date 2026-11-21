@@ -44,6 +44,8 @@ export interface IssueTracker {
   issue(number: number): Promise<IssueState>;
   /** The current login of the account with numeric id `id`; `null` when it is gone. */
   login?(id: number): Promise<string | null>;
+  /** How the calls are made: as the GitHub App, or with a static token. */
+  readonly kind?: "app" | "token";
 }
 
 export interface GitHubOptions {
