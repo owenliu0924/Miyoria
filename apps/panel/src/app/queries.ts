@@ -26,6 +26,7 @@ export const queryKeys = {
   cluster: ["cluster"] as const,
   clusterHosts: ["cluster", "hosts"] as const,
   clusterEndpoints: ["cluster", "endpoints"] as const,
+  clusterCheckout: ["cluster", "checkout"] as const,
   clusterInfo: (host: string) => ["cluster", "info", host] as const,
   decisionsAll: ["decisions"] as const,
   decisions: (q: DecisionsQuery) => ["decisions", q] as const,
@@ -240,7 +241,22 @@ export function useClusterHosts() {
   return useQuery({
     queryKey: queryKeys.clusterHosts,
     queryFn: ({ signal }) => api.rpc.cluster.hosts(undefined, { signal }),
-    refetchInterval: poll(10_000),
+    // Every 2 s while a host updates, so its steps show as they happen.
+    refetchInterval: (query) => {
+      const active = query.state.data?.some((h) => h.upgrade?.state === "running" || h.upgrade?.state === "waiting");
+      return poll(active ? 2_000 : 10_000)(query);
+    },
+    retry: clusterRetry,
+  });
+}
+
+/** Core's own checkout: the version an update brings the hosts to. */
+export function useClusterCheckout() {
+  const api = useApi();
+  return useQuery({
+    queryKey: queryKeys.clusterCheckout,
+    queryFn: ({ signal }) => api.rpc.cluster.checkout(undefined, { signal }),
+    refetchInterval: poll(30_000),
     retry: clusterRetry,
   });
 }
@@ -283,6 +299,14 @@ export function useClusterMutations() {
     service: useMutation({
       mutationFn: ({ host, service, action, force }: { host: string; service: string; action: ClusterServiceAction; force?: boolean }) =>
         api.rpc.cluster.service({ params: { name: host, service, action }, body: force ? { force: true } : {} }),
+      onSuccess: refresh,
+    }),
+    upgrade: useMutation({
+      mutationFn: (hosts: string[]) => api.rpc.cluster.upgrade({ body: { hosts } }),
+      onSuccess: refresh,
+    }),
+    upgradeCancel: useMutation({
+      mutationFn: (name: string) => api.rpc.cluster.upgradeCancel({ params: { name }, body: {} }),
       onSuccess: refresh,
     }),
   };

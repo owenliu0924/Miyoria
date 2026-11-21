@@ -454,3 +454,161 @@ describe("Machines: page states", () => {
     expect(await screen.findAllByRole("link", { name: "電腦" })).not.toHaveLength(0);
   });
 });
+
+describe("Machines: versions and updates", () => {
+  const CORE = "c".repeat(40);
+  const OLD = "a".repeat(40);
+  const checkout = (commit: string, over: Partial<NonNullable<ClusterHostView["checkout"]>> = {}) => ({
+    commit,
+    branch: "main",
+    upstream: "origin/main",
+    ahead: 0,
+    behind: 0,
+    dirty: false,
+    fetched_at: null,
+    read_at: Date.now(),
+    ...over,
+  });
+  const live = { connected: true, connected_since: iso(60_000) };
+  const FRIEND = host("friend", {
+    ...live,
+    checkout: checkout(OLD),
+    relation: { relation: "behind", count: 3 },
+    remote_update: { allowed: true },
+    upgrade: null,
+  });
+  const CLOSED = host("closed", {
+    ...live,
+    checkout: checkout(OLD),
+    relation: { relation: "behind", count: 3 },
+    remote_update: { allowed: false, reason: "這台沒有開放遠端更新(host.toml 的 [update] allow_remote 是 false)" },
+  });
+  const MAIN = host("main-pc", {
+    ...live,
+    checkout: checkout(CORE),
+    relation: { relation: "same" },
+    remote_update: { allowed: false, reason: "這台跑著 Core,不能從面板更新;請在這台執行 miyoria update" },
+  });
+  const OLDHOST = host("old-pc", live);
+
+  function serveUpdates(hosts: ClusterHostView[], extra?: Parameters<typeof mockFetch>[0]) {
+    const infos = Object.fromEntries(hosts.map((h) => [h.name, info({ name: h.name })]));
+    return serve(world({ hosts, infos }), (method, url, body, headers) => {
+      if (method === "GET" && url.pathname === "/api/cluster/checkout") return { body: { checkout: checkout(CORE) } };
+      return extra?.(method, url, body, headers);
+    });
+  }
+
+  it("shows each version, how it stands to Core's, and plainly why a host cannot be updated", async () => {
+    serveUpdates([FRIEND, CLOSED, MAIN, OLDHOST]);
+    renderRoute("/machines");
+    const friend = await rowOf("friend");
+    expect(within(friend).getByText("main · aaaaaaaa")).toBeInTheDocument();
+    expect(within(friend).getByText("落後 Core 3 個提交")).toBeInTheDocument();
+    expect(within(friend).getByRole("checkbox", { name: "選取 friend" })).toBeEnabled();
+
+    const closed = await rowOf("closed");
+    expect(within(closed).getByText(/不能從面板更新:這台沒有開放遠端更新/)).toBeInTheDocument();
+    expect(within(closed).getByRole("checkbox", { name: "選取 closed" })).toBeDisabled();
+
+    const main = await rowOf("main-pc");
+    expect(within(main).getByText("與 Core 相同")).toBeInTheDocument();
+    expect(within(main).getByText(/這台跑著 Core/)).toBeInTheDocument();
+
+    const old = await rowOf("old-pc");
+    expect(within(old).getByText(/版本不明/)).toBeInTheDocument();
+    expect(within(old).queryByRole("checkbox")).not.toBeInTheDocument();
+
+    // Core's own version above the list, and main-pc's in its row.
+    expect(await screen.findByText("Core 的版本")).toBeInTheDocument();
+    expect(await screen.findAllByText("main · cccccccc")).toHaveLength(2);
+  });
+
+  it("updates the picked hosts after one confirmation, with only their names sent", async () => {
+    const f = serveUpdates([FRIEND, CLOSED], (method, url) =>
+      method === "POST" && url.pathname === "/api/cluster/upgrade"
+        ? { body: { commit: CORE, results: [{ host: "friend", ok: true }] } }
+        : undefined,
+    );
+    const user = userEvent.setup();
+    renderRoute("/machines");
+    const friend = await rowOf("friend");
+    const update = await screen.findByRole("button", { name: "更新" });
+    expect(update).toBeDisabled();
+    await user.click(within(friend).getByRole("checkbox", { name: "選取 friend" }));
+    expect(screen.getByText("已選 1 台")).toBeInTheDocument();
+    await user.click(update);
+    const dialog = await screen.findByRole("alertdialog");
+    expect(within(dialog).getByText("friend:aaaaaaaa → cccccccc")).toBeInTheDocument();
+    expect(within(dialog).getByText(/模型不會下載/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "更新" }));
+    await waitFor(() => expect(posts(f)).toEqual([{ call: "POST /api/cluster/upgrade", body: { hosts: ["friend"] } }]));
+  });
+
+  it("shows a waiting update with what it waits for, its steps, and a cancel", async () => {
+    const waiting = host("friend", {
+      ...live,
+      checkout: checkout(OLD),
+      relation: { relation: "behind", count: 3 },
+      remote_update: { allowed: true },
+      upgrade: {
+        id: "j1",
+        target: CORE,
+        from: OLD,
+        state: "waiting",
+        step: "wait",
+        waiting_for: "sing 正在處理工作",
+        started_at: Date.now() - 60_000,
+        steps: [
+          { step: "check", state: "done", at: Date.now() - 60_000 },
+          { step: "fetch", state: "done", detail: "aaaaaaaa → cccccccc 可以快轉", at: Date.now() - 50_000 },
+          { step: "wait", state: "running", detail: "sing 正在處理工作", at: Date.now() - 40_000 },
+        ],
+      },
+    });
+    const f = serveUpdates([waiting], (method, url) =>
+      method === "POST" && url.pathname === "/api/cluster/hosts/friend/upgrade/cancel" ? { body: { cancelled: true, job: null } } : undefined,
+    );
+    const user = userEvent.setup();
+    renderRoute("/machines");
+    const row = await rowOf("friend");
+    expect(within(row).getAllByText("等她忙完").length).toBeGreaterThan(0);
+    expect(within(row).getAllByText("sing 正在處理工作").length).toBeGreaterThan(0);
+    const steps = within(row).getByRole("list", { name: "更新步驟" });
+    expect(within(steps).getByText("取得新版")).toBeInTheDocument();
+    // A host that is updating cannot be picked again.
+    expect(within(row).getByRole("checkbox", { name: "選取 friend" })).toBeDisabled();
+    await user.click(within(row).getByRole("button", { name: "取消更新" }));
+    await waitFor(() => expect(posts(f)).toEqual([{ call: "POST /api/cluster/hosts/friend/upgrade/cancel", body: {} }]));
+  });
+
+  it("shows a failed update's reason, that it went back, and what is missing", async () => {
+    const failed = host("friend", {
+      ...live,
+      checkout: checkout(OLD),
+      relation: { relation: "behind", count: 3 },
+      remote_update: { allowed: true },
+      upgrade: {
+        id: "j2",
+        target: CORE,
+        from: OLD,
+        state: "failed",
+        step: "rollback",
+        started_at: Date.now() - 600_000,
+        finished_at: Date.now() - 500_000,
+        error: "pnpm install 失敗:ERR_PNPM_EPERM",
+        rolled_back: true,
+        commit: OLD,
+        missing: [{ service: "sing", kind: "file", what: "lead-split/x.yaml" }],
+        steps: [{ step: "rollback", state: "done", detail: "已回到 aaaaaaaa", at: Date.now() - 500_000 }],
+      },
+    });
+    serveUpdates([failed]);
+    renderRoute("/machines");
+    const row = await rowOf("friend");
+    expect(within(row).getByRole("alert")).toHaveTextContent("pnpm install 失敗");
+    expect(within(row).getByText("已回到 aaaaaaaa", { selector: "dd" })).toBeInTheDocument();
+    expect(within(row).getByText("sing:lead-split/x.yaml")).toBeInTheDocument();
+    expect(within(row).getByText(/更新不會下載模型/)).toBeInTheDocument();
+  });
+});

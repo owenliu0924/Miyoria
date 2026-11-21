@@ -10,6 +10,8 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { InviteDialog } from "./Dialogs";
 import { EndpointList } from "./Endpoints";
 import { HostList } from "./Hosts";
+import { updatable } from "./labels";
+import { UpgradeBar } from "./Upgrade";
 
 /** The cluster module is off: every route answers 503. */
 function ClusterOff() {
@@ -49,13 +51,32 @@ function Empty({ onInvite }: { onInvite: () => void }) {
 
 function Hosts({ onInvite }: { onInvite: () => void }) {
   const hosts = useClusterHosts();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const select = (name: string, on: boolean) =>
+    setSelected((s) => {
+      const next = new Set(s);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
   return (
     <Card>
       <CardHeader>
         <CardTitle>電腦</CardTitle>
       </CardHeader>
       <QueryView query={hosts} isEmpty={(h) => h.length === 0} empty={<Empty onInvite={onInvite} />}>
-        {(list) => <HostList hosts={list} />}
+        {(list) => {
+          // A host that can no longer be updated drops out of the selection by itself.
+          const live = new Set([...selected].filter((n) => list.some((h) => h.name === n && updatable(h).ok)));
+          return (
+            <div className="grid gap-1">
+              {list.some((h) => h.remote_update !== undefined) && (
+                <UpgradeBar hosts={list} selected={live} onSelectAll={(names) => setSelected(new Set(names))} onDone={() => setSelected(new Set())} />
+              )}
+              <HostList hosts={list} selected={live} onSelect={select} />
+            </div>
+          );
+        }}
       </QueryView>
     </Card>
   );
