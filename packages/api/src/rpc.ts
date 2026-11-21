@@ -62,6 +62,7 @@ import { directivesRpc } from "./directives.js";
 import { economyRpc, personQuestsRpc } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { evalRpc } from "./eval/route.js";
+import { exchangeAdminRpc, exchangeRpc } from "./exchange-routes.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { fortuneRpc } from "./fortune-routes.js";
@@ -131,6 +132,8 @@ export const router = os.router({
   fortune: fortuneRpc,
   market: marketRpc,
   marketAdmin: marketAdminRpc,
+  exchange: exchangeRpc,
+  exchangeAdmin: exchangeAdminRpc,
   karaoke: karaokeRpc,
   karaokeAdmin: karaokeAdminRpc,
   karaokeRooms: karaokeRoomsRpc,
@@ -181,6 +184,7 @@ const PUBLIC_SIDE = new Set([
   "agency",
   "fortune",
   "market",
+  "exchange",
   "karaoke",
   "karaokeRooms",
   "githubLink",

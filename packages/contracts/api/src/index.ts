@@ -29,6 +29,7 @@ import { data } from "./data.js";
 import { directives } from "./directives.js";
 import { economy, peopleEconomy } from "./economy.js";
 import { evalRoutes } from "./eval.js";
+import { exchange, exchangeAdmin } from "./exchange.js";
 import { facts } from "./facts.js";
 import { fortune } from "./fortune.js";
 import { githubLink } from "./github-link.js";
@@ -340,6 +341,39 @@ export {
   type EvalNightlyState,
   EvalNightlyStateSchema,
 } from "./eval.js";
+export {
+  type ExchangeAccount,
+  ExchangeAccountSchema,
+  type ExchangeAdmin,
+  ExchangeAdminSchema,
+  ExchangeAdminSellRequestSchema,
+  type ExchangeBoards,
+  ExchangeBoardsSchema,
+  ExchangeCancelRequestSchema,
+  type ExchangeCompany,
+  type ExchangeCompanyPage,
+  ExchangeCompanyPageSchema,
+  ExchangeCompanySchema,
+  type ExchangeLeveraged,
+  ExchangeLeveragedSchema,
+  ExchangeLeverageRequestSchema,
+  ExchangeMarginRequestSchema,
+  type ExchangeMarket,
+  ExchangeMarketSchema,
+  type ExchangeNews,
+  ExchangeNewsSchema,
+  type ExchangeOrder,
+  type ExchangeOrderRequest,
+  ExchangeOrderRequestSchema,
+  ExchangeOrderSchema,
+  ExchangePauseRequestSchema,
+  type ExchangePortfolio,
+  ExchangePortfolioSchema,
+  type ExchangeQuote,
+  ExchangeQuoteSchema,
+  ExchangeRulesSchema,
+  ExchangeVisibilityRequestSchema,
+} from "./exchange.js";
 export {
   type CauseChain,
   CauseChainSchema,
@@ -1103,6 +1137,8 @@ export const contract = {
   fortune,
   market,
   marketAdmin,
+  exchange,
+  exchangeAdmin,
   karaoke,
   karaokeAdmin,
   karaokeRooms,

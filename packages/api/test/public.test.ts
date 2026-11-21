@@ -734,6 +734,11 @@ describe("the route table", () => {
       "GET /api/member/cards/pity",
       "GET /api/member/cards/wishlist",
       "GET /api/member/danmaku",
+      "GET /api/member/exchange",
+      "GET /api/member/exchange/account",
+      "GET /api/member/exchange/boards",
+      "GET /api/member/exchange/company/:code",
+      "GET /api/member/exchange/portfolio",
       "GET /api/member/export",
       "GET /api/member/fortune",
       "GET /api/member/github",
@@ -762,6 +767,13 @@ describe("the route table", () => {
       "POST /api/member/card",
       "POST /api/member/checkin",
       "POST /api/member/danmaku",
+      "POST /api/member/exchange/account",
+      "POST /api/member/exchange/cancel",
+      "POST /api/member/exchange/leverage",
+      "POST /api/member/exchange/margin",
+      "POST /api/member/exchange/order",
+      "POST /api/member/exchange/quote",
+      "POST /api/member/exchange/visibility",
       "POST /api/member/feed",
       "POST /api/member/forget",
       "POST /api/member/frame",
@@ -801,7 +813,8 @@ describe("the route table", () => {
     // and one that is not theirs is not found; a series names one of their own titles; a karaoke
     // song is nobody's, and a karaoke session (and its files) that is not theirs is not found; a
     // room's code names a room, which anyone with the code may join or watch; a queue entry is one
-    // of that room's, which only its adder, the opener or a panel admin may take out or move.
+    // of that room's, which only its adder, the opener or a panel admin may take out or move; an
+    // exchange company's code names one of the eight made-up companies.
     const named = all.filter(
       (r) =>
         r.member &&
@@ -812,6 +825,7 @@ describe("the route table", () => {
           .replace(/^\/api\/member\/karaoke\/rooms\/:code(\/queue\/:entry)?/, "")
           .replace(/^\/api\/member\/karaoke\/files\/:session\/:name$/, "")
           .replace(/^\/api\/member\/karaoke\/edit\/:song\/backing$/, "")
+          .replace(/^\/api\/member\/exchange\/company\/:code$/, "")
           .includes(":"),
     );
     expect(named).toEqual([]);
