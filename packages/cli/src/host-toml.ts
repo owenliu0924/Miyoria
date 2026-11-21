@@ -28,15 +28,17 @@ const HEADER =
   "# This machine's services for hostd. Written by `miyoria init`; `miyoria add` and `remove` edit it.\n";
 
 /**
- * At the end of a new file: how to let an admin update this machine from Core's panel
- * (docs/design/v5-hostd.md §14). Off unless the two lines are uncommented.
+ * At the end of a new file: that the owner of the Core this machine joins may update it from the
+ * panel, and how to turn that off (docs/design/v5-hostd.md §14). On unless the two lines are
+ * uncommented.
  */
 const UPDATE_HINT = [
   "",
-  "# Let an admin update this machine from Core's panel: fast-forward to Core's commit on the",
-  "# branch this checkout tracks, install, restart what changed. Never downloads models.",
+  "# The owner of the Core this machine joins may update it from the panel: fast-forward this",
+  "# checkout to Core's commit on the branch it tracks, install, restart what changed. Never with",
+  "# uncommitted changes here, never downloads models. To turn it off, uncomment these two lines:",
   "# [update]",
-  "# allow_remote = true",
+  "# allow_remote = false",
   "",
 ].join("\n");
 

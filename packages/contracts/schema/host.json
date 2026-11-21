@@ -176,12 +176,12 @@
         },
         "update": {
           "default": {
-            "allow_remote": false
+            "allow_remote": true
           },
           "type": "object",
           "properties": {
             "allow_remote": {
-              "default": false,
+              "default": true,
               "type": "boolean"
             }
           },

@@ -37,7 +37,8 @@ export const HostCheckoutSchema = z
 export type HostCheckout = z.output<typeof HostCheckoutSchema>;
 
 /**
- * Whether this host takes `host.upgrade` from Core: `host.toml [update] allow_remote`, and only
+ * Whether this host takes `host.upgrade` from Core: `host.toml [update] allow_remote` (default
+ * `true`), and only
  * on a git checkout that is not Core's own machine. `reason` says why not, in words for the panel.
  */
 export const HostRemoteUpdateSchema = z
@@ -64,7 +65,7 @@ export type HostUpgrade = z.output<typeof HostUpgradeSchema>;
 /** The steps of an update, in the order they run. */
 export const HostUpgradeStepNameSchema = z
   .enum([
-    /** Opt-in, git checkout, branch, upstream, clean tree. No network. */
+    /** Not opted out, git checkout, branch, upstream, clean tree. No network. */
     "check",
     /** `git fetch` of the tracked remote, then the commit is looked at. */
     "fetch",

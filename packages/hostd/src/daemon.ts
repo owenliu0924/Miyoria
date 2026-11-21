@@ -316,7 +316,10 @@ export class Daemon implements HostApi {
   #checkout: HostCheckout | null | undefined = undefined;
   #checkoutTimer: ReturnType<typeof setInterval> | null = null;
   #checkoutReading: Promise<void> | null = null;
-  /** `host.toml [update] allow_remote`, read at start and with each checkout reading. */
+  /**
+   * `host.toml [update] allow_remote` (default `true`, also without the table), read at start and
+   * with each checkout reading. `false` until the file was read.
+   */
   #allowRemote = false;
   /** `host.upgrade` (v5-hostd §14); made at start. */
   #upgrader: Upgrader | null = null;
@@ -1241,7 +1244,7 @@ export class Daemon implements HostApi {
     if (!this.#allowRemote) {
       return {
         allowed: false,
-        reason: "這台沒有開放遠端更新(host.toml 的 [update] allow_remote 是 false)",
+        reason: "這台的主人關掉了遠端更新(host.toml 的 [update] allow_remote = false)",
       };
     }
     const core = this.#services.get("core");

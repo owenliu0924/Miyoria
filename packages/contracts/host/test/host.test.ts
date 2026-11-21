@@ -179,11 +179,15 @@ describe("HostConfigSchema", () => {
       paths: { state: "data/host" },
       network: { bind: "127.0.0.1" },
       gpu: { reserve_mb: 0, arbiter: "worker" },
-      update: { allow_remote: false },
+      update: { allow_remote: true },
       services: {},
     });
-    expect(HostConfigSchema.parse({ name: "m", update: { allow_remote: true } }).update).toEqual({
+    // On without the table and with an empty one; `false` opts out.
+    expect(HostConfigSchema.parse({ name: "m", update: {} }).update).toEqual({
       allow_remote: true,
+    });
+    expect(HostConfigSchema.parse({ name: "m", update: { allow_remote: false } }).update).toEqual({
+      allow_remote: false,
     });
     expect(HostConfigSchema.safeParse({ name: "m", update: { allow: true } }).success).toBe(false);
     expect(HostConfigSchema.parse({ name: "m", services: { a: {} } }).services.a).toEqual({

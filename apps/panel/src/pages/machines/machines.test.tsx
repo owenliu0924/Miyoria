@@ -481,7 +481,7 @@ describe("Machines: versions and updates", () => {
     ...live,
     checkout: checkout(OLD),
     relation: { relation: "behind", count: 3 },
-    remote_update: { allowed: false, reason: "這台沒有開放遠端更新(host.toml 的 [update] allow_remote 是 false)" },
+    remote_update: { allowed: false, reason: "這台的主人關掉了遠端更新(host.toml 的 [update] allow_remote = false)" },
   });
   const MAIN = host("main-pc", {
     ...live,
@@ -508,7 +508,7 @@ describe("Machines: versions and updates", () => {
     expect(within(friend).getByRole("checkbox", { name: "選取 friend" })).toBeEnabled();
 
     const closed = await rowOf("closed");
-    expect(within(closed).getByText(/不能從面板更新:這台沒有開放遠端更新/)).toBeInTheDocument();
+    expect(within(closed).getByText(/不能從面板更新:這台的主人關掉了遠端更新/)).toBeInTheDocument();
     expect(within(closed).getByRole("checkbox", { name: "選取 closed" })).toBeDisabled();
 
     const main = await rowOf("main-pc");

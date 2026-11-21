@@ -1,8 +1,8 @@
 // One update of this host's checkout, asked for by Core (`host.upgrade`, docs/design/v5-hostd.md
 // §14). Core names a commit and nothing else; the sequence is this file's:
 //
-//   check    opt-in (the daemon), a git checkout, on a branch that tracks a remote, no changes to
-//            tracked files. No network. A refusal here changes nothing.
+//   check    not opted out (the daemon), a git checkout, on a branch that tracks a remote, no
+//            changes to tracked files. No network. A refusal here changes nothing.
 //   fetch    `git fetch --no-tags <the branch's remote>`; the commit must exist, be on the tracked
 //            upstream, and be a fast-forward of HEAD (not older, not on another line).
 //   wait     while a job runs (a song being made, singing, live, a GPU lease): visible as

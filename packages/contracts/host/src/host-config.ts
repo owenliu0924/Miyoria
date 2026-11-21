@@ -65,13 +65,13 @@ export const HostConfigSchema = z
       .object({
         /**
          * Core may ask this host to update itself (`host.upgrade`): fast-forward its checkout to a
-         * commit of the branch it tracks, install, restart. Off by default; a host that is off
-         * still reports its version.
+         * commit of the branch it tracks, install, restart. On by default, also when the table is
+         * not there; `false` opts out, and a host that opted out still reports its version.
          */
-        allow_remote: z.boolean().default(false),
+        allow_remote: z.boolean().default(true),
       })
       .strict()
-      .default({ allow_remote: false }),
+      .default({ allow_remote: true }),
     services: z.record(z.string(), HostServiceConfigSchema).default({}),
   })
   .strict()

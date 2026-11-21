@@ -20,7 +20,7 @@ export const HOST_METHOD = {
   ServiceRemove: "service.remove",
   HostUpdate: "host.update",
   /**
-   * Core only, and only to a host that opted in (`[update] allow_remote`): fast-forward to a commit
+   * Core only, and only to a host that has not opted out (`[update] allow_remote = false`): fast-forward to a commit
    * of the tracked upstream, install, restart, report (v5-hostd §14). Answers at once with the job;
    * its steps arrive in `host.report`. Not the same as `host.update`, the local re-sync.
    */

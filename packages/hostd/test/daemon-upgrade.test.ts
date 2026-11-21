@@ -23,8 +23,8 @@ function opened(extra: string, services = [] as ReturnType<typeof fake>[]) {
 }
 
 describe("host.upgrade in the daemon", () => {
-  it("reports the checkout, and refuses an update without the opt-in", T, async () => {
-    const { repo, daemon } = opened("");
+  it("reports the checkout, and refuses an update on a host that opted out", T, async () => {
+    const { repo, daemon } = opened("[update]\nallow_remote = false\n");
     await daemon.start();
     const info = (await daemon.call("host.info", null, CORE)) as HostInfo;
     expect(info.checkout).toMatchObject({
@@ -40,8 +40,8 @@ describe("host.upgrade in the daemon", () => {
     expect(repo.calls).toEqual([]);
   });
 
-  it("takes it from Core only, and runs it with the opt-in", T, async () => {
-    const { repo, daemon } = opened("[update]\nallow_remote = true\n");
+  it("takes it from Core only, and runs it on a host.toml without [update]", T, async () => {
+    const { repo, daemon } = opened("");
     await daemon.start();
     expect(daemon.remoteUpdate()).toEqual({ allowed: true });
     await expect(daemon.call("host.upgrade", { commit: sha(4) }, OP)).rejects.toMatchObject({
@@ -62,7 +62,7 @@ describe("host.upgrade in the daemon", () => {
   });
 
   it("never updates the machine Core runs on", T, async () => {
-    const { daemon } = opened("[update]\nallow_remote = true\n", [
+    const { daemon } = opened("", [
       fake("core", "health.cjs", { port: "auto", command: ["{node}", "{service}/health.cjs"] }),
     ]);
     await daemon.start();
@@ -75,16 +75,14 @@ describe("host.upgrade in the daemon", () => {
   });
 
   it("counts a Core reached at a local address as Core's machine too", T, async () => {
-    const { daemon } = opened(
-      '[cluster]\nurl = "ws://127.0.0.1:7880/cluster-link"\n[update]\nallow_remote = true\n',
-    );
+    const { daemon } = opened('[cluster]\nurl = "ws://127.0.0.1:7880/cluster-link"\n');
     await daemon.start();
     expect(daemon.remoteUpdate().allowed).toBe(false);
     expect(daemon.remoteUpdate().reason).toContain("Core");
   });
 
   it("has no checkout and no git where there is no .git", T, async () => {
-    const ws = workspace([], "[update]\nallow_remote = true\n");
+    const ws = workspace([], "");
     let ran = 0;
     const daemon = daemonFor(ws, {
       upgrade: {
