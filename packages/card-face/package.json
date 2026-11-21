@@ -22,6 +22,11 @@
       "types": "./dist/fonts.d.ts",
       "default": "./dist/fonts.js"
     },
+    "./market": {
+      "@miyoria/source": "./src/market.ts",
+      "types": "./dist/market.d.ts",
+      "default": "./dist/market.js"
+    },
     "./pictures": {
       "@miyoria/source": "./src/pictures/index.ts",
       "types": "./dist/pictures/index.d.ts",

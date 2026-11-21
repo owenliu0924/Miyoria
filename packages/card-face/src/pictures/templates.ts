@@ -52,6 +52,7 @@ import {
 } from "./draw.js";
 import {
   exchangeBankruptPicture,
+  exchangeMapPicture,
   exchangeOverviewPicture,
   exchangePortfolioPicture,
   exchangeQuotePicture,
@@ -557,5 +558,6 @@ export const TEMPLATES: { readonly [K in PictureKind]: Template<PictureDataMap[K
   exchange_rich: exchangeRichPicture,
   exchange_receipt: exchangeReceiptPicture,
   exchange_bankrupt: exchangeBankruptPicture,
+  exchange_map: exchangeMapPicture,
   gift: giftPicture,
 };

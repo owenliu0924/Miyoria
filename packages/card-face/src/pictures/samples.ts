@@ -2,9 +2,38 @@
 // (`packages/api/test/pictures.test.ts`). Every name here is made up. `LONG` is the same data
 // with the longest names and the biggest numbers a picture has to hold.
 
-import type { PictureDataMap, PictureKind } from "@miyoria/types";
+import type { ExchangeCandlePoint, PictureDataMap, PictureKind } from "@miyoria/types";
 
-const WEEK = ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17"];
+/**
+ * 130 made-up daily candles (prices in cents) ending at 2,045.00, with volume: a slow climb with a
+ * wobble, deterministic (no random numbers), so the sample picture is the same every time.
+ */
+const SAMPLE_CANDLES: ExchangeCandlePoint[] = (() => {
+  const out: ExchangeCandlePoint[] = [];
+  let close = 160_000;
+  for (let i = 0; i < 130; i++) {
+    const open = close;
+    const drift = 330 + Math.round(Math.sin(i / 5) * 2_400 + Math.cos(i / 2.3) * 1_100);
+    close = Math.max(1_000, open + drift);
+    const high = Math.max(open, close) + 600 + ((i * 37) % 900);
+    const low = Math.min(open, close) - 500 - ((i * 53) % 800);
+    const day = new Date(Date.UTC(2026, 4, 25) + Math.floor((i * 7) / 5) * 86_400_000);
+    out.push({
+      o: open,
+      h: high,
+      l: low,
+      c: close,
+      v: 18_000_000 + ((i * 7_919_993) % 30_000_000),
+      label: `${day.getUTCMonth() + 1}/${day.getUTCDate()}`,
+    });
+  }
+  // The last close is the sample's price.
+  const last = out.at(-1) as ExchangeCandlePoint;
+  const shift = 204_500 - last.c;
+  return out.map((k) => ({ ...k, o: k.o + shift, h: k.h + shift, l: k.l + shift, c: k.c + shift }));
+})();
+
+const WEEK =["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17"];
 
 export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] } = {
   wallet: {
@@ -169,8 +198,10 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     ref: 201_000,
     change: 0.0174,
     limit: null,
-    series: [200_000, 200_500, 199_000, 201_500, 202_000, 201_000, 203_000, 204_500],
-    range: "11/9 – 11/22",
+    timeframe: "daily",
+    candles: SAMPLE_CANDLES,
+    range: "5/25 – 11/23",
+    today: null,
     news: [],
     as_of: "2026-11-23 10:05 的報價",
     coin_line: "約 2,045 魚幣一股",
@@ -245,6 +276,28 @@ export const PICTURE_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] }
     written_off: 37,
     since: "2026-11-23",
     until: "2026-11-30",
+  },
+  exchange_map: {
+    small_print: "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。資料來源:Yahoo Finance,報價可能延遲。",
+    title: "熱門台股圖",
+    tiles: [
+      { code: "2330.TW", name: "示範半導體", sector: "半導體", weight: 300, change: 0.0174 },
+      { code: "2454.TW", name: "示範晶片", sector: "半導體", weight: 23, change: -0.012 },
+      { code: "2303.TW", name: "示範晶圓", sector: "半導體", weight: 6, change: 0.004 },
+      { code: "2317.TW", name: "示範代工", sector: "科技", weight: 30, change: -0.021 },
+      { code: "2308.TW", name: "示範電子", sector: "科技", weight: 20, change: 0.035 },
+      { code: "2382.TW", name: "示範電腦", sector: "科技", weight: 11, change: 0 },
+      { code: "2881.TW", name: "示範金控", sector: "金融", weight: 12, change: 0.006 },
+      { code: "2882.TW", name: "示範保險", sector: "金融", weight: 10, change: -0.003 },
+      { code: "2891.TW", name: "示範銀行", sector: "金融", weight: 9, change: null },
+      { code: "2412.TW", name: "示範電信", sector: "電信", weight: 10, change: 0.001 },
+      { code: "0050.TW", name: "示範五十", sector: "ETF", weight: 6, change: 0.011 },
+      { code: "0056.TW", name: "示範高股息", sector: "ETF", weight: 4, change: -0.008 },
+      { code: "1301.TW", name: "示範塑膠", sector: "原物料", weight: 3, change: -0.031 },
+    ],
+    footnote: "格子大小為預設權重,非即時市值",
+    as_of: "2026-11-23 10:05",
+    colors: "tw",
   },
   gift: {
     name: "小魚乾",
@@ -366,7 +419,9 @@ export const LONG_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] } = 
     blurb: "一段很長的介紹。".repeat(20),
     coin_line: "約 999,999,999 魚幣一股".repeat(3),
     market_line: "美股休市・報價約 999 分鐘前".repeat(3),
-    series: [],
+    timeframe: "intraday",
+    candles: SAMPLE_CANDLES.slice(0, 1).map((k) => ({ ...k, h: 99_999_999_999, v: 999_999_999_999 })),
+    today: "昨天她被餵了 999 次,比平常多 → 今天開盤 +3.0%".repeat(4),
     colors: "us",
   },
   exchange_portfolio: {
@@ -390,6 +445,19 @@ export const LONG_SAMPLES: { readonly [K in PictureKind]: PictureDataMap[K] } = 
   },
   exchange_receipt: { ...PICTURE_SAMPLES.exchange_receipt, name: LONG_NAME, ticker: LONG_NAME, coins: 999_999_999, side: "sell", leverage: 2 },
   exchange_bankrupt: { ...PICTURE_SAMPLES.exchange_bankrupt, name: LONG_NAME, written_off: 999_999_999 },
+  exchange_map: {
+    ...PICTURE_SAMPLES.exchange_map,
+    title: LONG_NAME,
+    tiles: Array.from({ length: 50 }, (_, i) => ({
+      code: `LONG${i}.TWO`,
+      name: LONG_NAME,
+      sector: i % 7 === 0 ? "一個名字很長的產業類別" : `類別${i % 5}`,
+      weight: 1 + ((i * 37) % 97),
+      change: ((i % 11) - 5) / 40,
+    })),
+    footnote: "很長的說明。".repeat(30),
+    colors: "us",
+  },
   gift: {
     ...PICTURE_SAMPLES.gift,
     name: LONG_NAME,

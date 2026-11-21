@@ -13,12 +13,25 @@
 import type {
   ExchangeBankruptPicture,
   ExchangeBoardPicture,
+  ExchangeCandlePoint,
   ExchangeColors,
+  ExchangeMapPicture,
   ExchangeOverviewPicture,
   ExchangePortfolioPicture,
   ExchangeQuotePicture,
   ExchangeReceiptPicture,
+  ExchangeTimeframe,
 } from "@miyoria/types";
+import {
+  changeText,
+  layoutMap,
+  MA_PERIODS,
+  maDirection,
+  moveColors as marketColors,
+  movingAverage,
+  tileColor,
+  tileRoom,
+} from "../market.js";
 import {
   baseline,
   blockTitle,
@@ -42,13 +55,9 @@ import { textWidth } from "./measure.js";
 
 type Out = { drawn: ReturnType<typeof finish>; alt: string };
 
-/** The market's red and green, softened for the dark glass. */
-const RED = "#ef5f5f";
-const GREEN = "#3fc48a";
-
-/** Up's and down's colours under a convention. */
+/** Up's and down's colours under a convention (the market's red and green, `../market.ts`). */
 export function moveColors(colors: ExchangeColors): { up: string; down: string } {
-  return colors === "us" ? { up: GREEN, down: RED } : { up: RED, down: GREEN };
+  return marketColors(colors);
 }
 
 /** The legend's words (`紅漲綠跌`). */
@@ -79,10 +88,7 @@ export function price(cents: number): string {
 
 /** A change with its arrow and sign: `▲ +1.2%` / `▼ −0.8%` / `0.0%`. */
 export function change(x: number): string {
-  const v = Math.round(x * 1000) / 10;
-  if (v > 0) return `▲ +${v.toFixed(1)}%`;
-  if (v < 0) return `▼ −${Math.abs(v).toFixed(1)}%`;
-  return "0.0%";
+  return changeText(x);
 }
 
 function limitWord(limit: "up" | "down" | null): string {
@@ -104,48 +110,166 @@ function head(c: Canvas, top: number, title: string, value: string, delta: strin
   return top + TYPE.label + 6 + TYPE.headline + 10;
 }
 
+/** The timeframe's word on the switch and in the header. */
+export const TIMEFRAME_WORD: Readonly<Record<ExchangeTimeframe, string>> = {
+  intraday: "當日",
+  daily: "日線",
+  weekly: "週線",
+  monthly: "月線",
+};
+
+/** The most bars a timeframe's picture draws (the moving averages read the ones before too). */
+const MAX_BARS: Readonly<Record<ExchangeTimeframe, number>> = {
+  intraday: 80,
+  daily: 60,
+  weekly: 60,
+  monthly: 60,
+};
+
+/** The moving averages' colours: the light neutral first (MA5 lies on the candles), then the theme's two. */
+export const MA_COLORS = [T.chart3, T.chart2, T.chart1] as const;
+
+const r1 = (n: number) => n.toFixed(1);
+
+/** A price axis number: fewer decimals as it grows. */
+function axisPrice(cents: number): string {
+  const v = cents / 100;
+  if (v >= 1000) return num(v);
+  if (v >= 100) return v.toFixed(1);
+  return v.toFixed(2);
+}
+
+/** A volume as `1.2萬`, `3.4億`. */
+function volumeText(v: number): string {
+  if (v >= 1e8) return `${(v / 1e8).toFixed(1)}億`;
+  if (v >= 1e4) return `${(v / 1e4).toFixed(1)}萬`;
+  return num(v);
+}
+
 /**
- * A line of `values` (oldest first) in a box `height` tall, with the reference as a dashed line
- * and its number, and the highest and lowest values at the right. Answers the bottom.
+ * The candle chart (owner 2026-11-21: "a real stock chart"): candles coloured by the convention,
+ * MA5 / MA20 / MA60 over them, volume bars under them, the price axis on the right with the last
+ * price tagged, the date axis below. The legend names each average with its last value and an
+ * arrow for its direction. Answers the bottom.
  */
-function lineChart(c: Canvas, top: number, values: readonly number[], height: number, ref: number | null, label: (v: number) => string, colors: ExchangeColors): number {
-  const labelW = 54;
-  const w = CONTENT - labelW;
-  if (values.length < 2) {
-    c.rect(X0, top, w, height, T.chartFaint, 4);
-    c.text(X0 + w / 2, baseline(top + height / 2 - 8, TYPE.label), "還沒有走勢", { size: TYPE.label, fill: T.sheetMuted, anchor: "middle" });
-    return top + height;
+function candleChart(c: Canvas, top: number, d: ExchangeQuotePicture): number {
+  const m = moveColors(d.colors);
+  const axisW = 58;
+  const plotW = CONTENT - axisW;
+  const priceH = 176;
+  const all = d.candles;
+  const shown = all.slice(-MAX_BARS[d.timeframe]);
+  const offset = all.length - shown.length;
+  // The legend: each average's last value and its direction (arrow and colour), then the volume.
+  const closes = all.map((k) => k.c);
+  const mas = MA_PERIODS.map((n) => movingAverage(closes, n));
+  let lx = X0;
+  MA_PERIODS.forEach((n, i) => {
+    const ma = mas[i] as (number | null)[];
+    const last = ma.at(-1) ?? null;
+    const dir = maDirection(ma);
+    const color = MA_COLORS[i] as string;
+    c.rect(lx, top + 4, 10, 2, color, 1);
+    const w = c.text(lx + 14, baseline(top, TYPE.small), `MA${n} ${last === null ? "—" : axisPrice(last)}`, { size: TYPE.small, fill: T.sheetMuted, max: 110 });
+    lx += 14 + w + 4;
+    if (dir !== null && dir !== 0) {
+      lx += c.text(lx, baseline(top, TYPE.small), dir > 0 ? "▲" : "▼", { size: TYPE.small, weight: 700, fill: dir > 0 ? m.up : m.down });
+    }
+    lx += 14;
+  });
+  const plotTop = top + TYPE.small + 10;
+  if (shown.length < 2) {
+    c.rect(X0, plotTop, plotW, priceH, T.chartFaint, 4);
+    c.text(X0 + plotW / 2, baseline(plotTop + priceH / 2 - 8, TYPE.label), "還沒有 K 線", { size: TYPE.label, fill: T.sheetMuted, anchor: "middle" });
+    return plotTop + priceH;
   }
-  const all = ref === null ? values : [...values, ref];
-  let lo = Math.min(...all);
-  let hi = Math.max(...all);
+  // The price range: the bars shown and the averages over them.
+  const values: number[] = [];
+  for (const k of shown) values.push(k.h, k.l);
+  for (const ma of mas) for (const v of ma.slice(offset)) if (v !== null) values.push(v);
+  let lo = Math.min(...values);
+  let hi = Math.max(...values);
   if (hi === lo) {
-    hi += 1;
-    lo -= 1;
+    hi += Math.max(1, hi * 0.01);
+    lo -= Math.max(1, lo * 0.01);
   }
-  const pad = (hi - lo) * 0.08;
+  const pad = (hi - lo) * 0.06;
   lo -= pad;
   hi += pad;
-  const x = (i: number) => X0 + (i / (values.length - 1)) * w;
-  const y = (v: number) => top + (1 - (v - lo) / (hi - lo)) * height;
-  for (let g = 0; g <= 3; g++) c.hairline(X0, top + (g / 3) * height, w, T.chartGrid);
-  const pts = values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`);
-  const last = values[values.length - 1] as number;
-  const first = values[0] as number;
-  const color = colorOf(last - (ref ?? first), colors);
-  c.shape(`<path d="M${pts.join(" L")} L${x(values.length - 1).toFixed(1)},${(top + height).toFixed(1)} L${X0},${(top + height).toFixed(1)} Z" fill="${color}" fill-opacity="0.12"/>`);
-  c.shape(`<path d="M${pts.join(" L")}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`);
-  if (ref !== null) {
-    const ry = y(ref).toFixed(1);
-    c.shape(`<line x1="${X0}" y1="${ry}" x2="${X0 + w}" y2="${ry}" stroke="${T.chartAxis}" stroke-width="1" stroke-dasharray="4 4"/>`);
-    c.text(X0 + CONTENT, baseline(y(ref) - 7, TYPE.tick), `參考 ${label(ref)}`, { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: labelW + 20 });
+  const slot = plotW / shown.length;
+  const bodyW = Math.max(1, Math.min(14, slot * 0.64));
+  const x = (i: number) => X0 + slot * i + slot / 2;
+  const y = (v: number) => plotTop + (1 - (v - lo) / (hi - lo)) * priceH;
+  const lastClose = (shown.at(-1) as ExchangeCandlePoint).c;
+  const ly = Math.max(plotTop + 8, Math.min(plotTop + priceH - 8, y(lastClose)));
+  // Gridlines with their prices on the right (one the last price's tag would cover is left out).
+  for (let g = 0; g <= 4; g++) {
+    const gy = plotTop + (g / 4) * priceH;
+    c.hairline(X0, gy, plotW, T.chartGrid);
+    if (Math.abs(gy - ly) < 16) continue;
+    const v = hi - ((hi - lo) * g) / 4;
+    c.text(X0 + CONTENT, baseline(gy - 6, TYPE.tick), axisPrice(v), { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: axisW - 6 });
   }
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  c.text(X0 + CONTENT, baseline(top - 2, TYPE.tick), label(max), { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: labelW });
-  c.text(X0 + CONTENT, baseline(top + height - 12, TYPE.tick), label(min), { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: labelW });
-  c.shape(`<circle cx="${x(values.length - 1).toFixed(1)}" cy="${y(last).toFixed(1)}" r="3" fill="${color}"/>`);
-  return top + height;
+  // The candles: a 1 px wick and a body, up in the up colour, down in the down colour.
+  shown.forEach((k, i) => {
+    const up = k.c >= k.o;
+    const color = up ? m.up : m.down;
+    const cx = x(i);
+    c.rect(cx - 0.5, y(k.h), 1, Math.max(1, y(k.l) - y(k.h)), color);
+    const top2 = y(Math.max(k.o, k.c));
+    const h = Math.max(1, Math.abs(y(k.o) - y(k.c)));
+    c.rect(cx - bodyW / 2, top2, bodyW, h, color);
+  });
+  // The moving averages over the bars shown.
+  MA_PERIODS.forEach((_, i) => {
+    const ma = (mas[i] as (number | null)[]).slice(offset);
+    let path = "";
+    let pen = false;
+    ma.forEach((v, j) => {
+      if (v === null) {
+        pen = false;
+        return;
+      }
+      path += `${pen ? "L" : "M"}${r1(x(j))},${r1(y(v))}`;
+      pen = true;
+    });
+    if (path !== "") c.shape(`<path d="${path}" fill="none" stroke="${MA_COLORS[i]}" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"/>`);
+  });
+  // The last price, tagged on the axis in its move's colour.
+  const last = shown.at(-1) as ExchangeCandlePoint;
+  const tag = colorOf(d.change, d.colors);
+  c.shape(`<line x1="${X0}" y1="${r1(ly)}" x2="${X0 + plotW}" y2="${r1(ly)}" stroke="${tag}" stroke-width="1" stroke-dasharray="3 3" stroke-opacity="0.7"/>`);
+  c.rect(X0 + plotW + 2, ly - 9, axisW - 2, 18, tag, 3);
+  c.shape(`<text x="${r1(X0 + CONTENT - 3)}" y="${r1(ly + 4)}" font-size="${TYPE.tick}" font-weight="700" fill="${T.background}" text-anchor="end">${axisPrice(last.c)}</text>`);
+  let y2 = plotTop + priceH;
+  // Volume underneath, when the bars have it.
+  const vols = shown.map((k) => k.v ?? 0);
+  const maxV = Math.max(0, ...vols);
+  if (maxV > 0) {
+    const volTop = y2 + 8;
+    const volH = 44;
+    c.hairline(X0, volTop + volH, plotW, T.chartAxis);
+    shown.forEach((k, i) => {
+      const v = k.v ?? 0;
+      if (v <= 0) return;
+      const h = Math.max(1, (v / maxV) * volH);
+      const color = k.c >= k.o ? m.up : m.down;
+      c.shape(`<rect x="${r1(x(i) - bodyW / 2)}" y="${r1(volTop + volH - h)}" width="${r1(bodyW)}" height="${r1(h)}" fill="${color}" fill-opacity="0.55"/>`);
+    });
+    c.text(X0 + CONTENT, baseline(volTop + 4, TYPE.tick), volumeText(maxV), { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: axisW - 6 });
+    c.text(X0 + CONTENT, baseline(volTop + volH - 12, TYPE.tick), "成交量", { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: axisW - 6 });
+    y2 = volTop + volH;
+  } else c.hairline(X0, y2, plotW, T.chartAxis);
+  // The date axis: five labels at their bars, the first and last held inside.
+  const marks = Math.min(5, shown.length);
+  for (let k = 0; k < marks; k++) {
+    const i = marks === 1 ? 0 : Math.round((k * (shown.length - 1)) / (marks - 1));
+    const label = (shown[i] as ExchangeCandlePoint).label;
+    const anchor = k === 0 ? "start" : k === marks - 1 ? "end" : "middle";
+    const lx2 = k === 0 ? X0 : k === marks - 1 ? X0 + plotW : x(i);
+    c.text(lx2, baseline(y2 + 5, TYPE.tick), label, { size: TYPE.tick, fill: T.sheetMuted, anchor, max: plotW / marks });
+  }
+  return y2 + 5 + TYPE.tick + 4;
 }
 
 /** A small line (a sparkline) in a box, coloured by its move. */
@@ -214,26 +338,93 @@ export function exchangeOverviewPicture(d: ExchangeOverviewPicture): Out {
 export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
   const { canvas: c, top } = page("交易所", `${d.code} ${d.name}`, d.as_of);
   const word = limitWord(d.limit);
-  let y = head(c, top, `現價(${d.sector}・${d.currency})`, price(d.price), `${change(d.change)}${word === "" ? "" : ` ${word}`}`, colorOf(d.change, d.colors), d.range);
+  const tf = TIMEFRAME_WORD[d.timeframe];
+  let y = head(c, top, `現價(${d.sector}・${d.currency})`, price(d.price), `${change(d.change)}${word === "" ? "" : ` ${word}`}`, colorOf(d.change, d.colors), d.range === null ? tf : `${tf}・${d.range}`);
   if (d.coin_line !== null) {
     c.text(X0, baseline(y - 6, TYPE.label), d.coin_line, { size: TYPE.label, fill: T.sheetMuted, max: CONTENT });
     y += TYPE.label + 4;
   }
-  y = lineChart(c, y + 6, d.series, 132, d.ref, price, d.colors) + 10;
+  y = candleChart(c, y + 6, d) + 8;
   y = moveLegend(c, y, d.colors) + 8;
-  const hi = d.series.length > 0 ? Math.max(...d.series) : d.price;
-  const lo = d.series.length > 0 ? Math.min(...d.series) : d.price;
+  const shown = d.candles.slice(-MAX_BARS[d.timeframe]);
+  const hi = shown.length > 0 ? Math.max(...shown.map((k) => k.h)) : d.price;
+  const lo = shown.length > 0 ? Math.min(...shown.map((k) => k.l)) : d.price;
   y = facts(c, y, [
     { label: "參考價", value: price(d.ref) },
     { label: "漲跌", value: change(d.change) },
-    { label: "區間最高", value: price(hi) },
-    { label: "區間最低", value: price(lo) },
+    { label: `${tf}最高`, value: price(hi) },
+    { label: `${tf}最低`, value: price(lo) },
   ]);
   y += 10;
   y = plainLine(c, y, d.market_line);
+  if (d.today !== null) {
+    y += 2;
+    y = paragraph(c, y, d.today, 2, { size: TYPE.label });
+  }
   y += 4;
   y = paragraph(c, y, d.blurb, 2, { fill: T.sheetMuted, size: TYPE.label });
-  const alt = `${d.code} ${d.name}:${d.currency} ${price(d.price)}(${change(d.change)}${word === "" ? "" : `,${word}`})${d.coin_line === null ? "" : `,${d.coin_line}`},${d.market_line}。`;
+  const alt = `${d.code} ${d.name}(${tf}):${d.currency} ${price(d.price)}(${change(d.change)}${word === "" ? "" : `,${word}`})${d.coin_line === null ? "" : `,${d.coin_line}`},${d.market_line}${d.today === null ? "" : `;${d.today}`}。`;
+  y = smallPrint(c, y, d.small_print);
+  return { drawn: finish(c, y), alt };
+}
+
+/** A Taiwan code without its board (`2330.TW` → `2330`): the tiles have little room. */
+export const shortCode = (code: string): string => code.replace(/\.TWO?$/, "");
+
+/**
+ * A heat map (伺服器持股圖, 熱門台股圖, 熱門美股圖): the shared squarified layout, each tile filled by
+ * today's change on the diverging scale, with its code and change (arrow and sign) when it has
+ * room; a sector's name on its top strip. Tiles too small for text are named in the alt text.
+ */
+export function exchangeMapPicture(d: ExchangeMapPicture): Out {
+  const { canvas: c, top } = page("交易所", d.title, d.as_of);
+  const h = 300;
+  const layout = layoutMap(d.tiles, CONTENT, h, { header: 16, gap: 2 });
+  if (layout.tiles.length === 0) {
+    c.rect(X0, top, CONTENT, 120, T.chartFaint, 4);
+    c.text(X0 + CONTENT / 2, baseline(top + 52, TYPE.label), "還沒有可以畫的股票", { size: TYPE.label, fill: T.sheetMuted, anchor: "middle" });
+  }
+  for (const s of layout.sectors) {
+    c.text(X0 + s.x + 2, baseline(top + s.y + 1, TYPE.tick), s.name, { size: TYPE.tick, weight: 700, fill: T.sheetMuted, max: Math.max(0, s.w - 4) });
+  }
+  const unlabeled: string[] = [];
+  for (const t of layout.tiles) {
+    const tx = X0 + t.x;
+    const ty = top + t.y;
+    c.rect(tx, ty, t.w, t.h, tileColor(t.tile.change, d.colors), 2);
+    const code = shortCode(t.tile.code);
+    const move = changeText(t.tile.change);
+    // The biggest size that fits the code and the change under it; else the biggest that fits the code.
+    const room = tileRoom(t.w, t.h);
+    const sizes = [TYPE.title, TYPE.label, TYPE.tick];
+    const under = (s: number) => (s === TYPE.title ? TYPE.label : TYPE.tick);
+    const fitsCode = (s: number) => textWidth(code, s, 700) <= t.w - 4 && s + 4 <= t.h;
+    const fitsBoth = (s: number) =>
+      fitsCode(s) && textWidth(move, under(s)) <= t.w - 4 && t.h >= s + under(s) + 8;
+    const size = sizes.find(fitsBoth) ?? sizes.find(fitsCode);
+    if (room === 0 || size === undefined) {
+      unlabeled.push(`${code} ${move}`);
+      continue;
+    }
+    const small = under(size);
+    const both = fitsBoth(size);
+    const block = both ? size + small + 4 : size;
+    const y0 = ty + (t.h - block) / 2;
+    const cx = tx + t.w / 2;
+    c.text(cx, baseline(y0, size), code, { size, weight: 700, anchor: "middle" });
+    if (both) c.text(cx, baseline(y0 + size + 4, small), move, { size: small, anchor: "middle" });
+    else unlabeled.push(`${code} ${move}`);
+  }
+  let y = top + (layout.tiles.length === 0 ? 120 : h) + 12;
+  y = moveLegend(c, y, d.colors) + 4;
+  y = paragraph(c, y, `顏色是今天的漲跌,±3% 以上最深;${d.footnote}`, 3, { size: TYPE.label, fill: T.sheetMuted });
+  if (unlabeled.length > 0) y = paragraph(c, y + 2, `太小沒寫字的:${unlabeled.join("、")}`, 3, { size: TYPE.tick, fill: T.sheetMuted });
+  const named = [...d.tiles]
+    .sort((a, b) => b.weight - a.weight)
+    .slice(0, 8)
+    .map((t) => `${t.code} ${changeText(t.change)}`)
+    .join("、");
+  const alt = `${d.title}:${named === "" ? "還沒有可以畫的股票" : named}。${d.footnote}。`;
   y = smallPrint(c, y, d.small_print);
   return { drawn: finish(c, y), alt };
 }

@@ -216,7 +216,22 @@ export interface GiftPictureData {
  */
 export type ExchangeColors = "tw" | "us";
 
-/** One ticker's quote: its price in its currency and in coins, the move, its line. */
+/** A chart's timeframe: 當日 (the current or last session), 日線, 週線, 月線. */
+export type ExchangeTimeframe = "intraday" | "daily" | "weekly" | "monthly";
+
+/** One candle as a picture draws it: prices in cents of the ticker's own currency. */
+export interface ExchangeCandlePoint {
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  /** Shares traded (`null`: none known). */
+  v: number | null;
+  /** Its time as the date axis writes it (`10:05`, `11/20`, `2025/11`). */
+  label: string;
+}
+
+/** One ticker's quote: its price in its currency and in coins, the move, its candle chart. */
 export interface ExchangeQuotePicture {
   code: string;
   name: string;
@@ -231,10 +246,16 @@ export interface ExchangeQuotePicture {
   /** From the reference, as a fraction. */
   change: number;
   limit: "up" | "down" | null;
-  /** Prices over the chart's span, oldest first. */
-  series: number[];
-  /** What `series` covers (`11/8 – 11/21`); `null`: nothing yet. */
+  timeframe: ExchangeTimeframe;
+  /**
+   * The bars, oldest first (more than are drawn: the moving averages need the bars before the
+   * first one shown).
+   */
+  candles: ExchangeCandlePoint[];
+  /** What the chart covers (`11/8 – 11/21`); `null`: nothing yet. */
   range: string | null;
+  /** A local stock's line of what moved today's open (`null`: none, or a real stock). */
+  today: string | null;
   news: { headline: string; direction: "up" | "down" }[];
   /** The quote's time (`2026-11-23 10:05 的報價`). */
   as_of: string;
@@ -312,6 +333,31 @@ export interface ExchangeBankruptPicture {
   small_print: string;
 }
 
+/** One tile of a heat map (`ExchangeMapPicture`). */
+export interface ExchangeMapTile {
+  code: string;
+  name: string;
+  sector: string;
+  /** Its area. */
+  weight: number;
+  /** Today's change as a fraction (`null`: not known). */
+  change: number | null;
+}
+
+/**
+ * A heat map (伺服器持股圖, 熱門台股圖, 熱門美股圖): tiles by area and today's change, grouped by
+ * sector. The holdings map never carries who holds what.
+ */
+export interface ExchangeMapPicture {
+  title: string;
+  tiles: ExchangeMapTile[];
+  /** What the tiles' size means (「格子大小為預設權重,非即時市值」). */
+  footnote: string;
+  as_of: string;
+  colors: ExchangeColors;
+  small_print: string;
+}
+
 /** The rich list (people who hide are not on it). */
 export interface ExchangeBoardPicture {
   currency: string;
@@ -339,6 +385,7 @@ export interface PictureDataMap {
   exchange_rich: ExchangeBoardPicture;
   exchange_receipt: ExchangeReceiptPicture;
   exchange_bankrupt: ExchangeBankruptPicture;
+  exchange_map: ExchangeMapPicture;
   gift: GiftPictureData;
 }
 
