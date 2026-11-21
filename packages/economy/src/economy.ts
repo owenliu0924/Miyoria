@@ -347,7 +347,7 @@ export interface EconomyDeps {
 export class EconomyService implements Economy {
   readonly #d: EconomyDeps;
   readonly #turns = new SerialQueue();
-  /** Her own coins (purse.ts), her crowdfunding goals (goals.ts) and her bounties (bounties.ts). */
+  /** Her own coins (purse.ts) and her bounties (bounties.ts). */
   readonly purse: Purse;
   readonly bountyDesk: BountyBoard;
   /** Danmaku on the stream overlay (danmaku.ts, docs/design/v5-play.md §11.6). */
