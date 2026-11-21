@@ -1,7 +1,9 @@
 // Module `report` (opt-in): problem reports members make through her, and the GitHub issues they
 // become. It owns the `report` plugin's table and provides `ReportKey` (`ReportService`) for the
-// panel. With a token and a repo it offers her `report_problem` and reads the issues back every
-// `poll_mins`; without them it only keeps and shows the drafts there are.
+// panel. With the GitHub App's settings (or, as the fallback, a token) and a repo it offers her
+// `report_problem` and reads the issues back every `poll_mins`; without them it only keeps and
+// shows the drafts there are. With the App's user authorisation set, members may link their
+// GitHub account (`link.ts`).
 
 import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
@@ -14,8 +16,10 @@ import {
 } from "@miyoria/runtime/kernel";
 import { PeopleStoreKey, StoreKey } from "@miyoria/store";
 import { type Clock, serviceKey } from "@miyoria/types";
-import { ReportConfigSchema } from "./config.js";
+import { AppInstallationAuth, AppKeyError, type GitHubAuth, StaticToken } from "./auth.js";
+import { appSettings, linkSettings, type ReportConfig, ReportConfigSchema } from "./config.js";
 import { type FetchLike, GitHubIssues, type IssueTracker } from "./github.js";
+import { GitHubLinker } from "./link.js";
 import { memoryNotifier } from "./notify.js";
 import { type ReportNotifier, ReportService } from "./service.js";
 import { reportTables } from "./store.js";
@@ -31,6 +35,35 @@ export interface ReportModuleOptions {
   /** For tests: replaces the memory follow-up. */
   notifier?: ReportNotifier;
   clock?: Clock;
+}
+
+/**
+ * Who GitHub is called as: the App when its settings are complete (recommended), else the token;
+ * `null` when neither is, or without a repo. A key that cannot be read falls back to the token.
+ */
+export function githubAuth(
+  config: ReportConfig,
+  now: () => number,
+  fetcher: FetchLike | undefined,
+  warn: (msg: string) => void = () => {},
+): GitHubAuth | null {
+  if (config.repo === "") return null;
+  const app = appSettings(config);
+  if (app !== null) {
+    try {
+      return new AppInstallationAuth({
+        ...app,
+        repo: config.repo,
+        apiUrl: config.api_url,
+        now,
+        ...(fetcher === undefined ? {} : { fetch: fetcher }),
+      });
+    } catch (error) {
+      if (!(error instanceof AppKeyError)) throw error;
+      warn(`report: ${error.message}; trying the token`);
+    }
+  }
+  return config.token === "" ? null : new StaticToken(config.token);
 }
 
 export class ReportModule implements Module {
@@ -59,21 +92,41 @@ export class ReportModule implements Module {
       return;
     }
     const clock = this.#options.clock ?? ctx.clock;
-    const configured = config.token !== "" && config.repo !== "";
+    const tables = store.plugin(reportTables);
+    const fetcher = this.#options.fetch;
+    const auth = githubAuth(
+      config,
+      () => clock.now(),
+      fetcher,
+      (msg) => ctx.log.warn(msg),
+    );
     const tracker =
       this.#options.tracker ??
-      (configured
-        ? new GitHubIssues({
-            token: config.token,
+      (auth === null
+        ? null
+        : new GitHubIssues({
+            auth,
             repo: config.repo,
             apiUrl: config.api_url,
-            ...(this.#options.fetch === undefined ? {} : { fetch: this.#options.fetch }),
-          })
-        : null);
+            ...(fetcher === undefined ? {} : { fetch: fetcher }),
+          }));
+    const link = linkSettings(config);
+    const linker =
+      link === null
+        ? null
+        : new GitHubLinker({
+            ...link,
+            store: tables,
+            webUrl: config.web_url,
+            apiUrl: config.api_url,
+            now: () => clock.now(),
+            ...(fetcher === undefined ? {} : { fetch: fetcher }),
+          });
     const service = new ReportService({
       config,
-      store: store.plugin(reportTables),
+      store: tables,
       tracker,
+      linker,
       now: () => clock.now(),
       reporter: async (account) => {
         const person = await ctx.services.get(PeopleStoreKey)?.personByAccount(account);
@@ -92,7 +145,7 @@ export class ReportModule implements Module {
     this.#service = service;
 
     if (tracker === null) {
-      ctx.log.warn("report: no token or no repo; she is not offered report_problem");
+      ctx.log.warn("report: no GitHub App, no token or no repo; she is not offered report_problem");
       return;
     }
     const tools = ctx.services.get(ToolRegistryKey);
@@ -110,7 +163,15 @@ export class ReportModule implements Module {
         }
       }
     });
-    ctx.log.info({ repo: config.repo, auto_open: config.auto_open }, "reports running");
+    ctx.log.info(
+      {
+        repo: config.repo,
+        auth: auth?.kind ?? "test",
+        linking: linker !== null,
+        auto_open: config.auto_open,
+      },
+      "reports running",
+    );
   }
 
   async card(): Promise<ModuleCard> {

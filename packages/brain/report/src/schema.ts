@@ -73,6 +73,8 @@ export const reportDrafts = sqliteTable(
     checked_at: micros(),
     /** The reporter was told it was fixed (a follow-up for her was queued). */
     notified_at: micros(),
+    /** Version 2: the owner took the reporter's GitHub mention off this report. */
+    no_mention: integer({ mode: "boolean" }).notNull().default(false),
   },
   (t) => [
     uniqueIndex("report_drafts_dedupe_idx").on(t.dedupe_key),
@@ -85,3 +87,23 @@ export const reportDrafts = sqliteTable(
 );
 
 export type ReportDraftRow = typeof reportDrafts.$inferSelect;
+
+/**
+ * `report_github_links` (version 2): the GitHub account a member linked on the member page, one
+ * per person and one person per account. Only GitHub's numeric id and the login it had when it was
+ * last read are kept, never a token. `mention`: the member's switch "在我回報的問題上標記我".
+ * The row goes when they unlink or ask to be forgotten.
+ */
+export const reportGithubLinks = sqliteTable(
+  "report_github_links",
+  {
+    person_id: text().primaryKey(),
+    github_id: integer().notNull(),
+    login: text().notNull(),
+    mention: integer({ mode: "boolean" }).notNull().default(true),
+    linked_at: micros().notNull(),
+  },
+  (t) => [uniqueIndex("report_github_links_github_idx").on(t.github_id)],
+);
+
+export type ReportGithubLinkRow = typeof reportGithubLinks.$inferSelect;

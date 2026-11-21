@@ -1,29 +1,25 @@
-// The four calls of GitHub's REST API a report needs, with plain `fetch` (no client package for
-// four requests): search the repository's open issues by title, open an issue, comment on one, and
-// read one back to see whether it was closed. `fetch` is injected, so tests never reach GitHub.
+// GitHub's REST API for one repository, with plain `fetch` (no client package for a handful of
+// requests): search the repository's open issues by title, open an issue, comment on one, read one
+// back to see whether it was closed, and read a user's login from their numeric id. `fetch` is
+// injected, so tests never reach GitHub.
 //
-// The token goes in the `Authorization` header and nowhere else: not in a URL, an error, a log
-// line or `toJSON`.
+// Who the calls are made as is a `GitHubAuth` (`auth.ts`): the GitHub App's installation (the
+// recommended way: issues show as the App's bot) or a static token. A call refused with 401 asks
+// the auth for a fresh token and is tried once more. Secrets go in the `Authorization` header and
+// nowhere else: not in a URL, an error, a log line or `toJSON`.
 
+import { type GitHubAuth, StaticToken } from "./auth.js";
 import type { IssueMatch } from "./duplicates.js";
+import { type FetchLike, GitHubError, githubRequest, isObject } from "./http.js";
 
-export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
-
-/** Longest wait for one call. */
-const TIMEOUT_MS = 15_000;
-const API_VERSION = "2022-11-28";
-
-/** A call GitHub refused or that did not arrive; `status` 0 when there was no answer. */
-export class GitHubError extends Error {
-  override readonly name = "GitHubError";
-
-  constructor(
-    readonly status: number,
-    message: string,
-  ) {
-    super(message);
-  }
-}
+export {
+  API_VERSION,
+  type FetchLike,
+  GitHubError,
+  githubRequest,
+  isObject,
+  USER_AGENT,
+} from "./http.js";
 
 export interface OpenedIssue {
   number: number;
@@ -46,29 +42,36 @@ export interface IssueTracker {
   open(issue: { title: string; body: string; labels: readonly string[] }): Promise<OpenedIssue>;
   comment(number: number, body: string): Promise<{ url: string }>;
   issue(number: number): Promise<IssueState>;
+  /** The current login of the account with numeric id `id`; `null` when it is gone. */
+  login?(id: number): Promise<string | null>;
 }
 
 export interface GitHubOptions {
-  token: string;
+  /** Who the calls are made as. */
+  auth?: GitHubAuth;
+  /** A static token: shorthand for `auth: new StaticToken(token)`. */
+  token?: string;
   /** `owner/name`. */
   repo: string;
   apiUrl?: string;
   fetch?: FetchLike;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
+/** A GitHub login as GitHub allows it: letters, digits and single inner hyphens, at most 39. */
+export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/;
 
 /** GitHub's REST API for one repository. */
 export class GitHubIssues implements IssueTracker {
-  readonly #token: string;
+  readonly #auth: GitHubAuth;
   readonly #repo: string;
   readonly #api: string;
   readonly #fetch: FetchLike;
 
   constructor(options: GitHubOptions) {
-    this.#token = options.token;
+    const auth =
+      options.auth ?? (options.token === undefined ? null : new StaticToken(options.token));
+    if (auth === null) throw new Error("GitHubIssues needs `auth` or `token`");
+    this.#auth = auth;
     this.#repo = options.repo;
     this.#api = (options.apiUrl ?? "https://api.github.com").replace(/\/+$/, "");
     this.#fetch = options.fetch ?? ((input, init) => fetch(input, init));
@@ -78,46 +81,34 @@ export class GitHubIssues implements IssueTracker {
     return this.#repo;
   }
 
-  /** Never the token. */
-  toJSON(): { repo: string; api: string } {
-    return { repo: this.#repo, api: this.#api };
+  /** How the calls are made: `app` or `token`. */
+  get kind(): GitHubAuth["kind"] {
+    return this.#auth.kind;
+  }
+
+  /** Never a secret. */
+  toJSON(): { repo: string; api: string; auth: GitHubAuth["kind"] } {
+    return { repo: this.#repo, api: this.#api, auth: this.#auth.kind };
   }
 
   async #call(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {
-    let response: Response;
-    try {
-      response = await this.#fetch(`${this.#api}${path}`, {
+    const url = `${this.#api}${path}`;
+    const once = async (token: string) =>
+      githubRequest(this.#fetch, url, {
         method,
-        headers: {
-          Accept: "application/vnd.github+json",
-          Authorization: `Bearer ${this.#token}`,
-          "X-GitHub-Api-Version": API_VERSION,
-          "User-Agent": "miyoria-report",
-          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-        },
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        redirect: "error",
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { body }),
       });
-    } catch (error) {
-      const why = error instanceof Error && error.name === "TimeoutError" ? "timed out" : "failed";
-      throw new GitHubError(0, `GitHub ${method} ${path.split("?")[0]}: the request ${why}`);
-    }
-    const text = await response.text().catch(() => "");
-    let parsed: unknown = null;
+    const token = await this.#auth.token();
     try {
-      parsed = text === "" ? null : JSON.parse(text);
-    } catch {
-      parsed = null;
+      return await once(token);
+    } catch (error) {
+      // A token that stopped working (revoked, or expired early): one fresh one, one more try.
+      if (error instanceof GitHubError && error.status === 401 && this.#auth.refused(token)) {
+        return once(await this.#auth.token());
+      }
+      throw error;
     }
-    if (!response.ok) {
-      const said = isObject(parsed) && typeof parsed.message === "string" ? parsed.message : "";
-      throw new GitHubError(
-        response.status,
-        `GitHub answered ${response.status}${said === "" ? "" : `: ${said.slice(0, 200)}`}`,
-      );
-    }
-    return parsed;
   }
 
   #issues(rest = ""): string {
@@ -180,5 +171,17 @@ export class GitHubIssues implements IssueTracker {
       closed_at: typeof got.closed_at === "string" ? got.closed_at : null,
       url: typeof got.html_url === "string" ? got.html_url : "",
     };
+  }
+
+  async login(id: number): Promise<string | null> {
+    if (!Number.isSafeInteger(id) || id < 1) return null;
+    try {
+      const got = await this.#call("GET", `/user/${id}`);
+      const login = isObject(got) && typeof got.login === "string" ? got.login : null;
+      return login !== null && LOGIN.test(login) ? login : null;
+    } catch (error) {
+      if (error instanceof GitHubError && error.status === 404) return null;
+      throw error;
+    }
   }
 }
