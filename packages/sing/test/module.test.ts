@@ -286,6 +286,10 @@ interface Play {
 class FakeVoice implements VoicePlayer {
   readonly plays: Play[] = [];
   readonly channels = new Map<string, string>();
+  /** While set, the node takes no audio: nothing of the song is ever heard until it is stopped. */
+  holdPlay = false;
+  /** While set, `play` does not return: the playback is still being set up. */
+  setupGate: Promise<void> | null = null;
 
   channel(guild: string): string | null {
     return this.channels.get(guild) ?? null;
@@ -305,11 +309,14 @@ class FakeVoice implements VoicePlayer {
       state: null,
     };
     this.plays.push(p);
+    const gate = this.setupGate;
+    if (gate !== null) await gate;
     let resolve: (s: PlaybackState) => void = () => {};
     const ended = new Promise<PlaybackState>((r) => {
       resolve = r;
     });
     void (async () => {
+      while (this.holdPlay && p.stoppedWith === null) await new Promise((r) => setTimeout(r, 20));
       for await (const c of audio) {
         if (p.stoppedWith !== null) break;
         p.chunks.push(c);
@@ -1605,6 +1612,109 @@ describe("sing module", () => {
       await settle(REFUND_RETRY_MS + 300);
       expect(ticket.consumed).toEqual([key]);
       expect(ticket.refunds).toEqual([]);
+    });
+
+    it("gives the ticket back for a song stopped before the node played any of it", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      h.voice.holdPlay = true;
+      h.worker.finish("j1", "One", 1);
+      await h.join();
+      await settle(6000 + 400);
+      // Handed to the node, which never reported it playing.
+      expect(h.voice.plays).toHaveLength(1);
+      await h.singer.stop(false);
+      await settle(100);
+      expect(ticket.refunds).toEqual([key]);
+      expect(ticket.consumed).toEqual([]);
+      expect(h.singer.list.get(1)).toMatchObject({ state: "cancelled", priority_key: null });
+      // Later rounds neither refund it again nor mark it used.
+      await settle(2 * (REFUND_RETRY_MS + 300));
+      expect(ticket.refunds).toEqual([key]);
+      expect(ticket.consumed).toEqual([]);
+    });
+
+    it("gives the ticket back for a song stopped during her opening, before any playback", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      h.worker.finish("j1", "One", 1);
+      await h.join();
+      await settle(1000);
+      expect(h.singer.playing()?.no).toBe(1);
+      expect(h.voice.plays).toHaveLength(0);
+      await h.singer.stop(false);
+      await settle(100);
+      expect(h.voice.plays).toHaveLength(0);
+      expect(ticket.refunds).toEqual([key]);
+      expect(ticket.consumed).toEqual([]);
+      expect(h.singer.list.get(1)?.state).toBe("cancelled");
+    });
+
+    it("uses the ticket of a song stopped after it started, once", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      h.worker.finish("j1", "One", 30);
+      await h.join();
+      await settle(6000 + 400 + 500);
+      expect(h.cues().some((c) => c.state === "started")).toBe(true);
+      expect(ticket.consumed).toEqual([key]);
+      await h.singer.stop(false);
+      await settle(2000);
+      expect(h.cues().at(-1)).toMatchObject({ state: "ended", outcome: "interrupted" });
+      expect(h.singer.list.get(1)?.state).toBe("done");
+      await settle(2 * (REFUND_RETRY_MS + 300));
+      expect(ticket.consumed).toEqual([key]);
+      expect(ticket.refunds).toEqual([]);
+    });
+
+    it("tries the refund of a stopped unheard song again, and never marks that ticket used", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      const key = ticket.charges[0]?.key ?? "";
+      h.voice.holdPlay = true;
+      h.worker.finish("j1", "One", 1);
+      await h.join();
+      await settle(6000 + 400);
+      ticket.down = true;
+      await h.singer.stop(false);
+      await settle(100);
+      // Cancelled, still holding its key: not held for the market, not a done song to mark used.
+      expect(h.singer.list.get(1)).toMatchObject({ state: "cancelled", priority_key: key });
+      expect(h.sup.services.require(SongTicketsKey).holds(key)).toBe(false);
+      expect(ticket.refunds).toEqual([]);
+      await settle(REFUND_RETRY_MS + 300);
+      expect(ticket.consumed).toEqual([]);
+      ticket.down = false;
+      await settle(REFUND_RETRY_MS + 300);
+      expect(ticket.refunds).toEqual([key]);
+      expect(h.singer.list.get(1)?.priority_key).toBeNull();
+      await settle(REFUND_RETRY_MS + 300);
+      expect(ticket.refunds).toEqual([key]);
+      expect(ticket.consumed).toEqual([]);
+    });
+
+    it("a stop while the playback is being set up still stops it", async () => {
+      const ticket = await priced();
+      await asAmy({ query: "one", priority: true });
+      let release: () => void = () => {};
+      h.voice.setupGate = new Promise<void>((r) => {
+        release = r;
+      });
+      h.worker.finish("j1", "One", 1);
+      await h.join();
+      await settle(6000 + 400);
+      expect(h.voice.plays).toHaveLength(1);
+      await h.singer.stop(false);
+      release();
+      await settle(1500);
+      expect(h.voice.plays[0]?.stoppedWith).toBe(1500);
+      expect(h.voice.plays[0]?.state).toBe("interrupted");
+      expect(h.cues().some((c) => c.state === "started")).toBe(false);
+      expect(h.singer.list.get(1)?.state).toBe("cancelled");
+      expect(ticket.refunds).toEqual([ticket.charges[0]?.key]);
     });
 
     it("holds a listed song's ticket again after a restart", async () => {

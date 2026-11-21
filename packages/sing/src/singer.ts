@@ -28,7 +28,8 @@
 //   keeps its place. She is shown as singing (`singing()`, the card) only once the playback started.
 // * A request with a song priority ticket (`priority`, the person's own command or member page
 //   only) pays it first through `SongPriorityKey` and stands ahead of the songs without one. A
-//   song that is not sung (it could not be listed or made, it failed, it was cancelled) gives the
+//   song that is not sung (it could not be listed or made, it failed, it was cancelled, or it was
+//   stopped before the voice node played any of it, which ends it as cancelled) gives the
 //   ticket back; a refund that did not go (the wallet was not there) keeps the ticket's key on the
 //   entry and is tried again every `REFUND_RETRY_MS` (the ledger gives a charge back once, so a
 //   retry never pays twice). Once the song starts being sung (or ends counted as sung) the ticket
@@ -229,6 +230,8 @@ export class Singer implements VoiceFloor, SpeechPause {
   readonly #orphans = new Set<SongNo>();
   /** When refunds that did not go were last tried again (epoch ms). */
   #refundsTried = 0;
+  /** Ticket keys whose refund is under way: a retry round meanwhile leaves them alone. */
+  readonly #refunding = new Set<string>();
   /** The stored set list was read back (or there was none): `holdsTicket` can tell. */
   #restored = false;
   /** Songs whose job has (or is about to have) the GPU, by number. */
@@ -456,8 +459,13 @@ export class Singer implements VoiceFloor, SpeechPause {
   /** A song that ended without being sung (failed, cancelled) gives its ticket back, once. */
   async #giveBackPriority(entry: SongEntry): Promise<void> {
     const key = entry.priority_key ?? null;
-    if (key === null || entry.requester === null) return;
-    if (await this.#refundPriority(entry.requester, key)) entry.priority_key = null;
+    if (key === null || entry.requester === null || this.#refunding.has(key)) return;
+    this.#refunding.add(key);
+    try {
+      if (await this.#refundPriority(entry.requester, key)) entry.priority_key = null;
+    } finally {
+      this.#refunding.delete(key);
+    }
   }
 
   /**
@@ -966,9 +974,12 @@ export class Singer implements VoiceFloor, SpeechPause {
           return;
         }
         if (isGone(error) && !both.aborted && (await this.#prepareAgain(entry))) return;
-        log.warn({ no: entry.no, err: errorMessage(error) }, "could not sing");
-        outcome = "error";
-        entry.error = errorMessage(error);
+        // Stopped while the audio was loading: a skip like any other, not a failure.
+        if (!both.aborted) {
+          log.warn({ no: entry.no, err: errorMessage(error) }, "could not sing");
+          outcome = "error";
+          entry.error = errorMessage(error);
+        }
       }
       this.#ended(entry, guild, outcome);
     });
@@ -1060,11 +1071,17 @@ export class Singer implements VoiceFloor, SpeechPause {
   }
 
   #ended(entry: SongEntry, guild: string, outcome: PlaybackState | "error"): void {
+    // Heard: the voice node reported the song itself playing. A stop before that (during her
+    // opening, the quiet wait, or while the playback was set up) took nothing of it from anyone.
+    const heard = this.#playing?.entry === entry && this.#playing.started;
     if (this.#playing?.entry === entry) this.#playing = null;
     if (entry.song) this.#cue({ state: "ended", song: entry.song.id, outcome });
     const finished = outcome === "finished";
-    const sung = finished || outcome === "interrupted";
-    this.list.finish(entry, sung ? "done" : "failed", entry.error);
+    const unheard = outcome === "interrupted" && !heard;
+    const sung = finished || (outcome === "interrupted" && heard);
+    // A stopped song nobody heard is cancelled, not done: its ticket goes back (also on a later
+    // round, should this refund not go), where a done song's is used.
+    this.list.finish(entry, sung ? "done" : unheard ? "cancelled" : "failed", entry.error);
     this.#finishQueueItem(entry, finished);
     if (sung) this.#consumePriority(entry);
     else void this.#giveBackPriority(entry);

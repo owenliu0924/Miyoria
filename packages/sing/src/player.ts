@@ -183,7 +183,9 @@ export async function singSong(
     { levels: vocals !== null },
   );
   const onAbort = () => handle.stop(d.fadeMs);
-  signal.addEventListener("abort", onAbort, { once: true });
+  // A stop that came while the playback was being set up fires no event any more.
+  if (signal.aborted) onAbort();
+  else signal.addEventListener("abort", onAbort, { once: true });
   const lyricsDone = new AbortController();
   const durationMs = Math.round((mix.length / rate) * 1000);
   const lyrics = cueLyrics(
