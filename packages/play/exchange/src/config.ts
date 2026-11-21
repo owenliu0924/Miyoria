@@ -265,6 +265,19 @@ export const ExchangeConfigSchema = z
     account_min_tier: tier("認識").meta(
       setting({ kind: "select", label: "開戶:羈絆至少", group: "account" }),
     ),
+    // Real prices hold nothing an owner or admin can see ahead of the members, so they may
+    // trade; `false` keeps them out (the local stocks' seeds are theirs to read).
+    staff_may_trade: z
+      .boolean()
+      .default(true)
+      .meta(
+        setting({
+          kind: "switch",
+          label: "owner 和管理員也能交易",
+          help: "關掉:看得到市場內部數字的人不能開戶和下單",
+          group: "account",
+        }),
+      ),
     order_min: coins(DEFAULT_RULES.order_min).meta(
       setting({ kind: "coins", label: "一筆最少", group: "account" }),
     ),

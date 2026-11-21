@@ -641,6 +641,7 @@ dirs = ["extensions"]
 # component_minutes = 15      # Discord 上的按鈕和選單多久後過期
 # # ---- 開戶和委託(都是市價單,以下一筆有效報價成交)
 # account_min_days = 7        # 她認識你滿幾天才能開戶
+# staff_may_trade = true      # owner 和管理員也能交易;false = 看得到市場內部數字的人不能開戶和下單
 # account_min_tier = "認識"   # 羈絆至少到哪一級
 # order_min = 10              # 一筆買進最少(含手續費)
 # order_max = 0               # 一筆買進最多(0 = 不限)

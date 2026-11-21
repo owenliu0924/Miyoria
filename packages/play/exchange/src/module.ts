@@ -133,8 +133,9 @@ export class ExchangeModule implements Module {
           known_days: Math.max(0, (clock.now() - since) / DAY_MS),
           tier: BOND_LADDER.findIndex((t) => t.label === label),
           insider:
-            isOwnerAccount(authorizer, account) ||
-            authorizer?.allows(account, INSIDER_NODE) === true,
+            !config.staff_may_trade &&
+            (isOwnerAccount(authorizer, account) ||
+              authorizer?.allows(account, INSIDER_NODE) === true),
           self: ctx.services.get(PeopleDirectoryKey)?.isSelf(account) ?? false,
         };
       },
