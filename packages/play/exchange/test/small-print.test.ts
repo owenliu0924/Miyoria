@@ -74,6 +74,13 @@ describe("the small print", () => {
     while (queue.length > 0) {
       const { reply, depth } = queue.shift() as { reply: CommandReply; depth: number };
       seen.push(reply);
+      // Discord refuses a select with more than one chosen option (a list and a heat map share
+      // the names `tw` and `us`).
+      for (const b of (reply.card as Card | undefined)?.blocks ?? []) {
+        if (b.type !== "select") continue;
+        const chosen = b.select.options.filter((o) => o.default === true).map((o) => o.value);
+        expect(chosen.length, `select ${b.select.id}: ${chosen.join(", ")}`).toBeLessThanOrEqual(1);
+      }
       if (depth >= 3) continue;
       for (const b of (reply.card as Card | undefined)?.blocks ?? []) {
         const controls: ComponentInvocationData[] =
