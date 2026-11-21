@@ -12,7 +12,7 @@
 - [x] 階段 3 大腦(PR #56,2026-11-17):新的回合跑者、提示詞版面、子代理、記憶分層
 - [x] 階段 4 心(PR #63,2026-11-17):人物模型、`<feel>`、每晚反思、人物頁
 - [x] 階段 5 玩(PR #64、#67 起到 #93,2026-11-17 到 11-21,分批合併):每日卡、經濟的去處、每日任務、派對遊戲、直播彈幕、唱 K 第 1 步
-- [ ] 階段 5 剩下的:深海交易所([design/exchange.md](design/exchange.md))、水族箱;生圖卡等模型選定([design/v5-play.md](design/v5-play.md))
+- [ ] 階段 5 剩下的:深海交易所([design/exchange.md](design/exchange.md));生圖卡等模型選定([design/v5-play.md](design/v5-play.md))
 - [ ] 階段 6 很多地方(Space / Room、每個 Space 的設定、檔案網域):還沒開始
 - [ ] 階段 7 身體(活動契約、Neuro SDK、表演者與渲染器分開、Minecraft):還沒開始;Minecraft 暫停,筆記在 [design/minecraft-findings.md](design/minecraft-findings.md)
 
