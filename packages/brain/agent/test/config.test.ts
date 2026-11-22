@@ -1,3 +1,4 @@
+import { configJsonSchema, placeFields, settingFields } from "@miyoria/runtime/kernel";
 import type { ContextKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { DelegateConfigSchema, MainLineConfigSchema, WorkConfigSchema } from "../src/config.js";
@@ -188,5 +189,16 @@ describe("config", () => {
       },
     });
     expect(() => AgentConfigSchema.parse({ channels: { c: "loud" } })).toThrow();
+  });
+
+  it("the_levels_differ_per_room", () => {
+    expect(settingFields(configJsonSchema(AgentConfigSchema)).skipped).toEqual([]);
+    expect(placeFields(AgentConfigSchema).map((f) => [f.keys.join("."), f.scope])).toEqual([
+      ["mode", "room"],
+      ["activeness_level", "room"],
+      ["language", "room"],
+      ["voice.mode", "room"],
+      ["voice.activeness_level", "room"],
+    ]);
   });
 });

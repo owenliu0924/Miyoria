@@ -170,14 +170,16 @@ owners = ["discord:${MIYORIA_OWNER_ID:-0}"]
 token = "${DISCORD_BOT_TOKEN:-}"
 # 填伺服器 id 可以讓 slash command 立即生效;空的 = 全域(最多要等一小時)
 # id 要加引號,例如 ["123456789012345678"](數字太大,TOML 整數會失真)
-# 每次啟動會清掉另一種範圍留下的舊指令;指令清單有重複時可執行一次
-# `miyoria discord commands reset`
+# ["*"] = 她在的每個伺服器,之後加入的伺服器也會馬上拿到指令
+# 每次啟動會清掉全域(或全域模式下各伺服器)留下的舊指令;沒列到的伺服器的指令不會被清掉。
+# 指令清單有重複時可執行一次 `miyoria discord commands reset`
 command_guilds = []
 # Discord 會看到完整的指令樹;/miyo /song 直接開面板,有子指令的 /me /admin 用 /me i /admin i 開面板。
 # 伺服器訊息的收聽範圍(docs/design/v3-architecture.md §19 第 4 項):
 #   "allowlist"(預設):只有提及她、回覆她的訊息,或 ambient_channels 內的頻道她才讀得到;私訊一律可以
 #   "tiers":每則訊息都交給她,由 /miyo 的「聊天等級」(關閉 / 只回提及 / 可以聊天)決定她插不插話
-# 頻道 id 要加引號
+# 頻道 id 要加引號。這兩項(和下面表情、貼圖的 enabled、descriptions)可以在面板每個伺服器各設各的;
+# 後來加入的伺服器在設定之前只讀得到提及她、回覆她的訊息
 ambient_text = "allowlist"
 ambient_channels = []
 # 讓她知道誰在線、在玩什麼、誰在哪個語音頻道。要先在 Developer Portal → Bot →

@@ -12,10 +12,14 @@
 //    failing.
 // 3. Invite the bot with the `bot` and `applications.commands` scopes and the permissions View
 //    Channels, Send Messages, Send Messages in Threads, Read Message History and Add Reactions.
-// 4. For instant command updates during development, list your server ids in `command_guilds`;
-//    otherwise commands are registered globally. The first sync of every run clears the scope
-//    not in use, so switching modes leaves no duplicates; `miyoria discord commands reset`
-//    clears everything by hand.
+// 4. For instant command updates, list your server ids in `command_guilds` (`["*"]`: every
+//    server she is in, and each one she joins); otherwise commands are registered globally. The
+//    first sync of every run clears the global set in guild mode (and every guild's in global
+//    mode), so switching modes leaves no duplicates; `miyoria discord commands reset` clears
+//    everything by hand.
+//
+// Servers she is in are recorded as she sees them (`Places.seen` on connecting and on joining,
+// `Places.left` when she is removed); members who leave reach `Places.memberLeft` through Core.
 
 import { CommandRegistryKey, CommandsModule } from "@miyoria/commands";
 import { LlmRouterKey, userMessage, withLlmTag } from "@miyoria/llm/llm";
@@ -27,11 +31,13 @@ import {
   type Module,
   type ModuleContext,
   type ModuleManifest,
+  placeConfig,
   withTimeout,
 } from "@miyoria/runtime/kernel";
-import { SettingsStoreKey } from "@miyoria/store";
+import { SettingsStoreKey, StoreKey } from "@miyoria/store";
 import {
   PlaceDirectoryKey,
+  PlacesKey,
   PlatformHistoriesKey,
   PlatformSinksKey,
   ProfileIdKey,
@@ -48,6 +54,7 @@ import {
   type DescriptionStore,
   EmojiDescriber,
 } from "./emoji-describe.js";
+import { type AmbientPlaces, perGuild } from "./gate.js";
 import { GatewayBridge, Shared } from "./handler.js";
 import { PLATFORM, parseUserIds } from "./mapping.js";
 import { DiscordPlaces } from "./places.js";
@@ -139,7 +146,8 @@ export class DiscordBotModule implements Module {
       ctx.log.warn("PlatformSinks service missing; output actions cannot reach Discord");
     }
     const histories = ctx.services.get(PlatformHistoriesKey) ?? null;
-    const shared = new Shared(config, selfIds, registry, sinks, histories);
+    const places = this.#places(ctx);
+    const shared = new Shared(config, selfIds, registry, sinks, histories, places);
     this.#running = shared;
     const client = createClient({ presence: config.presence_intents });
     new GatewayBridge(ctx, shared).attach(client);
@@ -154,6 +162,18 @@ export class DiscordBotModule implements Module {
     ctx.spawn("gateway", (signal) => runGateway(client, token, shared, ctx, signal));
   }
 
+  /** The module's config per server and room, when Core has the places (docs/design/v5-places.md). */
+  #places(ctx: ModuleContext): AmbientPlaces | null {
+    const places = ctx.services.get(PlacesKey);
+    if (places === undefined) return null;
+    const settings = ctx.services.get(StoreKey)?.config?.places;
+    return {
+      config: placeConfig(ctx, DiscordConfigSchema),
+      places,
+      own: (space, key) => settings?.get("space", space, DiscordBotModule.ID, key) != null,
+    };
+  }
+
   /** The server emoji block, and meanings written for new emoji in the background. */
   #startEmoji(ctx: ModuleContext, shared: Shared, queue: DescribeQueue): void {
     const config = shared.config.emoji;
@@ -163,24 +183,26 @@ export class DiscordBotModule implements Module {
       undefined,
       queue,
     );
-    const owner = (name: string): string | undefined =>
-      config.descriptions[name]?.trim() || undefined;
+    const per = perGuild(shared, (c) => c.emoji);
+    const owner = (name: string, guild: string | null): string | undefined =>
+      per.descriptions(guild)[name]?.trim() || undefined;
     const contributors = ctx.services.get(PromptContributorsKey);
     const contributor = emojiContributor(
       shared.emoji,
       { owner, described: (id) => describer.get(id) },
-      { max_listed: config.max_listed, enabled: () => config.enabled },
+      { max_listed: config.max_listed, enabled: (guild) => per.enabled(guild) },
     );
     contributors?.register(contributor);
     this.#unregister.push(() => contributors?.unregister(contributor.key));
     void describer.load();
-    if (!config.enabled || !config.auto_describe) return;
+    if (!config.auto_describe) return;
     const controller = new AbortController();
     this.#unregister.push(() => controller.abort());
-    const off = shared.emoji.onChange(() => {
+    const off = shared.emoji.onChange((guild) => {
+      if (!per.enabled(guild)) return;
       void describer.describeMissing(
-        shared.emoji.all().filter((e) => e.available),
-        (e) => owner(e.name) !== undefined,
+        shared.emoji.list(guild),
+        (e) => owner(e.name, guild) !== undefined,
         controller.signal,
       );
     });
@@ -196,24 +218,26 @@ export class DiscordBotModule implements Module {
       undefined,
       queue,
     );
-    const owner = (name: string): string | undefined =>
-      config.descriptions[name]?.trim() || undefined;
+    const per = perGuild(shared, (c) => c.stickers);
+    const owner = (name: string, guild: string | null): string | undefined =>
+      per.descriptions(guild)[name]?.trim() || undefined;
     const contributors = ctx.services.get(PromptContributorsKey);
     const contributor = stickerContributor(
       shared.stickers,
       { owner, described: (id) => describer.get(id) },
-      { max_listed: config.max_listed, enabled: () => config.enabled },
+      { max_listed: config.max_listed, enabled: (guild) => per.enabled(guild) },
     );
     contributors?.register(contributor);
     this.#unregister.push(() => contributors?.unregister(contributor.key));
     void describer.load();
-    if (!config.enabled || !config.auto_describe) return;
+    if (!config.auto_describe) return;
     const controller = new AbortController();
     this.#unregister.push(() => controller.abort());
-    const off = shared.stickers.onChange(() => {
+    const off = shared.stickers.onChange((guild) => {
+      if (!per.enabled(guild)) return;
       void describer.describeMissing(
-        shared.stickers.all().filter((s) => s.available),
-        (s) => owner(s.name) !== undefined,
+        shared.stickers.list(guild),
+        (s) => owner(s.name, guild) !== undefined,
         controller.signal,
       );
     });
