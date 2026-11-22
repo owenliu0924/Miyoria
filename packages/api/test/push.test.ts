@@ -397,6 +397,34 @@ describe("the push hub", () => {
     }).not.toThrow();
   });
 
+  it("pings a stream that has nothing to send, and a change puts the ping off", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const hub = new PushHub({ now: () => 0, timers: false, pingMs: 1_000 });
+    let n = 1;
+    const gen = hub.open(
+      request([{ sub: STATUS, watch: watch("status", () => ({ n })) }]),
+      hub.reserve("c", null),
+      NO_TIMING,
+    );
+    await gen.next();
+    await gen.next();
+    const ping = gen.next();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect((await ping).value).toEqual({ event: { kind: "ping" }, id: null });
+    const change = gen.next();
+    await vi.advanceTimersByTimeAsync(600);
+    n = 2;
+    hub.touch("status");
+    await hub.flush();
+    expect((await change).value?.event).toMatchObject({ kind: "value", data: { n: 2 } });
+    const after = gen.next();
+    await vi.advanceTimersByTimeAsync(999);
+    await settle();
+    expect(await Promise.race([after.then(() => "ping"), Promise.resolve("none")])).toBe("none");
+    await vi.advanceTimersByTimeAsync(1);
+    expect((await after).value?.event).toEqual({ kind: "ping" });
+  });
+
   it("builds a view again on its tick, for changes no event announces", async () => {
     let t = 0;
     const hub = new PushHub({ now: () => t, timers: false });
@@ -1004,25 +1032,22 @@ describe("push streams through the app", () => {
     for (const sse of open.slice(1)) await sse.cancel();
   });
 
-  it("says something at least every 15 s while nothing changes", async () => {
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  it("pings every 15 s while nothing changes, as an event the client can see", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     const w = make();
     const app = createApp(w.state, { responseCheck: "strict" });
     const sse = new SseReader(await app.request("/api/public/stream?topics=status"));
     await sse.untilReady();
-    const pending = sse.next();
-    await settle();
-    expect(sse.comments).toBe(0);
-    await vi.advanceTimersByTimeAsync(15_000);
-    // Well under a tunnel's idle timeout (100 s): a comment by 15 s, every 15 s.
-    await vi.advanceTimersByTimeAsync(15_000);
-    w.activity.live = true;
-    w.bus.emit("activity.changed");
-    vi.useRealTimers();
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    await hubOf(w.state).flush();
-    expect((await pending)?.data).toMatchObject({ kind: "value", topic: "status" });
-    expect(sse.comments).toBe(2);
+    // Well under a tunnel's idle timeout (100 s): something by 15 s, every 15 s.
+    for (let i = 0; i < 3; i++) {
+      const next = sse.next().then((m) => m?.data);
+      await vi.advanceTimersByTimeAsync(14_999);
+      await settle();
+      expect(await Promise.race([next, Promise.resolve("none")])).toBe("none");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await next).toEqual({ kind: "ping" });
+    }
+    // A ping is no change: it carries no id, so a resume still starts from the last one.
     await sse.cancel();
   });
 
@@ -1058,7 +1083,9 @@ describe("push streams through the app", () => {
     );
     const first = (await sse.untilReady()).map((m) => m.data as PushEvent);
     expect(
-      first.map((e) => (e.kind === "ready" ? "ready" : `${e.kind}:${e.topic}~${e.param}`)),
+      first.map((e) =>
+        e.kind === "ready" || e.kind === "ping" ? e.kind : `${e.kind}:${e.topic}~${e.param}`,
+      ),
     ).toEqual([
       "value:exchange_list~tw",
       "value:exchange_ticker~2330.TW",

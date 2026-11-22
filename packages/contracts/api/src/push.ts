@@ -8,7 +8,7 @@
 // polled route would have answered), then `ready`; after that a `value` whenever a topic's answer
 // changes. A reconnect that sends `Last-Event-ID` gets only what changed since that id, or every
 // value again when the id is from another run of the Core, names other topics, or is too old. A
-// comment comes after 15 s without an event.
+// `ping` event comes after 15 s without any other (a comment would be invisible to the client).
 
 import { eventIterator } from "@orpc/contract";
 import { z } from "zod";
@@ -74,6 +74,11 @@ export const PushEventSchema = z
     }),
     /** Every topic asked for has its value (or its refusal): from here on, only changes. */
     z.object({ kind: z.literal("ready") }),
+    /**
+     * Nothing changed for 15 s: the stream is alive. A client that hears nothing at all (no value,
+     * no `ready`, no `ping`) for much longer treats the stream as dead, whatever the socket says.
+     */
+    z.object({ kind: z.literal("ping") }),
   ])
   .meta({ id: "ApiPushEvent" });
 export type PushEvent = z.output<typeof PushEventSchema>;

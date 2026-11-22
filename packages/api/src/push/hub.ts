@@ -37,6 +37,11 @@ export const PUSH_LINGER_MS = 60_000;
 export const PUSH_SLOW_MS = 30_000;
 /** How often the hub looks over its streams and views. */
 export const PUSH_SWEEP_MS = 5_000;
+/**
+ * A stream with nothing to say sends a `ping` event this often: a client sees it (a comment it
+ * would not), so it can tell a quiet stream from a dead one. Well under a tunnel's idle timeout.
+ */
+export const PUSH_PING_MS = 15_000;
 
 /** One topic a stream asked for: `songs`, or `songs~<space>`. */
 export interface Subscription {
@@ -97,6 +102,8 @@ export interface HubOptions {
   /** Start the settle and sweep timers (`false` in tests, which call `flush` and `sweep`). */
   timers?: boolean;
   limits?: Partial<{ perClient: number; perAccount: number; total: number }>;
+  /** How often an idle stream pings (`PUSH_PING_MS`). */
+  pingMs?: number;
 }
 
 interface View {
@@ -172,9 +179,18 @@ class Stream {
     wake?.();
   }
 
-  wait(): Promise<void> {
+  /** Until a change (or the close) wakes it: `true`; `false` after `ms` of nothing. */
+  wait(ms: number): Promise<boolean> {
     return new Promise((resolve) => {
-      this.#wake = resolve;
+      const timer = setTimeout(() => {
+        this.#wake = null;
+        resolve(false);
+      }, ms);
+      timer.unref?.();
+      this.#wake = () => {
+        clearTimeout(timer);
+        resolve(true);
+      };
     });
   }
 
@@ -201,6 +217,7 @@ function message(sub: Subscription, view: View): PushEvent {
 export class PushHub {
   readonly #now: () => number;
   readonly #timers: boolean;
+  readonly #pingMs: number;
   readonly #limits: { perClient: number; perAccount: number; total: number };
   readonly run: string;
   readonly #views = new Map<string, View>();
@@ -219,6 +236,7 @@ export class PushHub {
   constructor(options: HubOptions) {
     this.#now = options.now;
     this.#timers = options.timers ?? true;
+    this.#pingMs = options.pingMs ?? PUSH_PING_MS;
     this.run = options.run ?? shortHash(`${Date.now()}:${Math.random()}`);
     this.#limits = {
       perClient: options.limits?.perClient ?? PUSH_STREAMS_PER_CLIENT,
@@ -332,7 +350,10 @@ export class PushHub {
 
       while (!opened.closed) {
         if (opened.pending.size === 0) {
-          await opened.wait();
+          const woken = await opened.wait(this.#pingMs);
+          if (!woken && !opened.closed && opened.pending.size === 0) {
+            yield { event: { kind: "ping" }, id: null };
+          }
           continue;
         }
         const batchUpTo = this.#seq;
