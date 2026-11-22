@@ -1,5 +1,6 @@
 // Reads and writes of the `initiative` plugin's tables (`initiative-schema.ts`): her schedules and
-// her inbox. Every time is given by the caller (her clock), never the store's.
+// her inbox. Every time is given by the caller (her clock), never the store's. A row's Space
+// (`space_id`) is the caller's when given, else that of its place as identity knows it.
 
 import {
   type CategoryData,
@@ -7,6 +8,7 @@ import {
   type Identity,
   type PersonForget,
   type StorePlugin,
+  spaces,
   tablePart,
 } from "@miyoria/store";
 import { type AccountRef, type ContextKey, type Timestamp, toTimestamp } from "@miyoria/types";
@@ -35,6 +37,8 @@ export interface NewSchedule {
   for_account: AccountRef | null;
   source: ScheduleSource;
   at: number;
+  /** The Space of `context`; left out: the one identity knows for it. */
+  space_id?: string | null;
 }
 
 /** A new inbox item. */
@@ -46,6 +50,11 @@ export interface NewInboxItem {
   text: string;
   person: string | null;
   at: number;
+  /**
+   * The Space it came from, also when it has no place any more (a voice event put in her home);
+   * left out: the one identity knows for `context`.
+   */
+  space_id?: string | null;
 }
 
 const ts = (ms: number): Timestamp => toTimestamp(ms);
@@ -96,6 +105,17 @@ export class InitiativeStore {
     });
   }
 
+  /** The Space of a place as identity knows it (left ones too: the row is still theirs). */
+  spaceOf(context: ContextKey | null): string | null {
+    if (context === null || context.scope === null) return null;
+    const row = this.#db.orm
+      .select({ id: spaces.id })
+      .from(spaces)
+      .where(and(eq(spaces.platform, context.platform), eq(spaces.external_id, context.scope)))
+      .get();
+    return row?.id ?? null;
+  }
+
   // ---- schedules ------------------------------------------------------------------------------
 
   addSchedule(s: NewSchedule): ScheduleRow {
@@ -106,6 +126,7 @@ export class InitiativeStore {
       daily: s.daily,
       context: s.context,
       person: s.person,
+      space_id: s.space_id !== undefined ? s.space_id : this.spaceOf(s.context),
       for_account: s.for_account,
       source: s.source,
       fired: 0,
@@ -161,6 +182,7 @@ export class InitiativeStore {
         kind: item.kind,
         session: item.session,
         context: item.context,
+        space_id: item.space_id !== undefined ? item.space_id : this.spaceOf(item.context),
         text: item.text,
         person: item.person,
         created_at: ts(item.at),
@@ -175,12 +197,20 @@ export class InitiativeStore {
     return this.#db.orm.select({ id: I.id }).from(I).where(eq(I.key, key)).get() !== undefined;
   }
 
-  /** What a run in `session` is shown: its unseen items and home's, oldest first, at most `max`. */
-  unseenFor(session: string, max: number): InboxRow[] {
+  /**
+   * What a run in `session` (in the Space `space`; `null`: none, a DM or her home) is shown: its
+   * unseen items, and the home items of its Space and of none, oldest first, at most `max`. A
+   * home item of another Space is never shown (an event of one server in another server's run).
+   */
+  unseenFor(session: string, max: number, space: string | null = null): InboxRow[] {
+    const home = and(
+      isNull(I.session),
+      space === null ? isNull(I.space_id) : or(isNull(I.space_id), eq(I.space_id, space)),
+    );
     return this.#db.orm
       .select()
       .from(I)
-      .where(and(isNull(I.seen_at), or(eq(I.session, session), isNull(I.session))))
+      .where(and(isNull(I.seen_at), or(eq(I.session, session), home)))
       .orderBy(desc(I.id))
       .limit(max)
       .all()
@@ -233,6 +263,7 @@ const initiativeData: readonly CategoryData[] = [
         daily: "text",
         context: "json",
         person: "text",
+        space_id: "text",
         for_account: "json",
         source: "text",
         fired: "num",
@@ -246,6 +277,7 @@ const initiativeData: readonly CategoryData[] = [
         kind: "text",
         session: "text",
         context: "json",
+        space_id: "text",
         text: "text",
         person: "text",
         created_at: "ts",
