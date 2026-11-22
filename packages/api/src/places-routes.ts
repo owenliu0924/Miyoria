@@ -18,6 +18,7 @@ function spaceView(space: SpaceRef): Space {
     external_id: space.external_id,
     name: space.name,
     primary: space.primary,
+    established: space.established,
   };
 }
 

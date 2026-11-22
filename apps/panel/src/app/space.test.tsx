@@ -10,8 +10,8 @@ import { useAdminSpace } from "./space";
 
 const SPACES: AdminSpaces = {
   spaces: [
-    { id: "a", platform: "discord", external_id: "1", name: "A", primary: true, members: 3 },
-    { id: "b", platform: "discord", external_id: "2", name: "B", primary: false, members: 1 },
+    { id: "a", platform: "discord", external_id: "1", name: "A", primary: true, established: true, members: 3 },
+    { id: "b", platform: "discord", external_id: "2", name: "B", primary: false, established: false, members: 1 },
   ],
   default: "a",
 };

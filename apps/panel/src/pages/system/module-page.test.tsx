@@ -98,8 +98,8 @@ const ROOMS = {
   ],
 };
 
-const SPACE_A: AdminSpace = { id: "a", platform: "discord", external_id: "9", name: "魚缸", primary: true, members: 3 };
-const SPACE_B: AdminSpace = { id: "b", platform: "discord", external_id: "8", name: "第二", primary: false, members: 1 };
+const SPACE_A: AdminSpace = { id: "a", platform: "discord", external_id: "9", name: "魚缸", primary: true, established: true, members: 3 };
+const SPACE_B: AdminSpace = { id: "b", platform: "discord", external_id: "8", name: "第二", primary: false, established: false, members: 1 };
 
 /** `fetch`'s handler with `GET /api/places/spaces` answered first. */
 function spacesFirst(fetch: ReturnType<typeof mockFetch>, spaces: AdminSpaces) {

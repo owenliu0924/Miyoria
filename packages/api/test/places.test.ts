@@ -136,8 +136,24 @@ describe("the routes", () => {
     expect(status).toBe(200);
     expect(body).toEqual({
       spaces: [
-        { id: A, platform: "discord", external_id: "gA", name: "gA", primary: true, members: 1 },
-        { id: B, platform: "discord", external_id: "gB", name: "gB", primary: false, members: 2 },
+        {
+          id: A,
+          platform: "discord",
+          external_id: "gA",
+          name: "gA",
+          primary: true,
+          established: true,
+          members: 1,
+        },
+        {
+          id: B,
+          platform: "discord",
+          external_id: "gB",
+          name: "gB",
+          primary: false,
+          established: false,
+          members: 2,
+        },
       ],
       default: A,
     });
@@ -151,7 +167,16 @@ describe("the routes", () => {
     expect(one).toEqual({
       status: 200,
       body: {
-        spaces: [{ id: B, platform: "discord", external_id: "gB", name: "gB", primary: false }],
+        spaces: [
+          {
+            id: B,
+            platform: "discord",
+            external_id: "gB",
+            name: "gB",
+            primary: false,
+            established: false,
+          },
+        ],
         default: B,
       },
     });

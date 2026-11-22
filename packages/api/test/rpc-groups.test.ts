@@ -312,7 +312,16 @@ const ANSWERS = {
   "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
   "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
   "member.spaces": {
-    spaces: [{ id: "s1", platform: "discord", external_id: "1", name: "Guild", primary: true }],
+    spaces: [
+      {
+        id: "s1",
+        platform: "discord",
+        external_id: "1",
+        name: "Guild",
+        primary: true,
+        established: true,
+      },
+    ],
     default: "s1",
   } satisfies ApiOutputs["member"]["spaces"],
   "member.issueCard": CARD,

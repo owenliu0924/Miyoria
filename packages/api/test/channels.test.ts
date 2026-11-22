@@ -52,8 +52,22 @@ function fakeHandle() {
 /** Two Spaces: S1 (guild g1, primary) and S2 (guild g2). */
 function twoSpaces(): Places {
   const list: SpaceRef[] = [
-    { id: "S1", platform: "discord", external_id: "g1", name: "一號", primary: true },
-    { id: "S2", platform: "discord", external_id: "g2", name: "二號", primary: false },
+    {
+      id: "S1",
+      platform: "discord",
+      external_id: "g1",
+      name: "一號",
+      primary: true,
+      established: true,
+    },
+    {
+      id: "S2",
+      platform: "discord",
+      external_id: "g2",
+      name: "二號",
+      primary: false,
+      established: false,
+    },
   ];
   return {
     primary: () => list[0] ?? null,

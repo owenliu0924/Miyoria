@@ -95,6 +95,7 @@ function twoSpaces(inB: boolean): Places {
     external_id: `g${id}`,
     name: id,
     primary,
+    established: primary,
   });
   const spaces = [space("A", true), space("B", false)];
   return {

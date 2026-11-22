@@ -496,6 +496,8 @@ export class Identity {
         name: name ?? externalId,
         joined_at: at,
         is_primary: primary === undefined,
+        // The first Space of a fresh install is the original one; a later one starts quiet.
+        established: primary === undefined,
       })
       .run();
     placeChanged(this.#db, { kind: "space", space_id: id, room_id: null });

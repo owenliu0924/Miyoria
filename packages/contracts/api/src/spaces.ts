@@ -16,6 +16,11 @@ export const SpaceSchema = z
     name: z.string(),
     /** The install's original server: the default where none is chosen. */
     primary: z.boolean(),
+    /**
+     * A server she was already in when servers were told apart (the primary always is): it goes on
+     * with the cluster's settings. `false`: a server she joined later, quiet until it is set up.
+     */
+    established: z.boolean(),
   })
   .meta({ id: "ApiSpace" });
 export type Space = z.output<typeof SpaceSchema>;

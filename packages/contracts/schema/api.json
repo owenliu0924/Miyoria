@@ -909,6 +909,9 @@
         "primary": {
           "type": "boolean"
         },
+        "established": {
+          "type": "boolean"
+        },
         "members": {
           "type": "integer",
           "minimum": -9007199254740991,
@@ -921,6 +924,7 @@
         "external_id",
         "name",
         "primary",
+        "established",
         "members"
       ]
     },
@@ -20799,6 +20803,9 @@
         },
         "primary": {
           "type": "boolean"
+        },
+        "established": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -20806,7 +20813,8 @@
         "platform",
         "external_id",
         "name",
-        "primary"
+        "primary",
+        "established"
       ]
     },
     "ApiSpaceLevelView": {

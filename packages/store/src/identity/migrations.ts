@@ -159,6 +159,17 @@ WHERE NOT EXISTS (
 GROUP BY x.\`space_id\`, x.\`account_id\`;
 `;
 
+// v4, phase 6 (docs/design/v5-places.md §1): which Spaces were already hers before servers were
+// told apart. Every Space that exists when this runs is established, the primary and every other
+// server she was already in (one she left too: its row existed, so coming back is coming home):
+// each goes on as it did, with the cluster's settings. A Space first seen later starts quiet until
+// someone sets it up; the first Space of a fresh install (the primary) is established when it is
+// made (`Identity`). The column as drizzle-kit writes it from `schema.ts`; the UPDATE by hand.
+const ESTABLISHED = `ALTER TABLE \`spaces\` ADD \`established\` integer DEFAULT false NOT NULL;
+
+UPDATE \`spaces\` SET \`established\` = 1;
+`;
+
 /** Persons, accounts, link codes, spaces, rooms, sessions and space members. */
 export const identitySchema: PluginSchema = {
   plugin: "identity",
@@ -166,5 +177,6 @@ export const identitySchema: PluginSchema = {
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "places", sql: PLACES },
     { version: 3, name: "members_who_acted", sql: ACTED },
+    { version: 4, name: "established", sql: ESTABLISHED },
   ],
 };

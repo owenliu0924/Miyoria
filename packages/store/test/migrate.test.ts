@@ -14,6 +14,7 @@ import {
   checksum,
   coreSchema,
   Db,
+  Identity,
   identitySchema,
   legacySchema,
   lintSchemas,
@@ -22,6 +23,7 @@ import {
   orderSchemas,
   type PluginSchema,
   SchemaError,
+  SpacePlaces,
   SqliteStore,
 } from "../src/index.js";
 
@@ -514,10 +516,12 @@ describe("identity v2 (places) on a v1 database", () => {
     const before = counts(db);
     const v1 = appliedMigrations(db).find((m) => m.plugin === "identity" && m.version === 1);
     const applied = migrate(db, [identitySchema]);
-    // v3 runs too: with no events it adds no member, so every count stays.
+    // v3 and v4 run too: with no events v3 adds no member, v4 only marks the Spaces, so every
+    // count stays.
     expect(applied.map((m) => [m.plugin, m.version])).toEqual([
       ["identity", 2],
       ["identity", 3],
+      ["identity", 4],
     ]);
     expect(counts(db)).toEqual(before);
     // The applied migration is the one that ran: its checksum is unchanged.
@@ -758,7 +762,10 @@ describe("identity v3 (members who acted) on a v2 database", () => {
 
       const before = counts(db);
       const applied = migrate(db, [identitySchema]);
-      expect(applied.map((m) => [m.plugin, m.name])).toEqual([["identity", "members_who_acted"]]);
+      expect(applied.map((m) => [m.plugin, m.name])).toEqual([
+        ["identity", "members_who_acted"],
+        ["identity", "established"],
+      ]);
       expect(counts(db)).toEqual(before);
       expect(members(db)).toEqual([
         ["s1", "a1", 10, null],
@@ -783,6 +790,109 @@ describe("identity v3 (members who acted) on a v2 database", () => {
       const before = members(db);
       migrate(db, [identitySchema]);
       expect(members(db)).toEqual(before);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("identity v4 (established) on a v3 database", () => {
+  const V3: PluginSchema = { ...identitySchema, migrations: identitySchema.migrations.slice(0, 3) };
+  const TABLES = [
+    "persons",
+    "accounts",
+    "link_codes",
+    "spaces",
+    "rooms",
+    "sessions",
+    "space_members",
+    "events",
+  ];
+  const ctx = (guild: string, channel: string) => ({
+    platform: "discord",
+    scope: guild,
+    channel,
+    kind: "channel" as const,
+  });
+  const author = (id: string) => ({ account: { platform: "discord", id }, display_name: id });
+
+  it("makes every server she was already in established, the second one too, and no row moves", () => {
+    let now = Date.UTC(2026, 10, 22);
+    const db = new Db(new DatabaseSync(":memory:", { enableForeignKeyConstraints: true }), {
+      now: () => now++,
+    });
+    try {
+      migrate(db, [V3]);
+      // The install of the rehearsal, as the build of before wrote it (its own SQL: this build's
+      // tables have the v4 column already): a big server (primary), a small one, and a third she
+      // left, with members.
+      const [a, b, c] = ["s-a", "s-b", "s-c"];
+      db.run(
+        `INSERT INTO spaces (id, platform, external_id, name, joined_at, left_at, is_primary)
+         VALUES ('s-a', 'discord', 'gA', 'A', 1, NULL, 1), ('s-b', 'discord', 'gB', 'B', 2, NULL, 0),
+                ('s-c', 'discord', 'gC', 'C', 3, 9, 0)`,
+      );
+      db.run(
+        `INSERT INTO rooms (id, platform, external_id, space_id, kind, created_at)
+         VALUES ('r-c', 'discord', 'c1', 's-c', 'text', 1)`,
+      );
+      for (const [i, space] of [a, a, a, a, b, c].entries()) {
+        db.run("INSERT INTO persons (id, name, handle, created_at) VALUES ($id, $id, $id, 1)", {
+          id: `p${i}`,
+        });
+        db.run(
+          `INSERT INTO accounts (id, platform, external_id, person_id, display_name, first_seen, last_seen)
+           VALUES ($id, 'discord', $ext, $person, $ext, 1, 1)`,
+          { id: `a${i}`, ext: String(i + 1), person: `p${i}` },
+        );
+        db.run(
+          "INSERT INTO space_members (space_id, account_id, last_seen) VALUES ($space, $account, 1)",
+          { space, account: `a${i}` },
+        );
+      }
+      const counts = () =>
+        TABLES.map((t) => [t, Number(db.get(`SELECT COUNT(*) AS n FROM ${t}`)?.n)] as const);
+      const before = counts();
+
+      const applied = migrate(db, [identitySchema]);
+      expect(applied.map((m) => [m.plugin, m.name])).toEqual([["identity", "established"]]);
+      expect(counts()).toEqual(before);
+      expect(db.all("SELECT id, is_primary, established FROM spaces ORDER BY joined_at")).toEqual([
+        { id: a, is_primary: 1, established: 1 },
+        { id: b, is_primary: 0, established: 1 },
+        { id: c, is_primary: 0, established: 1 },
+      ]);
+
+      const identity = new Identity(db);
+      const places = new SpacePlaces(db, identity);
+      expect(places.spaces().map((s) => [s.id, s.primary, s.established])).toEqual([
+        [a, true, true],
+        [b, false, true],
+      ]);
+      // A server first seen after the upgrade is not established; one she left before it and
+      // comes back to still is (its row was there).
+      const d = places.seen("discord", "gD", "D");
+      expect(places.space(d)).toMatchObject({ primary: false, established: false });
+      identity.resolve(ctx("gC", "c1"), author("6"));
+      expect(places.space(c)).not.toBeNull();
+      expect(places.space(c)).toMatchObject({ primary: false, established: true });
+      expect(migrate(db, [identitySchema])).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("a fresh install: the first server is primary and established, a later one is neither", () => {
+    const db = new Db(new DatabaseSync(":memory:", { enableForeignKeyConstraints: true }), {
+      now: () => Date.UTC(2026, 10, 22),
+    });
+    try {
+      migrate(db, [identitySchema]);
+      const places = new SpacePlaces(db, new Identity(db));
+      const first = places.seen("discord", "g1", "One");
+      const second = places.seen("discord", "g2", "Two");
+      expect(places.space(first)).toMatchObject({ primary: true, established: true });
+      expect(places.space(second)).toMatchObject({ primary: false, established: false });
     } finally {
       db.close();
     }

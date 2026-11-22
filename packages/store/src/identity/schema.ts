@@ -125,6 +125,12 @@ export const spaces = sqliteTable(
      * one row (a partial unique index); set once, never moved by itself.
      */
     is_primary: integer({ mode: "boolean" }).notNull().default(false),
+    /**
+     * A server she was in before servers were told apart (identity v4), or the first one of a
+     * fresh install: it goes on with the cluster's settings. A Space first seen later is not, and
+     * starts quiet until it is set up. Set once, never cleared.
+     */
+    established: integer({ mode: "boolean" }).notNull().default(false),
   },
   (t) => [
     unique("spaces_platform_external_id_key").on(t.platform, t.external_id),

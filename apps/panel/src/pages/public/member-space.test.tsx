@@ -11,6 +11,7 @@ const space = (id: string, name: string, primary = false): Space => ({
   external_id: `g-${id}`,
   name,
   primary,
+  established: primary,
 });
 
 function Probe() {

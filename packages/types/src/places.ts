@@ -83,6 +83,14 @@ export interface SpaceRef {
    * itself, not even when she leaves it.
    */
   primary: boolean;
+  /**
+   * A server she was already in before servers were told apart (`spaces.established`, identity
+   * v4), or the first one of a fresh install; always true for the primary. It behaves as it always
+   * did: the cluster's ambient settings, the file's emoji and sticker meanings, her talk levels.
+   * A server first seen later is not established and starts quiet (a mention or a reply only)
+   * until something is set for it. Not the default Space: that is `primary`.
+   */
+  established: boolean;
 }
 
 /** A room (channel, thread, voice room, DM) as identity records it. */

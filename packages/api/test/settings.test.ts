@@ -213,8 +213,16 @@ const SPACE_A: SpaceRef = {
   external_id: "9",
   name: "魚缸",
   primary: true,
+  established: true,
 };
-const SPACE_B: SpaceRef = { ...SPACE_A, id: "S2", external_id: "8", name: "第二", primary: false };
+const SPACE_B: SpaceRef = {
+  ...SPACE_A,
+  id: "S2",
+  external_id: "8",
+  name: "第二",
+  primary: false,
+  established: false,
+};
 
 /** The two Spaces she is in, as far as the routes ask. */
 const places = {

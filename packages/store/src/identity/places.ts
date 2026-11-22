@@ -24,6 +24,7 @@ function ref(row: SpaceRow): SpaceRef {
     external_id: row.external_id,
     name: row.name,
     primary: row.is_primary,
+    established: row.established || row.is_primary,
   };
 }
 
