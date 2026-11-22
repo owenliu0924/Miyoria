@@ -42,6 +42,7 @@ import { dirname, join } from "node:path";
 import {
   ArtifactCreated,
   type ArtifactCreatedData,
+  ArtifactDeleted,
   ArtifactExpired,
   type ArtifactKeptBy,
   type ArtifactKind,
@@ -169,6 +170,8 @@ export interface ArtifactFilter {
   source?: ArtifactSource;
   kind?: ArtifactKind;
   plugin?: string;
+  /** Only copies of this artifact (a cleaned or re-encoded one). */
+  derived_from?: string;
   /** Only kept ones (`true`), or only expiring ones (`false`). */
   kept?: boolean;
   /** Only those in an album. */
@@ -759,13 +762,19 @@ export class ArtifactStore {
    * A stream of an artifact's bytes, with no visibility check: for callers that checked already
    * (a share token's lookup). Throws `ArtifactBlobMissingError` when the file is missing.
    */
-  async openContent(artifact: Artifact): Promise<ReadStream> {
+  async openContent(
+    artifact: Artifact,
+    range?: { start: number; end: number },
+  ): Promise<ReadStream> {
     const path = this.layout.blobPath(artifact.sha256);
     const info = await statOrNull(path);
     if (info === null || !info.isFile()) {
       throw new ArtifactBlobMissingError(`the bytes of artifact ${artifact.id} are missing`);
     }
-    return createReadStream(path);
+    // An inclusive byte range (a video's seek), or the whole file.
+    return range === undefined
+      ? createReadStream(path)
+      : createReadStream(path, { start: range.start, end: range.end });
   }
 
   /** Whether `artifact` is still there to be seen now: not deleted, expired or withdrawn. */
@@ -803,6 +812,7 @@ export class ArtifactStore {
     if (filter.source !== undefined) where.push(eq(t.source, filter.source));
     if (filter.kind !== undefined) where.push(eq(t.kind, filter.kind));
     if (filter.plugin !== undefined) where.push(eq(t.plugin, filter.plugin));
+    if (filter.derived_from !== undefined) where.push(eq(t.derived_from, filter.derived_from));
     if (filter.kept === true) where.push(isNotNull(t.kept_by));
     if (filter.kept === false) where.push(isNull(t.kept_by));
     if (filter.album === true) where.push(eq(t.kept_by, "album"));
@@ -852,11 +862,14 @@ export class ArtifactStore {
     return this.#db.tx(() => {
       const artifact = this.get(id);
       if (artifact === null || !isLive(artifact, this.#nowMs())) return false;
-      this.#db.orm
-        .update(artifactItems)
-        .set({ kept_by: by, expires_at: null })
-        .where(eq(artifactItems.id, id))
-        .run();
+      // Its cleaned copies are what its links hand out: they are kept with it.
+      for (const target of [id, ...this.#copiesOf(id)]) {
+        this.#db.orm
+          .update(artifactItems)
+          .set({ kept_by: by, expires_at: null })
+          .where(eq(artifactItems.id, target))
+          .run();
+      }
       return true;
     });
   }
@@ -868,13 +881,25 @@ export class ArtifactStore {
       if (artifact === null || artifact.kept_by === null) return false;
       if (!isLive(artifact, this.#nowMs())) return false;
       const expires = TIME(this.#nowMs() + this.lifetime(artifact.source));
-      this.#db.orm
-        .update(artifactItems)
-        .set({ kept_by: null, expires_at: expires })
-        .where(eq(artifactItems.id, id))
-        .run();
+      for (const target of [id, ...this.#copiesOf(id)]) {
+        this.#db.orm
+          .update(artifactItems)
+          .set({ kept_by: null, expires_at: expires })
+          .where(eq(artifactItems.id, target))
+          .run();
+      }
       return true;
     });
+  }
+
+  /** The ids of the copies made from an artifact (cleaned, re-encoded) that are not deleted. */
+  #copiesOf(id: string): string[] {
+    return this.#db.orm
+      .select({ id: artifactItems.id })
+      .from(artifactItems)
+      .where(and(eq(artifactItems.derived_from, id), isNull(artifactItems.deleted_at)))
+      .all()
+      .map((r) => r.id);
   }
 
   /** Revokes every live share of an artifact; returns how many. Inside the caller's `tx`. */
@@ -897,12 +922,16 @@ export class ArtifactStore {
       const artifact = this.get(id);
       if (artifact === null || artifact.review === "taken_down") return false;
       const at = TIME(this.#nowMs());
-      this.#db.orm
-        .update(artifactItems)
-        .set({ review: "taken_down" })
-        .where(eq(artifactItems.id, id))
-        .run();
-      const revoked = this.#revokeShares(id, at);
+      // Its cleaned copies go down with it: they are the same picture.
+      let revoked = 0;
+      for (const target of [id, ...this.#copiesOf(id)]) {
+        this.#db.orm
+          .update(artifactItems)
+          .set({ review: "taken_down" })
+          .where(eq(artifactItems.id, target))
+          .run();
+        revoked += this.#revokeShares(target, at);
+      }
       this.#events.appendNow({
         draft: {
           id: newId(),
@@ -911,6 +940,44 @@ export class ArtifactStore {
           v: ArtifactTakenDown.v,
           key: `artifact:${id}`,
           data: { artifact_id: id, by, reason, shares_revoked: revoked },
+        },
+        source: ARTIFACT_EVENT_SOURCE,
+      });
+      return true;
+    });
+  }
+
+  /**
+   * Deletes an artifact for its own person (the member page): it is gone for everyone at once, its
+   * shares (and those of its cleaned copies) are revoked, and one `artifact.deleted` event records
+   * who. The sweep removes the row and the bytes after the grace. `false`: unknown, already gone,
+   * or not made for `person`.
+   */
+  deleteFor(id: string, person: PersonId): boolean {
+    return this.#db.tx(() => {
+      const artifact = this.get(id);
+      if (artifact === null || artifact.made_for !== person || artifact.deleted_at !== null) {
+        return false;
+      }
+      const at = TIME(this.#nowMs());
+      let revoked = 0;
+      for (const target of [id, ...this.#copiesOf(id)]) {
+        this.#db.orm
+          .update(artifactItems)
+          .set({ deleted_at: at })
+          .where(eq(artifactItems.id, target))
+          .run();
+        revoked += this.#revokeShares(target, at);
+      }
+      this.#events.appendNow({
+        draft: {
+          id: newId(),
+          at,
+          type: ArtifactDeleted.type,
+          v: ArtifactDeleted.v,
+          person_id: person,
+          key: `artifact:${id}`,
+          data: { artifact_id: id, by: `person:${person}`, shares_revoked: revoked },
         },
         source: ARTIFACT_EVENT_SOURCE,
       });
