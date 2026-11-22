@@ -114,7 +114,7 @@ export function shownNames(
   return out;
 }
 
-/** `「沒人」(現在叫「Luna」)`: a candidate as a refusal lists it. */
+/** `「沒人」(現在叫「Lumen」)`: a candidate as a refusal lists it. */
 export function describePerson(c: PersonCandidate): string {
   const shown = shownNames(c.handle, c.shown);
   const now = shown.length === 0 ? "" : `(現在叫${shown.map((n) => `「${n}」`).join("、")})`;
