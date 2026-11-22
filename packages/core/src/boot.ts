@@ -64,6 +64,7 @@ import {
 import {
   ActuatorExecutorKey,
   AttachmentSourceKey,
+  CharacterKey,
   DirectivesKey,
   Events,
   HandleDirectoryKey,
@@ -78,6 +79,7 @@ import {
   ProfileIdKey,
   PromptContributors,
   PromptContributorsKey,
+  RunningProfileKey,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
@@ -168,6 +170,11 @@ export interface CoreOptions {
   cli?: CliPlatformOptions;
   /** Uses this store instead of opening `core.database_url` (tests). */
   store?: Store;
+  /**
+   * The profile has a config and data of its own (docs/design/v5-profiles.md); `false` (default):
+   * it runs on the install's, as the first character always has. Only shown, never acted on.
+   */
+  ownProfile?: boolean;
 }
 
 /** A built (not yet started) core node. */
@@ -327,6 +334,14 @@ export async function buildCoreWith(
   const profileDisplayName = profile.displayName;
   const profileId = profile.id;
   services.provide(k, ProfileIdKey, profileId);
+  // Who she is in this profile, for the texts that name her (`[character]`).
+  services.provide(k, CharacterKey, profile.character);
+  services.provide(k, RunningProfileKey, {
+    id: profileId,
+    own: options.ownProfile ?? false,
+    character: profile.character.name,
+    persona: profileDisplayName,
+  });
   // One database belongs to one character: a memory looked up by id reports this profile.
   store.plugin(memoryTables).forProfile(profileId);
 

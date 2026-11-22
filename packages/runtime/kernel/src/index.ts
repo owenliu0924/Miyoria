@@ -40,6 +40,7 @@ export {
   processEnv,
 } from "./config.js";
 export {
+  CharacterSectionSchema,
   type ConfigCheckOptions,
   type ConfigPolicy,
   type ConfigProblem,
@@ -48,6 +49,7 @@ export {
   type ConfigSection,
   type ConfigSeverity,
   CoreSectionSchema,
+  characterOf,
   checkConfig,
   composeConfigSchema,
   configJsonSchema,

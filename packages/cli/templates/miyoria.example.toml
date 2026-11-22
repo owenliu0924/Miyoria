@@ -2,10 +2,18 @@
 # 字串可以用 ${ENV_VAR} 或 ${ENV_VAR:-預設值} 引用環境變數 / .env。
 
 [core]
-profile = "deepseek-chan"          # profiles/<id>/
+profile = "deepseek-chan"          # profiles/<id>/;它有自己的 miyoria.toml 時改用那份設定和它的 data/(`miyoria profile`)
 profiles_dir = "profiles"
 database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"   # 只支援 SQLite:sqlite:<路徑> 或 memory://
 log = "info,miyoria=debug"
+
+# 她是誰(這個 profile 的角色,docs/design/v5-profiles.md);不寫 = Miyoria。改了要重啟 core
+# [character]
+# name = "Miyoria"
+# short_name = "Miyo"               # 大部分人怎麼叫她;"" = 沒有
+# other_names = ["米優", "みよ"]     # 簡稱的其他寫法,叫到也算在叫她
+# pronoun = "她"
+# exchange_name = "深海交易所"       # 交易所的名字(幣名是 [modules.economy] currency)
 
 # ---- LLM ----------------------------------------------------------------
 # 任何 OpenAI 相容 API 都可以:填 base_url、api_key,模型 id 在 purposes 裡。

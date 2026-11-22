@@ -9,7 +9,8 @@
 // | where                            | today                                   | the check  |
 // |----------------------------------|-----------------------------------------|------------|
 // | `[llm]`, `[speech]`, `[mcp]`,    | the reader throws `ConfigError` while   | error      |
-// | `[memory.embedding]`             | Core is built: Core does not start      |            |
+// | `[memory.embedding]`,            | Core is built: Core does not start      |            |
+// | `[character]`                    |                                         |            |
 // | `[modules.<id>]`, module on      | the module fails its start (and is      | warning    |
 // |                                  | retried); the rest runs                 |            |
 // | `[modules.<id>]`, module off, or | never read (an empty token disables the | ignored    |
@@ -70,6 +71,7 @@ import {
 } from "@miyoria/plugin-host/ext-host";
 import { McpConfigSchema, McpModule } from "@miyoria/plugin-host/mcp";
 import {
+  CharacterSectionSchema,
   Config,
   type ConfigPolicy,
   type ConfigProblem,
@@ -172,6 +174,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
  */
 export const CONFIG_SECTIONS: Readonly<Record<string, ConfigSection>> = {
   core: CoreSectionSchema,
+  character: CharacterSectionSchema,
   llm: LlmConfigSchema,
   speech: SpeechConfigSchema,
   memory: { embedding: EmbeddingConfigSchema },
@@ -207,7 +210,7 @@ function coreRoot(): ConfigSchema {
 }
 
 /** Sections whose reader throws while Core is built, so a problem there stops the start. */
-const FATAL_SECTIONS = new Set(["llm", "speech", "mcp"]);
+const FATAL_SECTIONS = new Set(["llm", "speech", "mcp", "character"]);
 
 /**
  * Whether the file lets module `id` start: enabled, and with a token when it needs one (Core
