@@ -8,7 +8,7 @@
 //
 //   /miyo     (panel)
 //   /song     (panel)
-//   /voice    join · leave · mode · consent · golive start|stop|status
+//   /voice    join · leave · mode · consent · golive start|stop|status · watch start|stop
 //   /stream   start · stop · status · scene
 //   /me       i · profile · call · link · privacy · wallet · checkin · feed · give · board ·
 //             screen · danmaku · card · bounties · memory show|export|forget ·
@@ -27,8 +27,12 @@ type GroupInit = Partial<Omit<GroupInfo, "description">> & { description: string
 export const COMMAND_GROUPS: Readonly<Record<string, GroupInit>> = {
   miyo: { description: "她的控制面板：語音、直播、遊戲、聊天等級與緊急停止", guild_only: true },
   song: { description: "點歌與歌單", guild_only: true },
-  voice: { description: "語音：讓她加入或離開語音頻道、設定語音模式與 Go Live", guild_only: true },
+  voice: {
+    description: "語音：讓她加入或離開語音頻道、設定語音模式、Go Live 與看朋友的直播",
+    guild_only: true,
+  },
   "voice golive": { description: "Discord Go Live 推流" },
+  "voice watch": { description: "讓她看語音頻道裡朋友的直播" },
   stream: { description: "直播：透過直播機控制 OBS", guild_only: true },
   me: { description: "你的資料：她怎麼稱呼你、帳號連結與她記得的事" },
   "me memory": { description: "她記得的關於你的事" },
