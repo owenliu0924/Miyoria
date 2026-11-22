@@ -14,8 +14,8 @@
 //   writes nothing and returns the earlier import.
 // - The per-channel levels of `[modules.agent]` (`channels`, `activeness`) whose key names a place
 //   move to `place_settings` of plugin `agent`: `<platform>:<guild>` is the space, keys `mode` and
-//   `activeness`; `<platform>:<guild>:<channel>` the room, same keys; `<platform>:<guild>:voice:
-//   <channel>` the same room's voice lane, keys `voice.mode` and `voice.activeness`. Spaces and
+//   `activeness_level` (the names the agent reads); `<platform>:<guild>:<channel>` the room, same keys; `<platform>:<guild>:voice:
+//   <channel>` the same room's voice lane, keys `voice.mode` and `voice.activeness_level`. Spaces and
 //   rooms are created on first sight. A bare channel id names no space and a DM key names no
 //   person, so those entries stay in the document, and the result lists them.
 // - Channel fields that may differ per server (`spaceChannels`, from the modules' schemas) are
@@ -52,7 +52,7 @@ const AGENT = "agent";
 /** `[modules.agent]` maps keyed by context, and the place setting each becomes. */
 const LEVEL_MAPS = [
   { map: "channels", key: "mode" },
-  { map: "activeness", key: "activeness" },
+  { map: "activeness", key: "activeness_level" },
 ] as const;
 
 /** Key names whose literal value would be a secret. */

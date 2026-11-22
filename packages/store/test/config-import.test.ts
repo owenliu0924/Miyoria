@@ -209,7 +209,7 @@ enabled = false
         scope: "room",
         scope_id: text.id,
         plugin: "agent",
-        key: "activeness",
+        key: "activeness_level",
         value: "high",
       },
     ]);
@@ -232,7 +232,7 @@ enabled = false
     ).toEqual([
       ["space", space, "agent", "mode", "mention-only", "import"],
       ...[
-        [text.id, "activeness", "high"],
+        [text.id, "activeness_level", "high"],
         [text.id, "mode", "lively"],
         [voice.id, "voice.mode", "normal"],
       ]
