@@ -192,3 +192,24 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 **日記**:還是 owner 選的一個頻道。那一天在別的伺服器也有聊天時,日記不用反省的總結(它是所有地方的),改用日記頻道那個伺服器自己頻道的前情提要,加上心情、學到的事、目標。只在一個伺服器聊的日子照舊。
 
 **還沒做**:home 那一輪「每個地方合併成一行」的通知,和用 `disclose` 檢查權限的讀取工具 `look(place)`;現在 home 的項目只是按 Space 過濾。
+
+## 10. 拍賣、樂透、佇列、點歌、卡片掉落(P5,做成的樣子)
+
+**市集**(`play/market`):每個 Space 一個 `MarketService`(`markets.ts` 的 `Markets`,`MarketKey.of(space)`),各自的列(`MarketStore.forSpace`)和設定(`placeConfig`,用到時才讀,改了不用重啟);點歌優先券另外一個,大家共用。標成 `scope: "space"` 的是拍賣和樂透的開關、兩個頻道、星期幾、幾點、`utc_offset_minutes`(這個伺服器的日子;優先券的「一天」還是 cluster 的,每個人共用)。價格、上限、拍品是 cluster 的。
+
+- 主要的 Space 照舊:有拍賣頻道就拍,樂透沒有頻道也賣。其他 Space 只有在那個伺服器自己的頻道時才拍、才賣(cluster 的頻道在主要的 Space 裡,頻道規則會把它拿掉),所以沒設過的伺服器什麼都不跑、不寫任何列。
+- 她離開的伺服器:還開著的拍品取消、押著的全退,這週的樂透全額退回,不再發公告;列都留著。
+- 公告用那個 Space 的 context(`{platform, scope: guild, channel}`);沒有 identity 的時候用 sink 的平台。
+- 指令和按鈕用它們所在伺服器的市集,私訊是主要的;會員路由 `?space=`(`memberSpace`),管理路由 `?space=`(`adminSpace`,預設主要的)。
+
+`market` v3(需要 identity,在它後面跑):`market_lots`、`market_lottery_tickets`、`market_song_tickets` 多 `space_id`;拍品照它頻道的 room 補,其他的補主要的 Space。拍品的唯一索引從 `(week)` 換成 `(space_id, week)`。樂透改用新的 `market_lottery_draws`(主鍵 `(space_id, week)`),從 `market_lottery_weeks` 複製過去、放在主要的 Space 底下;舊表不動、不再寫,什麼都沒刪。資料庫那時還沒有任何 Space 的話,列是 `NULL`(樂透是 `''`),模組在有主要的 Space 之後把它們給它(`adopt`)。`retireMarketSql` 跟著改成看新表、也刪新表。
+
+**請求佇列**(`play/queue`):一個 `queue:state` 快照,每個項目帶 `space`,每個 Space 自己的暫停、公平輪替和投票放在 `spaces`;最上層的 `paused`、`served`、`vote`、`last_vote` 還是寫(主要的 Space 的),舊版讀得懂。舊快照照原樣讀:它的暫停、輪替和投票是主要的 Space 的,每個項目照它 context 的伺服器、沒有就主要的。項目編號全域唯一。指令和按鈕用所在伺服器的佇列;`/api/queue*` 有 `?space=`,跳過和移動回那個項目所在的佇列。`queue.changed` 只帶變了的那個佇列。
+
+**唱歌**(`sing`):項目多一個 `guild`(在伺服器外點的歌要在哪個伺服器唱)。在伺服器裡點的,就在那個伺服器唱;私訊或會員頁點的,在指定的伺服器(會員頁 `POST /api/member/songs?space=`,在好幾個伺服器的人用 `SpacePicker` 選),沒指定就是點歌的人自己的(她正在那裡語音的、主要的、第一個)。她在別的伺服器語音時這首就等,下次她在那個伺服器的語音再唱,回答裡說為什麼要等。`pending` / `setlist`(`VoiceFloor`)、自動開唱、提醒、她的 `sing_start` 都只看那個伺服器的歌;沒有伺服器的歌(階段 6 以前的)到處都算。重新啟動時,還沒唱、在伺服器外點的舊歌給主要的伺服器;正在唱的歌不受影響(這些只決定下一首)。優先券的價格和每天上限全域,記錄用在哪個 Space 的佇列;沒唱到的照舊退回。`GET /api/public/songs?space=`,沒給是主要的。
+
+**卡片掉落**(`play/cards`):`drop_channels` 是每個 Space 的清單,`drops` 每個 Room 可以自己開關;一個頻道在它伺服器的清單裡、而且開著才會掉。其他數字是 cluster 的,每人每天能撿幾張跨伺服器算。
+
+**卡拉 OK**:講評頻道和指令的字不再只認 Discord。KTV 房每個 Space 一份(`karaoke` v6、房間和講評頻道照 Space)還沒做,見 backlog。
+
+**面板**:經濟 / 市集和即時的佇列卡跟著殼的 `?space=`;會員頁的市集和點歌用自己的伺服器,只在好幾個伺服器時有選擇。
