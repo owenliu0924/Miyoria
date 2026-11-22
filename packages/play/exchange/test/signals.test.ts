@@ -6,11 +6,11 @@
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
 import { type JsonValue, newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { exchangeConfig } from "../src/config.js";
+import { exchangeConfig, localCompaniesOf } from "../src/config.js";
 import {
-  LOCAL_CODES,
-  type LocalCode,
+  LOCAL_ROLES,
   LocalProvider,
+  type LocalRole,
   nextPrice,
   signalMove,
   taipeiDay,
@@ -34,6 +34,8 @@ const TODAY = taipeiDay(NOON);
 const Y = TODAY - 1;
 const { start: Y0, end: Y1 } = taipeiDayWindow(Y);
 const config = exchangeConfig();
+const COMPANIES = localCompaniesOf(config);
+const RICE = COMPANIES.find((c) => c.code === "RICE") as (typeof COMPANIES)[number];
 
 const dbs: TestDb[] = [];
 afterEach(() => {
@@ -46,15 +48,15 @@ function log() {
   const events = t.events;
   const add = (type: string, at: number, data: JsonValue, source = "test") =>
     events.append([{ draft: { id: newId(), type, at: toTimestamp(at), data }, source }]);
-  const sources = (present: Partial<Record<LocalCode, boolean>> = {}) =>
+  const sources = (present: Partial<Record<LocalRole, boolean>> = {}) =>
     eventLogSources({
       events: () => events,
       present: {
-        RICE: () => present.RICE ?? true,
-        WHLE: () => present.WHLE ?? true,
-        NAPS: () => present.NAPS ?? true,
-        CUBE: () => present.CUBE ?? true,
-        DPSK: () => present.DPSK ?? true,
+        feeding: () => present.feeding ?? true,
+        songs: () => present.songs ?? true,
+        silence: () => present.silence ?? true,
+        game: () => present.game ?? true,
+        model: () => present.model ?? true,
       },
       slowMs: () => 30_000,
     });
@@ -103,7 +105,7 @@ const call = (status: "ok" | "error" | "aborted", duration: number | null) => ({
 const OLD = Y0 - 30 * DAY;
 
 describe("the sources over the event log", () => {
-  it("RICE counts bowls and food gifts of the Taipei day, refunds, objects and her purse out", async () => {
+  it("feeding (RICE) counts bowls and food gifts of the Taipei day, refunds, objects and her purse out", async () => {
     const { add, sources } = log();
     add("economy.posted", OLD, posted("checkin", 10, null));
     add("economy.posted", Y0, posted("feed", -30, "rice:3"));
@@ -119,11 +121,11 @@ describe("the sources over the event log", () => {
     // The last moment of the day counts; the first of the next does not.
     add("economy.posted", Y1 - 1, posted("feed", -10, "rice:1"));
     add("economy.posted", Y1, posted("feed", -50, "rice:5"));
-    const rice = sources().RICE as CountSource;
+    const rice = sources().feeding as CountSource;
     expect(await rice.count(Y, NOON)).toEqual({ value: 5, parts: { feeds: 5 } });
   });
 
-  it("WHLE counts songs sung to the end, not stopped, failed or started ones", async () => {
+  it("songs (WHLE) counts songs sung to the end, not stopped, failed or started ones", async () => {
     const { add, sources } = log();
     add("economy.posted", OLD, posted("checkin", 10, null));
     const song = (at: number, data: JsonValue) =>
@@ -141,14 +143,14 @@ describe("the sources over the event log", () => {
       observed("sing.cue", { state: "ended", outcome: "finished" }),
       "x",
     );
-    const whle = sources().WHLE as CountSource;
+    const whle = sources().songs as CountSource;
     expect(await whle.count(Y, NOON)).toEqual({ value: 2, parts: { songs: 2 } });
     // Ambient rows are folded after 14 days: an older day is not whole on record.
     expect(await whle.count(Y - 12, NOON)).toEqual({ value: 0, parts: { songs: 0 } });
     expect(await whle.count(Y - 13, NOON)).toBeNull();
   });
 
-  it("NAPS counts the Taipei hours with no line of hers delivered and no failed model call", async () => {
+  it("silence (NAPS) counts the Taipei hours with no line of hers delivered and no failed model call", async () => {
     const { add, sources } = log();
     add("economy.posted", OLD, posted("checkin", 10, null));
     add("facts.delivered", Y0 + 30 * 60_000, { channel: "text" }, "delivery.text");
@@ -159,14 +161,14 @@ describe("the sources over the event log", () => {
     add("llm.call", Y0 + 6 * HOUR, call("ok", 1000), "llm");
     // The next day's lines are not this day's.
     add("facts.delivered", Y1 + 10, { channel: "text" }, "delivery.text");
-    const naps = sources().NAPS as CountSource;
+    const naps = sources().silence as CountSource;
     expect(await naps.count(Y, NOON)).toEqual({ value: 21, parts: { hours: 21 } });
   });
 
-  it("CUBE is goals reached less deaths; no game played is a neutral zero", async () => {
+  it("game (CUBE) is goals reached less deaths; no game played is a neutral zero", async () => {
     const { add, sources } = log();
     add("economy.posted", OLD, posted("checkin", 10, null));
-    const cube = sources().CUBE as CountSource;
+    const cube = sources().game as CountSource;
     expect(await cube.count(Y, NOON)).toEqual({ value: 0, parts: { goals: 0, deaths: 0 } });
     add(
       "facts.observation",
@@ -196,7 +198,7 @@ describe("the sources over the event log", () => {
     expect(await cube.count(Y, NOON)).toEqual({ value: -1, parts: { goals: 1, deaths: 2 } });
   });
 
-  it("DPSK counts failed calls and slow answers, not cancelled ones", async () => {
+  it("model (DPSK) counts failed calls and slow answers, not cancelled ones", async () => {
     const { add, sources } = log();
     add("economy.posted", OLD, posted("checkin", 10, null));
     add("llm.call", Y0 + HOUR, call("error", 500), "llm");
@@ -204,7 +206,7 @@ describe("the sources over the event log", () => {
     add("llm.call", Y0 + 3 * HOUR, call("ok", 45_000), "llm");
     add("llm.call", Y0 + 4 * HOUR, call("ok", 30_000), "llm");
     add("llm.call", Y0 + 5 * HOUR, call("aborted", 90_000), "llm");
-    const dpsk = sources().DPSK as CountSource;
+    const dpsk = sources().model as CountSource;
     expect(await dpsk.count(Y, NOON)).toEqual({ value: 3, parts: { errors: 2, slow: 1 } });
   });
 
@@ -212,7 +214,7 @@ describe("the sources over the event log", () => {
     const { add, sources } = log();
     // A new instance: the log began during yesterday.
     add("economy.posted", Y0 + HOUR, posted("feed", -10, "rice:1"));
-    const rice = sources().RICE as CountSource;
+    const rice = sources().feeding as CountSource;
     expect(await rice.count(Y, NOON)).toBeNull();
     expect(await rice.count(TODAY, NOON)).toBeNull();
     expect(await rice.count(TODAY, NOON + DAY)).toEqual({ value: 0, parts: { feeds: 0 } });
@@ -220,25 +222,25 @@ describe("the sources over the event log", () => {
 
   it("are missing when their module is off or there is no log", () => {
     const { sources } = log();
-    expect(sources({ CUBE: false }).CUBE?.missing()).toBe("game 沒有開");
-    expect(sources().RICE?.missing()).toBeNull();
+    expect(sources({ game: false }).game?.missing()).toBe("game 沒有開");
+    expect(sources().feeding?.missing()).toBeNull();
     const none = eventLogSources({
       events: () => null,
       present: {
-        RICE: () => true,
-        WHLE: () => true,
-        NAPS: () => true,
-        CUBE: () => true,
-        DPSK: () => true,
+        feeding: () => true,
+        songs: () => true,
+        silence: () => true,
+        game: () => true,
+        model: () => true,
       },
       slowMs: () => 1,
     });
-    expect(none.RICE?.missing()).toBe("沒有事件紀錄");
+    expect(none.feeding?.missing()).toBe("沒有事件紀錄");
   });
 });
 
 describe("the mapping", () => {
-  const rice = mappingOf(config, "RICE");
+  const rice = mappingOf(config, "feeding");
 
   it("needs history: none, or fewer days than min_history_days, is no signal", () => {
     expect(readSignal(50, [], rice)).toBeNull();
@@ -249,7 +251,7 @@ describe("the mapping", () => {
   it("is neutral on days of zeros, and an outlier in the window moves neither median nor spread much", () => {
     const zeros = Array(14).fill(0);
     expect(readSignal(0, zeros, rice)?.signal).toBe(0);
-    for (const code of LOCAL_CODES)
+    for (const code of LOCAL_ROLES)
       expect(readSignal(0, zeros, mappingOf(config, code))?.signal).toBe(0);
     const usual = [10, 12, 9, 11, 10, 13, 8, 10, 11, 9, 12, 10, 11, 10];
     const outlier = [...usual.slice(0, 13), 500];
@@ -270,21 +272,27 @@ describe("the mapping", () => {
     expect(readSignal(0, usual, rice)?.signal).toBe(-1);
   });
 
-  it("points each company its own way, and DPSK never up", () => {
+  it("points each company its own way, and the model stock never up", () => {
     const usual = Array(14).fill(10);
-    for (const code of ["RICE", "WHLE", "NAPS", "CUBE"] as const) {
+    for (const code of ["feeding", "songs", "silence", "game"] as const) {
       expect(readSignal(100, usual, mappingOf(config, code))?.signal).toBe(1);
       expect(readSignal(0, usual, mappingOf(config, code))?.signal).toBe(-1);
     }
-    const dpsk = mappingOf(config, "DPSK");
+    const dpsk = mappingOf(config, "model");
     expect(readSignal(100, usual, dpsk)?.signal).toBeCloseTo(-0.6, 9);
     expect(readSignal(0, usual, dpsk)?.signal).toBe(0);
     // Even when the owner sets it: up stays 0, and the fall stays under a round trip's fees.
     const loose = exchangeConfig({
-      local_signals: { ...config.local_signals, DPSK: { floor: 1, up: 1, down: 1 } },
+      local_signals: { ...config.local_signals, model: { floor: 1, up: 1, down: 1 } },
     });
-    expect(mappingOf(loose, "DPSK").up).toBe(0);
-    expect(mappingOf(loose, "DPSK").down).toBeCloseTo(0.6, 9);
+    expect(mappingOf(loose, "model").up).toBe(0);
+    expect(mappingOf(loose, "model").down).toBeCloseTo(0.6, 9);
+    // The first character's codes are still read as their roles' tables.
+    const legacy = exchangeConfig({
+      local_signals: { ...config.local_signals, RICE: { floor: 4, up: 0.5, down: 1 } },
+    });
+    expect(mappingOf(legacy, "feeding")).toMatchObject({ floor: 4, up: 0.5 });
+    expect(mappingOf(legacy, "songs").floor).toBe(3);
   });
 });
 
@@ -314,12 +322,12 @@ describe("the book", () => {
   it("prices today's open from yesterday only: today's events never reach it", async () => {
     // Today's count so far is huge; yesterday's is usual.
     const feeds = fixed(history(10, { [TODAY]: 9999 }), (v) => ({ feeds: v }));
-    const book = new LocalSignalBook({ sources: { RICE: feeds.source }, config: () => config });
+    const book = new LocalSignalBook({ sources: { feeding: feeds.source }, config: () => config });
     const stored = { price: 100, at: NOON - 13 * HOUR, prev_close: 100 };
     const provider = new LocalProvider(
       "s",
       (c, d) => book.signal(c, d),
-      () => 100,
+      () => COMPANIES,
       () => stored,
       (days, now) => book.prepare(days, now),
     );
@@ -328,7 +336,7 @@ describe("the book", () => {
     expect(Math.max(...feeds.asked)).toBe(Y);
     const neutral = nextPrice(
       "s",
-      "RICE",
+      RICE,
       NOON,
       { price: 100, at: stored.at, close: 100 },
       () => null,
@@ -338,79 +346,83 @@ describe("the book", () => {
 
     // A big yesterday moves today's open by the gap, at the first tick only.
     const big = fixed(history(20), (v) => ({ feeds: v }));
-    const book2 = new LocalSignalBook({ sources: { RICE: big.source }, config: () => config });
+    const book2 = new LocalSignalBook({ sources: { feeding: big.source }, config: () => config });
     const p2 = new LocalProvider(
       "s",
       (c, d) => book2.signal(c, d),
-      () => 100,
+      () => COMPANIES,
       () => stored,
       (days, now) => book2.prepare(days, now),
     );
     const open = (await p2.quotes(["RICE"], NOON)).get("RICE")?.price ?? 0;
     const pushed = nextPrice(
       "s",
-      "RICE",
+      RICE,
       NOON,
       { price: 100, at: stored.at, close: 100 },
       () => ({ signal: 1 }),
       100,
     );
     expect(open).toBe(pushed.price);
-    expect(book2.fact("RICE", NOON)?.move).toBe(signalMove({ signal: 1 }));
+    expect(book2.fact("feeding", NOON)?.move).toBe(signalMove({ signal: 1 }));
   });
 
   it("is neutral for a missing source and says so in one plain line", async () => {
     const book = new LocalSignalBook({ sources: {}, config: () => config });
     await book.prepare([Y], NOON);
-    expect(book.signal("RICE", Y)).toBeNull();
-    expect(book.missing("RICE")).toBe("沒有來源");
-    expect(book.line("RICE", NOON)).toBe("昨天沒有她的紀錄 → 今天開盤 +0.0%");
+    expect(book.signal("feeding", Y)).toBeNull();
+    expect(book.missing("feeding")).toBe("沒有來源");
+    expect(book.line("feeding", NOON)).toBe("昨天沒有她的紀錄 → 今天開盤 +0.0%");
     const off: CountSource = {
       label: "off",
       missing: () => "economy 沒有開",
       count: async () => ({ value: 99, parts: {} }),
     };
-    const book2 = new LocalSignalBook({ sources: { RICE: off }, config: () => config });
+    const book2 = new LocalSignalBook({ sources: { feeding: off }, config: () => config });
     await book2.prepare([Y], NOON);
-    expect(book2.signal("RICE", Y)).toBeNull();
+    expect(book2.signal("feeding", Y)).toBeNull();
   });
 
   it("writes the card's line from the numbers, for each company", async () => {
     const sources = {
-      RICE: fixed(history(16), (v) => ({ feeds: v })).source,
-      WHLE: fixed(history(8), (v) => ({ songs: v })).source,
-      NAPS: fixed(history(10), (v) => ({ hours: v })).source,
-      CUBE: fixed(
+      feeding: fixed(history(16), (v) => ({ feeds: v })).source,
+      songs: fixed(history(8), (v) => ({ songs: v })).source,
+      silence: fixed(history(10), (v) => ({ hours: v })).source,
+      game: fixed(
         { ...Object.fromEntries(Array.from({ length: 15 }, (_, i) => [Y - 14 + i, 0])) },
         () => ({ goals: 0, deaths: 0 }),
       ).source,
-      DPSK: fixed(history(40), (v) => ({ errors: v - 5, slow: 5 })).source,
+      model: fixed(history(40), (v) => ({ errors: v - 5, slow: 5 })).source,
     };
     const book = new LocalSignalBook({ sources, config: () => config });
     await book.prepare([Y], NOON);
-    expect(book.line("RICE", NOON)).toBe("昨天她被餵了 16 次,比平常多 → 今天開盤 +1.8%");
-    expect(book.line("WHLE", NOON)).toBe("昨天她唱完 8 首歌,比平常少 → 今天開盤 -1.2%");
-    expect(book.line("NAPS", NOON)).toBe("昨天她有 10 個小時沒說話,跟平常差不多 → 今天開盤 +0.0%");
-    expect(book.line("CUBE", NOON)).toBe(
+    expect(book.line("feeding", NOON)).toBe("昨天她被餵了 16 次,比平常多 → 今天開盤 +1.8%");
+    expect(book.line("songs", NOON)).toBe("昨天她唱完 8 首歌,比平常少 → 今天開盤 -1.2%");
+    expect(book.line("silence", NOON)).toBe(
+      "昨天她有 10 個小時沒說話,跟平常差不多 → 今天開盤 +0.0%",
+    );
+    expect(book.line("game", NOON)).toBe(
       "昨天她在遊戲裡達成 0 個目標、死了 0 次,跟平常差不多 → 今天開盤 +0.0%",
     );
-    expect(book.line("DPSK", NOON)).toBe(
+    expect(book.line("model", NOON)).toBe(
       "昨天她的模型出錯 35 次、太慢 5 次,比平常多 → 今天開盤 -1.8%",
     );
     // The same facts, told to her about her own companies.
-    const note = book.herNote((c) => `公司${c}`, NOON) ?? "";
+    const codeOf = (role: LocalRole) => COMPANIES.find((c) => c.role === role)?.code ?? role;
+    const note =
+      book.herNote((role) => ({ code: codeOf(role), name: `公司${codeOf(role)}` }), NOON) ?? "";
     expect(note).toContain("公司RICE(RICE):昨天你被餵了 16 次,比平常多 → 今天開盤 +1.8%");
     expect(note.split(";")).toHaveLength(5);
   });
 
   it("says when there is not enough history yet", async () => {
     const book = new LocalSignalBook({
-      sources: { RICE: fixed({ [Y]: 3, [Y - 1]: 2 }, (v) => ({ feeds: v })).source },
+      sources: { feeding: fixed({ [Y]: 3, [Y - 1]: 2 }, (v) => ({ feeds: v })).source },
       config: () => config,
     });
     await book.prepare([Y], NOON);
-    expect(book.signal("RICE", Y)).toBeNull();
-    expect(book.line("RICE", NOON)).toBe(
+    expect(book.signal("feeding", Y)).toBeNull();
+    expect(book.line("feeding", NOON)).toBe(
       "昨天她被餵了 3 次,她平常的樣子還不到 7 天的紀錄 → 今天開盤 +0.0%",
     );
   });

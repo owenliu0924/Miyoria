@@ -6,15 +6,15 @@
 // the feedings and the fee are counted; causing model errors and buying DPSK's dip never pays.
 
 import { describe, expect, it } from "vitest";
-import { exchangeConfig } from "../src/config.js";
+import { exchangeConfig, localCompaniesOf } from "../src/config.js";
 import { feeOn } from "../src/engine/money.js";
 import { rngFor } from "../src/engine/rng.js";
 import {
   DAILY_LIMIT,
   HARD_BAND,
-  LOCAL_CODES,
-  type LocalCode,
+  type LocalCompany,
   LocalProvider,
+  type LocalRole,
   type LocalState,
   lastTick,
   nextPrice,
@@ -27,9 +27,15 @@ import { mappingOf, readSignal } from "../src/real/signals.js";
 const HOUR = 3_600_000;
 /** Monday 2026-11-23 12:00 Taipei. */
 const NOON = Date.UTC(2026, 10, 23, 4, 0);
-/** The configured anchors (config defaults). */
-const ANCHORS: Record<LocalCode, number> = { RICE: 100, WHLE: 108, NAPS: 88, CUBE: 116, DPSK: 94 };
-const anchor = (c: LocalCode) => ANCHORS[c];
+/** The five as the default config names them (codes, names, anchors). */
+const COMPANIES = localCompaniesOf(exchangeConfig());
+const stock = (code: string): LocalCompany => {
+  const c = COMPANIES.find((x) => x.code === code);
+  if (!c) throw new Error(code);
+  return c;
+};
+const RICE = stock("RICE");
+const DPSK = stock("DPSK");
 
 describe("the local stocks", () => {
   it("tick hourly from 12:00 to 23:00 Taipei and skip the night", () => {
@@ -44,7 +50,7 @@ describe("the local stocks", () => {
       const p = new LocalProvider(
         seed,
         () => null,
-        anchor,
+        () => COMPANIES,
         () => null,
       );
       const out: number[] = [];
@@ -83,10 +89,10 @@ describe("the local stocks", () => {
       return { signal: 1 };
     };
     const st = { price: 100, at: NOON - 13 * HOUR, close: 100 };
-    const open = nextPrice("s", "RICE", NOON, st, signals, 100);
+    const open = nextPrice("s", RICE, NOON, st, signals, 100);
     // The signal read is the day before the tick's.
     expect(seen).toEqual([Math.floor((NOON + 8 * HOUR) / 86_400_000) - 1]);
-    expect(nextPrice("s", "RICE", NOON + HOUR, open, signals, 100)).toBeDefined();
+    expect(nextPrice("s", RICE, NOON + HOUR, open, signals, 100)).toBeDefined();
     expect(seen).toHaveLength(1);
   });
 
@@ -94,17 +100,17 @@ describe("the local stocks", () => {
     // Ten seeds, a year each (365 × 12 ticks). The signal pushes the full +3% (or −3%) every day: the
     // worst a crowd could do. The range is printed for the report.
     const out: string[] = [];
-    for (const code of LOCAL_CODES) {
+    for (const company of COMPANIES) {
       let lo = Number.POSITIVE_INFINITY;
       let hi = 0;
       for (const push of [0, 1, -1]) {
         for (let seed = 0; seed < 10; seed++) {
-          const a = ANCHORS[code];
+          const a = company.anchor;
           let st: LocalState = { price: a, at: NOON - 13 * HOUR, close: a };
           const signals = () => (push === 0 ? null : { signal: push });
           for (let d = 0; d < 365; d++)
             for (let h = 0; h < 12; h++) {
-              st = nextPrice(`y${seed}`, code, NOON + d * 24 * HOUR + h * HOUR, st, signals, a);
+              st = nextPrice(`y${seed}`, company, NOON + d * 24 * HOUR + h * HOUR, st, signals, a);
               lo = Math.min(lo, st.price / a);
               hi = Math.max(hi, st.price / a);
             }
@@ -112,7 +118,7 @@ describe("the local stocks", () => {
       }
       expect(lo).toBeGreaterThanOrEqual(HARD_BAND.lo);
       expect(hi).toBeLessThanOrEqual(HARD_BAND.hi);
-      out.push(`${code} ${ANCHORS[code]}: ${lo.toFixed(2)}×–${hi.toFixed(2)}×`);
+      out.push(`${company.code} ${company.anchor}: ${lo.toFixed(2)}×–${hi.toFixed(2)}×`);
     }
     process.stdout.write(`local year range: ${out.join("; ")}\n`);
   }, 60_000);
@@ -160,11 +166,11 @@ describe("the local stocks", () => {
   const day0 = Math.floor((NOON + 8 * HOUR) / DAY_MS);
 
   /** The signal of `day` from the counts so far, as the book reads it (`readSignal`). */
-  const signalOf = (code: LocalCode, counts: readonly number[], day: number) => {
+  const signalOf = (role: LocalRole, counts: readonly number[], day: number) => {
     const x = counts[day - day0];
     if (x === undefined) return null;
     const from = Math.max(0, day - day0 - config.local_signals.baseline_days);
-    const r = readSignal(x, counts.slice(from, day - day0), mappingOf(config, code));
+    const r = readSignal(x, counts.slice(from, day - day0), mappingOf(config, role));
     return r ? { signal: r.signal } : null;
   };
 
@@ -197,21 +203,21 @@ describe("the local stocks", () => {
     let total = 0;
     let gaps = 0;
     let trades = 0;
-    const signals = (c: LocalCode, day: number) => signalOf(c, counts, day);
+    const signals = (c: LocalRole, day: number) => signalOf(c, counts, day);
     for (let d = 0; d < 2000; d++) {
       const rng = rngFor("feeds", seed, d);
       const pumped = pump(d);
       counts[d] = Math.max(0, Math.round(12 + rng.normal() * 4)) + (pumped ? extra.feeds : 0);
       let p23 = st.price;
       for (let h = 0; h < 12; h++) {
-        st = nextPrice(seed, "RICE", NOON + d * DAY_MS + h * HOUR, st, signals, 100);
+        st = nextPrice(seed, RICE, NOON + d * DAY_MS + h * HOUR, st, signals, 100);
         if (h === 11) p23 = st.price;
       }
       if (!pumped) continue;
       // The next day's first tick carries today's count (priced again in the loop: it is pure).
-      const open = nextPrice(seed, "RICE", NOON + (d + 1) * DAY_MS, st, signals, 100);
+      const open = nextPrice(seed, RICE, NOON + (d + 1) * DAY_MS, st, signals, 100);
       total += flip(stake.coins, p23, open.price, stake.orderMax) - extra.coins;
-      gaps += signalMove(signals("RICE", day0 + d));
+      gaps += signalMove(signals("feeding", day0 + d));
       trades++;
     }
     return { mean: total / Math.max(trades, 1), gap: gaps / Math.max(trades, 1), trades };
@@ -246,18 +252,18 @@ describe("the local stocks", () => {
     let st: LocalState = { price: 100, at: NOON - 13 * HOUR, close: 100 };
     let total = 0;
     let trades = 0;
-    const signals = (c: LocalCode, day: number) => signalOf(c, counts, day);
+    const signals = (c: LocalRole, day: number) => signalOf(c, counts, day);
     for (let d = 0; d < 2000; d++) {
       const rng = rngFor("feeds", "rider", d);
       counts[d] = Math.max(0, Math.round(12 + rng.normal() * 4));
       let p23 = st.price;
       for (let h = 0; h < 12; h++) {
-        st = nextPrice("rider", "RICE", NOON + d * DAY_MS + h * HOUR, st, signals, 100);
+        st = nextPrice("rider", RICE, NOON + d * DAY_MS + h * HOUR, st, signals, 100);
         if (h === 11) p23 = st.price;
       }
-      const s = signals("RICE", day0 + d);
+      const s = signals("feeding", day0 + d);
       if (s === null || s.signal < 0.5) continue;
-      const open = nextPrice("rider", "RICE", NOON + (d + 1) * DAY_MS, st, signals, 100);
+      const open = nextPrice("rider", RICE, NOON + (d + 1) * DAY_MS, st, signals, 100);
       total += flip(config.buy_per_day, p23, open.price);
       trades++;
     }
@@ -291,7 +297,7 @@ describe("the local stocks", () => {
   }, 60_000);
 
   it("never let causing model errors pay: DPSK only falls, by less than a round trip's fees", () => {
-    const m = mappingOf(config, "DPSK");
+    const m = mappingOf(config, "model");
     expect(m.up).toBe(0);
     expect(m.down * SIGNAL_MAX).toBeLessThan(2 * config.fee);
     // A quiet day gives nothing; a day of errors only pushes it down.
@@ -310,7 +316,7 @@ describe("the local stocks", () => {
       for (let seed = 0; seed < 12; seed++) {
         const run = (flood: boolean) => {
           const counts: number[] = [];
-          const signals = (c: LocalCode, day: number) => signalOf(c, counts, day);
+          const signals = (c: LocalRole, day: number) => signalOf(c, counts, day);
           let st: LocalState = { price: 94, at: NOON - 13 * HOUR, close: 94 };
           const buys = new Map<number, number>();
           const out: { pnl: number; fee: number }[] = [];
@@ -319,7 +325,7 @@ describe("the local stocks", () => {
             counts[d] =
               Math.max(0, Math.round(6 + rng.normal() * 2)) + (flood && d % 15 === 14 ? 500 : 0);
             for (let h = 0; h < 12; h++) {
-              st = nextPrice(`e${seed}`, "DPSK", NOON + d * DAY_MS + h * HOUR, st, signals, 94);
+              st = nextPrice(`e${seed}`, DPSK, NOON + d * DAY_MS + h * HOUR, st, signals, 94);
               if (h === 0 && d % 15 === 0 && d > 0) buys.set(d, st.price);
               const bought = h === 11 ? buys.get(d - hold) : undefined;
               if (bought === undefined) continue;

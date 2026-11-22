@@ -19,7 +19,12 @@ import { afterEach } from "vitest";
 import { type ExchangeConfig, exchangeConfig } from "../src/config.js";
 import { exchangeSchema } from "../src/migrations.js";
 import type { QuoteProvider } from "../src/real/provider.js";
-import { ExchangeService, type TraderInfo, type Traders } from "../src/service.js";
+import {
+  type ExchangeDeps,
+  ExchangeService,
+  type TraderInfo,
+  type Traders,
+} from "../src/service.js";
 import { ExchangeStore } from "../src/store.js";
 
 /** Monday 2026-11-23 11:30 local (UTC+8): the first round is at 12:00. */
@@ -72,7 +77,8 @@ interface Row {
 }
 
 export class FakeWallet implements ExchangeWallet {
-  readonly currency = "魚幣";
+  /** The economy's coin name (`[modules.economy] currency`). */
+  currency = "魚幣";
   /** The shared economy rate (`[modules.economy] twd_per_coin`): NT$ per coin. */
   twdPerCoin = 1;
   readonly rows: Row[] = [];
@@ -213,6 +219,8 @@ export const OPEN: Partial<ExchangeConfig> = {
 export async function rig(
   config: Partial<ExchangeConfig> = OPEN,
   providers?: ReadonlyMap<string, QuoteProvider>,
+  /** The profile's words (`[character]`, the coins' name); none: the first character's. */
+  words: Partial<Pick<ExchangeDeps, "name" | "currency" | "pronoun">> = {},
 ): Promise<Rig> {
   const clock = { at: T0 };
   const raw = openTestDb({
@@ -254,6 +262,7 @@ export async function rig(
         audit: (action, target, detail, by) => audits.push({ action, target, detail, by }),
         seed: "test-seed",
         ...(providers ? { providers } : {}),
+        ...words,
       });
       return r.service;
     },

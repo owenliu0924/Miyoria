@@ -15,7 +15,6 @@ import type { PersonId } from "@miyoria/types";
 import type { ExchangeConfig } from "../config.js";
 import type { ExchangeStore } from "../store.js";
 import { candidates, type RealDesk, type RealLine } from "./desk.js";
-import { LOCAL_CODES } from "./local.js";
 
 export const LIST_KINDS = [
   "local",
@@ -103,7 +102,7 @@ export class MarketLists {
     };
     switch (kind) {
       case "local":
-        return pick(LOCAL_CODES);
+        return pick(this.desk.localCompanies().map((l) => l.code));
       case "popular": {
         const counts = this.desk.holderCounts();
         const codes = [...counts]
@@ -195,7 +194,7 @@ export class MarketLists {
     const starters = [...this.desk.starters("tw"), ...this.desk.starters("us")];
     const known = new Set(lines.map((l) => l.code));
     const score = (code: string, name: string): number => {
-      if (key === "") return starters.includes(code) || LOCAL_CODES.includes(code as never) ? 1 : 0;
+      if (key === "") return starters.includes(code) || this.desk.localOf(code) !== null ? 1 : 0;
       const bare = code.replace(/\.TWO?$/, "");
       if (bare === key || code === key) return 4;
       if (bare.startsWith(key)) return 3;

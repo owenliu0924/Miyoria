@@ -29,6 +29,7 @@ import {
   type Book,
   type BuyRequest,
   COMPANIES,
+  type CompanySpec,
   cancelOrder,
   checkBuy,
   checkLeverageOptIn,
@@ -78,7 +79,7 @@ import {
   postingEntries,
   type RoundRecord,
 } from "./store.js";
-import { CURRENCY, END_WHY, hourOf, noticeText, refundText } from "./texts.js";
+import { END_WHY, hourOf, noticeText, refundText } from "./texts.js";
 
 const DAY_MS = 86_400_000;
 const HOUR_MS = 3_600_000;
@@ -124,6 +125,10 @@ export interface ExchangeDeps {
   signals?: LocalSignalFeed;
   /** The exchange's name in this profile (`[character] exchange_name`); default 深海交易所. */
   name?: () => string;
+  /** The coins' name (`CurrencyKey`); none: the wallet's, else the default. */
+  currency?: () => string;
+  /** How texts name her (`[character] pronoun`); none: 她. */
+  pronoun?: () => string;
 }
 
 export type Refusal = { ok: false; status: number; code: string; message: string };
@@ -434,6 +439,8 @@ export class ExchangeService {
       log: deps.log,
       ask: (account) => this.#ask(account),
       ...(deps.signals ? { signals: deps.signals } : {}),
+      ...(deps.currency ? { currency: deps.currency } : {}),
+      ...(deps.pronoun ? { pronoun: deps.pronoun } : {}),
     });
     this.lists = new MarketLists(this.real, deps.store, () => deps.config, deps.now);
   }
@@ -481,8 +488,19 @@ export class ExchangeService {
     return this.#d.name?.() ?? DEFAULT_CHARACTER.exchange_name;
   }
 
+  /** The coins' name: the profile's (one source), else the wallet's, else the default. */
   get currency(): string {
-    return this.#d.wallet()?.currency ?? CURRENCY;
+    return this.real.currency;
+  }
+
+  /** How texts name her (`[character] pronoun`). */
+  get pronoun(): string {
+    return this.#d.pronoun?.() ?? DEFAULT_CHARACTER.pronoun;
+  }
+
+  /** The old market's company of `code` under this profile's names. */
+  #company(code: string) {
+    return companyOf(code, this.params.companies);
   }
 
   /** Records the owner's hand on the market in the audit log. */
@@ -614,7 +632,7 @@ export class ExchangeService {
       position: n.position,
       order: null,
       round: o.round,
-      text: noticeText(n, hour, this.currency),
+      text: noticeText(n, hour, this.currency, this.params.companies),
       created_at: this.#ts(),
       sent_at: null,
     }));
@@ -640,6 +658,7 @@ export class ExchangeService {
           },
           hour,
           this.currency,
+          this.params.companies,
         ),
         created_at: this.#ts(),
         sent_at: null,
@@ -661,7 +680,13 @@ export class ExchangeService {
         position: null,
         order: e.order.id,
         round: o.round,
-        text: refundText(e.order.company, e.order.coins, e.why, this.currency),
+        text: refundText(
+          e.order.company,
+          e.order.coins,
+          e.why,
+          this.currency,
+          this.params.companies,
+        ),
         created_at: this.#ts(),
         sent_at: this.#ts(), // on their page only; never a DM
       }));
@@ -926,7 +951,7 @@ export class ExchangeService {
 
   #lines(book: Book, rounds: RoundRecord[]): CompanyLine[] {
     return book.market.companies.map((c) => {
-      const spec = companyOf(c.code);
+      const spec = this.#company(c.code);
       const spark = rounds
         .slice(-24)
         .map((r) => r.prices.find((x) => x.code === c.code)?.price ?? c.price);
@@ -950,7 +975,7 @@ export class ExchangeService {
   }
 
   #newsLine(n: NewsRecord): NewsLine {
-    const plain = plainNews(n);
+    const plain = plainNews(n, this.params.companies);
     return {
       id: n.id,
       company: n.company,
@@ -1001,7 +1026,7 @@ export class ExchangeService {
   }
 
   async company(code: string, account: AccountRef | null): Promise<CompanyView | null> {
-    if (!companyOf(code)) return null;
+    if (!this.#company(code)) return null;
     const { book } = this.#ensure();
     const rounds = this.#d.store.rounds({ limit: HISTORY_ROUNDS, held: true });
     const line = this.#lines(book, rounds).find((c) => c.code === code) as CompanyLine;
@@ -1259,7 +1284,7 @@ export class ExchangeService {
       }>
     | Refusal
   > {
-    const spec = companyOf(req.company);
+    const spec = this.#company(req.company);
     if (!spec && !req.position) return refuse(400, "company", "沒有這家公司");
     const who = await this.#who(account);
     if (!who) return refuse(403, "stranger", "她還不認識你,先和她說說話吧");
@@ -1287,13 +1312,20 @@ export class ExchangeService {
         leverage,
         days,
       };
-      const r = checkBuy(rules, this.params, t, buy, {
-        balance,
-        transferred,
-        orders_today: counted.orders,
-        bought_today: counted.bought,
-        ...this.#holdings(book, who.person, req.company),
-      });
+      const r = checkBuy(
+        rules,
+        this.params,
+        t,
+        buy,
+        {
+          balance,
+          transferred,
+          orders_today: counted.orders,
+          bought_today: counted.bought,
+          ...this.#holdings(book, who.person, req.company),
+        },
+        this.currency,
+      );
       if (!r.ok)
         return refuse(
           r.code === "short" || r.code === "transfer_lock" ? 402 : 409,
@@ -1337,7 +1369,7 @@ export class ExchangeService {
         warn_half_price: lev ? warnPrice(pos, this.params.leverage.warn_half) : null,
         warn_near_price: lev ? warnPrice(pos, this.params.leverage.warn_near) : null,
         sentence: lev
-          ? `最多賠掉 ${r.split.margin} ${this.currency}(這筆的保證金),跌到 ${(line ?? 0) / 100} 會自動賣出。你錢包裡的其他魚幣不會被動到,也不會欠錢。`
+          ? `最多賠掉 ${r.split.margin} ${this.currency}(這筆的保證金),跌到 ${(line ?? 0) / 100} 會自動賣出。你錢包裡的其他${this.currency}不會被動到,也不會欠錢。`
           : `花 ${r.split.margin + r.split.fee} ${this.currency}(含手續費 ${r.split.fee}),下一盤成交。今天買的明天才能賣。`,
       };
       return { ok: true, quote, person: who.person, name: who.name, book, split: r.split };
@@ -1448,7 +1480,7 @@ export class ExchangeService {
         const first = this.#d.store.orderByKey(known.person, key);
         if (first)
           return first.status === "void"
-            ? refuse(409, "void", "這筆沒有成立(魚幣不夠),請再下一次")
+            ? refuse(409, "void", `這筆沒有成立(${this.currency}不夠),請再下一次`)
             : { ok: true, order: orderLine(first) };
       }
       const checked = await this.#check(account, req);
@@ -1516,7 +1548,7 @@ export class ExchangeService {
       this.#d.store.settleBuy(order.id, postKey, post.ok, this.#ts());
       if (!post.ok)
         return post.reason === "short"
-          ? refuse(402, "short", "魚幣不夠")
+          ? refuse(402, "short", `${this.currency}不夠`)
           : refuse(409, "refused", post.message);
       return { ok: true, order: orderLine({ ...order, status: "open" }) };
     });
@@ -1574,14 +1606,18 @@ export class ExchangeService {
           .filter((p) => p.person === who.person && p.leverage > 1)
           .reduce((t, p) => t + p.margin, 0);
       if (rules.leverage_margin_cap > 0 && amount > capLeft)
-        return refuse(409, "margin_cap", `槓桿的保證金合計最多 ${rules.leverage_margin_cap} 魚幣`);
+        return refuse(
+          409,
+          "margin_cap",
+          `槓桿的保證金合計最多 ${rules.leverage_margin_cap} ${this.currency}`,
+        );
       const balance = await wallet.balance(who.person);
       const transferred = await wallet.transferredIn(
         who.person,
         toTimestamp(this.#now() - rules.transfer_lock_hours * HOUR_MS),
       );
       if (amount > balance - Math.max(0, transferred))
-        return refuse(402, "short", "魚幣不夠(轉來不到一天的不能投入)");
+        return refuse(402, "short", `${this.currency}不夠(轉來不到一天的不能投入)`);
       const entries = postingEntries(postKey, [{ reason: "exchange_in", delta: -amount }]);
       if (
         !this.#d.store.startMargin(
@@ -1598,7 +1634,7 @@ export class ExchangeService {
       const applied = this.#applyMargin(postKey, `margin:${pos.id}:${amount}`, amount, post.ok);
       if (!post.ok)
         return post.reason === "short"
-          ? refuse(402, "short", "魚幣不夠")
+          ? refuse(402, "short", `${this.currency}不夠`)
           : refuse(409, "refused", post.message);
       const after = this.#d.store.book()?.book.positions.find((p) => p.id === pos.id) ?? null;
       return {
@@ -1644,7 +1680,7 @@ export class ExchangeService {
     return {
       id: p.id,
       code: p.company,
-      name: companyOf(p.company)?.name ?? p.company,
+      name: this.#company(p.company)?.name ?? p.company,
       qty: p.qty,
       leverage: p.leverage,
       exposure: p.cost,
@@ -1671,7 +1707,7 @@ export class ExchangeService {
     const { book } = this.#ensure();
     const mine = book.positions.filter((p) => p.person === who.person);
     const holdings: HoldingLine[] = [];
-    for (const spec of COMPANIES) {
+    for (const spec of this.params.companies) {
       const lots = mine.filter((p) => p.company === spec.code && p.leverage <= 1);
       if (lots.length === 0) continue;
       const price = priceOf(book, spec.code);
@@ -1969,11 +2005,14 @@ function fillLine(f: {
 }
 
 /** The plain words of a piece of news, when she has not worded it (or cannot). */
-export function plainNews(n: Pick<NewsRecord, "company" | "kind" | "direction" | "size">): {
+export function plainNews(
+  n: Pick<NewsRecord, "company" | "kind" | "direction" | "size">,
+  companies: readonly CompanySpec[] = COMPANIES,
+): {
   headline: string;
   body: string;
 } {
-  const c = n.company ? companyOf(n.company) : null;
+  const c = n.company ? companyOf(n.company, companies) : null;
   const who = c ? `${c.name}(${c.code})` : "市場";
   const up = n.direction === "up";
   const size = n.size === "large" ? "大" : n.size === "medium" ? "中" : "小";

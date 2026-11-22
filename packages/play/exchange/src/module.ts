@@ -35,7 +35,9 @@ import {
   BOND_LADDER,
   CharacterKey,
   type Clock,
+  CurrencyKey,
   DEFAULT_CHARACTER,
+  DEFAULT_CURRENCY,
   DeliveryLedgerKey,
   EventLogKey,
   ExchangeWalletKey,
@@ -50,9 +52,9 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { card, registerCommands, unregisterCommands } from "./commands.js";
-import { type ExchangeConfig, ExchangeConfigSchema } from "./config.js";
-import { companyOf } from "./engine/companies.js";
+import { type ExchangeConfig, ExchangeConfigSchema, localCompaniesOf } from "./config.js";
 import { HER_RULES, herNote } from "./her.js";
+import { checkLocalCodes } from "./real/codes.js";
 import { taipeiDay } from "./real/local.js";
 import { HttpJsonProvider, type QuoteProvider } from "./real/provider.js";
 import { LocalSignalBook, type LocalSources } from "./real/signals.js";
@@ -111,6 +113,18 @@ export class ExchangeModule implements Module {
       return;
     }
     const tables = store.plugin(exchangeTables);
+    // The local stocks' codes are what their rows are kept under: a renamed code with rows under
+    // the old one would leave them behind, so it is refused (docs/design/v5-profiles.md).
+    const codes = checkLocalCodes(tables.real, localCompaniesOf(config));
+    if (codes.error !== null) throw new Error(codes.error);
+    for (const code of codes.stale) {
+      tables.real.setInstrument(
+        code,
+        { status: "removed" },
+        (this.#options.clock ?? ctx.clock).now(),
+      );
+      ctx.log.info({ code }, "exchange: a local code no longer named, never traded: unlisted");
+    }
     const heart = store.plugin(heartTables).people;
     const clock = this.#options.clock ?? ctx.clock;
     // The sources are looked up when the first signal is computed, not now: the modules they read
@@ -118,9 +132,16 @@ export class ExchangeModule implements Module {
     const book = new LocalSignalBook({
       sources: this.#options.sources ?? this.#sources(ctx, store, config),
       config: () => config,
+      // Logged by the stocks' codes, the names the owner knows them by.
       onMissing: (missing) =>
         ctx.log.info(
-          { missing },
+          {
+            missing: Object.fromEntries(
+              localCompaniesOf(config)
+                .filter((c) => missing[c.role] !== undefined)
+                .map((c) => [c.code, missing[c.role]]),
+            ),
+          },
           "exchange: no source for some local stocks; their opens stay neutral",
         ),
     });
@@ -153,6 +174,8 @@ export class ExchangeModule implements Module {
     const service = new ExchangeService({
       config,
       name: () => exchangeName(ctx),
+      currency: () => currencyOf(ctx),
+      pronoun: () => pronounOf(ctx),
       store: tables,
       wallet: () => ctx.services.get(ExchangeWalletKey) ?? null,
       traders,
@@ -188,6 +211,8 @@ export class ExchangeModule implements Module {
           () => ctx.services.get(PicturesKey) ?? null,
           () => exchangeName(ctx),
           () => ctx.services.get(PlacesKey),
+          () => currencyOf(ctx),
+          () => pronounOf(ctx),
         ),
       unregisterCommands,
     );
@@ -209,7 +234,10 @@ export class ExchangeModule implements Module {
           if (config.local_stocks) {
             const now = clock.now();
             await book.prepare([taipeiDay(now) - 1], now);
-            const local = book.herNote((code) => companyOf(code)?.name ?? code, now);
+            const local = book.herNote((role) => {
+              const l = service.real.localCompanies().find((c) => c.role === role);
+              return { code: l?.code ?? role, name: l?.name ?? role };
+            }, now);
             if (local !== null && local !== lastLocal) {
               lastLocal = local;
               tell(ctx, `你的五家公司今天開盤:${local}。${HER_RULES}`, "exchange:local", {
@@ -232,11 +260,11 @@ export class ExchangeModule implements Module {
     return eventLogSources({
       events: () => store.events ?? null,
       present: {
-        RICE: () => ctx.services.get(ExchangeWalletKey) !== undefined,
-        WHLE: () => ctx.services.get(SongTicketsKey) !== undefined,
-        NAPS: () => ctx.services.get(DeliveryLedgerKey) !== undefined,
-        CUBE: () => ctx.services.get(GameResumeKey) !== undefined,
-        DPSK: () => ctx.services.get(LlmRouterKey) !== undefined,
+        feeding: () => ctx.services.get(ExchangeWalletKey) !== undefined,
+        songs: () => ctx.services.get(SongTicketsKey) !== undefined,
+        silence: () => ctx.services.get(DeliveryLedgerKey) !== undefined,
+        game: () => ctx.services.get(GameResumeKey) !== undefined,
+        model: () => ctx.services.get(LlmRouterKey) !== undefined,
       },
       slowMs: () => config.local_signals.slow_call_seconds * 1000,
       keeping: {
@@ -277,6 +305,16 @@ function exchangeName(ctx: ModuleContext): string {
   return ctx.services.get(CharacterKey)?.exchange_name ?? DEFAULT_CHARACTER.exchange_name;
 }
 
+/** The coins' name in this profile (`[modules.economy] currency`, provided by Core). */
+function currencyOf(ctx: ModuleContext): string {
+  return ctx.services.get(CurrencyKey) ?? DEFAULT_CURRENCY;
+}
+
+/** How texts name her (`[character] pronoun`). */
+function pronounOf(ctx: ModuleContext): string {
+  return ctx.services.get(CharacterKey)?.pronoun ?? DEFAULT_CHARACTER.pronoun;
+}
+
 async function dm(ctx: ModuleContext, person: PersonId, text: string): Promise<boolean> {
   const sink = ctx.services.get(ReplySinkKey);
   const people = ctx.services.get(PeopleStoreKey);
@@ -290,7 +328,11 @@ async function dm(ctx: ModuleContext, person: PersonId, text: string): Promise<b
     // Every notice carries the small print; the ones about leverage add its line.
     await sink.sendDirect(
       account,
-      card(exchangeName(ctx), [text], { real: true, leverage: /槓桿|保證金|斷頭|破產/.test(text) }),
+      card(exchangeName(ctx), [text], {
+        real: true,
+        leverage: /槓桿|保證金|斷頭|破產/.test(text),
+        currency: currencyOf(ctx),
+      }),
     );
     return true;
   } catch (error) {

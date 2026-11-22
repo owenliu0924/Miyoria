@@ -2,6 +2,7 @@
 // facts the module gathers; each refusal is one plain sentence, the same on the panel and in
 // Discord. The numbers are `[modules.exchange]`'s.
 
+import { DEFAULT_CURRENCY } from "@miyoria/types";
 import { type BuySplit, splitBuy } from "./money.js";
 import type { EngineParams } from "./params.js";
 
@@ -87,8 +88,8 @@ export type GuardRefusal = { ok: false; code: string; message: string };
 const no = (code: string, message: string): GuardRefusal => ({ ok: false, code, message });
 
 /** The one-buy size rule in words (`max` 0: only a minimum). */
-export function sizeRule(min: number, max: number): string {
-  return max > 0 ? `一筆買進是 ${min} 到 ${max} 魚幣` : `一筆買進至少 ${min} 魚幣`;
+export function sizeRule(min: number, max: number, currency: string = DEFAULT_CURRENCY): string {
+  return max > 0 ? `一筆買進是 ${min} 到 ${max} ${currency}` : `一筆買進至少 ${min} ${currency}`;
 }
 
 /** Whether `value` goes past `cap`; a cap of `0` is no cap (the config's default for most). */
@@ -172,6 +173,8 @@ export function checkBuy(
   t: Trader,
   req: BuyRequest,
   f: BuyFacts,
+  /** The coins' name in the refusals. */
+  currency: string = DEFAULT_CURRENCY,
 ): { ok: true; split: BuySplit } | GuardRefusal {
   if (!rules.enabled || rules.paused) return no("closed", "交易所現在暫停,不能下單");
   const open = checkOpen(rules, t);
@@ -182,7 +185,7 @@ export function checkBuy(
     req.coins < rules.order_min ||
     over(req.coins, rules.order_max)
   ) {
-    return no("size", sizeRule(rules.order_min, rules.order_max));
+    return no("size", sizeRule(rules.order_min, rules.order_max, currency));
   }
   if (req.limit !== null && !(Number.isSafeInteger(req.limit) && req.limit > 0))
     return no("limit", "限價要是正的價格");
@@ -201,26 +204,32 @@ export function checkBuy(
   if (over(f.bought_today + req.coins, rules.buy_per_day)) {
     return no(
       "daily",
-      `一天最多買 ${rules.buy_per_day} 魚幣(今天還能買 ${Math.max(0, rules.buy_per_day - f.bought_today)})`,
+      `一天最多買 ${rules.buy_per_day} ${currency}(今天還能買 ${Math.max(0, rules.buy_per_day - f.bought_today)})`,
     );
   }
   const usable = f.balance - Math.max(0, f.transferred);
   if (req.coins > usable) {
     if (req.coins <= f.balance)
-      return no("transfer_lock", `別人轉給你的魚幣要過 ${rules.transfer_lock_hours} 小時才能投入`);
-    return no("short", "魚幣不夠");
+      return no(
+        "transfer_lock",
+        `別人轉給你的${currency}要過 ${rules.transfer_lock_hours} 小時才能投入`,
+      );
+    return no("short", `${currency}不夠`);
   }
   const split = splitBuy(req.coins, leverage, p);
   if (split === null) return no("size", "這筆太小了");
   const limits = limitsFor(rules, t);
   if (over(f.company_cost + split.exposure, limits.company)) {
-    return no("limit_company", `一家公司最多持有成本 ${limits.company} 魚幣(槓桿照全部部位算)`);
+    return no(
+      "limit_company",
+      `一家公司最多持有成本 ${limits.company} ${currency}(槓桿照全部部位算)`,
+    );
   }
   if (over(f.total_cost + split.exposure, limits.total)) {
-    return no("limit_total", `全部合計最多持有成本 ${limits.total} 魚幣(槓桿照全部部位算)`);
+    return no("limit_total", `全部合計最多持有成本 ${limits.total} ${currency}(槓桿照全部部位算)`);
   }
   if (leverage > 1 && over(f.margin + split.margin, rules.leverage_margin_cap)) {
-    return no("margin_cap", `槓桿的保證金合計最多 ${rules.leverage_margin_cap} 魚幣`);
+    return no("margin_cap", `槓桿的保證金合計最多 ${rules.leverage_margin_cap} ${currency}`);
   }
   const after = f.my_company_value + split.exposure;
   const base = Math.max(f.company_value + split.exposure, rules.concentration_floor);

@@ -18,6 +18,7 @@
 // The layout is not here: the panel and the picture lay the same tiles out with the same code
 // (`@miyoria/card-face`'s `market.ts`, `capShares`), so they agree.
 
+import { DEFAULT_CURRENCY } from "@miyoria/types";
 import { OTHER_SECTOR, type StarterEntry } from "../config.js";
 import type { RealLine } from "./desk.js";
 
@@ -110,8 +111,11 @@ export function holdingsMap(input: {
   minHolders: number;
   /** `map_max_share` (default: none). */
   maxShare?: number;
+  /** The coins' name (default 魚幣). */
+  currency?: string;
 }): MapData {
   const maxShare = input.maxShare ?? 1;
+  const cur = input.currency ?? DEFAULT_CURRENCY;
   const by = new Map<string, { value: number; people: Set<string> }>();
   for (const h of input.held) {
     if (!(h.value > 0)) continue;
@@ -135,7 +139,7 @@ export function holdingsMap(input: {
         line,
         input.sectorOf(line),
         Math.round(e.value),
-        `伺服器合計約 ${coinWord(e.value)} 魚幣・${e.people.size} 人持有`,
+        `伺服器合計約 ${coinWord(e.value)} ${cur}・${e.people.size} 人持有`,
       ),
     );
   }
@@ -151,7 +155,7 @@ export function holdingsMap(input: {
         price: null,
         currency: null,
         coin_price: null,
-        basis: `${other.codes} 檔合計約 ${coinWord(other.value)} 魚幣`,
+        basis: `${other.codes} 檔合計約 ${coinWord(other.value)} ${cur}`,
       });
     else hidden = other.codes;
   }
@@ -160,7 +164,7 @@ export function holdingsMap(input: {
     kind: "holdings",
     title: MAP_TITLE.holdings,
     tiles: tiles.filter((t) => t.weight > 0),
-    footnote: `格子大小為伺服器合計持有的市值(魚幣,照最後的價格);少於 ${input.minHolders} 人持有的併入「其他」,不顯示是誰持有${left}${capWords(maxShare)}`,
+    footnote: `格子大小為伺服器合計持有的市值(${cur},照最後的價格);少於 ${input.minHolders} 人持有的併入「其他」,不顯示是誰持有${left}${capWords(maxShare)}`,
     hidden,
     max_share: maxShare,
   };

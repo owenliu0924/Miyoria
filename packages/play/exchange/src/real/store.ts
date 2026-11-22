@@ -12,12 +12,16 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import {
+  exchangeFills,
   exchangeHouse,
   exchangeHouseLines,
   exchangeInstruments,
   exchangeMarks,
   exchangeNotices,
+  exchangeOrders,
+  exchangePositions,
   exchangePostings,
   exchangeQuotes,
   exchangeQuoteTicks,
@@ -592,6 +596,39 @@ export class RealStore {
         .where(eq(exchangeQuotes.code, code))
         .run();
     });
+  }
+
+  // ---- what is kept under a code ------------------------------------------------------------
+
+  /**
+   * How many rows are kept under `code`: orders, holdings, fills, quotes and their history, the
+   * house's lines, watch marks, and the old local market's orders, positions and fills. Its
+   * instrument row is not counted.
+   */
+  rowsUnder(code: string): number {
+    this.#db.ensureOpen();
+    const n = (table: SQLiteTable, column: SQLiteColumn) => this.#count(table, column, code);
+    return (
+      n(exchangeRealOrders, exchangeRealOrders.code) +
+      n(exchangeRealPositions, exchangeRealPositions.code) +
+      n(exchangeRealFills, exchangeRealFills.code) +
+      n(exchangeQuotes, exchangeQuotes.code) +
+      n(exchangeQuoteTicks, exchangeQuoteTicks.code) +
+      n(exchangeHouseLines, exchangeHouseLines.code) +
+      n(exchangeMarks, exchangeMarks.code) +
+      n(exchangeOrders, exchangeOrders.company) +
+      n(exchangePositions, exchangePositions.company) +
+      n(exchangeFills, exchangeFills.company)
+    );
+  }
+
+  #count(table: SQLiteTable, column: SQLiteColumn, code: string): number {
+    const r = this.#db.orm
+      .select({ n: sql<number>`count(*)` })
+      .from(table)
+      .where(eq(column, code))
+      .get();
+    return Number(r?.n ?? 0);
   }
 
   // ---- the instruments people looked up ----------------------------------------------------

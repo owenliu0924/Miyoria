@@ -7,6 +7,7 @@
 
 import { type CommandReply, pictureParts } from "@miyoria/commands";
 import {
+  DEFAULT_CURRENCY,
   type ExchangeBankruptPicture,
   type ExchangeBoardPicture,
   type ExchangeMapPicture,
@@ -128,7 +129,7 @@ export function quotePictureData(service: ExchangeService, set: CandleSet): Exch
     name: l.name,
     sector: MARKET_WORD[l.market] ?? l.market,
     blurb: isLocal ? (l.local?.what_moves ?? "") : l.source,
-    currency: coin ? "魚幣" : l.currency,
+    currency: coin ? service.currency : l.currency,
     price: cents(price),
     price_label: priceLabel(l),
     ref: cents(ref),
@@ -153,10 +154,11 @@ export function quotePictureData(service: ExchangeService, set: CandleSet): Exch
         : l.at === null
           ? "還沒有報價"
           : `${timeText(l.at, offset)} 的${l.basis === "close" ? "收盤價" : "報價"}`,
-    coin_line: coin || l.coin_price === null ? null : `約 ${coinText(l.coin_price)} 魚幣一股`,
+    coin_line:
+      coin || l.coin_price === null ? null : `約 ${coinText(l.coin_price)} ${service.currency}一股`,
     market_line: `${marketLine(l)}${set.stale ? "・K 線暫時沒有更新" : ""}`,
     colors: service.config.colors,
-    small_print: exchangeSmallPrint({ real: !isLocal }),
+    small_print: exchangeSmallPrint({ real: !isLocal, currency: service.currency }),
   };
 }
 
@@ -179,7 +181,7 @@ export function mapPictureData(
     max_share: map.max_share,
     as_of: timeText(now, service.config.utc_offset_minutes),
     colors: service.config.colors,
-    small_print: exchangeSmallPrint({ real: true }),
+    small_print: exchangeSmallPrint({ real: true, currency: service.currency }),
   };
 }
 
@@ -215,7 +217,7 @@ export function portfolioPictureData(
       })),
     as_of: p.bankrupt ? "破產冷靜期中" : "以最新報價計算",
     colors: service.config.colors,
-    small_print: exchangeSmallPrint({ real: true, leverage }),
+    small_print: exchangeSmallPrint({ real: true, leverage, currency: service.currency }),
   };
 }
 
@@ -232,6 +234,8 @@ export function overviewPictureData(
     return `${s.open}–${s.close}`;
   };
   return {
+    // Absent: the default name (the data of the first character's pictures stays as it was).
+    ...(service.currency === DEFAULT_CURRENCY ? {} : { currency: service.currency }),
     local: localRows.map((r) => {
       const h = service.real.history(r.code, 2, false);
       return {
@@ -263,7 +267,7 @@ export function overviewPictureData(
     ],
     as_of: timeText(now, offset),
     colors: service.config.colors,
-    small_print: exchangeSmallPrint({ real: true }),
+    small_print: exchangeSmallPrint({ real: true, currency: service.currency }),
   };
 }
 
@@ -278,7 +282,7 @@ export function boardPictureData(b: BoardsView): ExchangeBoardPicture {
       extra: r.holdings === null ? null : r.holdings.map((h) => h.code).join(" "),
     })),
     me: b.me === null ? null : { rank: b.me.rich, hidden: b.me.hidden },
-    small_print: exchangeSmallPrint({ real: true }),
+    small_print: exchangeSmallPrint({ real: true, currency: b.currency }),
   };
 }
 
@@ -302,13 +306,19 @@ export function receiptPictureData(
     ticker: line?.name ?? fill.code,
     shares: sharesText(fill.qty),
     price:
-      currency === "COIN" ? `${coinText(fill.price)} 魚幣` : `${currency} ${native.toFixed(2)}`,
+      currency === "COIN"
+        ? `${coinText(fill.price)} ${service.currency}`
+        : `${currency} ${native.toFixed(2)}`,
     coins: fill.side === "sell" ? fill.paid : fill.gross + fill.fee,
     fee: fill.fee,
     currency: service.currency,
     leverage: fill.leverage,
     at: timeText(fill.at, service.config.utc_offset_minutes),
-    small_print: exchangeSmallPrint({ real: line?.local === null, leverage: fill.leverage > 1 }),
+    small_print: exchangeSmallPrint({
+      real: line?.local === null,
+      leverage: fill.leverage > 1,
+      currency: service.currency,
+    }),
   };
 }
 
@@ -324,7 +334,7 @@ export function bankruptPictureData(
     written_off: b.written_off,
     since: timeText(b.since, offset).slice(0, 10),
     until: timeText(b.until, offset).slice(0, 10),
-    small_print: exchangeSmallPrint({ real: true, leverage: true }),
+    small_print: exchangeSmallPrint({ real: true, leverage: true, currency: service.currency }),
   };
 }
 

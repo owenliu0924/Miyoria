@@ -51,9 +51,9 @@ describe("module exchange, the local stocks' signals", () => {
     cleanup.push(() => sup.stopAll());
     sup.services.provide("app", StoreKey, store);
     sup.services.provide("app", EventLogKey, log);
-    // Only RICE has a source: the other four are missing and stay neutral.
+    // Only the feeding stock (RICE) has a source: the other four are missing and stay neutral.
     await sup.register(
-      new ExchangeModule({ clock, tickMs: 3_600_000, seed: "m", sources: { RICE: feeds } }),
+      new ExchangeModule({ clock, tickMs: 3_600_000, seed: "m", sources: { feeding: feeds } }),
       null,
       true,
     );
@@ -114,7 +114,7 @@ describe("module exchange, the local stocks' signals", () => {
         clock,
         tickMs: 3_600_000,
         seed: "m",
-        sources: { RICE: feeds, WHLE: songs },
+        sources: { feeding: feeds, songs },
       }),
       null,
       true,
@@ -146,8 +146,8 @@ describe("the signal book", () => {
     const told: Record<string, string>[] = [];
     const book = new LocalSignalBook({
       sources: {
-        RICE: { ...feeds, missing: () => (up ? null : "錢包沒有開") },
-        DPSK: { ...feeds, missing: () => "模型路由沒有開" },
+        feeding: { ...feeds, missing: () => (up ? null : "錢包沒有開") },
+        model: { ...feeds, missing: () => "模型路由沒有開" },
       },
       config: () => exchangeConfig(),
       onMissing: (m) => told.push(m as Record<string, string>),
@@ -158,10 +158,10 @@ describe("the signal book", () => {
     await book.prepare([Y], NOW);
     await book.prepare([Y], NOW + 60_000);
     expect(told).toEqual([
-      { WHLE: "沒有來源", NAPS: "沒有來源", CUBE: "沒有來源", DPSK: "模型路由沒有開" },
+      { songs: "沒有來源", silence: "沒有來源", game: "沒有來源", model: "模型路由沒有開" },
     ]);
-    expect(book.signal("RICE", Y)?.signal).toBeGreaterThan(0);
-    expect(book.signal("DPSK", Y)).toBeNull();
-    expect(signalMove(book.signal("DPSK", Y))).toBe(0);
+    expect(book.signal("feeding", Y)?.signal).toBeGreaterThan(0);
+    expect(book.signal("model", Y)).toBeNull();
+    expect(signalMove(book.signal("model", Y))).toBe(0);
   });
 });

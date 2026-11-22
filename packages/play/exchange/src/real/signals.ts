@@ -11,7 +11,8 @@
 // - the day's distance from the median over the scale, `(x − m) / max(spread·s, relative·m,
 //   floor)`, held within [-1, 1]: a full signal needs the day far from usual in its own terms, by
 //   a third of a usual day at least, and never by fewer than `floor`;
-// - times the company's direction (DPSK: −1), held within the company's `up` / `down`. DPSK's `up`
+// - times the company's direction (the model stock: −1), held within the company's `up` / `down`.
+//   The model stock's `up`
 //   is always 0 (fewer errors than usual give nothing: the only way to move it up would be to cause
 //   errors first) and its `down` stays under one round trip's fees, so causing errors, buying the
 //   dip and waiting for the walk to bring it back cannot pay;
@@ -21,10 +22,10 @@
 // The plain line on a local stock's card (`line`) and her note (`herLine`) say the same numbers.
 // Nothing here names a person: the sources count rows, never whose.
 
-import type { ExchangeConfig } from "../config.js";
+import { type ExchangeConfig, localMappingOf } from "../config.js";
 import {
-  LOCAL_CODES,
-  type LocalCode,
+  LOCAL_ROLES,
+  type LocalRole,
   type LocalSignal,
   type LocalSignalFeed,
   SIGNAL_MAX,
@@ -34,7 +35,7 @@ import {
 
 /** One completed day's count of a company's thing. */
 export interface DayCount {
-  /** What the baseline compares (CUBE: goals − deaths; DPSK: failed + slow calls). */
+  /** What the baseline compares (game: goals − deaths; model: failed + slow calls). */
   value: number;
   /** The numbers the plain line names (`feeds`, `songs`, `hours`, `goals`, `deaths`, `errors`, `slow`). */
   parts: Readonly<Record<string, number>>;
@@ -50,15 +51,15 @@ export interface CountSource {
   count(day: number, now: number): Promise<DayCount | null>;
 }
 
-export type LocalSources = Readonly<Partial<Record<LocalCode, CountSource>>>;
+export type LocalSources = Readonly<Partial<Record<LocalRole, CountSource>>>;
 
 /** More of the thing is good (+1) or bad (−1) for the company. */
-export const LOCAL_DIRECTION: Readonly<Record<LocalCode, 1 | -1>> = {
-  RICE: 1,
-  WHLE: 1,
-  NAPS: 1,
-  CUBE: 1,
-  DPSK: -1,
+export const LOCAL_DIRECTION: Readonly<Record<LocalRole, 1 | -1>> = {
+  feeding: 1,
+  songs: 1,
+  silence: 1,
+  game: 1,
+  model: -1,
 };
 
 /** The robust spread of a normal sample from its median absolute deviation. */
@@ -100,11 +101,11 @@ export interface Mapping {
   direction: 1 | -1;
 }
 
-/** The mapping of `code` from the config (DPSK's up is 0, its down under a round trip's fees). */
-export function mappingOf(config: ExchangeConfig, code: LocalCode): Mapping {
+/** The mapping of `role` from the config (the model stock's up is 0, its down under a round trip's fees). */
+export function mappingOf(config: ExchangeConfig, role: LocalRole): Mapping {
   const c = config.local_signals;
-  const m = c[code];
-  const dpsk = code === "DPSK";
+  const m = localMappingOf(config, role);
+  const dpsk = role === "model";
   return {
     min_history_days: Math.min(c.min_history_days, c.baseline_days),
     spread: c.spread,
@@ -113,7 +114,7 @@ export function mappingOf(config: ExchangeConfig, code: LocalCode): Mapping {
     up: dpsk ? 0 : m.up,
     // Its fall stays under 90% of a round trip's fees in price terms.
     down: dpsk ? Math.min(m.down, (0.9 * 2 * config.fee) / SIGNAL_MAX) : m.down,
-    direction: LOCAL_DIRECTION[code],
+    direction: LOCAL_DIRECTION[role],
   };
 }
 
@@ -140,7 +141,7 @@ export function readSignal(x: number, history: readonly number[], m: Mapping): R
 
 /** A company's day as the card and her note tell it. */
 export interface SignalFact {
-  code: LocalCode;
+  role: LocalRole;
   /** The completed day the signal is from (the open it moves is the next day's). */
   day: number;
   /** `null`: the source is missing or did not have the day. */
@@ -153,7 +154,7 @@ export interface SignalFact {
   history: number;
 }
 
-const key = (code: LocalCode, day: number) => `${code}:${day}`;
+const key = (role: LocalRole, day: number) => `${role}:${day}`;
 /** Days of counts and facts kept in memory. */
 const KEEP_DAYS = 90;
 
@@ -164,7 +165,7 @@ export interface SignalBookDeps {
    * Told once, at the first signal computation, which companies have no source then (their opens
    * stay neutral). Not at start: the modules a source reads may start after this one.
    */
-  onMissing?: (missing: Partial<Record<LocalCode, string>>) => void;
+  onMissing?: (missing: Partial<Record<LocalRole, string>>) => void;
 }
 
 /**
@@ -187,11 +188,11 @@ export class LocalSignalBook implements LocalSignalFeed {
   }
 
   /** The companies whose source is missing now, with why. */
-  missingNow(): Partial<Record<LocalCode, string>> {
-    const out: Partial<Record<LocalCode, string>> = {};
-    for (const code of LOCAL_CODES) {
-      const why = this.missing(code);
-      if (why !== null) out[code] = why;
+  missingNow(): Partial<Record<LocalRole, string>> {
+    const out: Partial<Record<LocalRole, string>> = {};
+    for (const role of LOCAL_ROLES) {
+      const why = this.missing(role);
+      if (why !== null) out[role] = why;
     }
     return out;
   }
@@ -205,71 +206,74 @@ export class LocalSignalBook implements LocalSignalFeed {
     }
     for (const day of days) {
       if (day >= taipeiDay(now)) continue;
-      for (const code of LOCAL_CODES) {
-        const k = key(code, day);
+      for (const role of LOCAL_ROLES) {
+        const k = key(role, day);
         const known = this.#facts.get(k);
         if (known?.reading) continue;
-        this.#facts.set(k, await this.#fact(code, day, now));
+        this.#facts.set(k, await this.#fact(role, day, now));
       }
     }
     this.#trim(taipeiDay(now));
   }
 
-  /** Why the source of `code` cannot count now (`null`: it can). */
-  missing(code: LocalCode): string | null {
-    const source = this.#d.sources[code];
+  /** Why the source of `role` cannot count now (`null`: it can). */
+  missing(role: LocalRole): string | null {
+    const source = this.#d.sources[role];
     return source ? source.missing() : "沒有來源";
   }
 
-  /** The simulator's question: the signal of `code` for completed day `day` (`null`: neutral). */
-  signal(code: LocalCode, day: number): LocalSignal | null {
-    const f = this.#facts.get(key(code, day));
+  /** The simulator's question: the signal of `role` for completed day `day` (`null`: neutral). */
+  signal(role: LocalRole, day: number): LocalSignal | null {
+    const f = this.#facts.get(key(role, day));
     const s = f?.reading ? { signal: f.reading.signal } : null;
-    this.#applied.set(key(code, day), s?.signal ?? 0);
+    this.#applied.set(key(role, day), s?.signal ?? 0);
     return s;
   }
 
-  /** The card's line for `code`: what moved today's open, in numbers (`null`: not known yet). */
-  line(code: LocalCode, now: number): string | null {
-    return cardLine(this.fact(code, now), this.#d.config().local_signals.min_history_days);
+  /**
+   * The card's line for `role`'s stock: what moved today's open, in numbers, about her
+   * (`pronoun`) (`null`: not known yet).
+   */
+  line(role: LocalRole, now: number, pronoun = "她"): string | null {
+    return cardLine(this.fact(role, now), this.#d.config().local_signals.min_history_days, pronoun);
   }
 
-  /** Her own companies' opens today, as facts (`null`: none known yet). */
-  herNote(names: (code: LocalCode) => string, now: number): string | null {
+  /** Her own companies' opens today, as facts (`null`: none known yet); `named`: each role's stock. */
+  herNote(named: (role: LocalRole) => { code: string; name: string }, now: number): string | null {
     const min = this.#d.config().local_signals.min_history_days;
-    const parts = LOCAL_CODES.flatMap((code) => {
-      const f = this.fact(code, now);
-      return f ? [herLine(f, names(code), min)] : [];
+    const parts = LOCAL_ROLES.flatMap((role) => {
+      const f = this.fact(role, now);
+      return f ? [herLine(f, named(role), min)] : [];
     });
     return parts.length === 0 ? null : parts.join(";");
   }
 
-  /** What today's open of `code` had from yesterday, as known now (`null`: not prepared). */
-  fact(code: LocalCode, now: number): SignalFact | null {
+  /** What today's open of `role`'s stock had from yesterday, as known now (`null`: not prepared). */
+  fact(role: LocalRole, now: number): SignalFact | null {
     const day = taipeiDay(now) - 1;
-    const f = this.#facts.get(key(code, day));
+    const f = this.#facts.get(key(role, day));
     if (!f) return null;
-    const applied = this.#applied.get(key(code, day));
+    const applied = this.#applied.get(key(role, day));
     if (applied === undefined || (f.reading?.signal ?? 0) === applied) return f;
     // The open was priced before the day could be read (a source came back later): it had this.
     return { ...f, reading: null, move: signalMove({ signal: applied }) };
   }
 
-  async #fact(code: LocalCode, day: number, now: number): Promise<SignalFact> {
-    const source = this.#d.sources[code];
-    const empty: SignalFact = { code, day, count: null, reading: null, move: 0, history: 0 };
+  async #fact(role: LocalRole, day: number, now: number): Promise<SignalFact> {
+    const source = this.#d.sources[role];
+    const empty: SignalFact = { role, day, count: null, reading: null, move: 0, history: 0 };
     if (!source || source.missing() !== null) return empty;
-    const count = await this.#count(source, code, day, now);
+    const count = await this.#count(source, role, day, now);
     if (count === null) return empty;
     const config = this.#d.config();
     const history: number[] = [];
     for (let d = day - config.local_signals.baseline_days; d < day; d++) {
-      const c = await this.#count(source, code, d, now);
+      const c = await this.#count(source, role, d, now);
       if (c !== null) history.push(c.value);
     }
-    const reading = readSignal(count.value, history, mappingOf(config, code));
+    const reading = readSignal(count.value, history, mappingOf(config, role));
     return {
-      code,
+      role,
       day,
       count,
       reading,
@@ -278,8 +282,8 @@ export class LocalSignalBook implements LocalSignalFeed {
     };
   }
 
-  async #count(source: CountSource, code: LocalCode, day: number, now: number) {
-    const k = key(code, day);
+  async #count(source: CountSource, role: LocalRole, day: number, now: number) {
+    const k = key(role, day);
     const kept = this.#counts.get(k);
     if (kept) return kept;
     let c: DayCount | null = null;
@@ -313,18 +317,18 @@ function compared(r: Reading): string {
 }
 
 /** What the day was, in numbers, with `who` as its subject (她 on the card, 你 in her note). */
-function what(code: LocalCode, c: DayCount, who: string): string {
+function what(role: LocalRole, c: DayCount, who: string): string {
   const n = (k: string) => c.parts[k] ?? 0;
-  switch (code) {
-    case "RICE":
+  switch (role) {
+    case "feeding":
       return `昨天${who}被餵了 ${n("feeds")} 次`;
-    case "WHLE":
+    case "songs":
       return `昨天${who}唱完 ${n("songs")} 首歌`;
-    case "NAPS":
+    case "silence":
       return `昨天${who}有 ${n("hours")} 個小時沒說話`;
-    case "CUBE":
+    case "game":
       return `昨天${who}在遊戲裡達成 ${n("goals")} 個目標、死了 ${n("deaths")} 次`;
-    case "DPSK":
+    case "model":
       return `昨天${who}的模型出錯 ${n("errors")} 次、太慢 ${n("slow")} 次`;
   }
 }
@@ -332,7 +336,7 @@ function what(code: LocalCode, c: DayCount, who: string): string {
 function sentence(f: SignalFact, who: string, minDays: number): string {
   const open = `今天開盤 ${pct(f.move)}`;
   if (f.count === null) return `昨天沒有${who}的紀錄 → ${open}`;
-  const day = what(f.code, f.count, who);
+  const day = what(f.role, f.count, who);
   if (f.reading === null)
     return f.history < minDays
       ? `${day},${who}平常的樣子還不到 ${minDays} 天的紀錄 → ${open}`
@@ -340,12 +344,16 @@ function sentence(f: SignalFact, who: string, minDays: number): string {
   return `${day},${compared(f.reading)} → ${open}`;
 }
 
-/** The card's line: what moved today's open, in numbers (`null`: nothing known yet). */
-export function cardLine(f: SignalFact | null, minDays: number): string | null {
-  return f ? sentence(f, "她", minDays) : null;
+/** The card's line: what moved today's open, in numbers, about her (`pronoun`) (`null`: nothing known yet). */
+export function cardLine(f: SignalFact | null, minDays: number, pronoun = "她"): string | null {
+  return f ? sentence(f, pronoun, minDays) : null;
 }
 
 /** One of her own companies' open today, as a fact for her note. */
-export function herLine(f: SignalFact, name: string, minDays: number): string {
-  return `${name}(${f.code}):${sentence(f, "你", minDays)}`;
+export function herLine(
+  f: SignalFact,
+  stock: { code: string; name: string },
+  minDays: number,
+): string {
+  return `${stock.name}(${stock.code}):${sentence(f, "你", minDays)}`;
 }
