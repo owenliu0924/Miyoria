@@ -433,7 +433,9 @@ Input / Textarea, Field (label + control + error), Dialog (forms, persona edit â
 AlertDialog via `ConfirmDialog` (stays open on failure), Sheet (details: event, decision, person,
 MCP tools), Command palette (pages, people, modules), Popover + Command combobox (person picker),
 Tooltip, Sonner toasts (success / error with the Core's message), Skeleton rows, `DiffView`,
-`JsonView`, `Facts`, `EmergencyStop`, `NowStrip`, `AppearancePopover`. Icons: lucide 16 px.
+`JsonView`, `Facts`, `EmergencyStop`, `NowStrip`, `AppearancePopover`, `SpacePicker` (a member's
+servers, `pages/public/member-space.tsx`: nothing at all for one server or none, a `Segmented` up to
+four, a `Select` beyond; admin pages read `?space=` through `useAdminSpace`). Icons: lucide 16 px.
 
 ## States
 
