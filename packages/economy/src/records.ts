@@ -202,6 +202,11 @@ export interface Bounty {
   closed_at: Timestamp | null;
   /** The account it was paid to, once awarded. */
   winner: AccountRef | null;
+  /**
+   * The Space (identity's `spaces.id`) it was posted in: where it is shown and who can win it.
+   * `null` when she knew of no Space (open to everyone she knows).
+   */
+  space: string | null;
 }
 
 /** What `BountyStore.transition` changes besides the status. */
@@ -217,10 +222,13 @@ export interface BountyStore {
   get(id: string): Promise<Bounty | null>;
   /** Changes the bounty only while its status is one of `from`; `false` when it was not. */
   transition(id: string, from: readonly BountyStatus[], patch: BountyPatch): Promise<boolean>;
-  /** Bounties newest first; `statuses` narrows them. */
+  /**
+   * Bounties newest first; `statuses` narrows them, and `spaces` to the ones of those Spaces (and
+   * the ones of no Space).
+   */
   list(
     profile: ProfileId,
-    filter: { statuses?: readonly BountyStatus[]; limit: number },
+    filter: { statuses?: readonly BountyStatus[]; spaces?: readonly string[]; limit: number },
   ): Promise<Bounty[]>;
 }
 
@@ -246,12 +254,19 @@ export interface EconomyDoc {
   data: JsonObject;
   created_at: Timestamp;
   updated_at: Timestamp;
+  /**
+   * The Space (identity's `spaces.id`) it belongs to: a prediction and its bets. `null` (or left
+   * out) for what belongs to no Space. Set when it is created; never changed.
+   */
+  space?: string | null;
 }
 
 export interface DocFilter {
   /** Only documents owned by one of these accounts. */
   owners?: readonly AccountRef[];
   statuses?: readonly string[];
+  /** Only documents of these Spaces, and the ones of no Space. */
+  spaces?: readonly string[];
   limit: number;
 }
 

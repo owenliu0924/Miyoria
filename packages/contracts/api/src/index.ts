@@ -197,6 +197,10 @@ export {
   ChannelLevelViewSchema,
   type SetChannelLevelRequest,
   SetChannelLevelRequestSchema,
+  type SetSpaceLevelRequest,
+  SetSpaceLevelRequestSchema,
+  type SpaceLevelView,
+  SpaceLevelViewSchema,
 } from "./channels.js";
 export {
   type ClusterApproveRequest,
