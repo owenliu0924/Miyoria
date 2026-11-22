@@ -2,7 +2,8 @@
 // (agent/turn.ts `#extras`, `#mainSlow`, `#mainPrompt`, `#styleNote`); no new memory:
 //
 //   1 fixed     the persona core (`PersonaHandle.corePrompt`); the runner adds its rules
-//   3 pinned    the owner's rules (`MainLine.ownerRules`: directives, capabilities on hold)
+//   3 pinned    the owner's rules (`MainLine.ownerRules`: his directives only; what is on hold
+//               and what did not work lately are her state, block 7)
 //   4 place     her skills (`SkillIndex`), the server's emoji and her notebook's index (the
 //               contributors' slow sections), 「今天的你」 (`LifeLog`), the recap of this place
 //               (`ConversationStates`), the people here as person cards (`PersonProfiles.render`,

@@ -290,6 +290,10 @@ export function goalsBlock(src: SelfSources): string {
   return items.length === 0 ? "" : ["你打算做的事:", ...items].join("\n");
 }
 
+/** Heading of what did not work lately, in the ledger block (`LedgerLimits.failed`). */
+export const FAILED_HEAD =
+  "剛才沒做成的事(只是結果,不是規則;弄清楚原因、換個寫法或做法就可以再試):";
+
 /** `self.ledger`: what she started on her own lately and the limits that apply now. */
 export function ledgerBlock(src: SelfSources): string {
   const view = src.ledger ?? null;
@@ -314,6 +318,15 @@ export function ledgerBlock(src: SelfSources): string {
   if (parts.length > 0) lines.push(`${parts.join(";")}。`);
   for (const b of l.blocked.slice(0, 3)) {
     lines.push(`- ${short(b.capability, 30)} 暫時不行:${short(b.reason, 50)}`);
+  }
+  // What did not work: a result to do better next time, not something she may not do.
+  const failed = (l.failed ?? []).slice(-3);
+  if (failed.length > 0) {
+    lines.push(FAILED_HEAD);
+    for (const f of failed) {
+      const at = clock(Date.parse(f.at), offset);
+      lines.push(`- ${at} ${short(f.capability, 30)}:${short(f.reason, 80)}`);
+    }
   }
   const unanswered = unansweredHint(view.unanswered);
   if (unanswered !== "") lines.push(unanswered);

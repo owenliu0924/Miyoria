@@ -14,7 +14,6 @@ import {
   type ActionSettled,
   type ActionSink,
   ActionSinkKey,
-  ArbiterKey,
   type ContextKey,
   contextKeyEquals,
   DeliveryLedgerKey,
@@ -316,12 +315,14 @@ export class MainLine implements Mouth {
     return false;
   }
 
-  /** What she must keep to, all of it, every run: the owner's rules and what is on hold. */
+  /**
+   * The owner's rules (his directives), all of them, every run. Nothing else: what is on hold and
+   * what did not work lately are her state (the ledger block, `ledgerBlock`), never rules. A tool
+   * that failed once was shown here as a rule she had to obey (2026-11-22: 「送魚幣給一個人:不知道
+   * 「…」是誰,沒有送出」 under 主人規則).
+   */
   ownerRules(context: ContextKey): string[] {
-    const services = this.#agent.ctx.services;
-    const rules = services.get(DirectivesKey)?.inject(context) ?? [];
-    const limits = services.get(ArbiterKey)?.ledger(context).limits;
-    return [...rules, ...(limits?.blocked ?? []).map((b) => `${b.capability}:${b.reason}`)];
+    return this.#agent.ctx.services.get(DirectivesKey)?.inject(context) ?? [];
   }
 
   /** Tasks in flight, from what the executors say about themselves. */
