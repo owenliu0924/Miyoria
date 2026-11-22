@@ -34,7 +34,7 @@ profiles/<id>/
 ## 3. 哪些指令跟著 profile
 
 - **跟著**(她的設定、`.env`、資料):`core`、`chat`、`stage`、`config`、`doctor`、`db`、`memory`、`module`、`decisions`、`events`、`persona`、`discord`、`ext`、`profile validate`。有自己設定的 profile,`--config` 換成它的 `miyoria.toml`。
-- **不跟**(這台電腦):`init`、`update`、`hostd`、`up`、`down`、`restart`、`status`、`logs`、`add`、`remove`、`models`、`host ...`、`profile list/show/use/new`。永遠用安裝資料夾的 `miyoria.toml`、`.env` 和旁邊的 `host.toml`。`doctor` 的電腦部分也用安裝資料夾的 `host.toml`。
+- **不跟**(這台電腦):`init`、`update`、`hostd`、`up`、`down`、`restart`、`status`、`logs`、`add`、`remove`、`models`、`host ...`、`profile list/show/use/new`。永遠用安裝資料夾的 `miyoria.toml`、`.env` 和旁邊的 `host.toml`。`doctor` 的電腦部分也用安裝資料夾的 `host.toml`。配對過的電腦也是安裝資料夾的(§7)。
 
 **`.env`**:跟著 profile 的指令,在有自己設定的 profile 只載入它自己的 `.env`,不載入安裝資料夾的(別的角色的 Discord token 不能漏過來)。hostd 是用安裝資料夾的 `.env` 啟動的,它把整個環境傳給 core;所以環境裡和安裝資料夾 `.env` 一樣的值當成是從那裡繼承來的:profile 自己有就換成自己的,沒有就拿掉。其他真的設在環境裡的值照舊優先。
 
@@ -68,11 +68,38 @@ exchange_name = "深海交易所"
 
 `profiles/*/miyoria.toml` 和 `profiles/*/data/` 加進 `.gitignore`。
 
-## 7. 這一步沒做的
+## 7. 電腦是共用的
+
+> 2026-11-22 owner 的決定:hostd 和配對過的朋友電腦是所有角色共用的,換角色不用重新配對。
+
+**電腦資料庫 = 安裝資料夾的資料庫。** 配對和電腦的狀態本來就在 `cluster_*` 表,這些表留在原地:安裝資料夾 `miyoria.toml` 的 `core.database_url` 指的那個檔案(預設 `data/miyoria.db`,相對路徑從安裝資料夾算)。不另開 `data/machines.db`,也從不複製:配對只有一份,不會有兩份各自改下去。
+
+- **沒有自己設定的 profile(今天的安裝)**:它的資料庫就是安裝資料夾的資料庫,`cluster` 模組照舊用 store 裡的表(`store.plugin(clusterTables)`),不多開任何連線、不建任何檔案。升級之後磁碟上什麼都沒變(有測試逐位元組比對 `data/`)。
+- **有自己設定的 profile**:Core 開它自己的資料庫當 store,另外用同一個 SQLite 驅動和同一套 migration 開安裝資料夾的資料庫,**只給 `cluster` 用**(`openMachineDatabase`,`packages/cluster/src/tables.ts`;底下是 store 的 `openPluginDatabase`)。這條連線只跑 `cluster` 的 migration,其他表(Miyoria 的成員、記憶、錢包、事件)一張都不碰,也不讀。
+- **第一次跑、安裝資料夾的資料庫還不存在**(新安裝只跑自己有設定的角色):在那個路徑建一個新檔,裡面只有 `_migrations`(core 的記帳表,只有第一個 migration)和 `cluster_*`,沒有任何角色的表。之後安裝資料夾的角色真的在這個檔上跑時,store 照常補上其他 migration。
+- 安裝資料夾的資料庫是 `memory://`(測試用):沒有檔案可以共用,這個角色的電腦就留在它自己的 store(記一行警告)。
+- 角色自己的資料庫裡也會有空的 `cluster_*` 表(store 開機時照樣 migrate 所有表),但不用、一直是空的。這一步之前用新角色配對過的電腦(如果有)留在它自己的資料庫裡,不搬、不刪、不用;重新配對一次就好。
+- 一次只跑一個角色,所以同一個檔案同時只有一個 Core 寫;CLI 的離線指令(`db`、`memory`)同時開也沒關係,WAL 和 busy timeout 本來就處理。
+
+安裝資料夾的資料庫怎麼找:讀安裝資料夾的 `miyoria.toml`,`${...}` 的展開和安裝資料夾自己的 Core 一樣:先看真的環境變數,再看安裝資料夾的 `.env`;**角色自己 `.env` 裡的值不算**(例如它自己的 `DATABASE_URL`),不然電腦會跟著跑到她的資料庫。這在 `machineSource`(`packages/core/src/profiles.ts`),`miyoria core`/`chat` 啟動時算好交給 Core。
+
+**搬的和不搬的:**
+
+| 在電腦資料庫(共用) | 留在角色自己的資料庫 |
+|---|---|
+| `cluster_hosts`:電腦的 id、名字、金鑰的 SHA-256、核准狀態、核准的能力 | 她的一切:成員、身分、羈絆、記憶、錢包和經濟、卡片、交易所、事件、設定 |
+| `cluster_invites`:加入碼(雜湊) | 面板的模組開關和設定修訂(`config_*`) |
+| `cluster_estimates`:每台電腦量到的速度 | |
+| `cluster_controls`:面板上的釘選、排除、權重、暫停接新工作 | |
+
+服務的用途表(`cluster.llm`/`fetch`/`resolve` 能用什麼)在程式裡,不在資料庫,兩邊一樣。
+
+**`[modules.cluster]` 跟著安裝資料夾。** 這一段的每個鍵都在描述電腦,不是她:`bind`、`public_url`(電腦連進來的位址,hostd 的 `host.toml` 指的就是它)、`static`(不歸 hostd 管的服務和它們的 token)、`order`、`retry_secs`、`hello_timeout_ms`、`ping_secs`、`peer_timeout_secs`、`routes`(各電腦的連線路徑和探測),和整個 `[modules.cluster.routing]`(權重、暫停、各能力的釘選和排除、傳輸速度、單位時間,以及 `allow_on_speech_host`/`idle_minutes`/`speech_penalty_secs`:它們決定的是「講話那台電腦能不能接唱歌的工作」,還是電腦的事)。所以有自己設定的角色,`cluster` 模組用**安裝資料夾** `miyoria.toml` 的 `[modules.cluster]`(含 `enabled`)跑,角色自己 `miyoria.toml` 裡的這一段不用(它還是得通過設定檢查)。不然換個角色,`bind` 就可能從 `0.0.0.0` 變回預設的 `127.0.0.1`,朋友的電腦就連不進來。這一段沒有面板可改的欄位,所以不會有角色資料庫裡的修訂蓋在上面。`[modules.cluster.static]` 的 token 用安裝資料夾 `.env` 的值,那是電腦的祕密,不是哪個角色的。
+
+## 8. 這一步沒做的
 
 | 項目 | 現況 | 之後 |
 |---|---|---|
-| **配對存在 Core 的資料庫** | `cluster_hosts` 等表在 Core 的資料庫,新角色有自己的資料庫,所以**新角色的 Core 一開始沒有任何配對過的電腦**。Miyoria 不受影響 | 把 `cluster_*` 搬到安裝資料夾的一個電腦資料庫(`data/machines.db` 之類),Core 開兩個 store;要改 `packages/cluster` |
 | 獨家股票的名字和代號 | `RICE` `WHLE` `NAPS` `CUBE` `DPSK` 和它們的公司名在 `play/exchange` 的程式裡,跟訊號邏輯綁在一起 | 名字和代號移進 `[modules.exchange]`,邏輯用固定的內部 id |
 | 還寫死的字 | 見本次的回報清單:面板公開頁的一部分、卡面圖、OBS 場景名、extensions 的預設值 | 一個套件一個套件換成 `CharacterKey` |
 | `pronoun` | 只在換過的幾句用;大部分文字還是直接寫「她」 | 需要第二個代名詞的角色出現時再全面換 |
