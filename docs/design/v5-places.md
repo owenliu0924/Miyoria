@@ -9,15 +9,22 @@
 | **Space** | identity 的 `spaces` | 一個 Discord 伺服器。`id` 是 ULID,表和路由都存它;`external_id` 是 guild id。`left_at` 有值表示她已經離開(列都留著) |
 | **主要的 Space** | `spaces.is_primary` | 安裝原本的那個伺服器:沒指定伺服器時的預設(管理頁、階段 6 之前的資料)。最多一個;不會自己移動,她離開了也一樣 |
 | **Room** | `rooms` | 頻道、討論串(`parent_id` 是它的頻道)、語音房、私訊(沒有 Space) |
-| **成員** | `space_members` | 在那裡說過話的帳號。說話就是成員,`platform.member` 的離開把 `left_at` 寫上,再說話就清掉 |
+| **成員** | `space_members` | 在那裡有動作的帳號:說過話、用過指令、按過按鈕或選單、送過表單,或在它的語音頻道裡被看到。`platform.member` 的離開把 `left_at` 寫上,再有動作就清掉 |
 | **地方的設定** | `place_settings(scope, scope_id, plugin, key)` | `scope` 是 `space` 或 `room`,`plugin` 是模組 id,`key` 是欄位路徑。沒有另外一張每個 Space 的設定表 |
 
 兩個服務,Core 提供,介面在 `packages/types/src/places.ts`:
 
-- **`Places`(`PlacesKey`)**:`primary()`、`spaces()`(她還在的,主要的排第一)、`space(id)`、`room(id)`、`at(ctx)`(一個 `ContextKey` 在哪個 Space、Room、session,只讀不寫)、`ofGuild(platform, guild)`、`channelSpace(platform, channel)`、`members(space)`、`spacesOf(person)`、`isMember(person, space)`、`seen` / `left`(她加入、離開一個伺服器)、`memberLeft`、`onChange`。實作是 `store/src/identity/places.ts` 的 `SpacePlaces`。
+- **`Places`(`PlacesKey`)**:`primary()`、`spaces()`(她還在的,主要的排第一)、`space(id)`、`room(id)`、`at(ctx)`(一個 `ContextKey` 在哪個 Space、Room、session,只讀不寫)、`ofGuild(platform, guild)`、`channelSpace(platform, channel)`、`members(space)`、`spacesOf(person)`、`isMember(person, space)`、`seen` / `left`(她加入、離開一個伺服器)、`memberSeen` / `memberLeft`、`onChange`。實作是 `store/src/identity/places.ts` 的 `SpacePlaces`。
 - **`PlaceConfig<T>`(`PlaceConfigKey`,模組用 kernel 的 `placeConfig(ctx, Schema)` 拿)**:`base()`(cluster 的值)、`for(where)`(某個地方的值)、`onChange`。實作是 `core/src/place-config.ts`。
 
 `ContextKey` 這一階段還是線上和程式裡的型別,`Places.at` 是它到 Space / Room 的橋。分享的「這個 Space 的成員」(`artifacts/membership.ts`)就是 `Places.isMember`,規則沒變。
+
+**怎麼變成成員**:在一個伺服器裡有動作的人就是那裡的成員。
+
+- 說話:事件記錄寫一則有作者的訊息時,`Identity.resolve` 順手寫 `space_members`(本來就這樣)。
+- 不說話的動作:Discord 模組(`discord/src/handler.ts`)在伺服器裡的每個互動派送之前呼叫 `Places.memberSeen(space, account, name)`:斜線指令、右鍵選單、按鈕、選單、表單送出;自動完成不算。語音:連線時已經在語音頻道裡的人、加入或換到一個語音頻道的人也算;同一個頻道裡靜音、拒聽、開直播不寫。機器人和她自己的帳號(機器人帳號、`self_account_ids`)不會這樣變成成員;語音狀態沒有成員資料、分不出是不是機器人的,也不算。
+- `memberSeen` 和訊息走同一段寫入:帳號沒有就建(第一次看到就有人物),沒有列就新增,離開過的清掉 `left_at`、更新 `last_seen`。每個互動都會呼叫,所以一分鐘內已經寫過、沒離開、名字沒變的就不寫。不認得的 Space 略過。
+- 會員網站:Discord 登入只要 `identify`,不知道這個人在哪些伺服器。哪裡都不是成員的人照舊拿到主要的、`member: false`;他在伺服器裡用一次任何指令或按鈕就是成員了。
 
 ## 2. 每個功能的範圍(定案)
 
@@ -89,6 +96,14 @@ CREATE UNIQUE INDEX spaces_primary_idx ON spaces (is_primary) WHERE is_primary =
 - 已經在兩個以上伺服器的資料庫:選成員最多的那個。之後要換是 owner 的事(還沒有指令,§8)。
 - 測試:`store/test/migrate.test.ts` 在一個只跑到 v1 的資料庫上放好每張表的列,升級後每張表的列數一樣,零個、一個、兩個 Space 各一個案例。
 - 計畫裡選用的 `core` v8(`events (space_id, type, at)` 索引)這一步沒做:P1 沒有查詢用到它,等 P4/P5 真的有按 Space 查事件的查詢再加。
+
+`identity` v3(`members_who_acted`,只有資料):升級以前,只有說話會變成成員,只用指令或只待在語音裡的人沒有 `space_members` 的列,升級後會從伺服器的榜上消失、不能押那個伺服器的預測。v3 從記錄裡補上能證明在那個 Space 有動作的人,只用寫著那個 Space 的資料:
+
+- 事件自己的 `space_id`(identity 從事件的地方解析出來的)加上做事的帳號 `account_id`。
+- 她的語音在場記錄(facts 的觀察,來源是 `voice.joined` / `voice.participants`,存著參與者的帳號):在那個 Space 的語音頻道裡被看到的人,`is_self` 的不算。被遺忘(redact)的記錄不算;環境觀察 14 天後會被摺疊,所以只有最近的。
+- 只補 identity 已經有的帳號,平台要和 Space 一樣,她自己的帳號(`is_self`)不算。已經有列的(包括離開的)一律不動,所以離開的人還是離開。重跑不會多寫。
+- 補不到的:指令和按鈕沒有留下帶著 Space 的記錄(`economy.posted` 沒有地方,稽核記錄沒有地方),所以只用過指令的人要等他下一次在伺服器裡有動作。經濟和市集的表(下注、樂透券、點歌券)也不用:它們的 `space_id` 是之前的 migration 照主要的 Space 填的,不是看到的,而且那些外掛的 migration 在 identity 之後才跑。語音參與者分不出是不是機器人;機器人的帳號通常是它自己發訊息時才建的,那時候本來就已經是成員。
+- 測試:`store/test/migrate.test.ts` 的 identity v3,在 v2 的資料庫上放事件:只有寫著 Space 的列補上成員,別的表列數不變,離開的人不動,重跑不變。
 
 ## 6. API 和面板
 
