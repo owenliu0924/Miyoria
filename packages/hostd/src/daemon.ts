@@ -5,6 +5,7 @@
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import type { Server } from "node:http";
 import { join, resolve } from "node:path";
 import type { Writable } from "node:stream";
@@ -52,6 +53,7 @@ import {
 } from "./api.js";
 import { type Catalog, type LinkPlaceholder, loadCatalog, placeholdersIn } from "./catalog.js";
 import { HostdClient } from "./client.js";
+import { createGateway } from "./gateway.js";
 import { CardReader, cudaIndex, freeOf, GpuCache, type GpuReader, type GpuSample } from "./gpu.js";
 import { type ArbiterService, GPU_PROFILE_FILE, GpuArbitration } from "./gpu-arbiter.js";
 import { coreStatusGuard, guardedMessage, guardUnknownMessage } from "./guard.js";
@@ -67,6 +69,7 @@ import {
 import { CoreLink, type CoreLinkOptions, type CoreLinkState } from "./link/index.js";
 import { linkValues } from "./links.js";
 import { rotatingLog, ServiceLog } from "./logs.js";
+import { localAddress } from "./ports.js";
 import {
   localUrl,
   offloadUrls,
@@ -74,6 +77,7 @@ import {
   type ResolveContext,
   type ServicePlan,
 } from "./resolve.js";
+import { type LoadedRoutes, loadRoutes, reachOf, reportRoutes, withLocal } from "./routes.js";
 import { serviceRouting, VariantHasher } from "./routing.js";
 import {
   pidAlive,
@@ -332,6 +336,14 @@ export class Daemon implements HostApi {
   readonly #variants = new VariantHasher();
   /** The card's total memory as last read, to tell when it changed. */
   #gpuTotal: number | null = null;
+  /** `routes.toml` as read at start (v5-hostd §16); `null` without the file. */
+  #routes: LoadedRoutes | null = null;
+  /** What Core sends to probe the gateway; only Core learns it, over the control link. */
+  readonly #routeToken = randomBytes(24).toString("base64url");
+  /** The gateway of the `direct` and `tunnel` routes while it listens. */
+  #gateway: Server | null = null;
+  /** Why the gateway does not listen, when a route needs it. */
+  #gatewayProblem: string | null = null;
 
   constructor(options: DaemonOptions) {
     this.#options = options;
@@ -374,6 +386,15 @@ export class Daemon implements HostApi {
       { base: { pid: process.pid }, timestamp: pino.stdTimeFunctions.isoTime },
       this.#logStream,
     );
+
+    this.#routes = loadRoutes({
+      workspace: host.workspace,
+      advertise: host.config.network.advertise,
+      bind: host.config.network.bind,
+    });
+    for (const problem of this.#routes?.problems ?? []) {
+      this.#log.warn({ file: this.#routes?.file, problem }, "routes problem");
+    }
 
     const catalog = loadCatalog(this.#options.catalogRoot);
     this.#catalog = catalog;
@@ -442,6 +463,7 @@ export class Daemon implements HostApi {
       },
       routing: (service) => this.#routingOf(service),
       outside: (name) => this.#outside(name),
+      reach: (service, port) => this.#reachOf(service.name, port),
     };
     this.#ctx = ctx;
     this.#serviceHost = serviceHost;
@@ -500,6 +522,7 @@ export class Daemon implements HostApi {
       workspace: host.workspace,
     });
 
+    await this.#startGateway();
     for (const service of this.#services.values()) service.watchExternal();
     this.#allowRemote = host.config.update.allow_remote;
     this.#upgrader = new Upgrader({
@@ -568,6 +591,14 @@ export class Daemon implements HostApi {
       } catch (error) {
         this.#log.warn({ err: error }, "control link did not stop cleanly");
       }
+    }
+    const gateway = this.#gateway;
+    this.#gateway = null;
+    if (gateway !== null) {
+      await new Promise<void>((done) => {
+        gateway.close(() => done());
+        gateway.closeAllConnections();
+      });
     }
     const server = this.#server;
     this.#server = null;
@@ -762,7 +793,102 @@ export class Daemon implements HostApi {
       ...(this.#checkout === undefined ? {} : { checkout: this.#checkout }),
       remote_update: this.remoteUpdate(),
       upgrade: this.#upgrader?.job ?? null,
+      ...this.#routesReport(withTokens),
     };
+  }
+
+  // ---- routes (v5-hostd §16) -------------------------------------------------------------------
+
+  /** The routes now: `routes.toml` with `local` first while Core runs on this machine. */
+  #routesNow(): LoadedRoutes | null {
+    const loaded = this.#routes;
+    const host = this.#host;
+    if (loaded === null || host === null) return null;
+    const local = isLoopbackUrl(host.config.cluster?.url)
+      ? localAddress(host.config.network.bind)
+      : null;
+    return withLocal(loaded, local);
+  }
+
+  #routesReport(withTokens: boolean): Pick<HostInfo, "routes" | "route_token"> {
+    const routes = this.#routesNow();
+    if (routes === null) return {};
+    return {
+      routes: reportRoutes(routes, this.#gatewayProblem),
+      ...(withTokens ? { route_token: this.#routeToken } : {}),
+    };
+  }
+
+  #reachOf(name: string, port: number): Record<string, string> | undefined {
+    const routes = this.#routesNow();
+    if (routes === null) return undefined;
+    return reachOf(
+      routes,
+      name,
+      port,
+      this.#gatewayToken(name) !== undefined,
+      this.#gateway !== null,
+    );
+  }
+
+  /**
+   * The token a gateway request for `name` must carry: its own token, for a worker that is not
+   * Core. Core's own service and the nodes are never behind the gateway.
+   */
+  #gatewayToken(name: string): string | undefined {
+    const managed = this.#services.get(name);
+    if (managed === undefined || managed.plan.kind !== "worker") return undefined;
+    if (name === "core" || managed.plan.provides.includes("core")) return undefined;
+    return managed.token;
+  }
+
+  /** Starts the gateway when a route of `routes.toml` needs one. A failure is a route problem. */
+  async #startGateway(): Promise<void> {
+    const plan = this.#routes?.gateway ?? null;
+    if (plan === null) return;
+    let tls: { cert: Buffer; key: Buffer } | null = null;
+    if (plan.tls !== null) {
+      try {
+        tls = { cert: await readFile(plan.tls.cert), key: await readFile(plan.tls.key) };
+      } catch (error) {
+        this.#gatewayProblem = `閘道讀不到憑證:${error instanceof Error ? error.message : String(error)}`;
+        this.#log.warn({ problem: this.#gatewayProblem }, "gateway not started");
+        return;
+      }
+    }
+    const gateway = createGateway({
+      tls,
+      logger: this.#log,
+      host: {
+        target: (name) => this.target(name),
+        tokenOf: (name) => this.#gatewayToken(name),
+        routeToken: () => this.#routeToken,
+      },
+    });
+    try {
+      await new Promise<void>((done, fail) => {
+        gateway.once("error", fail);
+        gateway.listen({ host: plan.bind, port: plan.port }, () => {
+          gateway.off("error", fail);
+          done();
+        });
+      });
+    } catch (error) {
+      this.#gatewayProblem = `閘道沒辦法聽 ${plan.bind}:${plan.port}:${error instanceof Error ? error.message : String(error)}`;
+      this.#log.warn({ problem: this.#gatewayProblem }, "gateway not started");
+      return;
+    }
+    gateway.on("error", (error) => this.#log.error({ err: error }, "gateway failed"));
+    this.#gateway = gateway;
+    this.#gatewayProblem = null;
+    this.#log.info({ bind: plan.bind, port: plan.port, tls: tls !== null }, "gateway listening");
+  }
+
+  /** Where the gateway listens, while it does. */
+  get gatewayAddress(): { host: string; port: number } | null {
+    const address = this.#gateway?.address();
+    if (address === undefined || address === null || typeof address !== "object") return null;
+    return { host: address.address, port: address.port };
   }
 
   onEvent(listener: (event: HostServiceEvent) => void): () => void {

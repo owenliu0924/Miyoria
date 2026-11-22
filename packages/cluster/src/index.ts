@@ -94,6 +94,29 @@ export {
   type RelayHost,
   type RelayOptions,
 } from "./relay.js";
+export { RouteProber, type RouteProberOptions } from "./route-probe.js";
+export {
+  bodyOf,
+  neverSent,
+  type RoutedDeps,
+  type RoutedEndpoint,
+  RouteError,
+  routedRequest,
+  TransferChangedError,
+} from "./routed.js";
+export {
+  GATEWAY_KINDS,
+  type ProbeTask,
+  REALTIME_KINDS,
+  type RouteChoice,
+  type RouteHealth,
+  type RouteState,
+  type RoutesConfig,
+  RoutesConfigSchema,
+  RouteTable,
+  type RouteView,
+  type RouteWork,
+} from "./routes.js";
 export {
   type ClusterControlRow,
   type ClusterEstimateRow,
@@ -120,6 +143,8 @@ export {
   Hosts,
   InviteError,
   Invites,
+  type MachineDatabase,
   type NewHost,
   type NewInvite,
+  openMachineDatabase,
 } from "./tables.js";

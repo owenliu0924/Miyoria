@@ -46,6 +46,7 @@ import { GuardRegistry, type GuardSourceFn } from "./guards.js";
 import { ClusterLink, type HostConnection } from "./link.js";
 import { type CapabilityRouting, type ClusterActivity, EndpointRegistry } from "./registry.js";
 import { ClusterRelay, type RelayOptions } from "./relay.js";
+import { RouteProber } from "./route-probe.js";
 import {
   ClusterError,
   type ClusterTables,
@@ -162,8 +163,9 @@ export interface ClusterModuleOptions {
   /** Runs `cluster.llm` completions; without it they fail with `Unavailable`. */
   complete?: ClusterComplete;
   /**
-   * By the capability a service provides: what it may use through `cluster.llm` and
-   * `cluster.fetch`. Default `DEFAULT_CLUSTER_USES` (`sing` and `lyrics`: LLM `fast`, fetch `asr`).
+   * By the capability a service provides: what it may use through `cluster.llm`,
+   * `cluster.fetch` and `cluster.resolve`. Default `DEFAULT_CLUSTER_USES` (`sing` and `lyrics`:
+   * LLM `fast`, fetch `asr`; nothing may resolve).
    */
   uses?: ClusterUses;
   /** The LLM purposes any service may ask for at all. Default `["fast"]`. */
@@ -177,10 +179,18 @@ export interface ClusterModuleOptions {
   links?: ClusterLinksSource;
   /** Core's own checkout, for remote updates of the hosts. Without it hosts cannot be updated. */
   checkout?: CheckoutSource | null;
+  /**
+   * The machines' tables (the hosts, their keys' hashes, invites, estimates, routing controls):
+   * Core's wiring gives the install's machine database's (docs/design/v5-profiles.md §7), which
+   * stays open across restarts of the module. Default: the store's (`store.plugin(clusterTables)`).
+   */
+  machines?: ClusterTables;
 }
 
 /** How often the `live` guard state is read for the speech-host rule. */
 const LIVE_POLL_MS = 5_000;
+/** How often the route prober looks for probes that are due (each route has its own interval). */
+const ROUTE_TICK_MS = 5_000;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -351,9 +361,7 @@ export class ClusterModule implements Module {
     const config = ctx.config(ClusterConfigSchema);
     const bind = parseBind(config.bind);
     if (!bind) throw new ClusterError(`cannot bind the cluster link to \`${config.bind}\``);
-    const store = ctx.services.get(StoreKey);
-    if (store === undefined) throw new ClusterError("the cluster module needs the store");
-    const tables = store.plugin(clusterTables).withClock(ctx.clock);
+    const tables = this.#machines(ctx).withClock(ctx.clock);
     this.#services = ctx.services;
 
     const activity = new ActivityTracker();
@@ -366,6 +374,7 @@ export class ClusterModule implements Module {
       estimates: tables.estimates,
       activity: () => activity.snapshot(),
       log: ctx.log,
+      routes: config.routes,
     });
     try {
       registry.setPanelControls(tables.controls.view());
@@ -455,6 +464,17 @@ export class ClusterModule implements Module {
       }
     });
 
+    // The hosts' routes (v5-hostd §16): only hosts with `routes.toml` are probed.
+    const prober = new RouteProber({ table: registry.routes, clock: ctx.clock, log: ctx.log });
+    ctx.spawn("routes", async (signal) => {
+      while (!signal.aborted) {
+        await prober
+          .tick()
+          .catch((error) => ctx.log.warn({ err: errorMessage(error) }, "route probing failed"));
+        await sleep(ROUTE_TICK_MS, signal);
+      }
+    });
+
     ctx.spawn("server", async (signal) => {
       const failed = new Promise<never>((_, reject) => {
         server.on("error", (error) =>
@@ -481,7 +501,15 @@ export class ClusterModule implements Module {
     this.#link?.refreshLinks();
   }
 
-  /** What serves `cluster.llm` and `cluster.fetch` for this run of the module. */
+  /** The machines' tables: the option's, else the store's. */
+  #machines(ctx: ModuleContext): ClusterTables {
+    if (this.#options.machines !== undefined) return this.#options.machines;
+    const store = ctx.services.get(StoreKey);
+    if (store === undefined) throw new ClusterError("the cluster module needs the store");
+    return store.plugin(clusterTables);
+  }
+
+  /** What serves `cluster.resolve`, `cluster.llm` and `cluster.fetch` for this run of the module. */
   #calls(ctx: ModuleContext, registry: EndpointRegistry): ClusterCalls {
     const o = this.#options;
     const complete = o.complete;

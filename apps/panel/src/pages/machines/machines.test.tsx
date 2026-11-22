@@ -168,7 +168,20 @@ const ROUTING: ClusterRouting = {
   ],
   hosts: [
     { host: "atlas", local: true, rtt_ms: 2.4, drained: null, weight: 1 },
-    { host: "laptop", local: false, rtt_ms: 38, drained: "擁有者在面板設定清空", weight: 2 },
+    {
+      host: "laptop",
+      local: false,
+      rtt_ms: 38,
+      drained: "擁有者在面板設定清空",
+      weight: 2,
+      routes: [
+        { name: "tailnet", kind: "tailnet", url: "laptop.ts.net", implicit: false, state: "resting", in_use: [], rtt_ms: null, mb_s: null, samples: 0, max_body_mb: null, probed_at: iso(60_000), ok_at: null, reason: "連不上:fetch failed" },
+        { name: "direct", kind: "direct", url: "https://laptop.example.net:7890", implicit: false, state: "up", in_use: ["realtime", "interactive"], rtt_ms: 31.6, mb_s: 9.4, samples: 2, max_body_mb: null, probed_at: iso(60_000), ok_at: iso(60_000), reason: null },
+        { name: "tunnel", kind: "tunnel", url: "https://laptop-tunnel.example.com", implicit: false, state: "up", in_use: ["bulk"], rtt_ms: 140, mb_s: 22.5, samples: 3, max_body_mb: 100, probed_at: iso(60_000), ok_at: iso(60_000), reason: null },
+        { name: "plain", kind: "direct", url: "http://203.0.113.7:7890", implicit: false, state: "invalid", in_use: [], rtt_ms: null, mb_s: null, samples: 0, max_body_mb: null, probed_at: null, ok_at: null, reason: "direct 一定要用 https(TLS),不接受 http" },
+        { name: "relay", kind: "relay", url: null, implicit: true, state: "unknown", in_use: [], rtt_ms: 38, mb_s: null, samples: 0, max_body_mb: null, probed_at: null, ok_at: null, reason: null },
+      ],
+    },
   ],
   activity: { in_voice: true, live: false, last_spoke_at: iso(30_000), idle: false },
   config: { allow_on_speech_host: "when_idle", idle_minutes: 10, weights: {}, drain: [], capabilities: { sing: { exclude: ["old"] } } },
@@ -580,6 +593,23 @@ describe("Machines: job dispatch", () => {
     expect(within(hostLaptop).getByRole("button", { name: "恢復 laptop" })).toBeInTheDocument();
     expect(hostLaptop).toHaveTextContent("面板 · discord:1");
     expect(within(hostLaptop).getByRole("button", { name: "還原 laptop 的權重" })).toBeInTheDocument();
+  });
+
+  it("shows each host's routes, which one is in use for what, and what was measured", async () => {
+    serve(world({ routing: ROUTING }));
+    renderRoute("/machines");
+    await capRow("sing");
+    const routes = within(document.querySelector('[data-routing-host="laptop"]') as HTMLElement).getByRole("list", { name: "laptop 的連線路徑" });
+    const route = (name: string) => routes.querySelector(`[data-route="${name}"]`) as HTMLElement;
+    expect(route("direct")).toHaveTextContent("direct直連使用中 · 即時、一般32 ms · 9.4 MB/shttps://laptop.example.net:7890");
+    expect(route("tunnel")).toHaveTextContent("使用中 · 大檔");
+    expect(route("tunnel")).toHaveTextContent("140 ms · 22.5 MB/s · 每次最多 100 MB");
+    expect(route("tailnet")).toHaveTextContent("剛剛失敗,先休息一下 · 連不上:fetch failed · 量於 1 分鐘前");
+    expect(within(route("tailnet")).queryByText(/使用中/)).not.toBeInTheDocument();
+    expect(route("relay")).toHaveTextContent("relay經控制連線38 ms還沒量過");
+    expect(route("plain")).toHaveTextContent("不能用 · direct 一定要用 https");
+    // An older Core sends no routes: nothing is shown for them.
+    expect(document.querySelector('[data-routing-host="atlas"] [data-route]')).toBeNull();
   });
 
   it("says which single instance is used and which are not, and lists open sessions", async () => {

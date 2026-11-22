@@ -17,6 +17,7 @@ import { CARD_FONT_FAMILY, cardFontOptions } from "@miyoria/card-face/fonts";
 import { renderCardSvg } from "@miyoria/card-face/render";
 import type { IssuedCard } from "@miyoria/contracts/api";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
+import { CharacterKey, DEFAULT_CHARACTER } from "@miyoria/types";
 import { Resvg } from "@resvg/resvg-js";
 import sharp from "sharp";
 import { publicCard } from "./card.js";
@@ -197,12 +198,23 @@ async function hazeArt(
   }
 }
 
+const escapeXml = (t: string): string =>
+  t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Who the site is named after: the running profile's character (Miyoria without one). */
+function herOf(state: ApiState) {
+  return state.optional(CharacterKey) ?? DEFAULT_CHARACTER;
+}
+
 /** The panel's 暮色 gradient, for a machine without her pictures. */
 const DUSK = `<defs><linearGradient id="og-dusk" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1b1b33"/><stop offset="0.55" stop-color="#2a2140"/><stop offset="1" stop-color="#3a2438"/></linearGradient></defs>
 <rect width="${OG_WIDTH}" height="${OG_HEIGHT}" fill="url(#og-dusk)"/>`;
 
 /** The site's own picture: her name on the glass, and her standing over its edge. */
-export async function renderDefaultImage(panelDir: string | null): Promise<Buffer> {
+export async function renderDefaultImage(
+  panelDir: string | null,
+  name: string = DEFAULT_CHARACTER.name,
+): Promise<Buffer> {
   const pose = "smile";
   const [art, back, frost] = await Promise.all([
     poseArt(panelDir, pose, 760, true),
@@ -235,7 +247,7 @@ ${her}
 <g transform="translate(${x - 4} 70) scale(2.25)" fill="none">
 <path d="M15.5 3.5a8 8 0 1 0 5 14.2A6.5 6.5 0 0 1 15.5 3.5Z" fill="${COLORS.primary}"/>
 </g>
-<text x="${x - 6}" y="388" font-family="${LATIN}" font-size="128" font-weight="600" letter-spacing="-3" fill="${TEXT}">Miyoria</text>
+<text x="${x - 6}" y="388" font-family="${LATIN}" font-size="128" font-weight="600" letter-spacing="-3" fill="${TEXT}">${escapeXml(name)}</text>
 <text x="${x}" y="452" font-family="${FONT_FAMILY}" font-size="34" fill="${MUTED}">住在 Discord 和直播裡的 AI VTuber</text>
 <rect x="${x}" y="514" width="40" height="3" rx="1.5" fill="${COLORS.primary}"/>
 <text x="${x + 56}" y="524" font-family="${FONT_FAMILY}" font-size="24" fill="${MUTED}" fill-opacity="0.8">聊天・唱歌・直播</text>
@@ -340,10 +352,11 @@ function image(png: Buffer, cacheControl: string): Response {
 
 async function defaultImage(state: ApiState, cacheControl = SITE_CACHE): Promise<Response> {
   const cache = cacheOf(state);
-  const key = `default:${RENDER_VERSION}`;
+  const name = herOf(state).name;
+  const key = `default:${RENDER_VERSION}:${name}`;
   let png = cache.get(key);
   if (!png) {
-    png = await oneAtATime(state, () => renderDefaultImage(state.panelDir));
+    png = await oneAtATime(state, () => renderDefaultImage(state.panelDir, name));
     cache.set(key, png);
   }
   return image(png, cacheControl);
@@ -475,7 +488,12 @@ export async function rewriteHtml(
   const serial = cardSerialIn(path);
   if (serial !== null && state.publicSide.config.enabled) {
     const card = await publicCard(state, serial);
-    if (card) return injectMeta(html, cardMeta(card, origin, `${origin}${cardImagePath(card)}`));
+    if (card) {
+      return injectMeta(
+        html,
+        cardMeta(card, origin, `${origin}${cardImagePath(card)}`, herOf(state)),
+      );
+    }
   }
-  return injectMeta(html, pageMeta(path, origin));
+  return injectMeta(html, pageMeta(path, origin, herOf(state)));
 }

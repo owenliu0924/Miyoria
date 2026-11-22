@@ -182,7 +182,9 @@ sing = ["你的名字", "他自己那台的名字"]
 
 **Core 的主人能做的:**送翻唱工作給你的 sing、查進度、抓做好的檔案(全部走你撥出去的那條連線);在面板把你的電腦釘選、排除、加權或「清空」(做完手上的,不接新的);從面板把你的 checkout 更新到他追蹤的提交(見第 5 節,可以關掉)。
 
-**Core 的主人不能做的:**在你的電腦上執行任何指令、讀你的檔案、下載模型、改你的 `host.toml`、拿到你的金鑰以外的東西。你的服務只聽你電腦本機(除非你自己設 `[network] advertise`)。
+**Core 的主人不能做的:**在你的電腦上執行任何指令、讀你的檔案、下載模型、改你的 `host.toml`、拿到你的金鑰以外的東西。你的服務只聽你電腦本機(除非你自己設 `[network] advertise`,或在 `routes.toml` 開了閘道)。
+
+**讓 Core 有更快的路連到你(選用)。**預設所有東西都走你撥出去的那條連線,最慢但一定通。傳大檔案(影片、做好的歌)想快一點,可以在 `host.toml` 旁邊放一個 `routes.toml`,宣告 Core 還能怎麼連到你:`tunnel`(Cloudflare tunnel 的主機名稱,不用轉發埠,最簡單)、`direct`(公開的位址加轉發的埠,要 https 和一張 Core 信任的憑證)、`tailnet`(你在 Owen 的 tailnet 裡時)。Core 會量每一條,挑快的,一條失敗就換下一條,最後還是那條連線。轉發埠、憑證、`cloudflared` 這些要你自己設;例子和每一種要做什麼寫在 repo 根目錄的 [routes.example.toml](../routes.example.toml),細節在 [v5-hostd.md](design/v5-hostd.md) §16。不管哪一條,Core 都要帶你那個服務的 token 才進得去,而且只進得去你的 worker。改了 `routes.toml` 要 `pnpm dev down` 再 `pnpm dev up`;沒有這個檔案就和現在一樣。
 
 **你自己限制你的電腦接什麼**(寫在你的 `host.toml`,Core 改不了):
 

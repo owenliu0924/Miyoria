@@ -106,6 +106,34 @@ async function opened(fund = true) {
   return r;
 }
 
+describe("the exchange's name", () => {
+  it("is 深海交易所 without a profile, and the profile's [character] exchange_name with one", async () => {
+    const r = await opened();
+    const titleOf = (reply: CommandReply) => (reply.card as Card | undefined)?.title;
+    const plain = registryWith(() => r.service, null);
+    expect(plain.groupDescription("me market")).toBe(
+      "深海交易所:新手推薦、台股美股行情、你的持股、富人榜",
+    );
+    const off = await rig({ open: false });
+    const closed = registryWith(() => off.service, null);
+    const reply = await closed.dispatch({ path: ["me", "market", "mine"], args: {}, ...who });
+    expect(titleOf(reply)).toBe("深海交易所");
+
+    const named = new CommandRegistry(Permissions.fromStrings(["discord:1", "discord:2"]));
+    registerCommands(
+      named,
+      () => off.service,
+      () => null,
+      () => "黑市",
+    );
+    expect(named.groupDescription("me market")).toBe(
+      "黑市:新手推薦、台股美股行情、你的持股、富人榜",
+    );
+    const shut = await named.dispatch({ path: ["me", "market", "mine"], args: {}, ...who });
+    expect(titleOf(shut)).toBe("黑市");
+  });
+});
+
 describe("/me market", () => {
   it("opens the overview privately, local stocks first, with the explainer and the small print", async () => {
     const r = await opened();

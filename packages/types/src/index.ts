@@ -615,6 +615,15 @@ export {
   CardWalletKey,
 } from "./cards.js";
 export {
+  type Character,
+  CharacterKey,
+  characterNames,
+  DEFAULT_CHARACTER,
+  orList,
+  type RunningProfile,
+  RunningProfileKey,
+} from "./character.js";
+export {
   DIRECTIVE_AUTHORITIES,
   DIRECTIVE_EFFECTS,
   type Directive,

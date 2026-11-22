@@ -1,12 +1,19 @@
-// The `cluster` plugin's tables on the store's database (`schema.ts`): the hosts that joined and
-// the codes to join with (docs/design/v5-hostd.md §6.2, §7). Core opens the store with
-// `clusterTables`; the module reads them through `store.plugin(clusterTables)`.
+// The `cluster` plugin's tables (`schema.ts`): the hosts that joined and the codes to join with
+// (docs/design/v5-hostd.md §6.2, §7). They are the install's machines, shared by every profile
+// (docs/design/v5-profiles.md §7): on the install's own store (`store.plugin(clusterTables)`), and
+// for a profile with a database of its own on that same file opened for them alone
+// (`openMachineDatabase`).
 //
 // A host's key and an invite's code are shown once, when they are made, and only their SHA-256
 // is stored. Keys are compared in constant time.
 
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
-import type { Db, StorePlugin } from "@miyoria/store";
+import {
+  type Db,
+  openPluginDatabase,
+  type PluginDatabaseOptions,
+  type StorePlugin,
+} from "@miyoria/store";
 import { type Clock, newId, systemClock, type Timestamp, toTimestamp } from "@miyoria/types";
 import { and, asc, eq } from "drizzle-orm";
 import type { EstimateRow, EstimateStore } from "./estimates.js";
@@ -463,3 +470,23 @@ export const clusterTables: StorePlugin<ClusterTables> = {
   schema: clusterSchema,
   open: ({ db }) => new ClusterTables(db),
 };
+
+/** The machines' tables on a database opened for them alone, and how to close it. */
+export interface MachineDatabase {
+  readonly tables: ClusterTables;
+  close(): void;
+}
+
+/**
+ * Opens the install's machine database at `path` (docs/design/v5-profiles.md §7) for the
+ * `cluster` tables only: a new file holds `_migrations` and `cluster_*`, nothing of a character;
+ * on the install's own store file only the `cluster` schema is migrated and nothing else is
+ * touched.
+ */
+export function openMachineDatabase(
+  path: string,
+  options: PluginDatabaseOptions = {},
+): MachineDatabase {
+  const db = openPluginDatabase(path, [clusterSchema], options);
+  return { tables: new ClusterTables(db, options.clock ?? systemClock), close: () => db.close() };
+}

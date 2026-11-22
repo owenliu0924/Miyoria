@@ -31,9 +31,28 @@ import { economy, peopleEconomy } from "./economy.js";
 import { evalRoutes } from "./eval.js";
 import { exchange, exchangeAdmin } from "./exchange.js";
 import { facts } from "./facts.js";
+import { filesAdmin, memberFiles } from "./files.js";
 import { fortune } from "./fortune.js";
 import { gifts, giftsAdmin, giftsPublic } from "./gifts.js";
 import { githubLink } from "./github-link.js";
+
+export {
+  type AdminFile,
+  AdminFileSchema,
+  type AdminFiles,
+  AdminFilesSchema,
+  type FileHistoryEntry,
+  FileHistoryEntrySchema,
+  type FileVisibility,
+  FileVisibilitySchema,
+  type MemberFile,
+  MemberFileSchema,
+  type MemberFiles,
+  MemberFilesSchema,
+  type MemberFileVisibilityRequest,
+  type MemberFileVisibilityResult,
+} from "./files.js";
+
 import { self, world } from "./inner.js";
 import { karaoke, karaokeAdmin } from "./karaoke.js";
 import { karaokeRooms } from "./karaoke-rooms.js";
@@ -1185,6 +1204,8 @@ export const contract = {
   karaokeRooms,
   reports,
   githubLink,
+  memberFiles,
+  filesAdmin,
   eval: evalRoutes,
 };
 

@@ -391,6 +391,12 @@ export function usePersona() {
   return useQuery(q.persona.list.queryOptions());
 }
 
+/** Which profile the Core runs (docs/design/v5-profiles.md): it changes only with a restart. */
+export function useRunningProfile() {
+  const { q } = useApi();
+  return useQuery({ ...q.persona.profile.queryOptions(), staleTime: 5 * 60_000 });
+}
+
 export function usePersonaHistory(key: string | undefined) {
   const { q } = useApi();
   return useQuery(q.persona.history.queryOptions({ input: { params: { key: key ?? "" } }, enabled: Boolean(key) }));

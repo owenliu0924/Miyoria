@@ -2,10 +2,18 @@
 # 字串可以用 ${ENV_VAR} 或 ${ENV_VAR:-預設值} 引用環境變數 / .env。
 
 [core]
-profile = "deepseek-chan"          # profiles/<id>/
+profile = "deepseek-chan"          # profiles/<id>/;它有自己的 miyoria.toml 時改用那份設定和它的 data/(`miyoria profile`)
 profiles_dir = "profiles"
 database_url = "${DATABASE_URL:-sqlite:data/miyoria.db}"   # 只支援 SQLite:sqlite:<路徑> 或 memory://
 log = "info,miyoria=debug"
+
+# 她是誰(這個 profile 的角色,docs/design/v5-profiles.md);不寫 = Miyoria。改了要重啟 core
+# [character]
+# name = "Miyoria"
+# short_name = "Miyo"               # 大部分人怎麼叫她;"" = 沒有
+# other_names = ["米優", "みよ"]     # 簡稱的其他寫法,叫到也算在叫她
+# pronoun = "她"
+# exchange_name = "深海交易所"       # 交易所的名字(幣名是 [modules.economy] currency)
 
 # ---- LLM ----------------------------------------------------------------
 # 任何 OpenAI 相容 API 都可以:填 base_url、api_key,模型 id 在 purposes 裡。
@@ -221,6 +229,10 @@ token = "${MIYORIA_API_TOKEN:-}"
 # 相對於工作目錄。留空 = 公開頁現在那一張(面板資料夾裡的 background.local.jpg);
 # 兩個都沒有就用面板的暮色漸層。
 # picture_background = ""
+# 對外的監聽位址(Cloudflare tunnel 指到這裡):只有公開頁、成員頁和網站本身,沒有任何管理 API。
+# 留空 = 照舊一個 bind 全包。設了之後 bind 只能是本機、tailnet 或區網的位址,
+# 管理面板和 CLI 走 bind,tunnel 改指到 public_bind(見 docs/design/v5-architecture.md §11)。
+# public_bind = "127.0.0.1:7885"
 
 # 管理面板用 Discord 登入(token 照樣能用)。三個值都填才會開啟;
 # redirect_uri 要跟 Developer Portal → OAuth2 → Redirects 裡的一模一樣,
@@ -247,6 +259,17 @@ token = "${MIYORIA_API_TOKEN:-}"
 # utc_offset_minutes = 480         # 「今天」從哪個時區的午夜開始算
 # client_ip_header = "cf-connecting-ip"  # 這台電腦上的反向代理用哪個標頭帶訪客的位址(只信從本機來的連線)。nginx / Caddy 用 "x-real-ip" 或 "x-forwarded-for"(取最後一個),而且代理要自己設這個標頭、不要照轉訪客送的;空字串 = 不讀任何標頭
 
+# 她做的檔案的下載連結(https://<檔案網域>/f/<token>)。檔案網域要是自己的主機名(例如 files.example.com,
+# 不能和網站同一個),在 Cloudflare tunnel 指到下面的 bind。origin 留空 = 不發連結,附件照常能傳。
+# [modules.api.files]
+# origin = "https://files.example.com"
+# bind = "127.0.0.1:7886"          # 檔案網域自己的監聽位址,只送檔案,沒有 cookie
+# site = ""                        # 只給本人或伺服器成員的連結要登入的網站;空 = discord_oauth.redirect_uri 的網址
+# links_per_person_per_day = 20    # 每個人 24 小時內最多幾條連結
+# per_ip_per_minute = 60           # 每個訪客每分鐘的請求數
+# per_link_per_minute = 120        # 每條連結每分鐘的請求數(所有人加起來)
+# public_cache_secs = 300          # 有連結就能看的檔案讓 CDN 快取幾秒;0 = 不快取
+
 # 每台電腦的管家(hostd)連進來的控制連線:回報這台有哪些服務、位址和健康。預設開著;
 # 埠被占用時這個模組會失敗,Core 照常執行。
 # [modules.cluster]
@@ -261,6 +284,15 @@ token = "${MIYORIA_API_TOKEN:-}"
 # provides = ["sing"]
 # url = "http://100.83.26.41:8005"
 # token = "${FRIEND_SING_TOKEN}"  # 那個服務有檢查 token 時
+# 每台電腦可以在它自己的 routes.toml 宣告好幾條連線路徑(tailnet、direct、tunnel,加上一直都在的控制連線);
+# Core 量每一條、照工作挑、失敗就換下一條(docs/design/v5-hostd.md §16)。下面都是預設值,只影響有 routes.toml 的電腦。
+# [modules.cluster.routes]
+# probe_secs = 300               # 每條路徑多久量一次延遲和連不連得上(秒)
+# sample_secs = 1800             # 閘道路徑多久測一次流量(秒);0 = 不主動測
+# sample_kib = 256               # 測流量抓多少(KiB,最多 1024)
+# timeout_ms = 5000              # 量測多久沒回應算失敗
+# rest_secs = [30, 120, 600]     # 失敗的路徑先跳過多久(連續失敗越多越久,最後一個重複)
+# chunk_mb = 64                  # 有內容上限的路徑(tunnel)下載時每段最多多大
 
 # Self 帳號語音節點(apps/voice-node)連進來的位址;token 由 `miyoria init` 產生
 [modules."voice.link"]
@@ -843,7 +875,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # [modules.actions.limits."code.run"]
 # per_day = 50
 # cooldown_ms = 5000
-# [modules.actions.share]        # 她把自己做的檔案當附件傳給開口要的人(這個階段沒有連結)
+# [modules.actions.share]        # 她把自己做的檔案當附件傳給開口要的人(設了 [modules.api.files] origin 就另外附連結)
 # max_bytes = 10485760           # 一個檔案最多幾 bytes(平台自己的上限另外算,取小的)
 # per_day = 60                   # 每 24 小時最多傳幾個(所有人加起來)
 # per_person_per_day = 10        # 每 24 小時最多傳給同一個人幾個

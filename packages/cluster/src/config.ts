@@ -2,6 +2,7 @@
 // which hosts are tried per capability, and the services no hostd manages.
 
 import { z } from "zod";
+import { RoutesConfigSchema } from "./routes.js";
 
 /** Where Core serves the control link when `bind` is not set. */
 export const DEFAULT_CLUSTER_BIND = "127.0.0.1:7880";
@@ -106,5 +107,7 @@ export const ClusterConfigSchema = z.object({
   peer_timeout_secs: z.number().positive().default(45),
   /** How `job` work is spread over the hosts, and the owner's pins, exclusions and drains. */
   routing: RoutingConfigSchema.prefault({}),
+  /** How the hosts' routes are probed and rested (v5-hostd §16). */
+  routes: RoutesConfigSchema.prefault({}),
 });
 export type ClusterConfig = z.output<typeof ClusterConfigSchema>;

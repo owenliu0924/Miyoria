@@ -52,6 +52,13 @@ export {
 } from "./descriptor.js";
 export { matchesPassEnv, mergeEnv, passEnv, workerBaseEnv } from "./env.js";
 export {
+  createGateway,
+  type GatewayHost,
+  type GatewayLogger,
+  type GatewayOptions,
+  gatewayTarget,
+} from "./gateway.js";
+export {
   CardReader,
   type CardReaderOptions,
   cudaIndex,
@@ -115,6 +122,18 @@ export {
   type SpawnSpec,
   type UsedLinks,
 } from "./resolve.js";
+export {
+  type GatewayPlan,
+  gatewayProblem,
+  type LoadedRoutes,
+  loadRoutes,
+  type RouteContext,
+  type RoutePlan,
+  reachOf,
+  reportRoutes,
+  routesFile,
+  withLocal,
+} from "./routes.js";
 export {
   pidAlive,
   RUN_FILE,

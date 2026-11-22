@@ -510,6 +510,26 @@ miyoria up                     # 啟動這台裝的全部
 
 用到它的地方:卡片和相簿(§9.1)、底片、委託交付、coder 和 research 子代理的成品、每週回顧卡、直播片段。
 
+### 11.3 做到哪裡(階段 6,2026-11-22)
+
+**檔案網域和「她做給我的」**
+
+- 設 `[modules.api.files] origin = "https://files.<你的網域>"` 才會發連結;沒設就不發,也不退回用網站的網域(附件照常)。檔案網域有自己的監聽位址 `[modules.api.files] bind`(預設 `127.0.0.1:7886`),只送 `/f/<token>`(分享連結)、`/d/<id>?k=…`(本人從會員頁下載)和 `robots.txt`,其他一律 404;不讀也不設 cookie。origin 和網站同一個主機名時 Core 拒絕啟動。
+- **owner 要自己做的**:Cloudflare 加一個主機名(例如 `files.example.com`),tunnel 的 ingress 指到 `http://127.0.0.1:7886`(和 `[modules.api.files] bind` 一致),然後在 `miyoria.toml` 設 `origin`。「只給本人」和「伺服器成員」的連結要 Discord 登入:檔案網域把訪客送到網站的 `/api/member/files/pass/<token>`(網站是 `[modules.api.files] site`,沒設就用 `discord_oauth.redirect_uri` 的網址),網站確認是誰之後帶一張兩分鐘、只對這個分享有效的票送回去,檔案網域再檢查一次。沒開 Discord 登入時只發「有連結就能看」的連結。
+- `share` 工具多了 `hours`(連結幾小時後失效,預設 7 天)和 `to: "here"`(這個伺服器的成員,私訊裡不行);附件照傳,同一則訊息附連結,平台收不了附件時只送連結。圖片一律送重新編碼過的副本(sharp,EXIF、文字區塊、檔尾藏的東西都不在了),副本是自己的一筆產物,跟原本的一起保留、到期、下架。
+- 範圍:私訊裡做的只給本人,本人可以自己改成有連結就能看,但絕不給伺服器或別人;頻道裡做的最多給那個伺服器的成員,本人一樣可以自己公開。成員資格只透過 `isSpaceMember(person, space)`(`packages/store/src/artifacts/membership.ts`),Space 和 Room 的表來了只改那一個函式。
+- 會員頁「她做給我的」:列表、下載、刪除、改給誰看(不分享 / 只有我 / 伺服器成員 / 有連結的人,舊連結立刻失效、新連結只顯示一次)、留著;每人 24 小時 20 條連結(`links_per_person_per_day`)。資料頁「她做的檔案」:每個產物、還開著的連結數、下架(要寫原因),和紀錄(做好、給出、做了連結、第一次打開、收回、本人刪除、下架、到期)。
+- 擋的東西:只有產物庫裡的 id;翻唱不發連結、不送檔;型別允許清單(圖片、音訊、影片、PDF、純文字,文字再讀一次內容,HTML/SVG/腳本和看起來像密鑰的都拒絕);回應有正確的 `Content-Type`、`Content-Disposition`(PDF 和 `?dl=1` 一律下載)、`nosniff`、`default-src 'none'; … sandbox` 的 CSP、`no-referrer`、`X-Frame-Options: DENY`、`noindex`;每個位址、每條連結都限速;有連結就能看的檔案讓 CDN 快取 5 分鐘(`public_cache_secs`),其他 `no-store`。
+- 新增事件 `artifact.deleted`(本人刪除)。沒有新的資料表或搬移:`artifact_shares` 本來就有。
+
+**API 分組**
+
+- 三組路由:`admin`(只在 `bind`)、`public`(公開頁和會員頁,在 `bind` 和 `public_bind`)、`host`(`/api/cluster/join`,只在 `bind`)。hostd 的控制連線本來就是 `[modules.cluster] bind` 自己的監聽位址,沒動。
+- 預設不變:`public_bind` 留空就是一個 `bind` 全包,和以前一樣。要分開:設 `[modules.api] public_bind = "127.0.0.1:7885"`,tunnel 改指到 7885;`bind` 這時只能是本機、tailnet 或區網的位址(`0.0.0.0` 或公網位址會拒絕啟動)。管理面板和 CLI 從本機或 tailnet 走 `bind`,公開的那個位址找不到任何管理路由(404)。
+- 管理 token 錯 10 次(15 分鐘內)那個位址鎖 15 分鐘,每鎖一次加倍,最長一天;鎖住時對的 token 也是 429。`rate-limiter-flexible` 不在依賴裡(這次不能 install),所以是記憶體裡的小限制器(`packages/api/src/admin-limit.ts`,介面和它同一類),重啟就忘。
+- 靜態檔:從公開那一側來的請求(`public_bind`,或單一 `bind` 時帶著 `client_ip_header` 的,也就是經過 tunnel 的)只送允許清單:頁面、`assets/` 裡的程式樣式字型和圖、幾個頂層檔;source map、其他檔一律 404。`*.local.*` 的圖(owner 的遊戲美術)是公開頁自己在畫的(背景、卡片立繪),照 owner 2026-11-14 的決定照舊公開,只是現在限定在清單裡的檔名樣式。
+- 還沒做:面板的輪詢改 SSE。面板已經有 `/api/events` 的事件流,但大多數頁面(`app/queries.ts` 約 60 個、公開頁十幾個)是各自輪詢;要改成「快照加增量」得每頁定增量的格式和事件來源,這次沒動。
+
 ## 12. 套件整併
 
 **已經做的(2026-11-14,`v5` 分支)**:十組機械式合併,`packages/` 從 45 個變成 26 個,行為沒有改。每一組是一個套件,裡面每個部分一個資料夾(各有自己的 `src/` 和 `test/`),對外用 `@miyoria/<組>/<部分>` 匯入,組內互相用相對路徑。工具是 `scripts/merge-packages.py`。

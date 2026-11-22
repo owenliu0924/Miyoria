@@ -351,7 +351,9 @@
 
 **小的、還沒做**
 
-- 產物庫對外提供檔案的路由還沒有;她的「分享」(`share`)現在是當附件送出,不做連結(`packages/gate/actions/src/share.ts`)。每天的清理已經排程了(`packages/memory/facts/src/module.ts` 的 `ArtifactSweepSchedule`)。
+- 產物庫對外的檔案網域和分享連結 2026-11-22 做了(v5-architecture §11.3),等 owner 在 Cloudflare 加主機名、設 `[modules.api.files] origin` 才會發連結。還沒做的:圖片送出前的 NSFW 分類(還沒有分類器);產物頁的「檢舉」;每個 Space 的容量額度(現在只有每人每天的連結數);別台電腦做的產物經 hostd 拉進產物庫;S3 相容的儲存。每天的清理已經排程了(`packages/memory/facts/src/module.ts` 的 `ArtifactSweepSchedule`)。
+- 面板的輪詢改 SSE 的「快照加增量」還沒做(v5-architecture §11.3 最後一點)。
+- 管理 token 的失敗限制是記憶體裡的小限制器(`packages/api/src/admin-limit.ts`);設計寫的 `rate-limiter-flexible` 要能跑 `pnpm install` 時再決定要不要換。
 - 「忘了我」不會去改 LLM 呼叫的 JSONL 檔(那些檔 14 天後過期)。
 - 她在一個還沒有人說過話的私訊裡的第一句話,存的時候沒有場所(`packages/store/src/events/log.ts` 的註解寫著)。
 - lyrics 服務和 turn worker 的錯誤回應是 FastAPI 預設的格式,和其他 worker 不一樣(測試裡標成已知)。
@@ -411,7 +413,7 @@
 - **承諾的預設期限偏急**:沒講時間的承諾 2 分鐘到期,而段落整理要對話停 5 分鐘才跑,所以一記下就過期。超過 24 小時才到期的承諾,Core 重啟後會掉(`CommitmentBook` 只從最近 24 小時的紀錄重建)。她明講不做了的承諾不會關。
 - **願望檢查在她自己起頭、沒有 @ 人、房間裡有好幾個人時**,仍然對每個人都檢查,可能誤擋。
 - **面板的新頁面沒有在瀏覽器看過**(評測、筆記、回合頁的工具呼叫、提示詞頁);**夜間評測沒有實際跑過**(`[modules.eval]` 預設關)。
-- **`share` 的圖片 metadata 沒有清除**(沒有加編碼器依賴)。
+- ~~`share` 的圖片 metadata 沒有清除~~:2026-11-22 起 `api` 模組提供重新編碼的副本(`packages/api/src/files/clean.ts`),沒有 `api` 模組時才照原樣送。
 - **CLI 用相對路徑匯入 notes**,`packages/cli` 還沒有 `@miyoria/memory` 這個依賴(2026-11-21 查過還是這樣,`packages/cli/src/commands/memory.ts`;加依賴要跟著更新 `pnpm-lock.yaml`,要在能跑 `pnpm install` 的時候做)。
 - **live 的 `miyoria.toml` 還有不再被讀的鍵**(啟動時的警告列了 `llm.thinking`、`modules.agent.max_tool_steps`、`tool_timeout_ms`、`max_tool_result_chars`;`[llm.reasoning] chat_intent` 也沒有作用了),可以刪。要決定的見「等 owner 決定」第 33 題。
 - **退路的備份**:`data/backups/core-db-before-v5p3-20261117/` 和 `miyoria.toml.before-v5p3-20261117`;`data/backups/core.db.rebuild-dryrun-20261116` 是估花費用的複本,可以刪。要決定的見「等 owner 決定」第 31 題。

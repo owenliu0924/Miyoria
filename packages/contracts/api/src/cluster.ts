@@ -12,6 +12,7 @@ import {
   HostGpuReadingSchema,
   HostLinkStateSchema,
   HostRemoteUpdateSchema,
+  HostRouteKindSchema,
   HostRoutingClassSchema,
   HostRoutingLatencySchema,
   HostServiceRoutingSchema,
@@ -333,6 +334,31 @@ export const ClusterRoutingControlSchema = z
   })
   .meta({ id: "ApiClusterRoutingControl" });
 
+/** One route of a host (v5-hostd §16): its state, what it is used for now, what was measured. */
+export const ClusterRouteViewSchema = z
+  .object({
+    name: z.string(),
+    kind: HostRouteKindSchema,
+    /** The gateway's URL, or the tailnet address; `null` for the relay. Never a token. */
+    url: z.string().nullable(),
+    /** Not declared in the host's `routes.toml` (its advertised address, Core's machine, the relay). */
+    implicit: z.boolean(),
+    state: z.enum(["unknown", "up", "down", "resting", "invalid"]),
+    /** The kinds of work it is the first choice for now. */
+    in_use: z.array(z.enum(["realtime", "interactive", "bulk"])),
+    rtt_ms: z.number().nullable(),
+    mb_s: z.number().nullable(),
+    /** Throughput samples behind `mb_s`. */
+    samples: z.number().int(),
+    max_body_mb: z.number().nullable(),
+    probed_at: TimestampSchema.nullable(),
+    ok_at: TimestampSchema.nullable(),
+    /** Why it is invalid, or why it failed last. */
+    reason: z.string().nullable(),
+  })
+  .meta({ id: "ApiClusterRouteView" });
+export type ClusterRouteView = z.output<typeof ClusterRouteViewSchema>;
+
 /** Job dispatch as the machines page shows it. */
 export const ClusterRoutingSchema = z
   .object({
@@ -346,6 +372,8 @@ export const ClusterRoutingSchema = z
         /** Why it takes nothing new; `null` when it does. */
         drained: z.string().nullable(),
         weight: z.number(),
+        /** The ways Core reaches it (v5-hostd §16) and what was measured; older Cores leave it out. */
+        routes: z.array(ClusterRouteViewSchema).optional(),
       }),
     ),
     /** Where her voice is, as the speech-host rule sees it. */

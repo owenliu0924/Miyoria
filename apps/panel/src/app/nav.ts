@@ -1,3 +1,4 @@
+import { SITE_NAME } from "@/lib/site-name";
 import {
   Activity,
   Bug,
@@ -155,7 +156,7 @@ export const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 export const isActive = (to: NavPath, path: string) => (to === "/" ? path === "/" : path === to || path.startsWith(`${to}/`));
 
 export function titleFor(path: string): string {
-  return NAV.find((i) => isActive(i.to, path))?.label ?? "Miyoria";
+  return NAV.find((i) => isActive(i.to, path))?.label ?? SITE_NAME;
 }
 
 export function groupFor(path: string): string | null {

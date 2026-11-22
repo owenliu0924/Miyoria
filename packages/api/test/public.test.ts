@@ -705,6 +705,7 @@ describe("the route table", () => {
       "GET /api/auth/oauth/callback",
       "GET /api/auth/oauth/login",
       "GET /api/health",
+      "GET /api/member/files/pass/:token",
       "GET /api/public/board",
       "GET /api/public/card-art/:file",
       "GET /api/public/card/:serial",
@@ -725,6 +726,7 @@ describe("the route table", () => {
         .map(line)
         .sort(),
     ).toEqual([
+      "DELETE /api/member/files/:id",
       "DELETE /api/member/karaoke/rooms/:code/queue/:entry",
       "GET /api/member/bounties",
       "GET /api/member/card",
@@ -745,6 +747,7 @@ describe("the route table", () => {
       "GET /api/member/exchange/suggest",
       "GET /api/member/exchange/ticker/:code",
       "GET /api/member/export",
+      "GET /api/member/files",
       "GET /api/member/fortune",
       "GET /api/member/gifts",
       "GET /api/member/gifts/:id/picture",
@@ -783,6 +786,9 @@ describe("the route table", () => {
       "POST /api/member/exchange/visibility",
       "POST /api/member/exchange/watch",
       "POST /api/member/feed",
+      "POST /api/member/files/:id/download",
+      "POST /api/member/files/:id/keep",
+      "POST /api/member/files/:id/visibility",
       "POST /api/member/forget",
       "POST /api/member/frame",
       "POST /api/member/gifts/:id/cancel",
@@ -826,7 +832,8 @@ describe("the route table", () => {
     // room's code names a room, which anyone with the code may join or watch; a queue entry is one
     // of that room's, which only its adder, the opener or a panel admin may take out or move; an
     // exchange ticker's code names a stock and a list's kind one of the fixed lists; a gift id
-    // names a gift, and one that is not theirs is refused.
+    // names a gift, and one that is not theirs is refused; a file id names one of the things she
+    // made, and one that was not made for them is not found.
     const named = all.filter(
       (r) =>
         r.member &&
@@ -842,6 +849,7 @@ describe("the route table", () => {
             "",
           )
           .replace(/^\/api\/member\/gifts\/:id\/(confirm|cancel|picture)$/, "")
+          .replace(/^\/api\/member\/files\/:id(\/(keep|visibility|download))?$/, "")
           .includes(":"),
     );
     expect(named).toEqual([]);
