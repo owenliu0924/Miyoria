@@ -19,6 +19,11 @@ export interface Endpoint {
   headers: Record<string, string>;
   healthy: boolean;
   version: string | null;
+  /**
+   * Set on what a `direct` query returned from a host with several routes: its requests travel
+   * only over routes fit for real-time work, never a tunnel or the control link.
+   */
+  direct_only?: boolean;
 }
 
 export interface EndpointQuery {

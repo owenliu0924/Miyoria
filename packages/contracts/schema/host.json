@@ -243,6 +243,9 @@
             "string",
             "null"
           ]
+        },
+        "direct_only": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -318,6 +321,33 @@
         "headers",
         "body"
       ]
+    },
+    "HostGatewayConfig": {
+      "type": "object",
+      "properties": {
+        "bind": {
+          "default": "127.0.0.1",
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "tls_cert": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tls_key": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "port"
+      ],
+      "additionalProperties": false
     },
     "HostGpu": {
       "type": "object",
@@ -1599,6 +1629,15 @@
               "type": "null"
             }
           ]
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostRoute"
+          }
+        },
+        "route_token": {
+          "type": "string"
         }
       },
       "required": [
@@ -2092,6 +2131,88 @@
         "on-failure",
         "never"
       ]
+    },
+    "HostRoute": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/HostRouteKind"
+        },
+        "url": {
+          "type": "string"
+        },
+        "max_body_bytes": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "implicit": {
+          "type": "boolean"
+        },
+        "problem": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ]
+    },
+    "HostRouteDecl": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+        },
+        "kind": {
+          "$ref": "#/$defs/HostRouteKind"
+        },
+        "address": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "max_body_mb": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "additionalProperties": false
+    },
+    "HostRouteKind": {
+      "type": "string",
+      "enum": [
+        "tailnet",
+        "direct",
+        "tunnel",
+        "relay"
+      ]
+    },
+    "HostRoutesFile": {
+      "type": "object",
+      "properties": {
+        "gateway": {
+          "$ref": "#/$defs/HostGatewayConfig"
+        },
+        "route": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/HostRouteDecl"
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "HostRouting": {
       "type": "object",
@@ -2871,6 +2992,15 @@
         },
         "advertised": {
           "type": "string"
+        },
+        "reach": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "healthy": {
           "type": "boolean"

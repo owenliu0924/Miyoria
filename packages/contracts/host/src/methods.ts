@@ -3,6 +3,7 @@
 
 import { z } from "zod";
 import { HostGpuArbitrationSchema } from "./gpu.js";
+import { HostRouteSchema } from "./routes.js";
 import { HostServiceLoadSchema, HostServiceRoutingSchema } from "./routing.js";
 import { HostGpuPolicySchema, HostGuardStateSchema } from "./service.js";
 import { HostCheckoutSchema, HostRemoteUpdateSchema, HostUpgradeJobSchema } from "./upgrade.js";
@@ -67,6 +68,12 @@ export const HostServiceStatusSchema = z
      * through the host's control link.
      */
     advertised: z.string().optional(),
+    /**
+     * By route name (`routes.toml`, v5-hostd §16): the base URL of this service on that route
+     * (`http://<address>:<port>` on a `tailnet` route, `<gateway url>/svc/<name>` on `direct` and
+     * `tunnel`). Absent on a host without `routes.toml`, and from older daemons.
+     */
+    reach: z.record(z.string(), z.string()).optional(),
     healthy: z.boolean(),
     /** Restarts within the current give-up window. */
     restarts: z.number().int().nonnegative(),
@@ -174,6 +181,16 @@ export const HostInfoSchema = z
     remote_update: HostRemoteUpdateSchema.optional(),
     /** The running update, or the last one; `null` before the first. */
     upgrade: HostUpgradeJobSchema.nullable().optional(),
+    /**
+     * The routes Core may reach this host by (v5-hostd §16), the implicit ones included. Absent on
+     * a host without `routes.toml` and from older daemons: Core then routes it as before.
+     */
+    routes: z.array(HostRouteSchema).optional(),
+    /**
+     * What Core sends to probe this host's gateway (`/_miyoria/probe`); new at each daemon start.
+     * Only in reports on the control link, like the service tokens.
+     */
+    route_token: z.string().optional(),
   })
   .meta({ id: "HostInfo" });
 export type HostInfo = z.output<typeof HostInfoSchema>;
@@ -286,6 +303,11 @@ export const HostEndpointSchema = z
     headers: z.record(z.string(), z.string()),
     healthy: z.boolean(),
     version: z.string().nullable(),
+    /**
+     * Set on what a `direct` query returned from a host with routes (v5-hostd §16): its requests
+     * go only over routes fit for real-time work (`tailnet`, `direct`), never a tunnel or the relay.
+     */
+    direct_only: z.boolean().optional(),
   })
   .meta({ id: "HostEndpoint" });
 export type HostEndpoint = z.output<typeof HostEndpointSchema>;
