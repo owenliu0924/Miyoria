@@ -143,20 +143,25 @@ export class PushClient {
     void this.#follow(topics, ctl.signal);
   }
 
+  /**
+   * Closes the stream on purpose (other topics, the page going away): its topics poll until the
+   * next stream is ready, which sends their values again, so nothing is fetched now.
+   */
   #close(): void {
     this.#connection?.abort();
     this.#connection = null;
     this.#topics = "";
-    this.#fallBack();
+    this.#fallBack(false);
     this.#setState("idle");
   }
 
-  /** Every pushed topic polls again, starting now (its value may have gone stale). */
-  #fallBack(): void {
+  /** Every pushed topic polls again; `refetch`: starting now (the stream broke, it may be stale). */
+  #fallBack(refetch = true): void {
     if (this.#live.size === 0) return;
     const keys = [...this.#live].map((id) => this.#wants.get(id)?.key).filter((k) => k !== undefined);
     this.#live.clear();
     this.#emit();
+    if (!refetch) return;
     for (const key of keys) void this.#o.queryClient.invalidateQueries({ queryKey: key, exact: true });
   }
 
