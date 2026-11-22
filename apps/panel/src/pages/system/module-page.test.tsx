@@ -13,6 +13,7 @@ const field = (over: Partial<SettingField> & Pick<SettingField, "path" | "kind" 
   danger: null,
   secret: false,
   scope: "cluster",
+  merge: "replace",
   unit: null,
   labels: null,
   room: null,

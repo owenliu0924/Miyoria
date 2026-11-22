@@ -55,7 +55,10 @@ export const SettingFieldSchema = z
     /** Why changing it is dangerous (the panel asks first). */
     danger: z.string().nullable(),
     secret: z.boolean(),
-    scope: z.enum(["cluster", "space"]),
+    /** `space` / `room`: may differ per server / per room (docs/design/v5-places.md). */
+    scope: z.enum(["cluster", "space", "room"]),
+    /** How a place's value meets the ones above it: the nearest wins, or a list takes them all. */
+    merge: z.enum(["replace", "union"]),
     unit: z.enum(["ms", "s", "min", "h", "day"]).nullable(),
     labels: z.record(z.string(), z.string()).nullable(),
     room: z.enum(["text", "voice", "thread"]).nullable(),

@@ -46,8 +46,20 @@ export type SettingKind = (typeof SETTING_KINDS)[number];
 
 /** `module`: saving restarts the module; `core`: it takes a restart of Core. */
 export type SettingApply = "module" | "core";
-/** `cluster`: one value; `space`: may differ per server (phase 6; written at cluster for now). */
-export type SettingScope = "cluster" | "space";
+/**
+ * `cluster`: one value. `space`: may differ per server. `room`: may differ per room (channel,
+ * thread, voice room), and a room without its own value takes its Space's. A place's value is a
+ * `place_settings` row; `placeConfig` resolves it (docs/design/v5-places.md).
+ */
+export type SettingScope = "cluster" | "space" | "room";
+/**
+ * How a place's value meets the ones above it. `replace` (default): the nearest one wins.
+ * `union`: a list field takes every layer's entries (cluster, Space, parent room, room), so a deny
+ * list set for the cluster cannot be lifted by a room.
+ */
+export type SettingMerge = "replace" | "union";
+/** The scopes, for checks. */
+export const SETTING_SCOPES: readonly SettingScope[] = ["cluster", "space", "room"];
 /** A `duration`'s unit: the unit the key's name says, never converted. */
 export type SettingUnit = "ms" | "s" | "min" | "h" | "day";
 /** The kind of room a `channel` field takes. */
@@ -74,6 +86,8 @@ export interface SettingMeta {
   secret?: boolean;
   /** Default `cluster`. */
   scope?: SettingScope;
+  /** Default `replace`; `union` only means something for a list. */
+  merge?: SettingMerge;
   unit?: SettingUnit;
   /** The step of a number. */
   step?: number;
@@ -122,6 +136,7 @@ export interface SettingField {
   danger: string | null;
   secret: boolean;
   scope: SettingScope;
+  merge: SettingMerge;
   unit: SettingUnit | null;
   labels: Record<string, string> | null;
   room: SettingRoom | null;
@@ -222,7 +237,8 @@ function fieldOf(root: Obj, raw: Obj, keys: string[], declared: number): Setting
     apply: oneOf(meta.apply, ["module", "core"] as const) ?? "module",
     danger: str(meta.danger),
     secret: meta.secret === true,
-    scope: oneOf(meta.scope, ["cluster", "space"] as const) ?? "cluster",
+    scope: oneOf(meta.scope, SETTING_SCOPES) ?? "cluster",
+    merge: (type === "array" && oneOf(meta.merge, ["replace", "union"] as const)) || "replace",
     unit: oneOf(meta.unit, ["ms", "s", "min", "h", "day"] as const),
     labels: stringMap(meta.labels),
     room: oneOf(meta.room, ["text", "voice", "thread"] as const),
