@@ -244,9 +244,10 @@ export interface MarketDeps {
   /** The tables, as seen from the Space this market runs in (`MarketStore.forSpace`). */
   store: MarketStore;
   /**
-   * A Space other than the primary one: its lottery runs only with a channel of its own, so a
-   * server where nobody set the market up sells nothing (the primary's lottery runs as it always
-   * did, with or without a channel).
+   * Its lottery runs only with a channel of its own: every Space but the primary, and the primary
+   * too when the cluster names a lottery channel (it is then some server's, and runs there). So a
+   * server where nobody set the market up sells nothing, and the one lottery of before runs once
+   * (the primary without a channel only when none was ever set).
    */
   secondary?: boolean;
   /** Whether this market runs the auction and the lottery (default true). */

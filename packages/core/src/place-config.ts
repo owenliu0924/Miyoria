@@ -242,6 +242,8 @@ class ModulePlaceConfig<T> implements PlaceConfig<T> {
         const keep = (v: JsonValue, origin: Origin) => {
           if (typeof v !== "string" || v === "") return true;
           const at = channels.place(v, field.channel?.ref ?? "id");
+          // A cluster channel nobody can place goes to the primary only, not to every established
+          // Space: the default Space, so a job posting there runs once, not in each server.
           return at === "in" || (at === "unknown" && (origin === "own" || place.space.primary));
         };
         if (entries !== null) {

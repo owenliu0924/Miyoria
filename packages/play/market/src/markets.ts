@@ -4,8 +4,11 @@
 // everyone's: the song priority ticket, whose price and daily limit are the same everywhere.
 //
 // * A Space runs an auction only with an auction channel in that Space (`PlaceConfig` drops a
-//   channel that is in another Space), and a lottery: the primary as it always did, any other
-//   Space only with a channel of its own. So a server where nobody set the market up runs nothing.
+//   channel that is in another Space), and a lottery: a Space with a lottery channel of its own,
+//   and the primary without one only while the cluster names no channel at all (the one server of
+//   before, set up without a channel). So a server where nobody set the market up runs nothing,
+//   and a cluster channel that is in one server runs the lottery there only, not also, channel-less,
+//   in the primary: two servers she was already in never both run the one lottery of before.
 // * A Space she left keeps its rows; a lot or a draw of it that is not settled yet is settled with
 //   both off (every hold and ticket goes back), and nothing new opens there.
 // * Rows from before there was any Space go to the primary Space once there is one (`adopt`).
@@ -14,7 +17,7 @@
 
 import { errorMessage } from "@miyoria/runtime/kernel";
 import type { ContextKey, PlaceConfig, Places, SongPriority, SpaceRef } from "@miyoria/types";
-import type { MarketConfig } from "./config.js";
+import { lotteryChannel, type MarketConfig } from "./config.js";
 import type { CommandReplyLike } from "./notices.js";
 import { type MarketDeps, MarketService } from "./service.js";
 import type { MarketStore } from "./store.js";
@@ -111,7 +114,8 @@ export class MarketRegistry implements Markets {
       ...this.#o.shared,
       config,
       store: this.#o.store.forSpace(space.id),
-      secondary: !space.primary,
+      // The default Space keeps a channel-less lottery only when the cluster set no channel.
+      secondary: !space.primary || lotteryChannel(this.#o.config.base()) !== "",
       trades: true,
       songs: false,
       post: (channel, reply) => this.#o.post(space, channel, reply),
