@@ -5,6 +5,7 @@
 // nothing that does not depend on the line is waited for, the rest only `live_context_ms`.
 
 import type { ContentPart } from "@miyoria/llm/llm";
+import type { SpeakerNames } from "@miyoria/memory/transcript";
 import {
   AffectStateKey,
   type ContextKey,
@@ -21,6 +22,7 @@ import {
   Warm,
 } from "../../agent/src/index.js";
 import type { PromptInput, PromptSource } from "../../self/src/index.js";
+import type { SpeakerNaming } from "../../self/src/prompt.js";
 import { moodStyle, type SlowReads, type WarmSlot } from "./prompt.js";
 import { roomLines } from "./voice-texts.js";
 
@@ -86,12 +88,12 @@ export function voiceReads(
 }
 
 /** The blocks of a run: the text host's, with block 7 of a voice run its own. */
-export class VoicePrompt implements PromptSource {
+export class VoicePrompt implements PromptSource, SpeakerNaming {
   readonly #agent: Agent;
-  readonly #text: PromptSource;
+  readonly #text: PromptSource & SpeakerNaming;
   readonly #room: VoiceRoom;
 
-  constructor(agent: Agent, text: PromptSource, room: VoiceRoom) {
+  constructor(agent: Agent, text: PromptSource & SpeakerNaming, room: VoiceRoom) {
     this.#agent = agent;
     this.#text = text;
     this.#room = room;
@@ -99,6 +101,10 @@ export class VoicePrompt implements PromptSource {
 
   fixed(input: PromptInput): Promise<string | null> {
     return this.#text.fixed(input);
+  }
+
+  names(input: PromptInput): SpeakerNames | null {
+    return this.#text.names?.(input) ?? null;
   }
 
   pinned(input: PromptInput): Promise<string | null> {

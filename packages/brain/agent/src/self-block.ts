@@ -48,6 +48,7 @@ import {
   type SelfState,
   type ShownEmotion,
   safeName,
+  shownNames,
   xmlAttrs,
 } from "@miyoria/types";
 import type { SelfBlock } from "./compiler.js";
@@ -376,6 +377,11 @@ export interface PresentPerson {
   account: AccountRef;
   /** Their stable handle (the name she uses for them). */
   handle: string;
+  /**
+   * What their accounts are called now, when that is not the handle (a nickname changed since
+   * she first saw them): `shown_as`, so a name in the chat maps to the handle. Unset: none.
+   */
+  shown?: readonly string[];
   person: PersonId | null;
   /** A speaker of this turn (listed first). */
   speaker: boolean;
@@ -394,6 +400,8 @@ const MAX_STANCE = 60;
 /** What the people block says of one person (`personTag`); empty values are left out. */
 export interface PersonAttrs {
   name: string;
+  /** What their accounts are called now, when not the handle (`PresentPerson.shown`). */
+  shown_as?: string | null;
   /** 朋友, 認識, ... */
   relation?: string | null;
   /** Her 羈絆 level with them, out of the scale's top (`92/1000`). */
@@ -423,8 +431,14 @@ export function personTag(attrs: PersonAttrs): string {
 }
 
 /** What is known about `p`, or `null` when nothing is. */
+/** `shown_as` of `p`: the names they go by now that are not the handle, or `null`. */
+export function shownAs(p: Pick<PresentPerson, "handle" | "shown">): string | null {
+  const shown = shownNames(p.handle, p.shown ?? []);
+  return shown.length === 0 ? null : shown.join("、");
+}
+
 function personAttrs(p: PresentPerson, src: PeopleSources): PersonAttrs | null {
-  const attrs: PersonAttrs = { name: p.handle };
+  const attrs: PersonAttrs = { name: p.handle, shown_as: shownAs(p) };
   const view = p.person === null ? null : (src.heart?.view(p.person) ?? null);
   if (view !== null) {
     // The heart's row (docs/design/v5-heart.md §2.9): the tier, the level and the slow values as
@@ -447,7 +461,8 @@ function personAttrs(p: PresentPerson, src: PeopleSources): PersonAttrs | null {
     if (stance !== "") attrs.stance = short(stance, MAX_STANCE);
   }
   const known = Object.entries(attrs).some(
-    ([k, v]) => k !== "name" && v !== null && v !== undefined && String(v).trim() !== "",
+    ([k, v]) =>
+      k !== "name" && k !== "shown_as" && v !== null && v !== undefined && String(v).trim() !== "",
   );
   return known ? attrs : null;
 }
@@ -503,7 +518,7 @@ export function peopleBody(present: readonly PresentPerson[], src: PeopleSources
     } catch {
       attrs = null;
     }
-    if (attrs === null) others.push(personTag({ name: p.handle }));
+    if (attrs === null) others.push(personTag({ name: p.handle, shown_as: shownAs(p) }));
     else lines.push(personTag(attrs));
   }
   if (lines.length === 0) return others.join("\n");
