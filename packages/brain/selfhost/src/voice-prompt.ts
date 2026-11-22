@@ -9,6 +9,7 @@ import type { SpeakerNames } from "@miyoria/memory/transcript";
 import {
   AffectStateKey,
   type ContextKey,
+  nameKey,
   SelfStateKey,
   type VoiceParticipant,
 } from "@miyoria/types";
@@ -129,10 +130,12 @@ export class VoicePrompt implements PromptSource, SpeakerNaming {
     const text = await this.#text.now(input);
     if (input.profile !== "voice") return text;
     const context = input.session.context;
-    const room = roomLines(
-      this.#room.members(context).map((m) => m.display_name),
-      this.#room.speaking(context),
-    );
+    // Who is there by handle, with the name shown when it is another (it is what is said aloud).
+    const members = this.#room.members(context).map((m) => {
+      const handle = this.#agent.handleOf(m.account, m.display_name);
+      return nameKey(handle) === nameKey(m.display_name) ? handle : `${handle}(${m.display_name})`;
+    });
+    const room = roomLines(members, this.#room.speaking(context));
     return text === null ? room : `${text}\n${room}`;
   }
 
