@@ -347,12 +347,15 @@ describe("an anonymous visitor", () => {
     renderApp();
     await screen.findAllByRole("link", { name: "用 Discord 登入" });
     await waitFor(() => expect(paths(fn)).toContain("/api/public/songs"));
+    // Her state and songs come by the public push stream too (it answers 404 here: polling).
+    await waitFor(() => expect(paths(fn)).toContain("/api/public/stream"));
     expect([...new Set(paths(fn))].sort()).toEqual([
       "/api/auth/methods",
       "/api/auth/session",
       "/api/member/session",
       "/api/public/songs",
       "/api/public/status",
+      "/api/public/stream",
     ]);
   });
 

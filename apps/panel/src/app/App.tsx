@@ -14,6 +14,7 @@ import { isKaraokePath } from "@/pages/public/karaoke/path";
 import { isLivePath, LivePage } from "@/pages/public/live/LivePage";
 import { Backdrop } from "./Backdrop";
 import { ConnectionProvider, useConnection } from "./connection";
+import { PushProvider } from "./push";
 import { createQueryClient } from "./query-client";
 import type { AppRouter } from "./router";
 import { type AuthState, checkVisitor, rememberVisitor, type Visitor } from "./visitor";
@@ -162,7 +163,10 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   if (isLivePath(path)) {
     return (
       <QueryClientProvider client={queryClient}>
-        <LivePage />
+        {/* Only a member's danmaku is pushed there (her state has its own live feed). */}
+        <PushProvider audience="member">
+          <LivePage />
+        </PushProvider>
       </QueryClientProvider>
     );
   }
@@ -179,7 +183,9 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     return (
       <QueryClientProvider client={queryClient}>
         <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
-          <KaraokePage member={member ?? undefined} home={discordAdmin ? OWN_PAGE : "/"} />
+          <PushProvider audience="member">
+            <KaraokePage member={member ?? undefined} home={discordAdmin ? OWN_PAGE : "/"} />
+          </PushProvider>
         </Suspense>
       </QueryClientProvider>
     );
@@ -189,10 +195,12 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   if (auth.status === "signed_in" && auth.session.method === "discord" && (path === OWN_PAGE || path.startsWith(`${OWN_PAGE}?`))) {
     return (
       <QueryClientProvider client={queryClient}>
-        <OwnPage
-          onLogout={logout}
-          onBack={() => history.push("/")}
-        />
+        <PushProvider audience="member">
+          <OwnPage
+            onLogout={logout}
+            onBack={() => history.push("/")}
+          />
+        </PushProvider>
       </QueryClientProvider>
     );
   }
@@ -200,11 +208,13 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   if (auth.status === "public" && auth.member !== null && !tokenLogin) {
     return (
       <QueryClientProvider client={queryClient}>
-        <PublicSite
-          member={auth.member}
-          notice={loginError === null ? null : loginErrorMessage(loginError)}
-          onLogout={logout}
-        />
+        <PushProvider audience="member">
+          <PublicSite
+            member={auth.member}
+            notice={loginError === null ? null : loginErrorMessage(loginError)}
+            onLogout={logout}
+          />
+        </PushProvider>
       </QueryClientProvider>
     );
   }
@@ -214,10 +224,12 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     return (
       <QueryClientProvider client={queryClient}>
         <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
-          <FrontPage
-            discord={(methods?.discord ?? false) && isSameOrigin(config.baseUrl)}
-            notice={loginError === null ? null : loginErrorMessage(loginError)}
-          />
+          <PushProvider audience="public">
+            <FrontPage
+              discord={(methods?.discord ?? false) && isSameOrigin(config.baseUrl)}
+              notice={loginError === null ? null : loginErrorMessage(loginError)}
+            />
+          </PushProvider>
         </Suspense>
       </QueryClientProvider>
     );

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
 import { isApiError } from "@/api/http";
 import { useApi } from "@/app/connection";
+import { usePushed } from "@/app/push";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -25,10 +26,12 @@ export function DanmakuForm() {
   const id = useId();
   const [text, setText] = useState("");
   const [note, setNote] = useState<Note>(null);
+  // By push under a `PushProvider` (her going live opens the form at once), else polled.
+  const pushed = usePushed("danmaku", null, DANMAKU);
   const view = useQuery({
     queryKey: DANMAKU,
     queryFn: ({ signal }) => api.rpc.wallet.danmakuView(undefined, { signal }),
-    refetchInterval: REFRESH_MS,
+    refetchInterval: pushed ? false : REFRESH_MS,
     retry: false,
   });
   const send = useMutation({
