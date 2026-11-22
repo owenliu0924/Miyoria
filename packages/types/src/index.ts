@@ -850,6 +850,22 @@ export {
   type PartySessionView,
   type PartySnapshot,
 } from "./party-overview.js";
+export {
+  type CallNames,
+  describePerson,
+  directoryCandidates,
+  directoryMatch,
+  isOrdinaryWord,
+  MAX_NAME_CANDIDATES,
+  matchPersonName,
+  namedIn,
+  nameKey,
+  nameRefusal,
+  ORDINARY_WORDS,
+  type PersonCandidate,
+  type PersonNameMatch,
+  shownNames,
+} from "./person-names.js";
 export { CORE_CHARS, CORE_SENTENCES, characterCore } from "./persona-core.js";
 export {
   type AdminProfilePicture,

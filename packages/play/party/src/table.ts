@@ -15,6 +15,7 @@ import {
   type ContextKey,
   contextKeyString,
   DEFAULT_CURRENCY,
+  matchPersonName,
   newId,
   PARTY_RECENT_MAX,
   type PartyPlayerView,
@@ -222,8 +223,21 @@ export class Session implements Host {
     const all = this.humans();
     const exact = all.find((p) => p.name === wanted || safeName(p.name, 24) === wanted);
     if (exact) return exact;
-    const partial = all.filter((p) => p.name.includes(wanted) || wanted.includes(p.name));
-    return partial.length === 1 ? (partial[0] ?? null) : null;
+    // Whole names only, the way every tool finds a person (`matchPersonName`): part of a name
+    // may be someone else.
+    const match = matchPersonName(
+      wanted,
+      all.map((p) => ({
+        key: p.key,
+        handle: p.name,
+        person: null,
+        account: p.account,
+        shown: [],
+        first: null,
+        call: null,
+      })),
+    );
+    return match.kind === "one" ? (all.find((p) => p.key === match.candidate.key) ?? null) : null;
   }
 
   /** The player of `account`, when they are in the game (a person her turn is about). */
