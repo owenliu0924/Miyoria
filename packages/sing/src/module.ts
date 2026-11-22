@@ -12,6 +12,8 @@ import {
   type ServiceLookup,
 } from "@miyoria/runtime/kernel";
 import {
+  CurrencyKey,
+  DEFAULT_CURRENCY,
   Events,
   type KaraokeWorker,
   KaraokeWorkerKey,
@@ -252,10 +254,11 @@ export class SingModule implements Module {
     );
 
     let paths: string[] = [];
+    const coin = () => ctx.services.get(CurrencyKey) ?? DEFAULT_CURRENCY;
     const commands = new CommandMount(
       "sing",
       (registry) => {
-        paths = registerCommands(registry, cfg.permissions, actuators, singer);
+        paths = registerCommands(registry, cfg.permissions, actuators, singer, coin());
       },
       (registry) => {
         for (const path of paths) registry.unregister(path);
@@ -263,7 +266,7 @@ export class SingModule implements Module {
     );
     commands.attach(ctx);
     const prompts = ctx.services.get(PromptContributorsKey) ?? null;
-    prompts?.register(new SingPrompt(singer));
+    prompts?.register(new SingPrompt(singer, coin));
     const room = new VoiceRoom(() => ctx.clock.now());
     prompts?.register(new VoiceRoomPrompt(room, singer.list));
     singer.setPresence((guild, who) => room.present(guild, who));
