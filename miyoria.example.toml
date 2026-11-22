@@ -728,7 +728,7 @@ dirs = ["extensions"]
 # # 五檔獨家股票,照什麼推動它分(角色固定在程式裡,代號、名字、起始價和說明是這個 profile 的;不寫 = 下面這些):
 # # feeding = 餵食、songs = 唱完的歌、silence = 沒說話的小時、game = 遊戲目標和死掉、model = 模型出錯
 # # anchor 是起始價和長期會回到的價位(魚幣);what_moves 不寫 = 照名字自動寫一句「大家多餵她,…就容易漲」
-# # 代號是資料庫裡持股和價格紀錄的鍵:已經有人買過或有價格紀錄時改代號,Core 會拒絕啟動(改回來,或用新的 profile)
+# # 代號是資料庫裡持股和價格紀錄的鍵:已經有人買過或有價格紀錄時改代號,交易所模組不會啟動、模組頁寫原因(改回來,或用新的 profile)
 # # [modules.exchange.local_companies]
 # # feeding = { code = "RICE", name = "白飯食品", anchor = 100 }
 # # songs = { code = "WHLE", name = "鯨落唱片", anchor = 108 }
