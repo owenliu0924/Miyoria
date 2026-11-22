@@ -20,7 +20,7 @@ type Handler = (url: URL, init: RequestInit) => Response | Promise<Response>;
 /** A fetch that answers by host name; anything else is a refused connection. */
 function fakeFetch(handlers: Record<string, Handler>) {
   const calls: Array<{ url: string; method: string; headers: Headers }> = [];
-  const fn = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const fn = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(String(input));
     calls.push({ url: url.href, method: init.method ?? "GET", headers: new Headers(init.headers) });
     const handler = handlers[url.host];
