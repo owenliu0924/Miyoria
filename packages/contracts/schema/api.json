@@ -18670,6 +18670,29 @@
         "placed"
       ]
     },
+    "ApiRunningProfile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "own": {
+          "type": "boolean"
+        },
+        "character": {
+          "type": "string"
+        },
+        "persona": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "own",
+        "character",
+        "persona"
+      ]
+    },
     "ApiSandboxHealth": {
       "type": "object",
       "properties": {

@@ -86,6 +86,20 @@
             "path": "/api/persona/{key}/history"
           }
         }
+      },
+      "profile": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/profile"
+          }
+        }
       }
     },
     "self": {
