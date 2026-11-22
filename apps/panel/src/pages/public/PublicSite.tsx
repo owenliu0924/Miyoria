@@ -14,6 +14,7 @@ import { fmtInt } from "@/lib/format";
 import { CardsArea } from "./cards/CardsArea";
 import { Exchange } from "./Exchange";
 import { GiftsReceived } from "./Gifts";
+import { MadeForMe } from "./MadeForMe";
 import { KaraokeLink } from "./karaoke/link";
 import { LiveStage } from "./live/LiveStage";
 import { Market } from "./Market";
@@ -255,6 +256,7 @@ export function PublicSite({
           <Predictions />
           <WalletMain />
           <GiftsReceived />
+          <MadeForMe />
           <Songs />
         </Page>
       </main>
