@@ -139,7 +139,9 @@ describe("share links", () => {
     expect(row?.token_hash).not.toContain(token);
     expect(JSON.stringify(f.t.db.all("SELECT * FROM artifact_shares"))).not.toContain(token);
     expect((await get(app, `/f/${token}`)).status).toBe(200);
-    expect((await get(app, `/f/${token.slice(0, -1)}A`)).status).toBe(404);
+    // One character off (never the same token: the first is swapped for a different one).
+    const off = `${token[0] === "A" ? "B" : "A"}${token.slice(1)}`;
+    expect((await get(app, `/f/${off}`)).status).toBe(404);
     f.clock.advance(DAY);
     expect((await get(app, `/f/${token}`)).status).toBe(404);
   });
