@@ -309,15 +309,23 @@ function core(o: Options = {}) {
 const paths = (fn: ReturnType<typeof mockFetch>) =>
   fn.mock.calls.map(([input]) => new URL(String(input), "http://panel.test").pathname);
 
-/** The app at the address the test set (`window.location`), as the browser would open it. */
-const renderApp = () =>
-  render(
+/** The app at `path` (else the address the test set, `window.location`), as the browser would open it. */
+const renderApp = (path?: string) => {
+  if (path !== undefined) window.history.replaceState(null, "", path);
+  return render(
     <App
       router={createAppRouter(
         createMemoryHistory({ initialEntries: [`${window.location.pathname}${window.location.search}`] }),
       )}
     />,
   );
+};
+
+/** Opens one of the member area's tabs, as a click on its link does. */
+const openTab = async (name: string) => {
+  await userEvent.click(await screen.findByRole("tab", { name }));
+  await waitFor(() => expect(screen.getByRole("tab", { name })).toHaveAttribute("aria-selected", "true"));
+};
 
 afterEach(() => {
   window.history.replaceState(null, "", "/");
@@ -403,8 +411,9 @@ describe("a member", () => {
     expect(within(view).getByText("熟")).toBeInTheDocument();
     expect(within(view).getByText("妳總是記得跟我打招呼。")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "一起的回憶" })).toHaveTextContent("小愛喜歡貓");
-    expect(screen.getByRole("region", { name: "你點的歌" })).toHaveTextContent("群青");
     expect(within(view).getByRole("heading", { name: "Alice" })).toBeInTheDocument();
+    await openTab("互動");
+    expect(await screen.findByRole("region", { name: "你點的歌" })).toHaveTextContent("群青");
   });
 
   it("sees the bond as the ring with nothing on the heart, and never a number", async () => {
@@ -465,7 +474,8 @@ describe("a member", () => {
     const now = await screen.findByRole("region", { name: "現在" });
     expect(await within(now).findByText(/她在唱歌/)).toBeInTheDocument();
     expect(within(now).getByText("3 首")).toBeInTheDocument();
-    const songs = screen.getByRole("region", { name: "歌單" });
+    await openTab("互動");
+    const songs = await screen.findByRole("region", { name: "歌單" });
     expect(await within(songs).findByText("歌名還不知道")).toBeInTheDocument();
   });
 
@@ -511,7 +521,7 @@ describe("a member", () => {
 
   it("requests a song with nothing but the query", async () => {
     const { posts } = core({ member: USER });
-    renderApp();
+    renderApp("/me/gifts");
     await userEvent.type(await screen.findByLabelText("歌名或 YouTube / bilibili 連結"), "群青");
     await userEvent.click(screen.getByRole("button", { name: "點歌" }));
     await waitFor(() => {
@@ -567,7 +577,7 @@ describe("an admin", () => {
 describe("a card she gives", () => {
   it("is on their page, and they can draw a new one for its price, with a key for the charge", async () => {
     const { posts, keys } = core({ member: USER });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     expect(await within(section).findByRole("img", { name: /MYR-AB12-CD34-EF56/ })).toBeInTheDocument();
     // The first card of the day costs too.
@@ -587,7 +597,7 @@ describe("a card she gives", () => {
 
   it("sends a fresh key with every card", async () => {
     const { posts, keys } = core({ member: USER });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     await userEvent.click(await within(section).findByRole("button", { name: /抽一張新卡/ }));
     await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/card")).toHaveLength(1));
@@ -601,7 +611,7 @@ describe("a card she gives", () => {
 
   it("lets them pay for a foil finish on top of the card, and shows what both cost", async () => {
     const { posts, keys } = core({ member: USER, cardInfo: { prices: { card: 30, foil: 50 } } });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     expect(await within(section).findByRole("button", { name: /抽一張新卡.*30/ })).toBeInTheDocument();
     // No picture to choose: her expression comes with the card.
@@ -617,7 +627,7 @@ describe("a card she gives", () => {
 
   it("has no foil to offer when it is not on sale, and no reroll at all", async () => {
     core({ member: USER, cardInfo: { prices: { card: 30, foil: null } } });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     await within(section).findByRole("button", { name: /抽一張新卡/ });
     expect(within(section).queryByRole("button", { name: "閃卡" })).toBeNull();
@@ -626,7 +636,7 @@ describe("a card she gives", () => {
 
   it("says when today's cards are all given", async () => {
     core({ member: USER, cardInfo: { today: 5 } });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     expect(await within(section).findByRole("button", { name: "今天的卡抽完了" })).toBeDisabled();
   });
@@ -641,7 +651,7 @@ describe("a card she gives", () => {
 
   it("says plainly when there is none yet", async () => {
     core({ member: USER, noCard: true });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "她給你的卡" });
     expect(await within(section).findByText("還沒有卡,抽一張看看她怎麼看你")).toBeInTheDocument();
     expect(within(section).queryByRole("button", { name: "下載" })).toBeNull();
@@ -690,11 +700,12 @@ describe("the wallet", () => {
     expect(within(wallet).getByText("今天 +20")).toBeInTheDocument();
     expect(within(wallet).getByText("她現在:有點餓")).toBeInTheDocument();
     expect(within(wallet).getByText("連續簽到 3 天")).toBeInTheDocument();
+    await openTab("魚幣");
     const earn = await screen.findByRole("region", { name: "怎麼賺" });
-    expect(within(earn).getByText("每日簽到")).toBeInTheDocument();
+    expect(await within(earn).findByText("每日簽到")).toBeInTheDocument();
     expect(within(earn).getByText("4 / 20")).toBeInTheDocument();
-    const recent = screen.getByRole("region", { name: "最近" });
-    expect(within(recent).getByText("餵了一碗白飯")).toBeInTheDocument();
+    const recent = await screen.findByRole("region", { name: "最近" });
+    expect(await within(recent).findByText("餵了一碗白飯")).toBeInTheDocument();
     expect(within(recent).getByText("−10")).toBeInTheDocument();
   });
 
@@ -748,8 +759,19 @@ describe("the wallet", () => {
     const wallet = await screen.findByRole("region", { name: "錢包" });
     expect(await within(wallet).findByText("她還不認識你,先和她說說話吧")).toBeInTheDocument();
     expect(within(wallet).queryByRole("button")).toBeNull();
-    expect(screen.queryByRole("region", { name: "商店" })).toBeNull();
+    expect(document.body.textContent).not.toMatch(/封鎖|blocked/i);
+    // The tabs with what they could buy or earn hold none of it; the coins' tab says the same line.
+    await openTab("互動");
+    await screen.findByRole("region", { name: "現場" });
+    await waitFor(() => expect(screen.queryByRole("region", { name: "商店" })).toBeNull());
+    expect(screen.queryByRole("region", { name: "送她禮物" })).toBeNull();
+    await openTab("魚幣");
+    expect(await screen.findByText("她還不認識你,先和她說說話吧")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "怎麼賺" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "最近" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "轉給朋友" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "贊助排行榜" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "轉出" })).toBeNull();
     expect(document.body.textContent).not.toMatch(/封鎖|blocked/i);
   });
 
@@ -759,16 +781,19 @@ describe("the wallet", () => {
     const wallet = await screen.findByRole("region", { name: "錢包" });
     expect(await within(wallet).findByText("這個 Core 還沒有錢包")).toBeInTheDocument();
     expect(within(wallet).queryByRole("button")).toBeNull();
-    expect(screen.queryByRole("region", { name: "商店" })).toBeNull();
-    expect(await screen.findByRole("region", { name: "她給你的卡" })).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "一起的回憶" })).toBeInTheDocument();
+    await openTab("互動");
+    await screen.findByRole("region", { name: "現場" });
+    await waitFor(() => expect(screen.queryByRole("region", { name: "商店" })).toBeNull());
+    await openTab("卡片");
+    expect(await screen.findByRole("region", { name: "她給你的卡" })).toBeInTheDocument();
   });
 });
 
 describe("the shop", () => {
   it("buys a frame after asking, and selects an owned one", async () => {
     const { posts } = core({ member: USER });
-    renderApp();
+    renderApp("/me/gifts");
     const shop = await screen.findByRole("region", { name: "商店" });
     expect(await within(shop).findByText("已擁有")).toBeInTheDocument();
     await userEvent.click(within(shop).getByRole("button", { name: "購買 深海" }));
@@ -831,7 +856,7 @@ describe("card frames", () => {
 describe("the newer places to spend", () => {
   it("sends a screen message with a key, counting to 60", async () => {
     const { posts, keys } = core({ member: USER });
-    renderApp();
+    renderApp("/me/gifts");
     const shop = await screen.findByRole("region", { name: "商店" });
     const box = await within(shop).findByLabelText("留言上大螢幕");
     const send = within(shop).getByRole("button", { name: /送上螢幕/ });
@@ -853,7 +878,7 @@ describe("the newer places to spend", () => {
 
   it("tells why a screen message did not go, and keeps the text", async () => {
     core({ member: USER, screen: { status: 409, body: { error: "她現在沒有開台" } } });
-    renderApp();
+    renderApp("/me/gifts");
     const shop = await screen.findByRole("region", { name: "商店" });
     const box = await within(shop).findByLabelText("留言上大螢幕");
     await userEvent.type(box, "晚安");
@@ -870,9 +895,11 @@ describe("the newer places to spend", () => {
     await userEvent.click(within(wallet).getByRole("button", { name: /簽到/ }));
     await waitFor(() => expect(posts.find((p) => p.path === "/api/member/checkin")?.body).toEqual({ fortune: true }));
     expect(posts.some((p) => p.path === "/api/member/fortune")).toBe(false);
+    await waitFor(() => expect(within(wallet).queryByRole("switch")).toBeNull());
+    await openTab("卡片");
     const section = await screen.findByRole("region", { name: "今日籤詩" });
     expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
-    expect(within(wallet).queryByRole("switch")).toBeNull();
+    expect(posts.some((p) => p.path === "/api/member/fortune")).toBe(false);
   });
 
   it("buys the slip alone on a day already checked in, until today's slip exists", async () => {
@@ -882,9 +909,10 @@ describe("the newer places to spend", () => {
     expect(within(wallet).queryByRole("switch")).toBeNull();
     await userEvent.click(await within(wallet).findByRole("button", { name: /買今日籤詩.*10/ }));
     await waitFor(() => expect(posts.find((p) => p.path === "/api/member/checkin")?.body).toEqual({ fortune: true }));
+    await waitFor(() => expect(within(wallet).queryByRole("button", { name: /買今日籤詩/ })).toBeNull());
+    await openTab("卡片");
     const section = await screen.findByRole("region", { name: "今日籤詩" });
     expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
-    await waitFor(() => expect(within(wallet).queryByRole("button", { name: /買今日籤詩/ })).toBeNull());
   });
 
   it("offers no purchase once today's slip exists", async () => {
@@ -898,7 +926,7 @@ describe("the newer places to spend", () => {
 
   it("shows a slip already drawn today without offering another", async () => {
     core({ member: USER, slip: true });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "今日籤詩" });
     expect(await within(section).findByRole("button", { name: "下載" })).toBeInTheDocument();
     expect(within(section).queryByRole("button", { name: /抽籤/ })).toBeNull();
@@ -906,7 +934,7 @@ describe("the newer places to spend", () => {
 
   it("offers no draw button of its own: the slip comes with the check-in", async () => {
     core({ member: USER });
-    renderApp();
+    renderApp("/me/cards");
     const section = await screen.findByRole("region", { name: "今日籤詩" });
     expect(await within(section).findByText(/簽到時可以加買/)).toBeInTheDocument();
     expect(within(section).queryByRole("button")).toBeNull();
@@ -914,7 +942,7 @@ describe("the newer places to spend", () => {
 
   it("asks before a transfer and sends it only after the answer", async () => {
     const { posts, keys } = core({ member: USER });
-    renderApp();
+    renderApp("/me/wallet");
     const section = await screen.findByRole("region", { name: "轉給朋友" });
     const send = within(section).getByRole("button", { name: "轉出" });
     expect(send).toBeDisabled();
@@ -942,7 +970,7 @@ describe("the newer places to spend", () => {
 
   it("does not send a transfer when they back out", async () => {
     const { posts } = core({ member: USER });
-    renderApp();
+    renderApp("/me/wallet");
     const section = await screen.findByRole("region", { name: "轉給朋友" });
     await userEvent.type(within(section).getByLabelText("對方的 Discord 使用者 ID"), "123456789");
     await userEvent.type(within(section).getByLabelText(/數量/), "5");
@@ -954,7 +982,7 @@ describe("the newer places to spend", () => {
 
   it("shows the board and joins or leaves it with one switch", async () => {
     const { posts } = core({ member: USER });
-    renderApp();
+    renderApp("/me/wallet");
     const section = await screen.findByRole("region", { name: "贊助排行榜" });
     expect(await within(section).findByText("小明")).toBeInTheDocument();
     expect(within(section).getByText(/只顯示你近 30 天/)).toBeInTheDocument();
@@ -977,13 +1005,17 @@ describe("the newer places to spend", () => {
         { id: "SB", name: "乙服" },
       ],
     });
-    renderApp();
+    renderApp("/me/wallet");
     const section = await screen.findByRole("region", { name: "贊助排行榜" });
     expect(await within(section).findByText("甲服 的小明")).toBeInTheDocument();
     expect(gets).toContain("/api/member/board?space=SA");
     const scope = within(section).getByRole("radiogroup", { name: "範圍" });
     expect(within(scope).getByRole("radio", { name: "這個伺服器" })).toBeChecked();
-    await userEvent.click(within(section).getByRole("radio", { name: "乙服" }));
+    // The server is chosen once for the tab, above its blocks; the board has no picker of its own.
+    expect(within(section).queryByRole("radio", { name: "乙服" })).toBeNull();
+    const servers = screen.getByRole("radiogroup", { name: "伺服器" });
+    expect(section.contains(servers)).toBe(false);
+    await userEvent.click(within(servers).getByRole("radio", { name: "乙服" }));
     expect(await within(section).findByText("乙服 的小明")).toBeInTheDocument();
     await userEvent.click(within(scope).getByRole("radio", { name: "全部" }));
     expect(await within(section).findByText("小明")).toBeInTheDocument();
@@ -1052,7 +1084,7 @@ describe("the newer places to spend", () => {
       my_bet: { option: "做到", amount: 20, outcome: "won", payout: 19 },
     };
     const { posts, keys } = core({ member: USER, predictions: [open, done] });
-    renderApp();
+    renderApp("/me/play");
     const section = await screen.findByRole("region", { name: "預測" });
     expect(within(section).getByText("照這碗海龜湯的結果自動結算")).toBeInTheDocument();
     expect(within(section).getByText("她做到了目標「蓋房子」")).toBeInTheDocument();
@@ -1090,24 +1122,25 @@ describe("the newer places to spend", () => {
         { id: "SB", name: "乙服" },
       ],
     });
-    renderApp();
+    renderApp("/me/play");
     const section = await screen.findByRole("region", { name: "預測" });
     await waitFor(() => expect(gets).toContain("/api/member/predictions?space=SA"));
-    await userEvent.click(within(section).getByRole("radio", { name: "乙服" }));
+    expect(within(section).queryByRole("radio", { name: "乙服" })).toBeNull();
+    await userEvent.click(within(screen.getByRole("radiogroup", { name: "伺服器" })).getByRole("radio", { name: "乙服" }));
     await waitFor(() => expect(gets).toContain("/api/member/predictions?space=SB"));
     await waitFor(() => expect(gets.some((g) => g.startsWith("/api/member/bounties?space="))).toBe(true));
   });
 
   it("leaves the predictions out when there are none", async () => {
     core({ member: USER, predictions: [] });
-    renderApp();
-    await screen.findByRole("region", { name: "錢包" });
+    renderApp("/me/play");
+    await screen.findByRole("region", { name: "她的懸賞" });
     await waitFor(() => expect(screen.queryByRole("region", { name: "預測" })).toBeNull());
   });
 
   it("lists her open bounties and says she judges them", async () => {
     core({ member: USER });
-    renderApp();
+    renderApp("/me/play");
     const section = await screen.findByRole("region", { name: "她的懸賞" });
     expect(await within(section).findByText("教她一個新梗")).toBeInTheDocument();
     expect(within(section).getByText(/由她判定/)).toBeInTheDocument();

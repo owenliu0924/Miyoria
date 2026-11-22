@@ -39,6 +39,8 @@ const ALLOWED: Readonly<Record<string, string>> = {
   "economy/src/v2-tools.ts": 'P4: typedCommand(path, "discord")',
   "economy/src/commands.ts": "P4: idempotency keys",
   "economy/src/gift-commands.ts": "P4: idempotency keys",
+  // The gift record's own word for where it was asked (`discord` or `web`), not a platform.
+  "economy/src/gift-chat.ts": "a gift's `source` word",
   "play/exchange/src/commands.ts": "P4: idempotency keys",
   "api/src/wallet.ts": "P4: the recipient of a transfer",
 };

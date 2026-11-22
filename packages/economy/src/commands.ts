@@ -30,6 +30,7 @@ import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/ke
 import { type KeepsakeFortune, KeepsakesKey, newId, PicturesKey, PlacesKey } from "@miyoria/types";
 import { registerV2, unregisterV2 } from "./commands-v2.js";
 import { STRANGER, WALLET_NODE } from "./economy.js";
+import { chatGiftRoutes } from "./gift-chat.js";
 import {
   askGift,
   giftRoutes,
@@ -490,7 +491,8 @@ function register(registry: CommandRegistry, handler: Handler): void {
         ? handler.feed(inv, item)
         : Promise.resolve(notice("warn", "要餵什麼?選一樣,或在 thing 寫要送她的東西"));
     },
-    { components: giftRoutes(handler.services) },
+    // The private quote's buttons, and those of the cards of gifts offered in chat (gift-chat.ts).
+    { components: [...giftRoutes(handler.services), ...chatGiftRoutes(handler.services)] },
   );
   registerGiftCommands(registry, handler.services);
   registry.register(

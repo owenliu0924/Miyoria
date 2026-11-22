@@ -28,6 +28,13 @@ export {
   WALLET_NODE,
 } from "./economy.js";
 export { EconomyExchangeWallet } from "./exchange-wallet.js";
+export {
+  CHAT_GIFT_ROUTES,
+  ChatGifts,
+  ChatGiftsKey,
+  type ChatQuoteResult,
+  ChatSpeakers,
+} from "./gift-chat.js";
 export { type FreeGiftConfig, FreeGiftConfigSchema, OLD_TIER_COINS } from "./gift-config.js";
 export { giftSchema } from "./gift-migrations.js";
 export {

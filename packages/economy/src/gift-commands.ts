@@ -10,6 +10,7 @@
 //   of the newest gift she kept.
 //
 // Her answer is her own message and the receipt card of `answer_gift`, where she answers.
+// A gift offered to her in conversation gets a public card instead (gift-chat.ts, `gift_quote`).
 
 import {
   type AnyComponentRoute,
@@ -52,7 +53,8 @@ const LISTED = 8;
 /** Longest wait for the picture before `/me gifts` answers with its text alone. */
 const PICTURE_MS = 8_000;
 
-const STATUS_WORD: Readonly<Record<GiftView["status"], string>> = {
+/** A gift's state in words (the cards, `/me gifts`). */
+export const STATUS_WORD: Readonly<Record<GiftView["status"], string>> = {
   pending: "等你確認",
   cancelled: "取消了",
   expired: "過期了",

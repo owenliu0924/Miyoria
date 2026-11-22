@@ -7,8 +7,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuctionView, LotteryView, LotView, MarketHistory, MyBids, MyTickets, WalletView } from "@miyoria/contracts/api";
 import { mockFetch, renderPage, renderRoute } from "@/test/render";
 import { Market } from "./Market";
-import { MemberActions } from "./Member";
-import { WalletMain } from "./Wallet";
+import { RequestSongCard } from "./Member";
+import { ShopSection } from "./Wallet";
 
 const HOUR = 3_600_000;
 const at = (ms: number) => new Date(Date.now() + ms).toISOString();
@@ -305,7 +305,7 @@ const WALLET: WalletView = {
 describe("a won one-of-a-kind frame", () => {
   it("is listed by its name in the shop's frames, theirs to put on", async () => {
     const { posts } = market({ wallet: WALLET });
-    renderPage(<WalletMain />);
+    renderPage(<ShopSection />);
     const row = (await screen.findByText("只此一件")).closest("li") as HTMLElement;
     expect(row).not.toHaveTextContent("one-L-1");
     await userEvent.click(within(row).getByRole("button", { name: "使用 只此一件" }));
@@ -333,7 +333,7 @@ describe("the song priority ticket", () => {
       if (url.pathname === "/api/member/songs") return { body: { accepted: true } };
       return undefined;
     });
-    renderPage(<MemberActions />);
+    renderPage(<RequestSongCard />);
     const box = await screen.findByRole("checkbox", { name: /用點歌優先券/ });
     await userEvent.type(screen.getByLabelText("歌名或 YouTube / bilibili 連結"), "群青");
     await userEvent.click(box);
@@ -343,7 +343,7 @@ describe("the song priority ticket", () => {
 
   it("is not offered without the market", async () => {
     mockFetch((_m, url) => (url.pathname === "/api/member/me" ? { body: me } : undefined));
-    renderPage(<MemberActions />);
+    renderPage(<RequestSongCard />);
     await screen.findByRole("button", { name: "點歌" });
     expect(screen.queryByRole("checkbox", { name: /用點歌優先券/ })).not.toBeInTheDocument();
   });

@@ -547,6 +547,10 @@ dirs = ["extensions"]
 # price_calls_per_person = 5        # 一個人一天最多讓系統問幾次價(問過的名字不算)
 # price_calls_per_day = 200         # 所有人加起來一天最多問幾次價;用完就「晚點再試」,不扣錢
 # price_timeout_s = 15              # 問價最多等幾秒,等不到用 fallback_coins
+# # 在聊天裡跟她說「送你一杯珍奶」:她貼一張報價卡,只有要送的人按確認才扣(白飯也要按一次)。
+# chat_window_s = 600               # 幾秒內在這裡說過話的人才能當送禮的人;下面兩個卡片數也照這段時間算
+# chat_cards_per_person = 3         # 一個人的話在這段時間最多叫出幾張報價卡(0 = 聊天裡不貼)
+# chat_cards_per_place = 8          # 一個頻道(私訊、語音)在這段時間最多貼幾張報價卡
 
 # 她給你的卡(docs/design/v5-play.md §2、cards.md):每日卡用魚幣買,每天第一張也要錢;部件照公開的機率抽,
 # 表情由你們的關係決定,買不到也抽不到。卡不能交易、不能送。卡框和閃卡在 [modules.economy](frames、card_foil)。

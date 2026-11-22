@@ -70,7 +70,7 @@ export function Fortune() {
             <FortuneSlip fortune={t.fortune} />
           ) : (
             <p className="text-[13px] text-muted-foreground">
-              每天一張,是她現在為你寫的。簽到時可以加買({priceText(t.price, currency)}),簽過到了也能只買籤詩,在錢包那邊。
+              每天一張,是她現在為你寫的。簽到時可以加買({priceText(t.price, currency)}),簽過到了也能只買籤詩,在總覽的錢包那邊。
             </p>
           )
         }

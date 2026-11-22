@@ -339,6 +339,14 @@
   }
 }
 
+/* A member tab with nothing to show (every block left itself out): its one line instead. */
+.member-tab > .member-tab-empty {
+  display: none;
+}
+.member-tab:not(:has(section)) > .member-tab-empty {
+  display: block;
+}
+
 /* Feeding her: the price floats up from the balance, the pressed button gives a little. */
 @keyframes wallet-spent {
   from {

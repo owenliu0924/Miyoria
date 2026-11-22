@@ -68,6 +68,15 @@ export const FreeGiftConfigSchema = z
     price_calls_per_day: z.number().int().min(0).max(10_000).default(200),
     /** Longest wait for the price (seconds); then the fallback price is used. */
     price_timeout_s: z.number().int().min(1).max(60).default(15),
+    /**
+     * Gifts offered in conversation (`gift_quote`, gift-chat.ts): who spoke in a place this long
+     * ago (seconds) may be named as the giver, and the two card counts below are per this long.
+     */
+    chat_window_s: z.number().int().min(60).max(3600).default(600),
+    /** Quote cards one person's words may put up in `chat_window_s` (`0`: none from chat). */
+    chat_cards_per_person: z.number().int().min(0).max(20).default(3),
+    /** Quote cards one place (a channel, a DM, a voice room) shows in `chat_window_s`. */
+    chat_cards_per_place: z.number().int().min(0).max(50).default(8),
   })
   .refine((c) => c.min_coins <= c.max_coins, { message: "min_coins is above max_coins" });
 export type FreeGiftConfig = z.output<typeof FreeGiftConfigSchema>;

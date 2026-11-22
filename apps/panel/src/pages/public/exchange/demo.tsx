@@ -397,7 +397,8 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
-function answer(method: string, path: string, query: URLSearchParams): Response | null {
+/** The exchange routes over the made-up market; `null` for any other path. Also the member demo's exchange tab. */
+export function answer(method: string, path: string, query: URLSearchParams): Response | null {
   if (path === "/api/member/exchange") return json(MARKET);
   if (path === "/api/member/exchange/account") return json(ACCOUNT);
   if (path === "/api/member/exchange/portfolio") return json(PORTFOLIO);

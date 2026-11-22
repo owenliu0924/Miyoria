@@ -9,6 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { TokenGate } from "@/pages/login/TokenGate";
 import { CardVerify, cardSerialIn } from "@/pages/public/CardVerify";
 import { FrontPage } from "@/pages/public/landing/front";
+import { isOwnPath, OWN_PATH } from "@/pages/public/member-tabs";
 import { PublicSite } from "@/pages/public/PublicSite";
 import { isKaraokePath } from "@/pages/public/karaoke/path";
 import { isLivePath, LivePage } from "@/pages/public/live/LivePage";
@@ -34,8 +35,8 @@ const KaraokePage = lazy(() => import("@/pages/public/karaoke/KaraokePage"));
 /** The admin panel (shell, router, pages, event stream): only an admin downloads it. */
 const AdminApp = lazy(() => import("./AdminApp"));
 
-/** Where an admin signed in with Discord finds their own member page. */
-export const OWN_PAGE = "/me";
+/** Where an admin signed in with Discord finds their own member page (its tabs are under it). */
+export const OWN_PAGE = OWN_PATH;
 
 /** The page's path and query from the history (`/card/MYR-…`, `/me`, `/login?error=…`). */
 function pathOf(history: RouterHistory): string {
@@ -43,10 +44,20 @@ function pathOf(history: RouterHistory): string {
   return `${pathname || "/"}${search}`;
 }
 
-function OwnPage({ onLogout, onBack }: { onLogout: () => void; onBack: () => void }) {
+function OwnPage({
+  onLogout,
+  onBack,
+  path,
+  navigate,
+}: {
+  onLogout: () => void;
+  onBack: () => void;
+  path: string;
+  navigate: (to: string, replace?: boolean) => void;
+}) {
   const { api } = useConnection();
   const member = useQuery({ queryKey: ["member", "session"], queryFn: ({ signal }) => api.rpc.member.session(undefined, { signal }) });
-  if (member.data) return <PublicSite member={member.data} onLogout={onLogout} onBack={onBack} />;
+  if (member.data) return <PublicSite member={member.data} onLogout={onLogout} onBack={onBack} path={path} navigate={navigate} />;
   return (
     <div className="flex min-h-svh items-center justify-center px-4">
       {member.isError ? (
@@ -144,6 +155,12 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     }
   }, [api, queryClient, signOut]);
 
+  // The member area's tabs are addresses in the page (`/me/wallet`): the same history the router uses.
+  const navigate = useCallback(
+    (to: string, replace = false) => (replace ? history.replace(to) : history.push(to)),
+    [history],
+  );
+
   const sessionValue = useMemo<SessionValue | null>(
     () => (auth.status === "signed_in" ? { session: auth.session, logout } : null),
     [auth, logout],
@@ -192,14 +209,11 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   }
 
   // An admin who logged in with Discord is a member too, with a page of their own.
-  if (auth.status === "signed_in" && auth.session.method === "discord" && (path === OWN_PAGE || path.startsWith(`${OWN_PAGE}?`))) {
+  if (auth.status === "signed_in" && auth.session.method === "discord" && isOwnPath(path)) {
     return (
       <QueryClientProvider client={queryClient}>
         <PushProvider audience="member">
-          <OwnPage
-            onLogout={logout}
-            onBack={() => history.push("/")}
-          />
+          <OwnPage onLogout={logout} onBack={() => history.push("/")} path={path} navigate={navigate} />
         </PushProvider>
       </QueryClientProvider>
     );
@@ -213,6 +227,8 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
             member={auth.member}
             notice={loginError === null ? null : loginErrorMessage(loginError)}
             onLogout={logout}
+            path={path}
+            navigate={navigate}
           />
         </PushProvider>
       </QueryClientProvider>

@@ -186,8 +186,8 @@ Navigation is four levels, each visible at once:
 - Page: `Page` is the content surface, 28 px padding (16 px on phones), `--stage-gap` (32 px)
   between blocks. `Page rail={...}` adds the right rail (19.5 rem, under the content below 1180 px).
   A rail holds things to act on, and only pages with real content for it have one: 總覽 (needs
-  attention, voice, say, spend, modules), 直播 (voice, say, game, channel levels), the public site
-  for someone logged in (點歌, 你的資料). Rail blocks are split by hairlines.
+  attention, voice, say, spend, modules), 直播 (voice, say, game, channel levels). Rail blocks are
+  split by hairlines.
 - Rows: hairlines, `--row-y` vertical padding, no horizontal inset, so rows align with block titles.
 - Chart blocks (`ChartBlock`): title 13 muted, headline value 24 semibold with its unit and one
   muted aside, legend, then the plot. Two per row from `lg`, one below.
@@ -321,11 +321,11 @@ token form stays at `#/login`, with no link to it from the page.
 | Who | Sees |
 |---|---|
 | Anyone not logged in | Her landing (see "Landing" below): who she is, what she is doing now, today's numbers, Discord login |
-| Logged in | Also 她眼中的你, 一起的回憶, 你點的歌, and a rail with 點歌 and 你的資料 |
+| Logged in | Their own page in tabs (see "Member area" below) |
 | Someone she does not know, or a blocked person | The same page, "她還不認識你", no 點歌. The two cannot be told apart |
 
 - Frame: a `.glass-dock` header like the shell's: the mark, her name, her state, then login or the
-  person and 登出. No sidebar, no navigation.
+  person and 登出. No sidebar. Someone logged in also gets the member area's tab row under it.
 - Content: `Page` straight away. There is no opening on the picture; that stays 總覽's.
 - 現在, 今天 and the bands of 她眼中的你 are strips of facts, label over value, at 14. Never tiles.
 - Words, not numbers, for anything she feels: 信任 and 熟悉 arrive as bands from the Core and show
@@ -333,14 +333,38 @@ token form stays at `#/login`, with no link to it from the page.
   fill, in twentieths), the tier with its stage, and 離「知心 III」還有一段 while there is a next
   step. The header says 關係 with the same tier. A Core without the ring keeps the six steps.
 - No ranking of people, anywhere.
+- Member area (`PublicSite.tsx`, `member-tabs.ts`): the logged-in page is six tabs, each its own
+  address, in the admin panel's frame tab row (`TabsList`, the underline in the primary, the same
+  hover and focus) right under the header, with each tab a link (`/me`, `/me/gifts`, …).
+  | Tab | Address | Holds |
+  |---|---|---|
+  | 總覽 | `/me` (and `/`) | 她眼中的你, 現在, 你和她說的話; 錢包 (balance, check-in, feeding) and 今天的任務 down the right from `lg`; 她這兩週, 一起的回憶; GitHub, 你的資料 |
+  | 互動 | `/me/gifts` | 現場 (pat, danmaku), 送她禮物, 她收到的東西, 點歌, 你點的歌, 歌單, 商店, 她做給我的 |
+  | the coins' name | `/me/wallet` | 怎麼賺, 最近, 轉給朋友, 贊助排行榜 |
+  | 卡片 | `/me/cards` | 她給你的卡 (in a 22 rem column from `lg`, the width it had in the old rail), 今日籤詩, 卡冊 |
+  | 遊戲 | `/me/play` | 預測, 她的懸賞, 市集 |
+  | 交易所 | `/me/exchange` | The exchange block |
+  - Every block is in exactly one tab (`SECTIONS` and `MEMBER_TABS`, checked by a test). A tab is a
+    column of rows; a row is one block across, or columns from `lg` (two equal by default). On a
+    phone the columns stack in their order, so what matters today (the check-in) comes early.
+  - Only the open tab is mounted: only its queries run and only its topics are on the push stream
+    (plus the header's state). A tab opened again draws from the cache at once.
+  - On a phone the row is the same underlined row, scrolling sideways when the names do not fit,
+    with the open tab kept in view. Arrow keys, Home and End move along it (Radix).
+  - The server choice is one for the whole area (`MemberSpaceProvider`) and drawn once, at the top of
+    a tab that has something per server (互動, the coins, 遊戲, 交易所), as a `SpacePicker` with a
+    server icon; no block draws its own. Nothing with one server or none.
+  - A tab whose blocks all leave themselves out shows one plain line instead (`.member-tab-empty`).
+  - `/me/<anything else>` goes to `/me`. Dev server only: `/me?member-demo` shows the area over
+    made-up data (`member-demo/`), without Discord or a Core.
 - The logged-in page also holds the keepsakes (`CardSection`, `FortuneSlip`, `HoloCard`): the member
   card and today's fortune slip, the same things `/me card` and `/me checkin fortune:true` give on Discord,
   through the same service, so both read alike. The card and the slip are the only decorated
   surfaces on the site; the rest stays flat, and the card's motion stops under reduced motion.
-  The rail's 她給你的卡 shows, under the newest card, a strip of facts (一張, 今天還能抽, 你有, 保底)
+  卡片's 她給你的卡 shows, under the newest card, a strip of facts (一張, 今天還能抽, 你有, 保底)
   and, under the button, the Core's own sentence when it would not give a card (in the primary,
   `role="alert"`); short coins disable the button with the same kind of line before asking.
-- 卡冊 (`pages/public/cards/`), a block of the main column after 一起的回憶, holds everything else
+- 卡冊 (`pages/public/cards/`), a block of the 卡片 tab, holds everything else
   about the cards as an inline tab row (`TabsList variant="inline"`: the page tab row's underline,
   without glass or stickiness, first tab flush with the block title), remembered per browser:
   - 我的卡: every card, newest first, as 3:4 thumbnails of her picture (`/api/public/card-art`,
@@ -443,7 +467,8 @@ MCP tools), Command palette (pages, people, modules), Popover + Command combobox
 Tooltip, Sonner toasts (success / error with the Core's message), Skeleton rows, `DiffView`,
 `JsonView`, `Facts`, `EmergencyStop`, `NowStrip`, `AppearancePopover`, `SpacePicker` (a member's
 servers, `pages/public/member-space.tsx`: nothing at all for one server or none, a `Segmented` up to
-four, a `Select` beyond; admin pages read `?space=` through `useAdminSpace`). Icons: lucide 16 px.
+four, a `Select` beyond; once per member-area tab, see "Member area"; admin pages read `?space=`
+through `useAdminSpace`). Icons: lucide 16 px.
 
 ## States
 

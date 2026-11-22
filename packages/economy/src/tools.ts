@@ -605,7 +605,8 @@ export function lookCapability(economy: EconomyService): Capability {
         out.push(
           `商店(價格單位:${cur}):\n${shopText(shop, known)}`,
           "不在商店的:" +
-            "自己取名送她一樣東西(/me feed thing:,或會員頁的「送她禮物」;系統報價、按確認才扣,收不收是你決定)、" +
+            "自己取名送她一樣東西(在聊天裡直接跟你說,你用 gift_quote 貼報價卡;或 /me feed thing:、會員頁的「送她禮物」;" +
+            "系統報價、他自己按確認才扣,收不收是你決定)、" +
             "懸賞(她貼的任務)、轉帳(給她認識的人)、贊助排行榜。",
           "在哪裡花:公開面板的會員頁,或 Discord 的 /me wallet、/me feed、/me screen、" +
             "/me bounties、/me give、/me board。" +

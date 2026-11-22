@@ -150,6 +150,8 @@ describe("everything people write is judged", () => {
       "packages/brain/arbiter/src/module.ts",
       "packages/brain/arbiter/src/unanswered.ts",
       "packages/economy/src/earn.ts",
+      // Who spoke where lately (so only someone present can be named as a giver): never the text.
+      "packages/economy/src/gift-chat.ts",
       // The raw record of each line (the store), not something she knows.
       "packages/memory/facts/src/record.ts",
       "packages/memory/learning/src/modules.ts",
