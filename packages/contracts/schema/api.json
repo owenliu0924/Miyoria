@@ -2296,11 +2296,22 @@
           "items": {
             "$ref": "#/$defs/ApiChannelLevelView"
           }
+        },
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSpaceLevelView"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "levels",
-        "channels"
+        "channels",
+        "space"
       ]
     },
     "ApiCheckinRequest": {
@@ -19789,6 +19800,20 @@
         "scene"
       ]
     },
+    "ApiSetSpaceLevelRequest": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    },
     "ApiSetWishlistRequest": {
       "type": "object",
       "properties": {
@@ -20678,6 +20703,33 @@
         "external_id",
         "name",
         "primary"
+      ]
+    },
+    "ApiSpaceLevelView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "custom": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mode",
+        "custom",
+        "default"
       ]
     },
     "ApiSpaceQuery": {

@@ -662,6 +662,20 @@
             "path": "/api/channels/level"
           }
         }
+      },
+      "setSpaceLevel": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.channel.mode"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/channels/space-level"
+          }
+        }
       }
     },
     "cluster": {
