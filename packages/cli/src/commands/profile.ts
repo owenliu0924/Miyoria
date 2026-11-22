@@ -17,6 +17,7 @@ import {
 } from "@miyoria/core/light";
 import { type Config, characterOf } from "@miyoria/runtime/kernel";
 import { exampleConfig, exampleEnv, PACKAGE_ROOT } from "../assets.js";
+import { capturedProcessEnv } from "../process-env.js";
 import { profileLine, selectProfile } from "../profile.js";
 import { TomlDocument } from "../toml-patch.js";
 import { dim, ok, println, warn } from "../ui.js";
@@ -34,6 +35,14 @@ const SOURCE: Record<ResolvedProfile["source"], string> = {
   default: "預設",
 };
 
+/**
+ * The real environment, as Core sees it when it picks the profile: a `MIYORIA_PROFILE` written in
+ * the install's `.env` (loaded into `process.env` for these commands) does not pick one there.
+ */
+function realEnv(): Record<string, string> {
+  return Object.fromEntries(capturedProcessEnv());
+}
+
 function lookup(name: string): string | undefined {
   return process.env[name];
 }
@@ -48,7 +57,7 @@ function runningConfig(profile: ResolvedProfile): Config | null {
 }
 
 export async function list(installPath: string): Promise<void> {
-  const running = selectProfile(installPath);
+  const running = selectProfile(installPath, realEnv());
   const folders = listProfileFolders(profilesDirOf(running));
   if (folders.length === 0) {
     warn(`${profilesDirOf(running)} 裡沒有任何 profile`);
@@ -62,7 +71,7 @@ export async function list(installPath: string): Promise<void> {
 }
 
 export async function show(installPath: string): Promise<void> {
-  const profile = selectProfile(installPath);
+  const profile = selectProfile(installPath, realEnv());
   const config = runningConfig(profile);
   const character = characterOf(config?.section("character"));
   println(`現在的角色:${profileLine(profile, character.name)}`);
@@ -93,7 +102,7 @@ export async function use(installPath: string, id: string): Promise<void> {
   ok(
     `下次啟動 core 時跑 ${id}(${own ? "它自己的設定和資料" : `${installPath} 的設定和資料`});正在跑的 core 要重啟才換:\`miyoria restart core\``,
   );
-  const env = process.env[PROFILE_ENV]?.trim();
+  const env = realEnv()[PROFILE_ENV]?.trim();
   if (env) warn(`環境變數 ${PROFILE_ENV}=${env} 會蓋過 core.profile`);
 }
 
