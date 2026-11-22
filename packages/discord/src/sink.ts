@@ -5,7 +5,7 @@
 // again that the channel may see the artifact, and uploads the bytes it gets back with the first
 // chunk of the text. Nothing is posted when one of them is refused.
 
-import type { CommandReply, ReplySink } from "@miyoria/commands";
+import type { CommandReply, ReplySink, SendCardOptions } from "@miyoria/commands";
 import {
   type AccountRef,
   AttachmentError,
@@ -442,25 +442,33 @@ export class DiscordSink implements PlatformSink, ReplySink {
 
   /**
    * `ReplySink`: a command-style card (Components V2, no pings) into `context`, with the reply's
-   * files (a picture the card shows) uploaded with it.
+   * files (a picture the card shows) uploaded with it. With `options.replyTo` a message of the
+   * same channel, the first part replies to it without pinging its author (and is posted plainly
+   * when that message is gone).
    */
   async sendCard(
     context: ContextKey,
     reply: CommandReply,
     signal?: AbortSignal,
+    options?: SendCardOptions,
   ): Promise<MessageRef> {
     if (context.platform !== PLATFORM) {
       throw new DiscordSendError(`context \`${contextKeyString(context)}\` is not on Discord`);
     }
     const channel = channelOf(context);
+    let reference = cardReference(channel, options?.replyTo ?? null);
     let first: string | null = null;
     for (const payload of renderReply(reply, false)) {
       const files = payload.files ?? [];
       const body: Record<string, unknown> = {
         components: payload.components,
         flags: payload.flags,
-        allowed_mentions: { parse: [] },
+        allowed_mentions: reference ? { parse: [], replied_user: false } : { parse: [] },
       };
+      if (reference) {
+        body.message_reference = reference;
+        reference = null;
+      }
       const request: RestRequest = { body, signal };
       if (files.length > 0) {
         body.attachments = files.map((f, id) => ({ id, filename: f.name }));
@@ -521,6 +529,16 @@ export class DiscordSink implements PlatformSink, ReplySink {
       return null;
     }
   }
+}
+
+/**
+ * The reference that makes a card a reply to `to`: only a Discord message of the same channel
+ * (a voice utterance or another channel's message is not one); `null` otherwise.
+ */
+function cardReference(channel: string, to: MessageRef | null): Record<string, unknown> | null {
+  if (to === null || to.context.platform !== PLATFORM || to.context.kind === "voice") return null;
+  if (to.context.channel !== channel || !/^[0-9]{1,20}$/.test(to.id)) return null;
+  return { message_id: to.id, channel_id: channel, fail_if_not_exists: false };
 }
 
 function messageId(sent: unknown): string {

@@ -45,7 +45,13 @@ export {
   type SessionInfo,
   validateRoute,
 } from "./components.js";
-export { type ReplySink, ReplySinkKey, type UserResolver, UserResolverKey } from "./direct.js";
+export {
+  type ReplySink,
+  ReplySinkKey,
+  type SendCardOptions,
+  type UserResolver,
+  UserResolverKey,
+} from "./direct.js";
 export { HELP_NODE, registerHelp } from "./help.js";
 export { CARD_DROP_ROUTE, CARD_NODE, registerKeepsakes } from "./keepsakes.js";
 export {

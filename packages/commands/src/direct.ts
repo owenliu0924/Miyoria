@@ -19,14 +19,27 @@ export interface ReplySink {
   sendDirect(account: AccountRef, reply: CommandReply, signal?: AbortSignal): Promise<MessageRef>;
   /**
    * Sends `reply` (rendered like a command reply, never pinging anyone) into `context` (a channel,
-   * a thread, a voice channel's text chat): the receipt cards of her actions.
+   * a thread, a voice channel's text chat): the receipt cards of her actions. With
+   * `options.replyTo` (a message in `context`), the card is a reply to it, still without a ping;
+   * a platform that cannot reply, or a message that is gone, posts it plainly.
    */
-  sendCard?(context: ContextKey, reply: CommandReply, signal?: AbortSignal): Promise<MessageRef>;
+  sendCard?(
+    context: ContextKey,
+    reply: CommandReply,
+    signal?: AbortSignal,
+    options?: SendCardOptions,
+  ): Promise<MessageRef>;
   /**
    * Replaces a card sent with `sendCard` (its first message) with `reply`, never pinging anyone:
    * a notice that changes once posted, like a karaoke room's that ends.
    */
   editCard?(message: MessageRef, reply: CommandReply, signal?: AbortSignal): Promise<void>;
+}
+
+/** How `ReplySink.sendCard` posts a card. */
+export interface SendCardOptions {
+  /** The message the card answers (a quote card under the words that asked for it). */
+  replyTo?: MessageRef | null;
 }
 
 export const ReplySinkKey = serviceKey<ReplySink>("ReplySink");

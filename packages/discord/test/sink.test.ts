@@ -106,6 +106,39 @@ describe("DiscordSink", () => {
     ).rejects.toThrow(/not on Discord/);
   });
 
+  test("a_card_replies_to_a_message_of_its_channel_without_a_ping", async () => {
+    const rest = new FakeRest();
+    const sink = new DiscordSink(rest);
+    const card = {
+      text: "報價",
+      card: {
+        accent: "neutral" as const,
+        title: null,
+        blocks: [{ type: "text" as const, text: "報價" }],
+      },
+    };
+    await sink.sendCard(channel, card, undefined, { replyTo: { context: channel, id: "999" } });
+    const body = rest.calls[0]?.options?.body as Record<string, unknown>;
+    expect(body.message_reference).toEqual({
+      message_id: "999",
+      channel_id: "200",
+      fail_if_not_exists: false,
+    });
+    expect(body.allowed_mentions).toEqual({ parse: [], replied_user: false });
+    // A voice utterance, another channel's message or a made-up id: posted plainly.
+    const voice: ContextKey = { ...channel, kind: "voice" };
+    for (const to of [
+      { context: voice, id: "999" },
+      { context: { ...channel, channel: "201" }, id: "999" },
+      { context: channel, id: "utt-1" },
+    ]) {
+      await sink.sendCard(channel, card, undefined, { replyTo: to });
+      const plain = rest.calls.at(-1)?.options?.body as Record<string, unknown>;
+      expect(plain.message_reference).toBeUndefined();
+      expect(plain.allowed_mentions).toEqual({ parse: [] });
+    }
+  });
+
   test("opens_dms_and_sends_cards_without_pings", async () => {
     const rest = new FakeRest();
     const sink = new DiscordSink(rest);
