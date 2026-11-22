@@ -817,7 +817,7 @@ export class HostPrompt implements PromptSource {
       mood: agent.mood(),
       self: services.get(SelfStateKey) ?? null,
       her: services.get(WorldStateKey)?.snapshot().her ?? null,
-      level: levelHint(agent.handle.channelMode(context), context),
+      level: levelHint(agent.handle.channelMode(context), context, agent.handle.language(context)),
       notices: [],
     });
     const lines = [whenAndWhere(context, new Date(input.now), offset)];
