@@ -84,6 +84,7 @@ import {
   PromptContributors,
   PromptContributorsKey,
   RunningProfileKey,
+  type SpaceRef,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
@@ -317,6 +318,18 @@ export async function buildCoreWith(
       }
       return null;
     },
+    // A module's own values per Space and Room (docs/design/v5-places.md).
+    ...(store.places && store.config
+      ? {
+          places: {
+            places: store.places,
+            settings: store.config.places,
+            ...(store.events ? { events: store.events } : {}),
+            directory: () => services.get(PlaceDirectoryKey),
+            ...roomMaker(store),
+          },
+        }
+      : {}),
   });
   services.provide(k, ModuleSettingsKey, settings);
   services.provide(k, StoreKey, store);
@@ -488,6 +501,22 @@ async function followMembers(bus: EventBus, places: Places, signal: AbortSignal)
       log.warn({ guild, err: errorMessage(error) }, "failed to record a member leaving");
     }
   }
+}
+
+/**
+ * Creating a Space's room for a setting before anyone spoke there, when the store's identity can
+ * (the SQLite store's `persons`); test doubles without it only set rooms she has seen.
+ */
+function roomMaker(store: Store): { ensureRoom?: (space: SpaceRef, channel: string) => string } {
+  const persons = (store as { persons?: unknown }).persons as
+    | { ensureRoom?: (p: string, s: string, c: string, k: "text" | "voice") => { id: string } }
+    | undefined;
+  const ensure = persons?.ensureRoom;
+  if (typeof ensure !== "function") return {};
+  return {
+    ensureRoom: (space, channel) =>
+      ensure.call(persons, space.platform, space.external_id, channel, "text").id,
+  };
 }
 
 function tokenMissing(section: JsonValue | null): boolean {

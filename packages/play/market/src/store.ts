@@ -7,12 +7,6 @@
 //
 // Core's store opens this plugin (`STORE_PLUGINS`); the module `market` (`module.ts`) owns it.
 // The rows are money records: a person asking to be forgotten keeps them; a merge moves them.
-//
-// One `MarketStore` is a view of one Space (`forSpace`): it reads that Space's lots, draws and
-// tickets and writes its rows with that `space_id`. The view the plugin opens has no Space: it
-// reads every row and writes rows without one, the market of a single server as it was before
-// phase 6 (the service's own tests); the module only ever uses `forSpace` views and the song
-// priority tickets, which are everyone's.
 
 import {
   type CategoryData,
@@ -25,8 +19,7 @@ import {
   tablePart,
 } from "@miyoria/store";
 import { type AccountRef, type PersonId, type Timestamp, toTimestamp } from "@miyoria/types";
-import { and, asc, desc, eq, inArray, isNull, lte, ne, type SQL, sql } from "drizzle-orm";
-import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
+import { and, asc, desc, eq, inArray, isNull, lte, ne, sql } from "drizzle-orm";
 import type { LotKind } from "./config.js";
 import {
   type LotClosedData,
@@ -38,8 +31,8 @@ import { marketSchema } from "./migrations.js";
 import {
   marketBids,
   marketLots,
-  marketLotteryDraws,
   marketLotteryTickets,
+  marketLotteryWeeks,
   marketSongTickets,
 } from "./schema.js";
 
@@ -140,7 +133,7 @@ export interface Ticket {
 
 type LotRow = typeof marketLots.$inferSelect;
 type BidRow = typeof marketBids.$inferSelect;
-type WeekRow = typeof marketLotteryDraws.$inferSelect;
+type WeekRow = typeof marketLotteryWeeks.$inferSelect;
 type TicketRow = typeof marketLotteryTickets.$inferSelect;
 type SongTicketRow = typeof marketSongTickets.$inferSelect;
 
@@ -263,7 +256,7 @@ export type LotPatch = Partial<
 >;
 
 /** What a lottery week may change. */
-export type WeekPatch = Partial<Omit<WeekRow, "space_id" | "week" | "draw_at">>;
+export type WeekPatch = Partial<Omit<WeekRow, "week" | "draw_at">>;
 
 /** A new lot or a week's plan. */
 export interface NewLot {
@@ -282,50 +275,10 @@ export interface NewLot {
 export class MarketStore {
   readonly #db: Db;
   readonly #events: EventStore;
-  /** The Space of this view; `undefined`: every row (see the file comment). */
-  readonly #space: string | undefined;
 
-  constructor(db: Db, events: EventStore, space?: string) {
+  constructor(db: Db, events: EventStore) {
     this.#db = db;
     this.#events = events;
-    this.#space = space;
-  }
-
-  /** The same tables as seen from one Space (identity's `spaces.id`). */
-  forSpace(space: string): MarketStore {
-    return new MarketStore(this.#db, this.#events, space);
-  }
-
-  /** The Space of this view; `undefined` for the view of every row. */
-  get space(): string | undefined {
-    return this.#space;
-  }
-
-  /** `space_id` of a row this view writes. */
-  get #spaceValue(): string | null {
-    return this.#space ?? null;
-  }
-
-  /** `space_id` of a draw this view reads and writes: a draw always has one (`''`: none). */
-  get #drawSpace(): string {
-    return this.#space ?? "";
-  }
-
-  /** The condition on `column` that keeps this view's rows; none for the view of every row. */
-  #mine(column: SQLiteColumn): SQL | undefined {
-    return this.#space === undefined ? undefined : eq(column, this.#space);
-  }
-
-  /** The bids of this view's lots (a bid has no Space of its own). */
-  #mineBids(): SQL | undefined {
-    if (this.#space === undefined) return undefined;
-    return inArray(
-      marketBids.lot_id,
-      this.#db.orm
-        .select({ id: marketLots.id })
-        .from(marketLots)
-        .where(eq(marketLots.space_id, this.#space)),
-    );
   }
 
   #write<T>(fn: () => T): T {
@@ -333,60 +286,17 @@ export class MarketStore {
     return this.#db.tx(fn);
   }
 
-  // ---- Spaces -------------------------------------------------------------------------------
-
-  /**
-   * Gives the rows with no Space (written before there was any Space) to `space`, the primary;
-   * how many. A draw of a week the primary already has keeps its `''` (nothing is overwritten).
-   */
-  adopt(space: string): number {
-    return this.#write(() => {
-      let n = 0;
-      for (const table of ["market_lots", "market_lottery_tickets", "market_song_tickets"]) {
-        n += this.#db.run(`UPDATE ${table} SET space_id = $space WHERE space_id IS NULL`, {
-          space,
-        });
-      }
-      n += this.#db.run(
-        "UPDATE OR IGNORE market_lottery_draws SET space_id = $space WHERE space_id = ''",
-        { space },
-      );
-      return n;
-    });
-  }
-
-  /** The Spaces with a lot, a draw or a purchase not settled yet (a Space she left, too). */
-  unsettledSpaces(): string[] {
-    this.#db.ensureOpen();
-    const rows = this.#db.all(
-      `SELECT space_id FROM market_lots
-         WHERE status IN ('open', 'closing', 'naming', 'applied') AND space_id IS NOT NULL
-       UNION
-       SELECT space_id FROM market_lottery_draws
-         WHERE status IN ('open', 'drawing', 'refunding') OR announced_at IS NULL`,
-    );
-    return rows.map((r) => String(r.space_id)).filter((s) => s !== "");
-  }
-
   // ---- lots ---------------------------------------------------------------------------------
 
   lot(id: string): Lot | null {
     this.#db.ensureOpen();
-    const row = this.#db.orm
-      .select()
-      .from(marketLots)
-      .where(and(eq(marketLots.id, id), this.#mine(marketLots.space_id)))
-      .get();
+    const row = this.#db.orm.select().from(marketLots).where(eq(marketLots.id, id)).get();
     return row === undefined ? null : lotOf(row);
   }
 
   lotOfWeek(week: number): Lot | null {
     this.#db.ensureOpen();
-    const row = this.#db.orm
-      .select()
-      .from(marketLots)
-      .where(and(eq(marketLots.week, week), this.#mine(marketLots.space_id)))
-      .get();
+    const row = this.#db.orm.select().from(marketLots).where(eq(marketLots.week, week)).get();
     return row === undefined ? null : lotOf(row);
   }
 
@@ -396,7 +306,7 @@ export class MarketStore {
     return this.#db.orm
       .select()
       .from(marketLots)
-      .where(and(inArray(marketLots.status, [...statuses]), this.#mine(marketLots.space_id)))
+      .where(inArray(marketLots.status, [...statuses]))
       .orderBy(asc(marketLots.week))
       .all()
       .map(lotOf);
@@ -408,13 +318,7 @@ export class MarketStore {
     return this.#db.orm
       .select()
       .from(marketLots)
-      .where(
-        and(
-          ne(marketLots.status, "planned"),
-          ne(marketLots.status, "skipped"),
-          this.#mine(marketLots.space_id),
-        ),
-      )
+      .where(and(ne(marketLots.status, "planned"), ne(marketLots.status, "skipped")))
       .orderBy(desc(marketLots.week))
       .limit(limit)
       .all()
@@ -436,11 +340,7 @@ export class MarketStore {
   putLot(lot: NewLot): Lot | null {
     return this.#write(() => {
       const L = marketLots;
-      const found = this.#db.orm
-        .select()
-        .from(L)
-        .where(and(eq(L.week, lot.week), this.#mine(L.space_id)))
-        .get();
+      const found = this.#db.orm.select().from(L).where(eq(L.week, lot.week)).get();
       const values = {
         kind: lot.kind,
         status: lot.status,
@@ -453,13 +353,7 @@ export class MarketStore {
       if (found === undefined) {
         this.#db.orm
           .insert(L)
-          .values({
-            id: lot.id,
-            week: lot.week,
-            space_id: this.#spaceValue,
-            created_at: at(lot.now),
-            ...values,
-          })
+          .values({ id: lot.id, week: lot.week, created_at: at(lot.now), ...values })
           .run();
         return this.lot(lot.id);
       }
@@ -608,7 +502,6 @@ export class MarketStore {
           inArray(marketBids.status, ["outbid", "void"]),
           isNull(marketBids.released_at),
           sql`${marketBids.hold} > 0`,
-          this.#mineBids(),
         ),
       )
       .orderBy(asc(marketBids.created_at))
@@ -622,13 +515,7 @@ export class MarketStore {
     return this.#db.orm
       .select()
       .from(marketBids)
-      .where(
-        and(
-          eq(marketBids.status, "pending"),
-          lte(marketBids.created_at, at(before)),
-          this.#mineBids(),
-        ),
-      )
+      .where(and(eq(marketBids.status, "pending"), lte(marketBids.created_at, at(before))))
       .all()
       .map(bidOf);
   }
@@ -637,11 +524,10 @@ export class MarketStore {
 
   week(week: number): LotteryWeek | null {
     this.#db.ensureOpen();
-    const D = marketLotteryDraws;
     const row = this.#db.orm
       .select()
-      .from(D)
-      .where(and(eq(D.space_id, this.#drawSpace), eq(D.week, week)))
+      .from(marketLotteryWeeks)
+      .where(eq(marketLotteryWeeks.week, week))
       .get();
     return row === undefined ? null : weekOf(row);
   }
@@ -650,8 +536,8 @@ export class MarketStore {
   ensureWeek(week: number, drawAt: number): LotteryWeek {
     return this.#write(() => {
       this.#db.orm
-        .insert(marketLotteryDraws)
-        .values({ space_id: this.#drawSpace, week, status: "open", draw_at: at(drawAt) })
+        .insert(marketLotteryWeeks)
+        .values({ week, status: "open", draw_at: at(drawAt) })
         .onConflictDoNothing()
         .run();
       return this.week(week) as LotteryWeek;
@@ -660,12 +546,11 @@ export class MarketStore {
 
   weeksIn(statuses: readonly WeekStatus[]): LotteryWeek[] {
     this.#db.ensureOpen();
-    const D = marketLotteryDraws;
     return this.#db.orm
       .select()
-      .from(D)
-      .where(and(eq(D.space_id, this.#drawSpace), inArray(D.status, [...statuses])))
-      .orderBy(asc(D.week))
+      .from(marketLotteryWeeks)
+      .where(inArray(marketLotteryWeeks.status, [...statuses]))
+      .orderBy(asc(marketLotteryWeeks.week))
       .all()
       .map(weekOf);
   }
@@ -673,17 +558,11 @@ export class MarketStore {
   /** The weeks that were drawn or refunded, newest first. */
   pastWeeks(limit: number): LotteryWeek[] {
     this.#db.ensureOpen();
-    const D = marketLotteryDraws;
     return this.#db.orm
       .select()
-      .from(D)
-      .where(
-        and(
-          eq(D.space_id, this.#drawSpace),
-          inArray(D.status, ["drawn", "refunded", "drawing", "refunding"]),
-        ),
-      )
-      .orderBy(desc(D.week))
+      .from(marketLotteryWeeks)
+      .where(inArray(marketLotteryWeeks.status, ["drawn", "refunded", "drawing", "refunding"]))
+      .orderBy(desc(marketLotteryWeeks.week))
       .limit(limit)
       .all()
       .map(weekOf);
@@ -691,15 +570,14 @@ export class MarketStore {
 
   /** Changes a week while it is in one of `from`; whether it was. */
   setWeek(week: number, from: readonly WeekStatus[], patch: WeekPatch): boolean {
-    const D = marketLotteryDraws;
     return this.#write(
       () =>
         Number(
           this.#db.orm
-            .update(D)
+            .update(marketLotteryWeeks)
             .set(patch)
             .where(
-              and(eq(D.space_id, this.#drawSpace), eq(D.week, week), inArray(D.status, [...from])),
+              and(eq(marketLotteryWeeks.week, week), inArray(marketLotteryWeeks.status, [...from])),
             )
             .run().changes,
         ) > 0,
@@ -723,7 +601,7 @@ export class MarketStore {
     return this.#db.orm
       .select()
       .from(T)
-      .where(and(eq(T.week, week), inArray(T.status, [...statuses]), this.#mine(T.space_id)))
+      .where(and(eq(T.week, week), inArray(T.status, [...statuses])))
       .orderBy(asc(T.created_at), asc(T.id))
       .all()
       .map(ticketOf);
@@ -747,14 +625,7 @@ export class MarketStore {
     const row = this.#db.orm
       .select({ n: sql<number>`COALESCE(SUM(${T.count}), 0)` })
       .from(T)
-      .where(
-        and(
-          eq(T.week, week),
-          eq(T.person_id, person),
-          inArray(T.status, ["pending", "paid"]),
-          this.#mine(T.space_id),
-        ),
-      )
+      .where(and(eq(T.week, week), eq(T.person_id, person), inArray(T.status, ["pending", "paid"])))
       .get();
     return Number(row?.n ?? 0);
   }
@@ -775,7 +646,6 @@ export class MarketStore {
         .values({
           id: t.id,
           week: t.week,
-          space_id: this.#spaceValue,
           person_id: t.person,
           platform: t.account.platform,
           account_id: t.account.id,
@@ -813,21 +683,13 @@ export class MarketStore {
 
   // ---- song priority tickets ----------------------------------------------------------------
 
-  /**
-   * A ticket about to be charged under `key` (`charging`); one already there is left alone. `space`:
-   * the Space whose queue it is for (the view's own when not given).
-   */
-  addSongTicket(
-    t: Omit<SongTicket, "status" | "created_at" | "settled_at">,
-    now: number,
-    space?: string | null,
-  ): void {
+  /** A ticket about to be charged under `key` (`charging`); one already there is left alone. */
+  addSongTicket(t: Omit<SongTicket, "status" | "created_at" | "settled_at">, now: number): void {
     this.#write(() => {
       this.#db.orm
         .insert(marketSongTickets)
         .values({
           key: t.key,
-          space_id: space ?? this.#spaceValue,
           person_id: t.person,
           platform: t.account.platform,
           account_id: t.account.id,
@@ -889,7 +751,7 @@ export class MarketStore {
     return this.#db.orm
       .select()
       .from(T)
-      .where(and(eq(T.status, "pending"), lte(T.created_at, at(before)), this.#mine(T.space_id)))
+      .where(and(eq(T.status, "pending"), lte(T.created_at, at(before))))
       .all()
       .map(ticketOf);
   }
@@ -918,12 +780,11 @@ export class MarketStore {
           .where(eq(marketLotteryTickets.person_id, absorb))
           .run().changes,
       );
-      // The draws per Space; the weeks of before them are a record that is no longer written.
       const winners = Number(
         this.#db.orm
-          .update(marketLotteryDraws)
+          .update(marketLotteryWeeks)
           .set({ winner_person: keep })
-          .where(eq(marketLotteryDraws.winner_person, absorb))
+          .where(eq(marketLotteryWeeks.winner_person, absorb))
           .run().changes,
       );
       const songs = Number(
@@ -955,7 +816,6 @@ const marketData: readonly CategoryData[] = [
       tablePart("market_lots", "market_lots", "node", "created_at", "week", {
         id: "text",
         week: "num",
-        space_id: "text",
         kind: "text",
         status: "text",
         picked_by: "text",
@@ -988,35 +848,6 @@ const marketData: readonly CategoryData[] = [
         created_at: "ts",
         released_at: "ts",
       }),
-      tablePart(
-        "market_lottery_draws",
-        "market_lottery_draws",
-        "node",
-        "draw_at",
-        "space_id, week",
-        {
-          space_id: "text",
-          week: "num",
-          status: "text",
-          draw_at: "ts",
-          tickets: "num",
-          buyers: "num",
-          pot: "num",
-          prize: "num",
-          burned: "num",
-          winner_person: "text",
-          winner_platform: "text",
-          winner_account_id: "text",
-          winner_name: "text",
-          winner_tickets: "num",
-          pick: "num",
-          drawn_at: "ts",
-          paid_at: "ts",
-          announced_at: "ts",
-          notice_message: "text",
-          notice_at: "ts",
-        },
-      ),
       tablePart("market_lottery_weeks", "market_lottery_weeks", "node", "draw_at", "week", {
         week: "num",
         status: "text",
@@ -1047,7 +878,6 @@ const marketData: readonly CategoryData[] = [
         {
           id: "text",
           week: "num",
-          space_id: "text",
           person_id: "text",
           platform: "text",
           account_id: "text",
@@ -1068,7 +898,6 @@ const marketData: readonly CategoryData[] = [
         "created_at, key",
         {
           key: "text",
-          space_id: "text",
           person_id: "text",
           platform: "text",
           account_id: "text",

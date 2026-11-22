@@ -118,7 +118,7 @@ describe("ModuleSettings", () => {
     const { settings } = await setup("[modules.market]\nauction_hours = 12\n");
     const view = settings.describe("market");
     expect(view.groups.map((g) => g.id)).toEqual(["auction", "lottery", "song"]);
-    expect(view.fields.map((f) => f.path)).not.toContain("auction_purpose");
+    expect(view.fields.map((f) => f.path)).not.toContain("utc_offset_minutes");
     expect(view.fields.map((f) => f.path)).not.toContain("lottery_prize_share");
     expect(view.values.auction_hours).toMatchObject({ value: 12, source: "file", file: 12 });
     expect(view.values.auction_channel).toMatchObject({ value: "", source: "default" });
@@ -197,6 +197,46 @@ describe("ModuleSettings", () => {
     expect(market.seen.at(-1)).toMatchObject({ auction_hours: 5 });
     expect(settings.pending("market")).toBeNull();
     settings.close();
+  });
+
+  it("expands the layer's env references and calls a key equal to the file's the file's", async () => {
+    const env = (name: string) => (name === "AUCTION_CHANNEL" ? "123456" : undefined);
+    store = await openStore("memory://");
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the reference the import keeps
+    const ref = "${AUCTION_CHANNEL}";
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a variable that is not set
+    const missing = "${NOPE}";
+    const config = Config.fromToml(`[modules.market]\nauction_channel = "${ref}"\n`, env);
+    const settings = new ModuleSettings({
+      config,
+      revisions: store.moduleState.revisions,
+      supervisor: new Supervisor(),
+      guard: () => null,
+      env,
+    });
+    // What `miyoria config import` writes: the file as it is, references and all.
+    store.moduleState.revisions.write(
+      { modules: { market: { auction_channel: ref, auction_hours: 30, auction_step: missing } } },
+      "import",
+    );
+    const file = config.module("market").config;
+    const booted = settings.boot("market", file, MarketConfigSchema) as Record<string, JsonValue>;
+    expect(booted.auction_channel).toBe("123456");
+    expect(booted.auction_hours).toBe(30);
+    // A variable that is not set: the key is skipped, never a literal reference.
+    expect(booted.auction_step).toBeUndefined();
+    const sup = new Supervisor();
+    await sup.register(new Recorder("market", MarketConfigSchema), booted, false);
+    const view = new ModuleSettings({
+      config,
+      revisions: store.moduleState.revisions,
+      supervisor: sup,
+      guard: () => null,
+      env,
+    }).describe("market");
+    expect(view.values.auction_channel).toMatchObject({ value: "123456", source: "file" });
+    expect(view.values.auction_hours).toMatchObject({ value: 30, source: "panel" });
+    expect(view.values.auction_step?.invalid).toBe("環境變數 NOPE 沒有設定");
   });
 
   it("skips a panel value that no longer fits, at boot and on the form", async () => {

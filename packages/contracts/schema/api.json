@@ -15336,6 +15336,16 @@
         },
         "currency": {
           "type": "string"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSettingsPlaceView"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -19287,7 +19297,8 @@
             "restarted",
             "deferred",
             "stored",
-            "unchanged"
+            "unchanged",
+            "immediate"
           ]
         },
         "state": {
@@ -20044,6 +20055,43 @@
         "rows"
       ]
     },
+    "ApiSettingPlaceValue": {
+      "type": "object",
+      "properties": {
+        "own": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "own_set": {
+          "type": "boolean"
+        },
+        "inherited": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inherited_from": {
+          "$ref": "#/$defs/ApiSettingSource"
+        }
+      },
+      "required": [
+        "own",
+        "own_set",
+        "inherited",
+        "inherited_from"
+      ]
+    },
     "ApiSettingProblem": {
       "type": "object",
       "properties": {
@@ -20057,6 +20105,16 @@
       "required": [
         "path",
         "message"
+      ]
+    },
+    "ApiSettingSource": {
+      "type": "string",
+      "enum": [
+        "default",
+        "file",
+        "panel",
+        "space",
+        "room"
       ]
     },
     "ApiSettingValue": {
@@ -20073,12 +20131,7 @@
           ]
         },
         "source": {
-          "type": "string",
-          "enum": [
-            "default",
-            "file",
-            "panel"
-          ]
+          "$ref": "#/$defs/ApiSettingSource"
         },
         "file": {
           "anyOf": [
@@ -20179,6 +20232,42 @@
               "after"
             ]
           }
+        },
+        "place": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "space",
+                    "room"
+                  ]
+                },
+                "room": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "scope",
+                "room",
+                "name"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -20211,6 +20300,55 @@
         "next_before"
       ]
     },
+    "ApiSettingsPlaceView": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "room": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "space",
+        "room"
+      ]
+    },
     "ApiShopItem": {
       "type": "object",
       "properties": {
@@ -20240,6 +20378,16 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSettingPlaceValue"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
