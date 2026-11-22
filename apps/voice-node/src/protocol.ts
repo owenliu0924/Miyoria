@@ -109,6 +109,7 @@ const FIELD_RULES: Record<string, string> = {
   user_id: "a string",
   play: "a u32",
   id: "a u32",
+  run: "a u32",
   sample_rate: `an integer in ${VOICE_LINK_LIMITS.PLAY_SAMPLE_RATE_MIN}..${VOICE_LINK_LIMITS.PLAY_SAMPLE_RATE_MAX}`,
   fade_ms: "a non-negative number",
   gain: "a number in 0..1",

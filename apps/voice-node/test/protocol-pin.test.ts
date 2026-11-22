@@ -127,6 +127,15 @@ describe("parseCoreMessage: one of every message", () => {
     ],
     [{ type: "watch_stop", guild: "1" }, { type: "watch_stop", guild: "1" }],
     [{ type: "watch_snapshot", id: 7 }, { type: "watch_snapshot", id: 7 }],
+    [
+      { type: "watch_start", guild: "1", user_id: "2", run: 9 },
+      { type: "watch_start", guild: "1", user_id: "2", run: 9 },
+    ],
+    [
+      { type: "watch_start", guild: "1", user_id: "2", run: null },
+      { type: "watch_start", guild: "1", user_id: "2" },
+    ],
+    [{ type: "watch_snapshot", id: 7, run: 9 }, { type: "watch_snapshot", id: 7, run: 9 }],
   ])("%j", (input, value) => {
     expect(parse(input)).toStrictEqual(accepted(value));
   });
@@ -271,6 +280,9 @@ describe("parseCoreMessage: edges", () => {
     for (const id of [-1, 1.5, U32_MAX + 1, "1", null]) {
       expect(parse({ type: "watch_snapshot", id })).toStrictEqual(refused("watch_snapshot: `id` must be a u32"));
     }
+    expect(parse({ type: "watch_start", guild: "1", user_id: "2", run: -1 })).toStrictEqual(
+      refused("watch_start: `run` must be a u32"),
+    );
   });
 
   it("play ids are u32", () => {

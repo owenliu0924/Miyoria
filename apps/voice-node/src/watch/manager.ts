@@ -47,6 +47,8 @@ export interface WatchEvent {
   guild: string;
   userId: string;
   state: WatchWireState;
+  /** Core's id of the watch, echoed from its start; absent when the start had none. */
+  run?: number;
   error?: string;
   reason?: string;
 }
@@ -72,9 +74,17 @@ interface Cycle {
   abort: AbortController;
 }
 
+/** A `watch_start` as the manager takes it. */
+export interface WatchStart {
+  guild: string;
+  user_id: string;
+  run?: number;
+}
+
 interface Job {
   guild: string;
   userId: string;
+  run: number | undefined;
   abort: AbortController;
   state: WatchWireState;
   stopReason: string | undefined;
@@ -90,7 +100,7 @@ export class WatchManager {
   private readonly log: Logger;
   private readonly attemptMs: number;
   private job: Job | undefined;
-  private queued: { guild: string; user_id: string } | undefined;
+  private queued: WatchStart | undefined;
 
   constructor(opts: WatchManagerOptions) {
     this.o = opts;
@@ -102,8 +112,14 @@ export class WatchManager {
     return this.job?.guild;
   }
 
+  /** Whose stream is watched (or being started) in `guild`, if any. */
+  watching(guild: string): string | undefined {
+    const job = this.job;
+    return job && job.guild === guild && !job.abort.signal.aborted ? job.userId : undefined;
+  }
+
   /** Starts watching `user_id`; a different target first stops the current watch. Never throws. */
-  start(msg: { guild: string; user_id: string }): void {
+  start(msg: WatchStart): void {
     const job = this.job;
     if (!job) {
       this.begin(msg);
@@ -111,10 +127,15 @@ export class WatchManager {
     }
     const sameAsCurrent = job.guild === msg.guild && job.userId === msg.user_id;
     if (sameAsCurrent && !this.queued && !job.abort.signal.aborted) {
-      this.send({ guild: job.guild, userId: job.userId, state: job.state });
+      // Core numbered it anew: what follows is about its new run.
+      if (msg.run !== undefined) job.run = msg.run;
+      this.send(this.event(job, { state: job.state }));
       return;
     }
-    if (this.queued && this.queued.guild === msg.guild && this.queued.user_id === msg.user_id) return;
+    if (this.queued && this.queued.guild === msg.guild && this.queued.user_id === msg.user_id) {
+      if (msg.run !== undefined) this.queued.run = msg.run;
+      return;
+    }
     this.queued = msg;
     this.stopJob(job, "switched");
   }
@@ -134,11 +155,18 @@ export class WatchManager {
     await job.done;
   }
 
-  /** Asks for a JPEG of the current picture; answers through snapshotDone / snapshotFailed. */
-  snapshot(id: number): void {
+  /**
+   * Asks for a JPEG of the current picture; answers through snapshotDone / snapshotFailed. With
+   * `run`, only the watch Core started with that id answers.
+   */
+  snapshot(id: number, run?: number): void {
     const job = this.job;
     if (!job || job.abort.signal.aborted) {
       this.safe(() => this.o.snapshotFailed(id, "not watching"));
+      return;
+    }
+    if (run !== undefined && job.run !== run) {
+      this.safe(() => this.o.snapshotFailed(id, "not the watch going on"));
       return;
     }
     job.pending.add(id);
@@ -148,8 +176,9 @@ export class WatchManager {
     }
   }
 
-  private begin(msg: { guild: string; user_id: string }): void {
-    const { guild, user_id: userId } = msg;
+  private begin(msg: WatchStart): void {
+    const { guild, user_id: userId, run } = msg;
+    const tag = run === undefined ? {} : { run };
     let goLive = false;
     try {
       goLive = this.o.host.goLiveActive();
@@ -157,12 +186,13 @@ export class WatchManager {
       this.log.warn(`watch: goLiveActive failed: ${errMsg(e)}`);
     }
     if (goLive) {
-      this.send({ guild, userId, state: "failed", error: "she is streaming her own Go Live; stop it first" });
+      this.send({ guild, userId, ...tag, state: "failed", error: "she is streaming her own Go Live; stop it first" });
       return;
     }
     const job: Job = {
       guild,
       userId,
+      run,
       abort: new AbortController(),
       state: "starting",
       stopReason: undefined,
@@ -171,7 +201,7 @@ export class WatchManager {
       done: Promise.resolve(),
     };
     this.job = job;
-    this.send({ guild, userId, state: "starting" });
+    this.send(this.event(job, { state: "starting" }));
     job.done = this.run(job);
   }
 
@@ -198,7 +228,7 @@ export class WatchManager {
       onLive: () => {
         if (!this.isCurrent(job) || job.state !== "starting") return;
         job.state = "live";
-        this.send({ guild: job.guild, userId: job.userId, state: "live" });
+        this.send(this.event(job, { state: "live" }));
       },
       onKeyframe: (frame) => {
         if (!this.isCurrent(job)) return;
@@ -226,16 +256,14 @@ export class WatchManager {
       const plan = await this.o.host.attach(job.guild, job.userId, signal);
       if (signal.aborted) throw new Error("aborted");
       const reason = await this.o.engine.run(plan, this.hooks(job, pipeline), signal);
-      final = signal.aborted
-        ? { guild: job.guild, userId: job.userId, state: "stopped", reason: job.stopReason ?? reason }
-        : { guild: job.guild, userId: job.userId, state: "stopped", reason };
+      final = this.event(job, { state: "stopped", reason: signal.aborted ? (job.stopReason ?? reason) : reason });
     } catch (e) {
       if (signal.aborted) {
-        final = { guild: job.guild, userId: job.userId, state: "stopped", reason: job.stopReason ?? "stopped" };
+        final = this.event(job, { state: "stopped", reason: job.stopReason ?? "stopped" });
       } else {
         const error = errMsg(e);
         this.log.warn(`watch: failed: ${error}`);
-        final = { guild: job.guild, userId: job.userId, state: "failed", error };
+        final = this.event(job, { state: "failed", error });
       }
     }
 
@@ -305,6 +333,13 @@ export class WatchManager {
         this.nextAttempt(job, cycle);
       },
     );
+  }
+
+  /** An event about `job`, carrying its run id when it has one. */
+  private event(job: Job, ev: Pick<WatchEvent, "state" | "error" | "reason">): WatchEvent {
+    const out: WatchEvent = { guild: job.guild, userId: job.userId, ...ev };
+    if (job.run !== undefined) out.run = job.run;
+    return out;
   }
 
   private send(ev: WatchEvent): void {

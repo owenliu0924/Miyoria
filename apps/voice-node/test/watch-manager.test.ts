@@ -197,6 +197,43 @@ describe("WatchManager lifecycle", () => {
   });
 });
 
+describe("WatchManager runs", () => {
+  it("a_new_run_of_the_same_watch_is_adopted", async () => {
+    const t = setup();
+    t.m.start({ guild: "g", user_id: "u", run: 1 });
+    await flush();
+    t.m.start({ guild: "g", user_id: "u", run: 2 });
+    t.runs[0]?.hooks.onLive();
+    expect(t.runs).toHaveLength(1);
+    expect(t.events.map((e) => [e.state, e.run])).toEqual([
+      ["starting", 1],
+      ["starting", 2],
+      ["live", 2],
+    ]);
+  });
+
+  it("a_queued_start_takes_the_latest_run", async () => {
+    const t = setup({ holdEngine: true });
+    t.m.start({ guild: "g", user_id: "u1", run: 1 });
+    await flush();
+    t.m.start({ guild: "g", user_id: "u2", run: 2 });
+    t.m.start({ guild: "g", user_id: "u2", run: 3 });
+    t.runs[0]?.end("switched");
+    await flush();
+    expect(t.events.at(-1)).toEqual({ guild: "g", userId: "u2", state: "starting", run: 3 });
+  });
+
+  it("watching_names_the_person_until_the_watch_stops", async () => {
+    const t = setup();
+    expect(t.m.watching("g")).toBeUndefined();
+    t.m.start({ guild: "g", user_id: "u" });
+    expect(t.m.watching("g")).toBe("u");
+    expect(t.m.watching("other")).toBeUndefined();
+    t.m.stop("g", "bye");
+    expect(t.m.watching("g")).toBeUndefined();
+  });
+});
+
 describe("WatchManager teardown", () => {
   it("start_after_stop_for_the_same_target_restarts", async () => {
     const t = setup({ holdEngine: true });

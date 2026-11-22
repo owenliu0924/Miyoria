@@ -71,6 +71,8 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private helloTimer: ReturnType<typeof setTimeout> | undefined;
   private connectedAt = 0;
+  /** The snapshot being written out, if any; its bytes do not count against the audio limit. */
+  private snapshotInFlight: { ws: WebSocket; bytes: number } | undefined;
 
   constructor(opts: CoreLinkOptions) {
     super();
@@ -137,7 +139,7 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
   sendAudio(frame: Buffer): boolean {
     const ws = this.ws;
     if (!this.ready || !ws || ws.readyState !== WebSocket.OPEN) return false;
-    if (ws.bufferedAmount > this.o.maxBufferedBytes) return false;
+    if (this.backlog(ws) > this.o.maxBufferedBytes) return false;
     try {
       ws.send(frame, { binary: true });
       return true;
@@ -145,6 +147,37 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
       this.log.warn("audio send failed:", err);
       return false;
     }
+  }
+
+  /**
+   * Sends a binary snapshot frame. Speech comes first: a snapshot goes out only while no other one
+   * is being written and the send buffer is nearly empty, and the audio limit does not count it.
+   * Returns false (and sends nothing) otherwise; the caller reports the snapshot as failed.
+   */
+  sendSnapshot(frame: Buffer): boolean {
+    const ws = this.ws;
+    if (!this.ready || !ws || ws.readyState !== WebSocket.OPEN) return false;
+    if (this.snapshotInFlight?.ws === ws) return false;
+    if (ws.bufferedAmount > this.o.maxBufferedBytes / 4) return false;
+    const inFlight = { ws, bytes: frame.length };
+    this.snapshotInFlight = inFlight;
+    const done = (): void => {
+      if (this.snapshotInFlight === inFlight) this.snapshotInFlight = undefined;
+    };
+    try {
+      ws.send(frame, { binary: true }, done);
+      return true;
+    } catch (err) {
+      done();
+      this.log.warn("snapshot send failed:", err);
+      return false;
+    }
+  }
+
+  /** Bytes waiting in `ws`'s send buffer, less a snapshot still being written. */
+  private backlog(ws: WebSocket): number {
+    const snapshot = this.snapshotInFlight?.ws === ws ? this.snapshotInFlight.bytes : 0;
+    return ws.bufferedAmount - snapshot;
   }
 
   // ── connection management ────────────────────────────────────────────────

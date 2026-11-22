@@ -75,10 +75,14 @@ export class VoiceNode {
         };
         if (ev.error !== undefined) msg.error = ev.error;
         if (ev.reason !== undefined) msg.reason = ev.reason;
+        if (ev.run !== undefined) msg.run = ev.run;
         this.link.send(msg);
       },
       snapshotDone: (id, jpeg) => {
-        this.link.sendAudio(encodeSnapshotFrame(id, jpeg));
+        // Not through the audio path: a refused picture is reported at once, and speech keeps its room.
+        if (!this.link.sendSnapshot(encodeSnapshotFrame(id, jpeg))) {
+          this.link.send({ type: "watch_snapshot_failed", id, error: "the link to Core is busy" });
+        }
       },
       snapshotFailed: (id, error) => {
         this.link.send({ type: "watch_snapshot_failed", id, error });
@@ -152,7 +156,7 @@ export class VoiceNode {
         this.watch.stop(msg.guild, "stop requested");
         break;
       case "watch_snapshot":
-        this.watch.snapshot(msg.id);
+        this.watch.snapshot(msg.id, msg.run);
         break;
       case "golive_start":
         // Her own Go Live and watching someone else's are exclusive.
@@ -435,9 +439,15 @@ export class VoiceNode {
         return;
       }
       if (newState.channelId !== session.channelId) {
+        // The stream she watches is in the channel she was moved out of.
+        this.watch.stop(guildId, "she was moved to another channel");
         session.noteMoved(newState.channelId);
         return;
       }
+    } else if (userId === this.watch.watching(guildId)) {
+      // Discord's own end of the stream can come late, or not at all.
+      if (newState.channelId !== session.channelId) this.watch.stop(guildId, "the streamer left the channel");
+      else if (!newState.streaming) this.watch.stop(guildId, "the streamer stopped streaming");
     }
     if (oldState.channelId === session.channelId || newState.channelId === session.channelId) {
       session.sendVoiceState();
