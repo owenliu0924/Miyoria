@@ -37,7 +37,10 @@ function stubFetch(streams: Answer[], json: (path: string, url: URL) => unknown 
     if (url.pathname.endsWith("/stream") || url.pathname === "/api/events") {
       const next = streams.shift();
       if (next === undefined) return new Response(JSON.stringify({ error: "no such endpoint" }), { status: 404, headers: { "content-type": "application/json" } });
-      if (next instanceof Stream) return next.response;
+      if (next instanceof Stream) {
+        next.follow(_init?.signal);
+        return next.response;
+      }
       return new Response(JSON.stringify(next.body ?? { error: "not now" }), { status: next.status, headers: { "content-type": "application/json" } });
     }
     const body = json(url.pathname, url);
@@ -179,6 +182,86 @@ describe("the push client", () => {
     expect((second?.init.headers as Record<string, string> | undefined)?.["Last-Event-ID"]).toBeUndefined();
     push.stop();
     expect(push.state).toBe("idle");
+  });
+});
+
+describe("a stream that goes silent", () => {
+  const FAKE = { toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval", "Date"] } as const;
+  const ping = { kind: "ping" };
+
+  async function live() {
+    vi.useFakeTimers({ ...FAKE, toFake: [...FAKE.toFake] });
+    const first = new Stream();
+    const second = new Stream();
+    const fn = stubFetch([first, second]);
+    const { push, queryClient } = client();
+    const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+    push.start();
+    push.want("danmaku", null, KEY);
+    await vi.advanceTimersByTimeAsync(60);
+    expect(streamCalls(fn)).toHaveLength(1);
+    first.send(value("danmaku", { n: 1 }));
+    first.send(READY, "r.1.h");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push.isLive("danmaku")).toBe(true);
+    return { first, second, fn, push, invalidate };
+  }
+
+  it("polls again within the watchdog's window and recovers on a new connection", async () => {
+    const { second, fn, push, invalidate } = await live();
+    // Not a byte more, and the socket never closes.
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(push.isLive("danmaku")).toBe(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(push.isLive("danmaku")).toBe(false);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: KEY, exact: true });
+    await vi.advanceTimersByTimeAsync(10);
+    expect(streamCalls(fn)).toHaveLength(2);
+    second.send(READY, "r.1.h");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push.isLive("danmaku")).toBe(true);
+    push.stop();
+  });
+
+  it("stays on a quiet stream that pings, without reconnecting", async () => {
+    const { first, fn, push } = await live();
+    for (let i = 0; i < 12; i++) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      first.send(ping);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(streamCalls(fn)).toHaveLength(1);
+    expect(push.isLive("danmaku")).toBe(true);
+    push.stop();
+  });
+
+  it("reconnects once, at once, after the page slept", async () => {
+    const { second, fn, push } = await live();
+    // The laptop sleeps ten minutes: no timer runs, nothing arrives.
+    vi.setSystemTime(Date.now() + 10 * 60_000);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(streamCalls(fn)).toHaveLength(2);
+    second.send(READY, "r.1.h");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(push.isLive("danmaku")).toBe(true);
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      second.send(ping);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    expect(streamCalls(fn)).toHaveLength(2);
+    push.stop();
+  });
+
+  it("does nothing when its timers were only held back and the pings kept coming", async () => {
+    const { first, fn, push } = await live();
+    // A background tab: the check runs two minutes late, but a ping has just arrived.
+    vi.setSystemTime(Date.now() + 2 * 60_000);
+    first.send(ping);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(streamCalls(fn)).toHaveLength(1);
+    expect(push.isLive("danmaku")).toBe(true);
+    push.stop();
   });
 });
 

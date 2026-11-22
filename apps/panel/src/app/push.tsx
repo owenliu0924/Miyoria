@@ -12,6 +12,7 @@ import { type QueryClient, type QueryKey, useQueryClient } from "@tanstack/react
 import { createContext, type ReactNode, useContext, useEffect, useMemo, useSyncExternalStore } from "react";
 import { isApiError } from "@/api/http";
 import { backoff } from "@/api/sse";
+import { type Death, watchdog } from "@/api/watchdog";
 import { useConnection } from "./connection";
 
 export type PushAudience = "public" | "member";
@@ -172,17 +173,30 @@ export class PushClient {
       this.#setState("connecting");
       let openedAt: number | null = null;
       let wait: number | null = null;
+      // Nothing at all (no value, `ready` or `ping`, not a byte) for `SILENT_MS`: the stream is
+      // dead even if its socket is not closed (a proxy holding a gone connection).
+      const inner = new AbortController();
+      const both = AbortSignal.any([signal, inner.signal]);
+      const died: { why: Death | null } = { why: null };
+      const dog = watchdog((why) => {
+        died.why = why;
+        inner.abort();
+      }, this.#o.now);
       try {
         const call = this.#o.audience === "member" ? this.#o.rpc.push.member : this.#o.rpc.push.public;
         const lastEventId = this.#lastIdTopics === topics ? this.#lastId : undefined;
-        const stream = await call({ query: { topics } }, { signal, ...(lastEventId ? { lastEventId } : {}) });
+        const stream = await call(
+          { query: { topics } },
+          { signal: both, context: { onActivity: dog.seen }, ...(lastEventId ? { lastEventId } : {}) },
+        );
         openedAt = this.#o.now();
         this.#setState("open");
         const refused = new Set<string>();
         const stop = () => void stream.return().catch(() => undefined);
-        signal.addEventListener("abort", stop, { once: true });
+        both.addEventListener("abort", stop, { once: true });
         try {
           for await (const event of stream) {
+            dog.seen();
             const id = getEventMeta(event)?.id;
             if (id !== undefined) {
               this.#lastId = id;
@@ -191,15 +205,23 @@ export class PushClient {
             this.#take(event, refused);
           }
         } finally {
-          signal.removeEventListener("abort", stop);
+          both.removeEventListener("abort", stop);
         }
       } catch (error) {
         if (signal.aborted) break;
         // An older Core (no such route), push turned off, a session that ended: not soon again.
-        if (isApiError(error) && (error.kind === "not_provided" || error.kind === "unauthorized")) wait = OFF_WAIT_MS;
+        if (died.why === null && isApiError(error) && (error.kind === "not_provided" || error.kind === "unauthorized")) wait = OFF_WAIT_MS;
+      } finally {
+        dog.stop();
       }
       if (signal.aborted) break;
+      // Dead or broken: its topics poll again, starting with a fetch now.
       this.#fallBack();
+      if (died.why === "asleep") {
+        // The page slept (timers held back, a laptop resumed): reconnect once, now, from the start.
+        attempt = 0;
+        continue;
+      }
       if (openedAt !== null && this.#o.now() - openedAt >= STABLE_MS) attempt = 0;
       this.#setState("waiting");
       await sleep(wait ?? this.#o.delay(Math.max(1, attempt)), signal);
@@ -208,6 +230,7 @@ export class PushClient {
 
   /** One event: a value into the cache; `ready` hands the topics to the stream. */
   #take(event: PushEvent, refused: Set<string>): void {
+    if (event.kind === "ping") return;
     if (event.kind === "ready") {
       let changed = false;
       for (const id of this.#wants.keys()) {

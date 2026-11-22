@@ -20,7 +20,23 @@ export class TestStream {
     this.#controller.enqueue(enc.encode(`event: message\n${id ? `id: ${id}\n` : ""}data: ${JSON.stringify(event)}\n\n`));
   }
 
+  /** A comment line, as a server's keep-alive is. */
+  comment(): void {
+    this.#controller.enqueue(enc.encode(":\n\n"));
+  }
+
   end(): void {
     this.#controller.close();
+  }
+
+  /** What the request's abort does to a real response body. */
+  follow(signal: AbortSignal | null | undefined): void {
+    signal?.addEventListener("abort", () => {
+      try {
+        this.#controller.error(new DOMException("The operation was aborted.", "AbortError"));
+      } catch {
+        // already closed
+      }
+    });
   }
 }
