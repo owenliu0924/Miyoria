@@ -63,7 +63,8 @@ export const NO_PREDICTION = "沒有這個預測";
 export const BETTING_CLOSED = "這個預測已經截止了";
 export const ALREADY_BET = "你已經押過這個預測了";
 /** A bet on a prediction of a server they are not in (`{server}`: its name). */
-export const NOT_THERE = "這個預測是{server}的,只有在那裡說過話的成員能押";
+export const NOT_THERE =
+  "這個預測是{server}的,只有那裡的成員能押(在那個伺服器說過話、用過指令或進過語音就算)";
 
 /** The options of a prediction that settles by itself, by what settles it. */
 export const AUTO_OPTIONS: Readonly<Record<PredictionSourceKind, readonly [string, string]>> = {

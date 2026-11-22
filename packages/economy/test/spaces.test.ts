@@ -90,7 +90,7 @@ describe("predictions per server", () => {
     await rejects(
       r.economy.v2.placeBet(BOB, inA.id, 1, 10, "bob"),
       403,
-      "這個預測是「guild-a」的,只有在那裡說過話的成員能押",
+      "這個預測是「guild-a」的,只有那裡的成員能押(在那個伺服器說過話、用過指令或進過語音就算)",
     );
     expect(await balance(r, BOB)).toBe(100);
     // A member bets from anywhere, a DM too: the money is the one wallet.

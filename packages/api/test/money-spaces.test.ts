@@ -80,7 +80,7 @@ async function setup() {
     predictions: async (_account: unknown, spaces?: readonly string[]) => {
       asked.predictions.push(spaces);
       return [prediction("PA", A), prediction("PB", B)].filter(
-        (p) => !spaces || spaces.includes(p.space.id),
+        (p) => !spaces || (p.space !== null && spaces.includes(p.space.id)),
       );
     },
   };
