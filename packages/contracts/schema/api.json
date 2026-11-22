@@ -20289,6 +20289,16 @@
             "string",
             "null"
           ]
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSettingPlaceValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -20507,16 +20517,6 @@
           "type": [
             "string",
             "null"
-          ]
-        },
-        "place": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ApiSettingPlaceValue"
-            },
-            {
-              "type": "null"
-            }
           ]
         }
       },
