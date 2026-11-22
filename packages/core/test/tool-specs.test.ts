@@ -199,6 +199,7 @@ describe("the registry behind them", () => {
       "delegate_list",
       "delegate_read",
       "find_tools",
+      "look",
       "say",
       "schedule",
       "schedule_cancel",
