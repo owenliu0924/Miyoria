@@ -454,7 +454,14 @@ function routingView(cluster: ClusterService): RoutingView {
       sessions: c.sessions.map((x) => ({ ...x, since: toTimestamp(x.since) })),
       result_mb: c.result_mb,
     })),
-    hosts: snap.hosts,
+    hosts: snap.hosts.map(({ routes, ...h }) => ({
+      ...h,
+      routes: routes.map((r) => ({
+        ...r,
+        probed_at: r.probed_at === null ? null : toTimestamp(r.probed_at),
+        ok_at: r.ok_at === null ? null : toTimestamp(r.ok_at),
+      })),
+    })),
     activity: {
       in_voice: snap.activity.in_voice,
       live: snap.activity.live,

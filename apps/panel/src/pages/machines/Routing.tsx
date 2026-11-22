@@ -12,7 +12,8 @@ import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import { fmtMsAsSeconds, fmtSeconds, loadWords, ROUTING_CLASS, ROUTING_LATENCY, SPEECH_MODE } from "./labels";
 
-// Job dispatch as Core sees it (v5-hostd §15): per host its round trip, weight and drain; per
+// Job dispatch as Core sees it (v5-hostd §15): per host its round trip, weight, drain and routes
+// (§16: each way Core reaches it, which one is in use, what was measured); per
 // capability its class, its endpoints with their scores or why they take no new work, the last
 // decisions and open sessions; and the owner's controls, which Core alone allows or refuses.
 
@@ -20,10 +21,22 @@ export type ClusterRouting = ApiOutputs["cluster"]["routing"];
 type CapabilityRouting = ClusterRouting["capabilities"][number];
 type EndpointRouting = CapabilityRouting["endpoints"][number];
 type HostRouting = ClusterRouting["hosts"][number];
+type HostRoute = NonNullable<HostRouting["routes"]>[number];
 type PanelControl = ClusterRouting["panel"][number];
 type Decision = CapabilityRouting["decisions"][number];
 
 const VIA = { direct: "直連", link: "經連線" } as const;
+
+/** The ways Core reaches a host (v5-hostd §16). */
+const ROUTE_KIND: Record<HostRoute["kind"], string> = { tailnet: "Tailnet", direct: "直連", tunnel: "Tunnel", relay: "經控制連線" };
+const ROUTE_WORK: Record<HostRoute["in_use"][number], string> = { realtime: "即時", interactive: "一般", bulk: "大檔" };
+const ROUTE_STATE: Record<HostRoute["state"], { tone: Tone; words: string }> = {
+  up: { tone: "success", words: "通" },
+  unknown: { tone: "neutral", words: "還沒量過" },
+  down: { tone: "warning", words: "上次失敗,會再試" },
+  resting: { tone: "warning", words: "剛剛失敗,先休息一下" },
+  invalid: { tone: "warning", words: "不能用" },
+};
 
 /** Decisions shown per capability, newest first. */
 const DECISIONS_SHOWN = 5;
@@ -155,8 +168,47 @@ function HostRow({ host, data, busy, send, onConfirm }: { host: HostRouting; dat
           </span>
         </div>
         {host.drained && <p className="text-xs text-primary">{host.drained}</p>}
+        {host.routes && host.routes.length > 0 && <RouteList host={host.host} routes={host.routes} />}
       </div>
     </li>
+  );
+}
+
+function RouteList({ host, routes }: { host: string; routes: HostRoute[] }) {
+  return (
+    <ul aria-label={`${host} 的連線路徑`} className="grid gap-1">
+      {routes.map((r) => {
+        const state = ROUTE_STATE[r.state];
+        const measured = [r.rtt_ms !== null ? `${Math.round(r.rtt_ms)} ms` : null, r.mb_s !== null ? `${r.mb_s.toFixed(1)} MB/s` : null, r.max_body_mb !== null ? `每次最多 ${r.max_body_mb} MB` : null].filter(Boolean);
+        return (
+          <li key={r.name} data-route={r.name} className={cn("grid gap-0.5 text-xs", r.state === "invalid" && "text-muted-foreground")}>
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="inline-flex items-center gap-1.5">
+                <Dot tone={state.tone} />
+                <span className="font-mono text-[13px] text-foreground">{r.name}</span>
+              </span>
+              <Badge variant="outline">{ROUTE_KIND[r.kind]}</Badge>
+              {r.in_use.length > 0 && <Badge variant="brand">使用中 · {r.in_use.map((w) => ROUTE_WORK[w]).join("、")}</Badge>}
+              {measured.length > 0 && <span className="font-mono tabular-nums text-foreground">{measured.join(" · ")}</span>}
+              {r.url && <span className="min-w-0 truncate font-mono text-muted-foreground">{r.url}</span>}
+            </span>
+            <span className="pl-[18px] text-muted-foreground">
+              <span className={r.state === "up" || r.state === "unknown" ? undefined : "text-primary"}>{state.words}</span>
+              {r.reason && <span> · {r.reason}</span>}
+              {r.probed_at && (
+                <span>
+                  {" "}
+                  · 量於{" "}
+                  <time dateTime={r.probed_at} title={fmtDateTime(r.probed_at)}>
+                    {fmtRelative(r.probed_at)}
+                  </time>
+                </span>
+              )}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

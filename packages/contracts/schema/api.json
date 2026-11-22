@@ -2879,6 +2879,103 @@
         "link_url"
       ]
     },
+    "ApiClusterRouteView": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/HostRouteKind"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "implicit": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "unknown",
+            "up",
+            "down",
+            "resting",
+            "invalid"
+          ]
+        },
+        "in_use": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "realtime",
+              "interactive",
+              "bulk"
+            ]
+          }
+        },
+        "rtt_ms": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "mb_s": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "samples": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "max_body_mb": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "probed_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ok_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "name",
+        "kind",
+        "url",
+        "implicit",
+        "state",
+        "in_use",
+        "rtt_ms",
+        "mb_s",
+        "samples",
+        "max_body_mb",
+        "probed_at",
+        "ok_at",
+        "reason"
+      ]
+    },
     "ApiClusterRouting": {
       "type": "object",
       "properties": {
@@ -2916,6 +3013,12 @@
               },
               "weight": {
                 "type": "number"
+              },
+              "routes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ApiClusterRouteView"
+                }
               }
             },
             "required": [
@@ -3206,6 +3309,15 @@
         },
         "advertised": {
           "type": "string"
+        },
+        "reach": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
         },
         "healthy": {
           "type": "boolean"
@@ -22718,6 +22830,15 @@
       },
       "required": [
         "allowed"
+      ]
+    },
+    "HostRouteKind": {
+      "type": "string",
+      "enum": [
+        "tailnet",
+        "direct",
+        "tunnel",
+        "relay"
       ]
     },
     "HostRoutingClass": {
