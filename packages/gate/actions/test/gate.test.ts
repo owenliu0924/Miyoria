@@ -121,6 +121,93 @@ describe("gate order", () => {
     expect(asked.status).toBe("done");
   });
 
+  describe("watch consent", () => {
+    const watchCapability = () =>
+      defineCapability({
+        name: "t.watch",
+        summary: "test watch",
+        risk: "low",
+        args: z.object({}),
+        permission: null,
+        consent: "watch",
+        async execute() {
+          return "watching";
+        },
+      });
+
+    it("watch_is_allowed_by_default", async () => {
+      const g = await gate();
+      expect(await g.registry.privacy.get(AMY)).toMatchObject({ watch: true });
+    });
+
+    it("gate_refuses_watching_someone_who_opted_out", async () => {
+      const g = await gate();
+      g.registry.register(watchCapability());
+      await g.registry.privacy.set(AMY, { watch: false });
+      const out = await g.registry.invoke({ ...request("t.watch", self()), about: AMY });
+      expect(out.decision).toMatchObject({ allowed: false, stage: "consent" });
+      expect(out.decision.reason).toBe("the person opted out of being watched");
+      // Not being approached is a different choice: `approach` does not decide watching.
+      await g.registry.privacy.set(AMY, { watch: true, approach: false });
+      const ok = await g.registry.invoke({ ...request("t.watch", self()), about: AMY });
+      expect(ok.status).toBe("done");
+    });
+
+    it("the_person_asking_for_themselves_passes_the_gate", async () => {
+      const g = await gate();
+      g.registry.register(watchCapability());
+      await g.registry.privacy.set(AMY, { watch: false });
+      const out = await g.registry.invoke({
+        ...request("t.watch", Principals.self(CTX, AMY)),
+        about: AMY,
+      });
+      expect(out.status).toBe("done");
+    });
+
+    it("watching_with_no_one_to_ask_is_refused", async () => {
+      const g = await gate();
+      g.registry.register(watchCapability());
+      for (const p of [self(), user()]) {
+        const out = await g.registry.invoke(request("t.watch", p));
+        expect(out.decision).toMatchObject({ allowed: false, stage: "consent" });
+        expect(out.decision.reason).toBe("no one to ask consent from");
+      }
+    });
+
+    it("an_opt_out_can_be_told_as_something_else_and_the_audit_keeps_the_truth", async () => {
+      const g = await gate();
+      g.registry.register({
+        ...watchCapability(),
+        consentRefused: () => "那個人現在沒有在這裡開播。",
+      });
+      await g.registry.privacy.set(AMY, { watch: false });
+      const out = await g.registry.invoke({ ...request("t.watch", self()), about: AMY });
+      expect(out.decision).toMatchObject({
+        allowed: false,
+        stage: "args",
+        reason: "那個人現在沒有在這裡開播。",
+      });
+      expect(decisions(g.events).at(-1)).toMatchObject({
+        stage: "consent",
+        reason: "the person opted out of being watched",
+      });
+      // Other refusals are not touched.
+      g.registry.configure({ ...g.registry.config, forbidden: ["t.watch"] });
+      const forbidden = await g.registry.invoke({ ...request("t.watch", self()), about: AMY });
+      expect(forbidden.decision.stage).toBe("prohibition");
+    });
+
+    it("store_failure_counts_as_opted_out", async () => {
+      const g = await gate();
+      vi.spyOn(g.store.settings, "get").mockRejectedValue(new Error("down"));
+      expect(await g.registry.privacy.get(AMY)).toEqual({
+        dm: false,
+        approach: false,
+        watch: false,
+      });
+    });
+  });
+
   it("permission is checked against the requester; on_own goes as self", async () => {
     const g = await gate();
     const denied = await g.registry.invoke(request("t.low", user()));

@@ -39,7 +39,7 @@ const ignored = (error: string) => ({ ok: false, error, ignorable: true });
 describe("constants", () => {
   it("are the protocol's numbers", () => {
     expect(PROTOCOL_VERSION).toBe(1);
-    expect(NODE_CAPABILITIES).toEqual(["play_duck", "play_pause"]);
+    expect(NODE_CAPABILITIES).toEqual(["play_duck", "play_pause", "watch"]);
     expect(CAPTURE_SAMPLE_RATE).toBe(16_000);
     expect([FRAME_CAPTURE, FRAME_PLAYBACK, FRAME_LEVELS]).toEqual([0x01, 0x02, 0x03]);
     expect([CLOSE_VERSION_MISMATCH, CLOSE_BAD_TOKEN, CLOSE_REPLACED]).toEqual([4400, 4401, 4409]);
@@ -121,6 +121,21 @@ describe("parseCoreMessage: one of every message", () => {
       },
     ],
     [{ type: "golive_stop", guild: "1" }, { type: "golive_stop", guild: "1" }],
+    [
+      { type: "watch_start", guild: "1", user_id: "2" },
+      { type: "watch_start", guild: "1", user_id: "2" },
+    ],
+    [{ type: "watch_stop", guild: "1" }, { type: "watch_stop", guild: "1" }],
+    [{ type: "watch_snapshot", id: 7 }, { type: "watch_snapshot", id: 7 }],
+    [
+      { type: "watch_start", guild: "1", user_id: "2", run: 9 },
+      { type: "watch_start", guild: "1", user_id: "2", run: 9 },
+    ],
+    [
+      { type: "watch_start", guild: "1", user_id: "2", run: null },
+      { type: "watch_start", guild: "1", user_id: "2" },
+    ],
+    [{ type: "watch_snapshot", id: 7, run: 9 }, { type: "watch_snapshot", id: 7, run: 9 }],
   ])("%j", (input, value) => {
     expect(parse(input)).toStrictEqual(accepted(value));
   });
@@ -251,6 +266,22 @@ describe("parseCoreMessage: edges", () => {
     expect(parse({ type: "leave" })).toStrictEqual(refused("leave: `guild` must be a non-empty string"));
     expect(parse({ type: "golive_stop", guild: "" })).toStrictEqual(
       refused("golive_stop: `guild` must be a non-empty string"),
+    );
+  });
+
+  it("watch messages name their first bad field", () => {
+    expect(parse({ type: "watch_start", guild: "1" })).toStrictEqual(
+      refused("watch_start: `user_id` must be a string"),
+    );
+    expect(parse({ type: "watch_start", guild: "", user_id: "2" })).toStrictEqual(
+      refused("watch_start: `guild` must be a non-empty string"),
+    );
+    expect(parse({ type: "watch_stop" })).toStrictEqual(refused("watch_stop: `guild` must be a non-empty string"));
+    for (const id of [-1, 1.5, U32_MAX + 1, "1", null]) {
+      expect(parse({ type: "watch_snapshot", id })).toStrictEqual(refused("watch_snapshot: `id` must be a u32"));
+    }
+    expect(parse({ type: "watch_start", guild: "1", user_id: "2", run: -1 })).toStrictEqual(
+      refused("watch_start: `run` must be a u32"),
     );
   });
 
@@ -422,9 +453,9 @@ describe("encodeNodeMessage: one of every message the node sends", () => {
         token: "t",
         node: "voice-node",
         self_account: { platform: "discord", id: "42" },
-        capabilities: ["play_duck", "play_pause"],
+        capabilities: ["play_duck", "play_pause", "watch"],
       },
-      '{"type":"hello","version":1,"token":"t","node":"voice-node","self_account":{"platform":"discord","id":"42"},"capabilities":["play_duck","play_pause"]}',
+      '{"type":"hello","version":1,"token":"t","node":"voice-node","self_account":{"platform":"discord","id":"42"},"capabilities":["play_duck","play_pause","watch"]}',
     ],
     [{ type: "joined", guild: "1", channel: "2" }, '{"type":"joined","guild":"1","channel":"2"}'],
     [{ type: "left", guild: "1", reason: "leave" }, '{"type":"left","guild":"1","reason":"leave"}'],

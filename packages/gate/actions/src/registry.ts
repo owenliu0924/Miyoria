@@ -61,6 +61,7 @@ import {
   type ActionResult,
   type ApprovalDetail,
   type Capability,
+  deniedText,
   type ExecContext,
   type GateDecision,
   type GateStage,
@@ -471,7 +472,12 @@ export class ActuatorRegistry implements ActuatorExecutor {
       if (parsed.success && (decision.stage === "review" || decision.stage === "escalation")) {
         await this.#denied(capability, parsed.data, request, decision);
       }
-      const denied: ActionOutcome = { status: "denied", decision };
+      const denied: ActionOutcome = {
+        status: "denied",
+        decision: parsed.success
+          ? this.#shown(capability, parsed.data, request, decision)
+          : decision,
+      };
       // She should see what was refused and why (the Ledger), not only the audit log.
       if ((options.activity ?? "wait") !== "direct" && capability.risk !== "low") {
         this.#safely(() => recordOutcome(this.#sink(), capability, request, denied));
@@ -825,6 +831,24 @@ export class ActuatorRegistry implements ActuatorExecutor {
     }
   }
 
+  /** A refusal as whoever asked sees it: an opt-out may be told as something else (`consentRefused`). */
+  #shown(
+    capability: Capability,
+    args: unknown,
+    request: ActionRequest,
+    decision: GateDecision,
+  ): GateDecision {
+    if (decision.stage !== "consent" || capability.consentRefused === undefined) return decision;
+    let reason: string;
+    try {
+      reason = capability.consentRefused(args, request.principal);
+    } catch (error) {
+      log.warn({ capability: capability.name, err: errorMessage(error) }, "consentRefused failed");
+      reason = deniedText("args");
+    }
+    return { ...decision, stage: "args", reason };
+  }
+
   /** The person a medium / high action involves, for per-person limits. */
   #person(capability: Capability, args: unknown, request: ActionRequest): string | null {
     const who =
@@ -898,12 +922,19 @@ export class ActuatorRegistry implements ActuatorExecutor {
     }
 
     // 3. Consent.
+    if (capability.consent === "watch" && target === null) {
+      return deny("consent", "no one to ask consent from");
+    }
     if (target !== null && !askedForThemselves) {
       const choices = await this.privacy.get(target);
       if (capability.consent === "dm" && !choices.dm) {
         return deny("consent", "the person opted out of DMs from her");
       }
-      if (isAutonomous(p) && !choices.approach) {
+      if (capability.consent === "watch" && !choices.watch) {
+        return deny("consent", "the person opted out of being watched");
+      }
+      // Watching is decided by `watch` alone; `approach` is about her starting things.
+      if (capability.consent !== "watch" && isAutonomous(p) && !choices.approach) {
         return deny("consent", "the person does not want to be approached");
       }
     }

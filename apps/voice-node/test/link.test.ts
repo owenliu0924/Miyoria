@@ -53,7 +53,7 @@ describe("CoreLink", () => {
       token: "secret",
       node: "voice-node",
       self_account: { platform: "discord", id: "42" },
-      capabilities: ["play_duck", "play_pause"],
+      capabilities: ["play_duck", "play_pause", "watch"],
     });
     await pong;
     expect(frames).toContain('{"type":"pong"}');
@@ -156,5 +156,82 @@ describe("CoreLink", () => {
     const results: boolean[] = [];
     for (let i = 0; i < 2000; i++) results.push(link.sendAudio(Buffer.alloc(64 * 1024)));
     expect(results.includes(false)).toBe(true);
+  });
+
+  it("announces only the capabilities it is given", async () => {
+    let hello: Record<string, unknown> | undefined;
+    const url = await startServer((ws, h) => {
+      hello = h;
+      ws.send(JSON.stringify({ type: "welcome", session: "S" }));
+    });
+    link = new CoreLink({ url, token: "t", selfAccountId: "1", capabilities: ["play_duck", "play_pause"] });
+    const ready = once<[string]>(link, "ready");
+    link.start();
+    await ready;
+    expect(hello?.capabilities).toEqual(["play_duck", "play_pause"]);
+  });
+});
+
+describe("CoreLink snapshots", () => {
+  const LIMIT = 64 * 1024;
+  const JPEG = 900_000;
+
+  /** A ready link whose send buffer reports `backlog()` bytes (a loopback socket drains too fast to fill). */
+  async function ready() {
+    const url = await startServer((ws) => ws.send(JSON.stringify({ type: "welcome", session: "S" })));
+    link = new CoreLink({ url, token: "t", selfAccountId: "1", maxBufferedBytes: LIMIT });
+    const up = once<[string]>(link, "ready");
+    link.start();
+    await up;
+    let backlog = 0;
+    const ws = (link as unknown as { ws: WebSocket }).ws;
+    Object.defineProperty(ws, "bufferedAmount", { configurable: true, get: () => backlog });
+    return {
+      link,
+      setBacklog: (n: number) => {
+        backlog = n;
+      },
+    };
+  }
+
+  it("a_snapshot_in_the_buffer_does_not_crowd_out_speech", async () => {
+    const t = await ready();
+    expect(t.link.sendSnapshot(Buffer.alloc(JPEG))).toBe(true);
+    // The picture is still waiting to go out, behind it a little speech.
+    t.setBacklog(JPEG + 1000);
+    expect(t.link.sendAudio(Buffer.alloc(640))).toBe(true);
+    t.setBacklog(JPEG + LIMIT + 1);
+    expect(t.link.sendAudio(Buffer.alloc(640))).toBe(false);
+  });
+
+  it("one_snapshot_at_a_time", async () => {
+    const t = await ready();
+    expect(t.link.sendSnapshot(Buffer.alloc(JPEG))).toBe(true);
+    expect(t.link.sendSnapshot(Buffer.alloc(1024))).toBe(false);
+    // Once written, the next one may go and the first no longer counts as a snapshot.
+    await expect.poll(() => t.link.sendSnapshot(Buffer.alloc(1024)), { timeout: 5000 }).toBe(true);
+  });
+
+  it("a_written_snapshot_counts_as_any_other_backlog", async () => {
+    const t = await ready();
+    expect(t.link.sendSnapshot(Buffer.alloc(JPEG))).toBe(true);
+    await new Promise((r) => setTimeout(r, 50));
+    t.setBacklog(JPEG);
+    expect(t.link.sendAudio(Buffer.alloc(640))).toBe(false);
+  });
+
+  it("no_snapshot_while_speech_is_backed_up", async () => {
+    const t = await ready();
+    t.setBacklog(LIMIT);
+    expect(t.link.sendSnapshot(Buffer.alloc(1024))).toBe(false);
+    t.setBacklog(0);
+    expect(t.link.sendSnapshot(Buffer.alloc(1024))).toBe(true);
+  });
+
+  it("no_snapshot_before_welcome", async () => {
+    const url = await startServer(() => {});
+    link = new CoreLink({ url, token: "t", selfAccountId: "1" });
+    link.start();
+    expect(link.sendSnapshot(Buffer.alloc(1))).toBe(false);
   });
 });

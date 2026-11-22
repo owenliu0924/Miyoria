@@ -28,7 +28,7 @@ import type { Limit } from "./config.js";
 export type Risk = "low" | "medium" | "high";
 
 /** What a person can withdraw for actions directed at them (see `/me privacy`). */
-export type ConsentKind = "dm";
+export type ConsentKind = "dm" | "watch";
 
 /** How a capability is offered to the model as a tool (names: `[A-Za-z0-9_-]`). */
 export interface CapabilityTool {
@@ -154,6 +154,12 @@ export interface Capability<A = unknown> {
   activity?(args: A, principal: Principal): ActivityRequest[] | null;
   /** Checks against live state after the schema (e.g. the scene exists); returns why not. */
   check?(args: A, principal: Principal): string | null;
+  /**
+   * When the target opted out (`consent`): what whoever asked is told instead, so the opt-out is
+   * not given away (a stream she may not see answers like no stream at all). The answer goes out
+   * as a `check` refusal would (stage `args`); the audit and `gate.decision` keep the real one.
+   */
+  consentRefused?(args: A, principal: Principal): string;
   /** The owners' approval card shows this instead of the raw JSON arguments. */
   describe?(args: A): ApprovalDetail;
   execute(args: A, ctx: ExecContext): Promise<ActionResult | string>;

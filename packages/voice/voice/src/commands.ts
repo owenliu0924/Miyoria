@@ -45,9 +45,17 @@ const GOLIVE_STATE_TEXT: Record<GoLiveState, string> = {
   failed: "失敗",
 };
 
+/** Buttons that set the voice consent of whoever presses them, on any message (no session). */
+export const CONSENT_ROUTES = {
+  on: "voice:consent:on",
+  off: "voice:consent:off",
+  /** Turns it the other way each time. */
+  toggle: "voice:consent:toggle",
+} as const;
+
 const R = {
-  consentOn: "voice:consent:on",
-  consentOff: "voice:consent:off",
+  consentOn: CONSENT_ROUTES.on,
+  consentOff: CONSENT_ROUTES.off,
   goliveStart: "voice:golive:start",
   goliveStop: "voice:golive:stop",
 } as const;
@@ -216,6 +224,15 @@ export function registerCommands(
       handle: async (inv) => {
         await consent.set(inv.invoker, false);
         return ComponentResult.reply(consentReply(false, true));
+      },
+    },
+    {
+      route: CONSENT_ROUTES.toggle,
+      ephemeral: true,
+      handle: async (inv) => {
+        const allowed = !(await consent.allowed(inv.invoker));
+        await consent.set(inv.invoker, allowed);
+        return ComponentResult.reply(consentReply(allowed, true));
       },
     },
   ];

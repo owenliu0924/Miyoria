@@ -40,6 +40,8 @@ export interface CoreLinkOptions {
   backoffMaxMs?: number;
   /** Drop outgoing audio once this many bytes are waiting in the socket send buffer. */
   maxBufferedBytes?: number;
+  /** What `hello.capabilities` announces (default: everything the node implements). */
+  capabilities?: readonly string[];
   /** Treat the link as dead after this long without any frame from Core (Core pings every 15 s). */
   idleTimeoutMs?: number;
   /** Max time to wait for `welcome` after sending `hello`. */
@@ -71,6 +73,8 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private helloTimer: ReturnType<typeof setTimeout> | undefined;
   private connectedAt = 0;
+  /** The snapshot being written out, if any; its bytes do not count against the audio limit. */
+  private snapshotInFlight: { ws: WebSocket; bytes: number } | undefined;
 
   constructor(opts: CoreLinkOptions) {
     super();
@@ -82,6 +86,7 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
       backoffMinMs: opts.backoffMinMs ?? 1000,
       backoffMaxMs: opts.backoffMaxMs ?? 30_000,
       maxBufferedBytes: opts.maxBufferedBytes ?? 512 * 1024,
+      capabilities: opts.capabilities ?? NODE_CAPABILITIES,
       idleTimeoutMs: opts.idleTimeoutMs ?? 60_000,
       helloTimeoutMs: opts.helloTimeoutMs ?? 10_000,
     };
@@ -137,7 +142,7 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
   sendAudio(frame: Buffer): boolean {
     const ws = this.ws;
     if (!this.ready || !ws || ws.readyState !== WebSocket.OPEN) return false;
-    if (ws.bufferedAmount > this.o.maxBufferedBytes) return false;
+    if (this.backlog(ws) > this.o.maxBufferedBytes) return false;
     try {
       ws.send(frame, { binary: true });
       return true;
@@ -145,6 +150,37 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
       this.log.warn("audio send failed:", err);
       return false;
     }
+  }
+
+  /**
+   * Sends a binary snapshot frame. Speech comes first: a snapshot goes out only while no other one
+   * is being written and the send buffer is nearly empty, and the audio limit does not count it.
+   * Returns false (and sends nothing) otherwise; the caller reports the snapshot as failed.
+   */
+  sendSnapshot(frame: Buffer): boolean {
+    const ws = this.ws;
+    if (!this.ready || !ws || ws.readyState !== WebSocket.OPEN) return false;
+    if (this.snapshotInFlight?.ws === ws) return false;
+    if (ws.bufferedAmount > this.o.maxBufferedBytes / 4) return false;
+    const inFlight = { ws, bytes: frame.length };
+    this.snapshotInFlight = inFlight;
+    const done = (): void => {
+      if (this.snapshotInFlight === inFlight) this.snapshotInFlight = undefined;
+    };
+    try {
+      ws.send(frame, { binary: true }, done);
+      return true;
+    } catch (err) {
+      done();
+      this.log.warn("snapshot send failed:", err);
+      return false;
+    }
+  }
+
+  /** Bytes waiting in `ws`'s send buffer, less a snapshot still being written. */
+  private backlog(ws: WebSocket): number {
+    const snapshot = this.snapshotInFlight?.ws === ws ? this.snapshotInFlight.bytes : 0;
+    return ws.bufferedAmount - snapshot;
   }
 
   // ── connection management ────────────────────────────────────────────────
@@ -167,7 +203,7 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
           token: this.o.token,
           node: "voice-node",
           self_account: { platform: "discord", id: this.o.selfAccountId },
-          capabilities: [...NODE_CAPABILITIES],
+          capabilities: [...this.o.capabilities],
         }),
       );
       this.helloTimer = setTimeout(() => {

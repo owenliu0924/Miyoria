@@ -8,6 +8,7 @@ import { LevelPublisher } from "./levels/publisher.js";
 import { CoreLink } from "./link.js";
 import { createLogger, setLogLevel } from "./log.js";
 import { VoiceNode } from "./node.js";
+import { nodeCapabilities, whyNoWatch } from "./watch/probe.js";
 
 async function main(): Promise<void> {
   let cfg: Config;
@@ -31,10 +32,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  const noWatch = await whyNoWatch();
+  if (noWatch !== null) log.warn(noWatch);
   const link = new CoreLink({
     url: cfg.voiceLinkUrl,
     token: cfg.voiceLinkToken,
     selfAccountId: client.user.id,
+    capabilities: nodeCapabilities(noWatch),
     log: createLogger("link"),
   });
   let levelsClient: LevelsClient | undefined;

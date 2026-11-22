@@ -28,7 +28,13 @@ export {
   type PlaybackInfo,
   type SpeakerRole,
 } from "./barge.js";
-export { joinAnnouncement, PATHS, registerCommands, unregisterCommands } from "./commands.js";
+export {
+  CONSENT_ROUTES,
+  joinAnnouncement,
+  PATHS,
+  registerCommands,
+  unregisterCommands,
+} from "./commands.js";
 export {
   type BargeInMode,
   BargeInModeSchema,
@@ -65,7 +71,13 @@ export {
   type FillerDeps,
   trim,
 } from "./filler.js";
-export { type GoLiveState, type GoLiveStatus, VoiceLinkError } from "./link/conn.js";
+export { Hearing, type HearingDeps, type StreamHearing, StreamHearingKey } from "./hearing.js";
+export {
+  type GoLiveState,
+  type GoLiveStatus,
+  VoiceLinkError,
+  type WatchStatus,
+} from "./link/conn.js";
 export {
   type AudioEvent,
   DEFAULT_BIND,
@@ -78,6 +90,7 @@ export {
   VoiceLinkKey,
   type VoiceLinkOptions,
   voiceContext,
+  WATCH_TOPIC,
 } from "./link/link.js";
 export { VOICE_LINK_PATH, VoiceLinkModule } from "./link/module.js";
 export {
