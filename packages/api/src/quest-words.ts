@@ -23,7 +23,14 @@ import {
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, type NameSplit, sameAccount } from "@miyoria/types";
 import { z } from "zod";
-import { herVoice, WRITTEN_NOT_CHAT, withoutMarkup } from "./her-voice.js";
+import {
+  aboutThem,
+  herVoice,
+  THEIRS_ARE_DATA,
+  theirText,
+  WRITTEN_NOT_CHAT,
+  withoutMarkup,
+} from "./her-voice.js";
 import { cardView, loadMemberOf, namesFor, shown, shownMemories } from "./member.js";
 import { nameScreen, otherNameIn } from "./other-names.js";
 import type { ApiState } from "./state.js";
@@ -50,6 +57,8 @@ const QuestSchema = z.object({ quest: z.string().nullable().catch(null).default(
 
 const RULES = `${WRITTEN_NOT_CHAT}
 
+${THEIRS_ARE_DATA}
+
 你要替下面這個人想一個今天的小任務,他本人會在會員頁和 Discord 看到,做到了你會算他完成。
 只回傳 JSON:{"quest": 字串}
 - quest:一句話,${MAX_PICK_CHARS} 個字以內,寫成他要做的事,例如「跟她說說新家整理好了沒」「告訴她那首歌練得怎樣」。
@@ -65,13 +74,13 @@ const AGAIN_NAMES =
 
 function about(c: QuestContext): string {
   const v = c.view;
-  const lines = [
-    `他:${c.name}${v.call_name ? `(你叫他 ${v.call_name})` : ""}`,
+  const theirs = [
+    `他:${theirText(c.name)}${v.call_name ? `(你叫他 ${theirText(v.call_name)})` : ""}`,
     `你們的關係:${v.relationship ?? "還不認識"}`,
   ];
-  if (v.public_feeling) lines.push(`你之前寫給他的話:${v.public_feeling}`);
-  lines.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${m}`).join("\n")}`);
-  return lines.join("\n");
+  if (v.public_feeling) theirs.push(`你之前寫給他的話:${theirText(v.public_feeling)}`);
+  theirs.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${theirText(m)}`).join("\n")}`);
+  return aboutThem(theirs);
 }
 
 /** Her words flattened to one line, without chat markup or the quotes she may put around them. */
