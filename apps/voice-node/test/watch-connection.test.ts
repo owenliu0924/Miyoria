@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { StreamConnection } from "@dank074/discord-video-stream";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { noopLogger } from "../src/log.js";
 import { answerSdp, assertLibraryShape, DiscordWatchEngine, type WatchLibrary } from "../src/watch/connection.js";
 
@@ -189,16 +189,16 @@ describe("DiscordWatchEngine with a connection", () => {
     return { run, abort, conn, libState };
   }
 
-  /** Runs what the library's `setupEvents` installs and delivers `message` to it. */
+  /** Runs what the library's `setupEvents` installs and delivers `message` to its message listeners. */
   function receive(conn: FakeConn, message: unknown): void {
-    let listener: ((e: { data: unknown }) => void) | undefined;
+    const listeners: Array<(e: { data?: unknown }) => void> = [];
     (conn as unknown as { ws: unknown }).ws = {
-      addEventListener: (_type: string, fn: (e: { data: unknown }) => void) => {
-        listener = fn;
+      addEventListener: (type: string, fn: (e: { data?: unknown }) => void) => {
+        if (type === "message") listeners.push(fn);
       },
     };
     conn.setupEvents();
-    listener?.({ data: JSON.stringify(message) });
+    for (const fn of listeners) fn({ data: JSON.stringify(message) });
   }
 
   it("a stream in another codec ends the run with an error naming it", async () => {
@@ -242,5 +242,199 @@ describe("DiscordWatchEngine with a connection", () => {
     await expect(run).resolves.toBe("stopped");
     expect(conn.stop).toHaveBeenCalledTimes(1);
     expect(conn.startedAtStop).toBe(false);
+  });
+});
+
+describe("DiscordWatchEngine deadlines and reconnects", () => {
+  const plan = { guild: "g1", channel: "vc", userId: "u1", sessionId: "s" };
+  const key = "guild:g1:vc:u1";
+
+  class FakePc {
+    static last: FakePc;
+    onPacket: ((b: Buffer) => void) | undefined;
+    constructor() {
+      FakePc.last = this;
+    }
+    onStateChange(): void {}
+    onLocalDescription(): void {}
+    setLocalDescription(): void {}
+    addTrack() {
+      return {
+        onMessage: (cb: (b: Buffer) => void) => {
+          this.onPacket = cb;
+        },
+        sendMessageBinary: () => {},
+      };
+    }
+  }
+
+  class FakeConn extends EventEmitter {
+    static last: FakeConn;
+    status = { started: true };
+    ws: unknown = null;
+    serverId = "";
+    streamKey = "";
+    _daveProtocolVersion = 0;
+    daveReady = false;
+    daveSession = { decrypt: () => new Uint8Array() };
+    webRtcParams = null;
+    _webRtcWrapper = {
+      _videoDef: {},
+      _webRtcConn: undefined as unknown,
+      _videoTrack: undefined as unknown,
+      initWebRtc: (): unknown => undefined,
+      webRtcConn: { setRemoteDescription: vi.fn() },
+    };
+    handleProtocolAck = async (_d: unknown): Promise<void> => {};
+    setupEvents(): void {}
+    sendOpcode = vi.fn();
+    initDave = vi.fn();
+    setSession = vi.fn();
+    setTokens = vi.fn();
+    stop = vi.fn();
+    constructor() {
+      super();
+      FakeConn.last = this;
+    }
+  }
+
+  const flush = async (): Promise<void> => {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  async function start(serverUpdate = true) {
+    vi.useFakeTimers();
+    const client = Object.assign(new EventEmitter(), { user: { id: "self" } });
+    const sent: number[] = [];
+    const lib = {
+      dvs: {
+        GatewayOpCodes: { STREAM_WATCH: 20, STREAM_DELETE: 19 },
+        Streamer: class {
+          sendOpcode(op: number): void {
+            sent.push(op);
+          }
+        },
+        StreamConnection: FakeConn,
+      },
+      dc: { PeerConnection: FakePc },
+    } as unknown as WatchLibrary;
+    const engine = new DiscordWatchEngine(client as never, noopLogger, async () => lib);
+    const onLive = vi.fn();
+    const run = engine.run(plan, { onLive, onKeyframe() {}, onOpus() {} }, new AbortController().signal);
+    run.catch(() => {});
+    await flush();
+    client.emit("raw", { t: "STREAM_CREATE", d: { stream_key: key, rtc_server_id: "r1" } });
+    if (serverUpdate) {
+      client.emit("raw", { t: "STREAM_SERVER_UPDATE", d: { stream_key: key, endpoint: "e1", token: "t" } });
+      FakeConn.last._webRtcWrapper.initWebRtc();
+    }
+    const settled = vi.fn();
+    run.then(settled, settled);
+    return { run, client, onLive, sent, settled, conn: FakeConn.last };
+  }
+
+  /** A socket as the library opens it: `setupEvents` installs its listeners on it. */
+  function socket(conn: FakeConn) {
+    const listeners = new Map<string, Array<(e: { data?: unknown }) => void>>();
+    conn.ws = {
+      addEventListener: (type: string, fn: (e: { data?: unknown }) => void) => {
+        listeners.set(type, [...(listeners.get(type) ?? []), fn]);
+      },
+    };
+    conn.setupEvents();
+    const fire = (type: string, e: { data?: unknown }) => {
+      for (const fn of listeners.get(type) ?? []) fn(e);
+    };
+    return {
+      message: (m: unknown) => fire("message", { data: JSON.stringify(m) }),
+      /** `resumes`: what the library's own close listener, which runs first, decided. */
+      close: (resumes: boolean) => {
+        conn.status.started = resumes;
+        fire("close", {});
+      },
+    };
+  }
+
+  /** One unencrypted Opus RTP packet. */
+  function opusPacket(): Buffer {
+    const b = Buffer.alloc(16);
+    b.writeUInt8(0x80, 0);
+    b.writeUInt8(120, 1);
+    b.writeUInt32BE(7, 8);
+    b.set([1, 2, 3, 4], 12);
+    return b;
+  }
+
+  it("a_stream_that_never_answers_ends_after_ten_seconds", async () => {
+    const { run } = await start(false);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(run).rejects.toThrow(/did not answer/);
+  });
+
+  it("a_connection_that_never_brings_media_ends_with_a_reason", async () => {
+    const { run, settled } = await start();
+    await vi.advanceTimersByTimeAsync(14_000);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_000);
+    await expect(run).rejects.toThrow(/did not come up in time/);
+  });
+
+  it("first_media_lifts_the_deadline", async () => {
+    const { onLive, settled } = await start();
+    FakePc.last.onPacket?.(opusPacket());
+    expect(onLive).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).not.toHaveBeenCalled();
+  });
+
+  it("drops_in_a_row_end_the_watch", async () => {
+    const { run, conn, settled } = await start();
+    FakePc.last.onPacket?.(opusPacket());
+    for (let i = 0; i < 3; i++) socket(conn).close(true);
+    await flush();
+    expect(settled).not.toHaveBeenCalled();
+    socket(conn).close(true);
+    await expect(run).rejects.toThrow(/kept dropping/);
+  });
+
+  it("a_resume_resets_the_count", async () => {
+    const { conn, settled } = await start();
+    FakePc.last.onPacket?.(opusPacket());
+    for (let i = 0; i < 6; i++) {
+      const ws = socket(conn);
+      ws.message({ op: 9, d: null });
+      ws.close(true);
+      await flush();
+    }
+    socket(conn).message({ op: 9, d: null });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(settled).not.toHaveBeenCalled();
+  });
+
+  it("a_socket_that_stays_away_ends_the_watch", async () => {
+    const { run, conn } = await start();
+    FakePc.last.onPacket?.(opusPacket());
+    socket(conn).close(true);
+    await vi.advanceTimersByTimeAsync(15_000);
+    await expect(run).rejects.toThrow(/did not come back/);
+  });
+
+  it("a_close_the_library_does_not_resume_ends_the_run", async () => {
+    const { run, conn } = await start();
+    socket(conn).close(false);
+    await expect(run).resolves.toBe("connection closed");
+  });
+
+  it("a_move_to_another_server_ends_the_watch_with_a_reason", async () => {
+    const { run, client, settled, sent } = await start();
+    FakePc.last.onPacket?.(opusPacket());
+    client.emit("raw", { t: "STREAM_SERVER_UPDATE", d: { stream_key: key, endpoint: "e1", token: "t2" } });
+    await flush();
+    expect(settled).not.toHaveBeenCalled();
+    client.emit("raw", { t: "STREAM_SERVER_UPDATE", d: { stream_key: key, endpoint: "e2", token: "t3" } });
+    await expect(run).resolves.toBe("Discord moved the stream to another server");
+    expect(sent.at(-1)).toBe(19);
   });
 });

@@ -36,8 +36,16 @@ const VIDEO_PAYLOADS: Record<string, [number, number]> = {
 const MEDIA_AUDIO = 0;
 const MEDIA_VIDEO = 1;
 const PLI_EVERY_MS = 2_000;
+/** For Discord to answer the watch request with the stream's server. */
 const STREAM_INFO_MS = 10_000;
+/** From the stream's server to the first media. */
+const CONNECT_MS = 15_000;
+/** Socket drops in a row, without a resume between them, that end the watch. */
+const MAX_DROPS = 4;
+/** How long the socket may stay away after a drop. */
+const RECONNECT_MS = 15_000;
 const VOICE_OP_SELECT_PROTOCOL = 1;
+const VOICE_OP_RESUMED = 9;
 const VOICE_OP_READY = 12;
 const VOICE_OP_SESSION_UPDATE = 14;
 const VOICE_OP_VIDEO_BITRATES = 15;
@@ -88,7 +96,7 @@ interface LibConn {
   daveReady: unknown;
   daveSession: { decrypt(userId: string, mediaType: number, packet: Buffer): Uint8Array };
   webRtcParams: { audioSsrc?: number } | null;
-  ws: { addEventListener(type: string, fn: (e: { data: unknown }) => void): void } | null;
+  ws: { addEventListener(type: string, fn: (e: { data?: unknown }) => void): void } | null;
   serverId: string;
   streamKey: string;
   handleProtocolAck: (d: Record<string, unknown>) => Promise<void>;
@@ -175,6 +183,11 @@ export class DiscordWatchEngine implements WatchEngine {
       let loggedError = false;
       let deleteOnExit = true;
       let serverId: string | undefined;
+      let endpoint: string | undefined;
+      /** Until media arrives, the run has a deadline. */
+      let deadline: NodeJS.Timeout | undefined;
+      let drops = 0;
+      let reconnectTimer: NodeJS.Timeout | undefined;
       const assembler = new H264Assembler();
 
       const once = (where: string, error: unknown): void => {
@@ -186,7 +199,8 @@ export class DiscordWatchEngine implements WatchEngine {
       const cleanup = (): void => {
         signal.removeEventListener("abort", onAbort);
         this.client.off("raw", onRaw);
-        clearTimeout(infoTimer);
+        clearTimeout(deadline);
+        clearTimeout(reconnectTimer);
         if (pliTimer) clearInterval(pliTimer);
         if (this.current === handle) this.current = undefined;
         if (deleteOnExit) {
@@ -228,7 +242,39 @@ export class DiscordWatchEngine implements WatchEngine {
       const markLive = (): void => {
         if (live) return;
         live = true;
+        clearTimeout(deadline);
+        deadline = undefined;
         hooks.onLive();
+      };
+
+      const setDeadline = (ms: number, error: string): void => {
+        clearTimeout(deadline);
+        deadline = setTimeout(() => finish({ error: new Error(error) }), ms);
+      };
+
+      /** The library reopens a dropped socket at once and forever; bound that. */
+      const onSocketClosed = (c: LibConn): void => {
+        if (settled) return;
+        // The library's own close listener ran first: `started` is set again only when it resumes.
+        if (!c.status.started) {
+          finish({ reason: "connection closed" });
+          return;
+        }
+        drops++;
+        if (drops >= MAX_DROPS) {
+          finish({ error: new Error("the stream connection kept dropping") });
+          return;
+        }
+        reconnectTimer ??= setTimeout(
+          () => finish({ error: new Error("the stream connection did not come back") }),
+          RECONNECT_MS,
+        );
+      };
+
+      const onResumed = (): void => {
+        drops = 0;
+        clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
       };
 
       /** The media in `payload`, decrypted when it carries DAVE's trailer; null when it cannot be opened. */
@@ -362,6 +408,8 @@ export class DiscordWatchEngine implements WatchEngine {
         const setup = c.setupEvents.bind(c);
         c.setupEvents = () => {
           setup();
+          // Called again for every socket the library opens.
+          c.ws?.addEventListener("close", () => onSocketClosed(c));
           c.ws?.addEventListener("message", (e) => {
             if (typeof e.data !== "string") return;
             try {
@@ -369,6 +417,7 @@ export class DiscordWatchEngine implements WatchEngine {
                 op: number;
                 d?: { video_ssrc?: number; video_codec?: unknown };
               };
+              if (op === VOICE_OP_RESUMED) onResumed();
               if (op === VOICE_OP_SESSION_UPDATE) codecOk(d?.video_codec);
               if (op === VOICE_OP_READY && typeof d?.video_ssrc === "number" && d.video_ssrc !== 0) {
                 c.sendOpcode(VOICE_OP_VIDEO_BITRATES, { any: 100, [String(d.video_ssrc)]: 100 });
@@ -393,8 +442,13 @@ export class DiscordWatchEngine implements WatchEngine {
             created = true;
             serverId = String(packet.d.rtc_server_id);
           } else if (packet.t === "STREAM_SERVER_UPDATE" && created && !conn) {
-            clearTimeout(infoTimer);
-            startConnection(String(packet.d.endpoint), String(packet.d.token));
+            endpoint = String(packet.d.endpoint);
+            setDeadline(CONNECT_MS, "the stream connection did not come up in time");
+            startConnection(endpoint, String(packet.d.token));
+          } else if (packet.t === "STREAM_SERVER_UPDATE" && conn && String(packet.d.endpoint) !== endpoint) {
+            // Following would mean a new connection, DAVE session and identify on the new server;
+            // the library only resumes on the old one. End the watch; it can be started again.
+            finish({ reason: "Discord moved the stream to another server" });
           } else if (packet.t === "STREAM_DELETE") {
             deleteOnExit = false;
             finish({ reason: "stream ended" });
@@ -406,10 +460,7 @@ export class DiscordWatchEngine implements WatchEngine {
 
       const onAbort = (): void => finish({ reason: "stopped" });
 
-      const infoTimer = setTimeout(
-        () => finish({ error: new Error("Discord did not answer the watch request in time") }),
-        STREAM_INFO_MS,
-      );
+      setDeadline(STREAM_INFO_MS, "Discord did not answer the watch request in time");
 
       signal.addEventListener("abort", onAbort, { once: true });
       this.client.on("raw", onRaw);
