@@ -89,7 +89,9 @@ describe("the example file", () => {
     if (fields.length === 0) continue;
     it(`names every panel field of \`${id}\``, () => {
       const missing = fields.filter((f) => {
-        const table = ["modules", id, ...f.keys.slice(0, -1)].join(".");
+        // A module id with a dot is a quoted key: `[modules."platform.discord.bot".emoji]`.
+        const key = id.includes(".") ? JSON.stringify(id) : id;
+        const table = ["modules", key, ...f.keys.slice(0, -1)].join(".");
         const start = lines.indexOf(`[${table}]`);
         if (start === -1) return true;
         const end = lines.findIndex((l, i) => i > start && l.startsWith("["));
