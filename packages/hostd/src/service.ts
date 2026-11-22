@@ -87,6 +87,11 @@ export interface ServiceHost {
   routing?(service: ManagedService): HostServiceRouting | undefined;
   /** Why it is held up from outside now (the card is lent to another service), or `undefined`. */
   outside?(name: string): string | undefined;
+  /**
+   * Its base URL on each route of `routes.toml` (v5-hostd §16); `undefined` on a host without the
+   * file. Optional: stand-ins made before routes leave it out.
+   */
+  reach?(service: ManagedService, port: number): Record<string, string> | undefined;
 }
 
 /** States in which a service is on its way up and others may wait for it. */
@@ -213,6 +218,7 @@ export class ManagedService {
     // What Core may call directly: the advertised address, or this machine's own when Core is
     // here too. A joined machine with neither is reached through the control link only.
     const reach = this.#host.advertise ?? (this.#host.coreIsLocal() ? local : undefined);
+    const routes = port === undefined ? undefined : this.#host.reach?.(this, port);
     const gpuPolicy = this.plan.gpuPolicy;
     const resident = this.plan.entry?.descriptor.gpu?.vram_mb?.resident;
     return {
@@ -226,6 +232,7 @@ export class ManagedService {
       ...(port !== undefined && reach !== undefined
         ? { advertised: `http://${urlHost(reach)}:${port}` }
         : {}),
+      ...(routes !== undefined ? { reach: routes } : {}),
       healthy: this.#healthy,
       restarts: this.#recentFailures().length,
       ...(this.#reason !== undefined ? { reason: this.#reason } : {}),
