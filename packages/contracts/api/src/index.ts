@@ -75,6 +75,7 @@ import { reports } from "./reports.js";
 import { roles } from "./roles.js";
 import { sandbox } from "./sandbox.js";
 import { moduleSettings, places } from "./settings.js";
+import { memberSpaces, placesSpaces } from "./spaces.js";
 import { telemetry } from "./telemetry.js";
 import { turns } from "./turns.js";
 import { wallet } from "./wallet.js";
@@ -1046,7 +1047,17 @@ export {
   type SettingValue,
   SettingValueSchema,
 } from "./settings.js";
-export { type ContextKeyIn, ContextKeyInSchema } from "./shared.js";
+export { type ContextKeyIn, ContextKeyInSchema, SpaceQuery, type SpaceQueryIn } from "./shared.js";
+export {
+  type AdminSpace,
+  AdminSpaceSchema,
+  type AdminSpaces,
+  AdminSpacesSchema,
+  type MemberSpaces,
+  MemberSpacesSchema,
+  type Space,
+  SpaceSchema,
+} from "./spaces.js";
 export {
   type TelemetryLlm,
   TelemetryLlmSchema,
@@ -1154,7 +1165,7 @@ export const contract = {
   people: { ...people, ...peopleEconomy },
   // The settings routes first: `/api/modules/{id}/settings` before `/api/modules/{id}/{action}`.
   modules: { list: modules.list, ...moduleSettings, action: modules.action },
-  places,
+  places: { ...places, ...placesSpaces },
   decisions,
   events,
   llm,
@@ -1186,7 +1197,7 @@ export const contract = {
   workspace,
   skills,
   public: publicView,
-  member,
+  member: { ...member, ...memberSpaces },
   cards,
   cardsAdmin,
   wallet,

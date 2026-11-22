@@ -83,6 +83,7 @@ const CASES: Case[] = [
   },
   post("wallet.bet", "/api/member/bet", { prediction: "abc123", option: "1", amount: 1 }),
   post("member.pat", "/api/member/live/pat", {}),
+  { name: "member.spaces", method: "GET", path: "/api/member/spaces", audience: "member" },
   { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
   { name: "fortune.today", method: "GET", path: "/api/member/fortune", audience: "member" },
   { name: "cards.mine", method: "GET", path: "/api/member/cards", audience: "member" },
@@ -304,6 +305,10 @@ const ANSWERS = {
   } satisfies ApiOutputs["agency"]["bounties"],
   "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
   "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
+  "member.spaces": {
+    spaces: [{ id: "s1", platform: "discord", external_id: "1", name: "Guild", primary: true }],
+    default: "s1",
+  } satisfies ApiOutputs["member"]["spaces"],
   "member.issueCard": CARD,
   "cards.mine": {
     cards: [{ ...CARD, price: 30, pity_hit: false, wished: ["hand.cat"], portrait: "live" }],
@@ -446,6 +451,7 @@ describe("the answers", () => {
       cards: os.member.cards.handler(answer("member.cards")),
       issueCard: os.member.issueCard.handler(answer("member.issueCard")),
       pat: os.member.pat.handler(answer("member.pat")),
+      spaces: os.member.spaces.handler(answer("member.spaces")),
     },
     cards: {
       mine: os.cards.mine.handler(answer("cards.mine")),

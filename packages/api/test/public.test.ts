@@ -771,6 +771,7 @@ describe("the route table", () => {
       "GET /api/member/predictions",
       "GET /api/member/quests",
       "GET /api/member/session",
+      "GET /api/member/spaces",
       "GET /api/member/wallet",
       "POST /api/member/bet",
       "POST /api/member/board",

@@ -891,6 +891,60 @@
         "gifts"
       ]
     },
+    "ApiAdminSpace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "members": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "external_id",
+        "name",
+        "primary",
+        "members"
+      ]
+    },
+    "ApiAdminSpaces": {
+      "type": "object",
+      "properties": {
+        "spaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiAdminSpace"
+          }
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "spaces",
+        "default"
+      ]
+    },
     "ApiAffectBiases": {
       "type": "object",
       "properties": {
@@ -14465,6 +14519,27 @@
       ],
       "additionalProperties": false
     },
+    "ApiMemberSpaces": {
+      "type": "object",
+      "properties": {
+        "spaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSpace"
+          }
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "spaces",
+        "default"
+      ]
+    },
     "ApiMemberView": {
       "type": "object",
       "properties": {
@@ -19773,7 +19848,15 @@
           "type": "string",
           "enum": [
             "cluster",
-            "space"
+            "space",
+            "room"
+          ]
+        },
+        "merge": {
+          "type": "string",
+          "enum": [
+            "replace",
+            "union"
           ]
         },
         "unit": {
@@ -19909,6 +19992,7 @@
         "danger",
         "secret",
         "scope",
+        "merge",
         "unit",
         "labels",
         "room",
@@ -20420,6 +20504,43 @@
         "said",
         "panel"
       ]
+    },
+    "ApiSpace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "external_id",
+        "name",
+        "primary"
+      ]
+    },
+    "ApiSpaceQuery": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
     },
     "ApiSpendResult": {
       "type": "object",

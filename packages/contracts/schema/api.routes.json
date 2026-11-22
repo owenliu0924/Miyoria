@@ -504,6 +504,20 @@
             "path": "/api/places/rooms"
           }
         }
+      },
+      "spaces": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/places/spaces"
+          }
+        }
       }
     },
     "decisions": {
@@ -2351,6 +2365,21 @@
             "inputStructure": "detailed",
             "method": "POST",
             "path": "/api/member/live/pat"
+          }
+        }
+      },
+      "spaces": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/spaces"
           }
         }
       }
