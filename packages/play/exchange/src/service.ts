@@ -14,6 +14,7 @@ import { randomBytes } from "node:crypto";
 import { type Logger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  DEFAULT_CHARACTER,
   type ExchangeEntry,
   type ExchangeWallet,
   newId,
@@ -121,6 +122,8 @@ export interface ExchangeDeps {
    * over the event log); without it they walk alone.
    */
   signals?: LocalSignalFeed;
+  /** The exchange's name in this profile (`[character] exchange_name`); default 深海交易所. */
+  name?: () => string;
 }
 
 export type Refusal = { ok: false; status: number; code: string; message: string };
@@ -471,6 +474,11 @@ export class ExchangeService {
   /** The person behind `account`, or `null` when the wallet does not know them. */
   async personOf(account: AccountRef): Promise<PersonId | null> {
     return (await this.#who(account))?.person ?? null;
+  }
+
+  /** What the exchange is called (`[character] exchange_name`). */
+  get name(): string {
+    return this.#d.name?.() ?? DEFAULT_CHARACTER.exchange_name;
   }
 
   get currency(): string {

@@ -11,6 +11,7 @@
 // added later is reachable before someone adds a control for it.
 
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
+import { type Character, CharacterKey, DEFAULT_CHARACTER } from "@miyoria/types";
 import {
   type FieldAsk,
   mappedPaths,
@@ -440,7 +441,7 @@ function songPages(): PanelPage[] {
 
 // ---- /me ----------------------------------------------------------------------------------
 
-function mePages(policyUrl: string | null): PanelPage[] {
+function mePages(policyUrl: string | null, her: Character): PanelPage[] {
   const policy = (): CardBlock[] =>
     policyUrl
       ? [
@@ -457,7 +458,7 @@ function mePages(policyUrl: string | null): PanelPage[] {
       description: "第一次來？從這裡開始",
       alwaysVisible: true,
       intro: [
-        "我是 Miyoria，一個 AI。這是你自己的面板，其他人看不到，也不用背指令。",
+        `我是 ${her.name}，一個 AI。這是你自己的面板，其他人看不到，也不用背指令。`,
         "想聽她唱歌：按「點歌」。想管她能不能聽你、私訊你、看你的狀態：切到「隱私」。",
         "她記得的關於你的事可以查看、匯出和刪除：切到「記憶與刪除」。",
       ],
@@ -843,10 +844,12 @@ export interface PanelsOptions {
 /** The four panels (see the page tables above). */
 export function panelDefs(options: PanelsOptions = {}): PanelDef[] {
   const policyUrl = options.policyUrl?.trim() || null;
+  // Who she is in this profile (docs/design/v5-profiles.md); Miyoria without a running Core.
+  const her = options.services?.get(CharacterKey) ?? DEFAULT_CHARACTER;
   return [
     {
       command: "miyo",
-      title: "Miyoria 控制面板",
+      title: `${her.name} 控制面板`,
       description: "她的控制面板：語音、直播、遊戲、聊天等級與緊急停止",
       pages: miyoPages(),
     },
@@ -861,7 +864,7 @@ export function panelDefs(options: PanelsOptions = {}): PanelDef[] {
       title: "我的面板",
       description: "你的資料、隱私、語音同意與她記得的事",
       ephemeral: true,
-      pages: mePages(policyUrl),
+      pages: mePages(policyUrl, her),
     },
     {
       command: "admin",

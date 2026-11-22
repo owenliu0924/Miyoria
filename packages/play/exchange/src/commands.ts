@@ -39,6 +39,7 @@ import {
 import {
   type AccountRef,
   amountExamples,
+  DEFAULT_CHARACTER,
   exchangeSmallPrint,
   type Pictures,
   parseOrderAmount,
@@ -192,10 +193,10 @@ const cid = (route: string, s: Stamp, ...params: (string | number)[]) =>
 function refusal(x: ExchangeService, inv: ComponentInvocation): ComponentResult | null {
   const [o, e] = inv.params;
   if (o !== ownerTag(inv.invoker))
-    return ComponentResult.reply({ ...card("深海交易所", [NOT_YOURS]), ephemeral: true });
+    return ComponentResult.reply({ ...card(x.name, [NOT_YOURS]), ephemeral: true });
   const until = Number.parseInt(e ?? "", 36) * 60_000;
   if (!Number.isFinite(until) || until < x.nowMs())
-    return ComponentResult.update(card("深海交易所", [EXPIRED]));
+    return ComponentResult.update(card(x.name, [EXPIRED]));
   return null;
 }
 
@@ -257,10 +258,7 @@ async function mapCard(
     ...top.map((t) => `${t.code} ${t.name}・${t.sector} ${pct(t.change) || "—"}`),
     map.footnote,
   ];
-  const reply = privately(
-    x,
-    card("深海交易所", lines, { real: true }, [listSelect(s, { map: kind })]),
-  );
+  const reply = privately(x, card(x.name, lines, { real: true }, [listSelect(s, { map: kind })]));
   return withPicture(pictures, "exchange_map", mapPictureData(x, map, x.nowMs()), reply);
 }
 
@@ -331,7 +329,7 @@ async function overview(
   const reply = privately(
     x,
     card(
-      "深海交易所",
+      x.name,
       [...lines, ...(p.pages > 1 ? [`第 ${p.page + 1} / ${p.pages} 頁`] : [])],
       { real: list !== "local" },
       blocks,
@@ -527,7 +525,7 @@ async function confirmCard(
   if (!q.ok)
     return privately(
       x,
-      card("深海交易所", [q.message], { real: true }, [
+      card(x.name, [q.message], { real: true }, [
         {
           type: "buttons",
           buttons: [{ id: cid(R.back, s, back), label: "回清單", style: "secondary" }],
@@ -577,7 +575,7 @@ async function placeOrder(
     key,
   );
   const line = lineOf(x, code);
-  if (!line) return privately(x, card("深海交易所", ["沒有這個標的"]));
+  if (!line) return privately(x, card(x.name, ["沒有這個標的"]));
   const note = r.ok
     ? `委託已送出:${side === "buy" ? "買進" : "賣出"} ${code}${r.order.status === "open" ? `,${orderWhen(r.order)}` : ""}。`
     : r.message;
@@ -654,7 +652,7 @@ async function mineCard(
   note: string | null = null,
 ): Promise<CommandReply> {
   const p = await x.portfolio(who);
-  if (!p) return { ...card("深海交易所", ["她還不認識你,先和她說說話吧"]), ephemeral: true };
+  if (!p) return { ...card(x.name, ["她還不認識你,先和她說說話吧"]), ephemeral: true };
   if (!p.account.opened) return accountCard(x, who, { to: "m" });
   const real = x.real.portfolio((await x.personOf(who)) ?? "");
   const lines = real.holdings.map(
@@ -729,15 +727,17 @@ export function registerCommands(
   registry: CommandRegistry,
   service: () => ExchangeService | null,
   pictures: () => Pictures | null,
+  /** The exchange's name in this profile (`[character] exchange_name`). */
+  title: () => string = () => DEFAULT_CHARACTER.exchange_name,
 ): void {
-  registry.setGroupDescription("me market", "深海交易所:新手推薦、台股美股行情、你的持股、富人榜");
+  registry.setGroupDescription("me market", `${title()}:新手推薦、台股美股行情、你的持股、富人榜`);
   const open = (): ExchangeService | null => {
     const x = service();
     return x === null || !x.config.open ? null : x;
   };
   const run = async (fn: (x: ExchangeService) => Promise<CommandReply>): Promise<CommandReply> => {
     const x = open();
-    if (x === null) return card("深海交易所", [OFF]);
+    if (x === null) return card(title(), [OFF]);
     return fn(x);
   };
   /** A control's handler: the market must be open, the press the opener's and in time. */
@@ -751,14 +751,14 @@ export function registerCommands(
     ) =>
     async (inv: ComponentInvocation): Promise<ComponentResult> => {
       const x = open();
-      if (x === null) return ComponentResult.update(card("深海交易所", [OFF]));
+      if (x === null) return ComponentResult.update(card(title(), [OFF]));
       const no = refusal(x, inv);
       if (no) return no;
       return fn(x, inv, inv.params.slice(2));
     };
   const listOf = (raw: string | undefined): ListKind =>
     (LIST_KINDS as readonly string[]).includes(raw ?? "") ? (raw as ListKind) : "local";
-  const gone = () => ComponentResult.update(card("深海交易所", ["沒有這個標的"]));
+  const gone = () => ComponentResult.update(card(title(), ["沒有這個標的"]));
 
   const routes = [
     defineRoute({
@@ -825,8 +825,7 @@ export function registerCommands(
         const person = await x.personOf(inv.invoker);
         const line = lineOf(x, code ?? "");
         if (!line) return gone();
-        if (!person)
-          return ComponentResult.update(card("深海交易所", ["她還不認識你,先和她說說話吧"]));
+        if (!person) return ComponentResult.update(card(title(), ["她還不認識你,先和她說說話吧"]));
         const r = x.lists.setWatch(person, line.code, on === "1");
         const note = r.ok ? (r.watching ? `已加入觀察(${r.count} 檔)` : "已取消觀察") : r.message;
         return ComponentResult.update(
@@ -890,7 +889,7 @@ export function registerCommands(
           !amt ||
           (unit !== "c" && unit !== "s" && unit !== "a")
         )
-          return ComponentResult.update(card("深海交易所", [EXPIRED]));
+          return ComponentResult.update(card(title(), [EXPIRED]));
         const amount: Amount = { unit, value: unit === "a" ? 0 : Number(amt) };
         return ComponentResult.update(
           await placeOrder(
@@ -972,7 +971,7 @@ export function registerCommands(
         const person = await x.personOf(inv.invoker);
         if (!person)
           return ComponentResult.reply({
-            ...card("深海交易所", ["她還不認識你,先和她說說話吧"]),
+            ...card(title(), ["她還不認識你,先和她說說話吧"]),
             ephemeral: true,
           });
         const name = inv.invoker_display_name;
@@ -981,7 +980,7 @@ export function registerCommands(
           const fill = p.fills.find((f) => f.id === ref) ?? p.fills[0];
           if (!fill)
             return ComponentResult.reply({
-              ...card("深海交易所", ["還沒有成交紀錄"]),
+              ...card(title(), ["還沒有成交紀錄"]),
               ephemeral: true,
             });
           const data = receiptPictureData(x, name, fill);
@@ -1021,19 +1020,19 @@ export function registerCommands(
   ];
 
   registry.register(
-    commandSpec("me market overview", "深海交易所:市場總覽,從清單挑股票看報價、買賣", {
+    commandSpec("me market overview", `${title()}:市場總覽,從清單挑股票看報價、買賣`, {
       permission: NODE,
     }),
     async (inv) => {
       const x = open();
-      if (x === null) return { ...card("深海交易所", [OFF]), ephemeral: true };
+      if (x === null) return { ...card(title(), [OFF]), ephemeral: true };
       return overview(x, pictures(), inv.invoker, null, 0, true);
     },
     { components: routes },
   );
 
   registry.register(
-    commandSpec("me market quote", "深海交易所:一檔股票的報價和走勢(圖)", {
+    commandSpec("me market quote", `${title()}:一檔股票的報價和走勢(圖)`, {
       args: [argSpec("code", "代號或名稱:台股 2330、0050,美股 AAPL,或獨家的 RICE", ArgKind.string)],
       permission: NODE,
     }),
@@ -1044,7 +1043,7 @@ export function registerCommands(
         if (!line) {
           const found = await x.real.lookup(inv.invoker, typed);
           if (!found.ok)
-            return { ...card("深海交易所", [found.message], { real: true }), ephemeral: true };
+            return { ...card(title(), [found.message], { real: true }), ephemeral: true };
           line = found.instrument;
         }
         return quoteCard(x, pictures(), inv.invoker, line, "recent", null);
@@ -1063,7 +1062,7 @@ export function registerCommands(
   );
 
   registry.register(
-    commandSpec("me market mine", "深海交易所:你的持股(只有你看得到)", { permission: NODE }),
+    commandSpec("me market mine", `${title()}:你的持股(只有你看得到)`, { permission: NODE }),
     (inv) =>
       run(async (x) => {
         return mineCard(x, pictures(), inv.invoker, inv.invoker_display_name);
@@ -1071,7 +1070,7 @@ export function registerCommands(
   );
 
   registry.register(
-    commandSpec("me market rich", "深海交易所:富人榜(圖)", { permission: NODE }),
+    commandSpec("me market rich", `${title()}:富人榜(圖)`, { permission: NODE }),
     (inv) =>
       run(async (x) => {
         const b = await x.boards(inv.invoker);

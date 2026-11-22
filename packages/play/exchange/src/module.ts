@@ -33,7 +33,9 @@ import { AuditLogKey, PeopleStoreKey, type Store, StoreKey } from "@miyoria/stor
 import {
   AuthorizerKey,
   BOND_LADDER,
+  CharacterKey,
   type Clock,
+  DEFAULT_CHARACTER,
   DeliveryLedgerKey,
   EventLogKey,
   ExchangeWalletKey,
@@ -149,6 +151,7 @@ export class ExchangeModule implements Module {
     };
     const service = new ExchangeService({
       config,
+      name: () => exchangeName(ctx),
       store: tables,
       wallet: () => ctx.services.get(ExchangeWalletKey) ?? null,
       traders,
@@ -182,6 +185,7 @@ export class ExchangeModule implements Module {
           registry,
           () => service,
           () => ctx.services.get(PicturesKey) ?? null,
+          () => exchangeName(ctx),
         ),
       unregisterCommands,
     );
@@ -266,6 +270,11 @@ export class ExchangeModule implements Module {
 }
 
 /** A neutral card by DM to the person's first account on a platform that can send one. */
+/** The exchange's name in this profile (`[character] exchange_name`, docs/design/v5-profiles.md). */
+function exchangeName(ctx: ModuleContext): string {
+  return ctx.services.get(CharacterKey)?.exchange_name ?? DEFAULT_CHARACTER.exchange_name;
+}
+
 async function dm(ctx: ModuleContext, person: PersonId, text: string): Promise<boolean> {
   const sink = ctx.services.get(ReplySinkKey);
   const people = ctx.services.get(PeopleStoreKey);
@@ -279,7 +288,7 @@ async function dm(ctx: ModuleContext, person: PersonId, text: string): Promise<b
     // Every notice carries the small print; the ones about leverage add its line.
     await sink.sendDirect(
       account,
-      card("深海交易所", [text], { real: true, leverage: /槓桿|保證金|斷頭|破產/.test(text) }),
+      card(exchangeName(ctx), [text], { real: true, leverage: /槓桿|保證金|斷頭|破產/.test(text) }),
     );
     return true;
   } catch (error) {
