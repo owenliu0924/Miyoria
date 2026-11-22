@@ -688,8 +688,9 @@ export class SqliteStore implements Store {
   }
 
   /**
-   * Imports the text of `miyoria.toml` as config revision 1, its per-channel levels as place
-   * settings (`config/import.ts`). For the cut-over's first start; once only.
+   * Imports the text of `miyoria.toml` as the next config revision, merged with the panel's keys,
+   * its per-channel levels and per-server channels as place settings (`config/import.ts`). For
+   * `miyoria config import`, by hand; again only with `replace`.
    */
   importConfig(text: string, options: ConfigImportOptions = {}): ConfigImportResult {
     const { revisions, places } = this.config;
