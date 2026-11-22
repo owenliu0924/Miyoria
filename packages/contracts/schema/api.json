@@ -18247,6 +18247,189 @@
         "hours_in_voice"
       ]
     },
+    "ApiPushEvent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "value"
+            },
+            "topic": {
+              "type": "string",
+              "const": "status"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data": {
+              "$ref": "#/$defs/ApiPublicStatus"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "value"
+            },
+            "topic": {
+              "type": "string",
+              "const": "songs"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data": {
+              "$ref": "#/$defs/ApiPublicSongs"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "value"
+            },
+            "topic": {
+              "type": "string",
+              "const": "rooms"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data": {
+              "$ref": "#/$defs/ApiKaraokeRooms"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "value"
+            },
+            "topic": {
+              "type": "string",
+              "const": "danmaku"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data": {
+              "$ref": "#/$defs/ApiDanmakuView"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "refused"
+            },
+            "topic": {
+              "$ref": "#/$defs/ApiPushTopic"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "status": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "status",
+            "message"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ready"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "ApiPushQuery": {
+      "type": "object",
+      "properties": {
+        "topics": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 600
+        }
+      },
+      "required": [
+        "topics"
+      ]
+    },
+    "ApiPushTopic": {
+      "type": "string",
+      "enum": [
+        "status",
+        "songs",
+        "rooms",
+        "danmaku"
+      ]
+    },
     "ApiQuestsView": {
       "type": "object",
       "properties": {
