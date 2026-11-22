@@ -316,7 +316,10 @@ export type HostEndpoint = z.output<typeof HostEndpointSchema>;
 export const HostResolveSchema = z
   .object({
     capability: z.string(),
-    /** Set by hostd: the service of the host that asked. Core does not use it for `resolve`. */
+    /**
+     * Set by hostd: the service of the host that asked. Core gives the endpoints (and their
+     * tokens) only of a capability the `uses` table lets that service resolve.
+     */
     service: z.string().optional(),
   })
   .meta({ id: "HostResolve" });

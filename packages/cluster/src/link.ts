@@ -41,7 +41,6 @@ import {
   type HostRemoteUpdate,
   type HostReport,
   HostReportSchema,
-  HostResolveSchema,
   HostServiceEventSchema,
   type HostUpgradeJob,
   type HostWelcome,
@@ -580,14 +579,12 @@ export class ClusterLink {
         );
         return { states };
       }
-      case HOST_METHOD.ClusterResolve: {
-        const parsed = HostResolveSchema.safeParse(params);
-        if (!parsed.success) throw RpcError.invalidParams(parsed.error.message);
-        if (!this.#conns.get(name)?.approved) {
-          throw new RpcError(HOST_ERROR_CODE.NotAllowed, "this host is not approved yet");
+      case HOST_METHOD.ClusterResolve:
+        // Endpoints carry their tokens: only for what the asking service was granted (`uses`).
+        if (o.calls === undefined) {
+          throw new RpcError(HOST_ERROR_CODE.NotAllowed, "Core resolves nothing for hosts");
         }
-        return { endpoints: o.registry.candidates(parsed.data.capability) };
-      }
+        return o.calls.resolve(this.#caller(name), params);
     }
     throw new RpcError(EXT_ERROR_CODE.MethodNotFound, `unknown method "${method}"`);
   }

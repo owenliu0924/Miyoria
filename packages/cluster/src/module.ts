@@ -163,8 +163,9 @@ export interface ClusterModuleOptions {
   /** Runs `cluster.llm` completions; without it they fail with `Unavailable`. */
   complete?: ClusterComplete;
   /**
-   * By the capability a service provides: what it may use through `cluster.llm` and
-   * `cluster.fetch`. Default `DEFAULT_CLUSTER_USES` (`sing` and `lyrics`: LLM `fast`, fetch `asr`).
+   * By the capability a service provides: what it may use through `cluster.llm`,
+   * `cluster.fetch` and `cluster.resolve`. Default `DEFAULT_CLUSTER_USES` (`sing` and `lyrics`:
+   * LLM `fast`, fetch `asr`; nothing may resolve).
    */
   uses?: ClusterUses;
   /** The LLM purposes any service may ask for at all. Default `["fast"]`. */
@@ -508,7 +509,7 @@ export class ClusterModule implements Module {
     return store.plugin(clusterTables);
   }
 
-  /** What serves `cluster.llm` and `cluster.fetch` for this run of the module. */
+  /** What serves `cluster.resolve`, `cluster.llm` and `cluster.fetch` for this run of the module. */
   #calls(ctx: ModuleContext, registry: EndpointRegistry): ClusterCalls {
     const o = this.#options;
     const complete = o.complete;
