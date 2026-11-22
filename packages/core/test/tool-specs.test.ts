@@ -177,6 +177,7 @@ describe("the registry behind them", () => {
       "delegate",
       "find_tools",
       "keep_note",
+      "look",
       "message_dm",
       "notebook_read",
       "notebook_write",
