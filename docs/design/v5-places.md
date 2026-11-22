@@ -172,3 +172,23 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 | 錢和榜:每個 Space 的列表、預測和懸賞的 `space_id` | P4 |
 | 拍賣、樂透、佇列、卡拉 OK 房每個 Space 一份,外掛表的 migration | P5 |
 | 換主要的 Space 的指令或面板動作;`db doctor` 列出 Space 和會被選成主要的那個 | 還沒排 |
+
+## 9. 每個地方的聊天、Discord 的多伺服器、home(P3,做成的樣子)
+
+**聊天等級**(`brain/agent`):`place_settings` 外掛 `agent` 的鍵是 `mode`、`activeness_level`、`voice.mode`、`voice.activeness_level`、`language`(`LEVEL_KEYS`)。主動程度不叫 `activeness`:那個鍵是檔案裡每個 context 的表,型別不同。一個地方的值依序:她自己暫時調的(只有主動程度)→ 這個 Room → 討論串的頻道 → 這個 Space → `[modules.agent] channels` / `activeness` 表 → 後來加入的伺服器是「只回提及」/「低」→ `default_mode` / `default_activeness` → profile。私訊沒有 Space,讀它自己 Room 的列。`language` 有值時她的情境多一行「這裡用某某語言聊天」。
+
+- `/channel mode`、`/channel activeness` 多一個選項 `範圍: 這個頻道|整個伺服器`;沒選是這個頻道。面板的聊天等級卡片跟著 `?space=`,有好幾個伺服器(或那個伺服器自己設過)時多一列「整個伺服器」;`PUT /api/channels/space-level` 是它的路由。
+- 舊的 `channel_mode:*` / `activeness:*`(`plugin_state`)在 agent 啟動時搬一次到 Room 的列(`updated_by = "migration"`),標記 `agent:places_v1` 記著搬了幾個、哪些還在等。Room 還沒出現的鍵記一筆警告、先從記憶體照用,下次啟動再搬;舊鍵留著,搬過的不再讀。執行時的設定本來就贏過檔案,所以設定匯入(`import`)寫的同一格會被蓋過,面板或指令後來設的不會。
+- 一個還沒有人說過話的頻道(identity 沒有這個 Room):設定只放在記憶體到重新啟動為止,指令會說。
+
+**Discord**(`discord`):`ambient_text`、`ambient_channels`、表情和貼圖的 `enabled`、`descriptions` 是每個 Space;新的 `ambient_follow` 是每個 Room(`true` 跟隨、`false` 不跟隨、沒設照清單)。`command_guilds = ["*"]` 註冊到她在的每個伺服器,加入新的伺服器時只同步那一個;伺服器模式不再清別的伺服器的指令(以前第二個伺服器因此沒有斜線指令),只在每次啟動清一次全域的。`GuildCreate` 和連線時的每個伺服器呼叫 `Places.seen`,`GuildDelete` 呼叫 `Places.left`(`available: false` 是 Discord 斷線,不算離開);成員離開由 Core 的 `followMembers` 寫到 `Places.memberLeft`(P1 已接)。
+
+**新的伺服器先安靜**(owner 的預設,Q5):不是主要的 Space、也還沒替它設的時候,閘門是 `allowlist` 而且沒有跟隨的頻道(檔案的頻道本來就被頻道規則擋掉),只有提及她、回覆她的訊息進得來;聊天等級是只回提及、主動程度低;檔案裡表情和貼圖的意思是原本那個伺服器的,不帶過去。替那個伺服器(或它的頻道)設了什麼,就照設的。原本的伺服器(主要的)和以前一模一樣。
+
+**沒有預設平台**:`recipient`(私訊對象)、語音的能力、Go Live 跟著開 OBS、卡片指令的冪等鍵,平台都從 context、請求的人或帳號(語音節點)來,都沒有就拒絕。`actions.forbidden` 可以每個 Space、每個 Room 設,是 union:頻道只能多禁,不能解開上一層禁的。`core/test/no-platform-default.test.ts` 掃網域程式碼裡的 `"discord"` 預設值,允許清單分兩組:Discord 自己的(OAuth、v4 的 fixture),和等 P4、P5 修的(修好就拿掉)。
+
+**home 和收件匣**(`initiative` v2):`initiative_inbox`、`initiative_schedules` 多 `space_id`,舊列照自己的 `context` 補(`json_extract` 對 identity 的 `spaces`),沒有 context 的留 `NULL`(home)。一輪對話看得到的是:它自己地方的、它的 Space 的 home 項目、和沒有 Space 的(她自己的計時、早上)。某個伺服器語音裡的事放進 home 時記著是那個伺服器的,不會出現在別的伺服器;只有 home 地方在那個伺服器時才會叫醒她。`schedule_list` 只列這個伺服器的和沒有伺服器的。
+
+**日記**:還是 owner 選的一個頻道。那一天在別的伺服器也有聊天時,日記不用反省的總結(它是所有地方的),改用日記頻道那個伺服器自己頻道的前情提要,加上心情、學到的事、目標。只在一個伺服器聊的日子照舊。
+
+**還沒做**:home 那一輪「每個地方合併成一行」的通知,和用 `disclose` 檢查權限的讀取工具 `look(place)`;現在 home 的項目只是按 Space 過濾。
