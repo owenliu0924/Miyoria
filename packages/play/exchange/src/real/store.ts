@@ -11,13 +11,14 @@ import {
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
-import { and, asc, desc, eq, gte, inArray, ne, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core";
 import {
   exchangeFills,
   exchangeHouse,
   exchangeHouseLines,
   exchangeInstruments,
+  exchangeLocalDays,
   exchangeMarks,
   exchangeNotices,
   exchangeOrders,
@@ -39,6 +40,7 @@ import type {
   RealPosition,
 } from "./house.js";
 import { newHouse } from "./house.js";
+import { taipeiDay, taipeiDayWindow } from "./local.js";
 import type { Quote } from "./provider.js";
 
 export type RealOrderStatus = "charging" | "open" | "filled" | "cancelled" | "expired" | "void";
@@ -64,6 +66,51 @@ export interface RealNoticeRecord {
 
 const ms = (t: Timestamp | null) => (t === null ? null : Date.parse(t));
 const ts = (n: number) => toTimestamp(n);
+
+/** A local stock's day as one bar (`exchange_local_days`): its first, highest, lowest and last tick. */
+export interface LocalDayBar {
+  /** The Taipei day number. */
+  day: number;
+  first_at: number;
+  last_at: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  /** What the day's ±10% band was measured from. */
+  ref: number;
+  ticks: number;
+}
+
+function dayOf(r: typeof exchangeLocalDays.$inferSelect): LocalDayBar {
+  return {
+    day: r.day,
+    first_at: Date.parse(r.first_at),
+    last_at: Date.parse(r.last_at),
+    open: r.open,
+    high: r.high,
+    low: r.low,
+    close: r.close,
+    ref: r.ref,
+    ticks: r.ticks,
+  };
+}
+
+/** Two parts of one day as one bar: the earlier's open and reference, the later's close. */
+function mergeBars(a: LocalDayBar, b: LocalDayBar): LocalDayBar {
+  const early = a.first_at <= b.first_at ? a : b;
+  return {
+    day: a.day,
+    first_at: early.first_at,
+    last_at: Math.max(a.last_at, b.last_at),
+    open: early.open,
+    high: Math.max(a.high, b.high),
+    low: Math.min(a.low, b.low),
+    close: a.last_at >= b.last_at ? a.close : b.close,
+    ref: early.ref,
+    ticks: a.ticks + b.ticks,
+  };
+}
 
 type OrderRow = typeof exchangeRealOrders.$inferSelect;
 type PositionRow = typeof exchangeRealPositions.$inferSelect;
@@ -776,6 +823,177 @@ export class RealStore {
       .orderBy(asc(exchangeQuoteTicks.at))
       .all()
       .map((r) => ({ at: Date.parse(r.at), price: r.price }));
+  }
+
+  // ---- the local stocks' ticks and days ------------------------------------------------------
+
+  /** A local stock's new ticks, kept together (one day's at most: what one step worked out). */
+  recordTicks(code: string, ticks: readonly { at: number; price: number }[]): void {
+    if (ticks.length === 0) return;
+    this.#write(() => {
+      for (const t of ticks)
+        this.#db.orm
+          .insert(exchangeQuoteTicks)
+          .values({ code, at: ts(t.at), price: t.price })
+          .onConflictDoNothing()
+          .run();
+    });
+  }
+
+  /**
+   * A local stock's day as one bar, merged with what is kept of that day already (a day caught up
+   * after a downtime may have its morning in ticks and its evening here).
+   */
+  recordDay(code: string, bar: LocalDayBar): void {
+    this.#write(() => this.#mergeDay(code, bar));
+  }
+
+  #mergeDay(code: string, bar: LocalDayBar): void {
+    const orm = this.#db.orm;
+    const old = orm
+      .select()
+      .from(exchangeLocalDays)
+      .where(and(eq(exchangeLocalDays.code, code), eq(exchangeLocalDays.day, bar.day)))
+      .get();
+    const kept = old ? dayOf(old) : null;
+    const b = kept ? mergeBars(kept, bar) : bar;
+    const values = {
+      code,
+      day: b.day,
+      first_at: ts(b.first_at),
+      last_at: ts(b.last_at),
+      open: b.open,
+      high: b.high,
+      low: b.low,
+      close: b.close,
+      ref: b.ref,
+      ticks: b.ticks,
+    };
+    orm
+      .insert(exchangeLocalDays)
+      .values(values)
+      .onConflictDoUpdate({ target: [exchangeLocalDays.code, exchangeLocalDays.day], set: values })
+      .run();
+  }
+
+  /** A local stock's day bars from Taipei day `sinceDay` on, oldest first. */
+  localDays(code: string, sinceDay: number): LocalDayBar[] {
+    this.#db.ensureOpen();
+    return this.#db.orm
+      .select()
+      .from(exchangeLocalDays)
+      .where(and(eq(exchangeLocalDays.code, code), gte(exchangeLocalDays.day, sinceDay)))
+      .orderBy(asc(exchangeLocalDays.day))
+      .all()
+      .map(dayOf);
+  }
+
+  /** The last price of `code` kept before `ms` (a tick, or a day's close), `null`: none. */
+  #closeBefore(code: string, ms: number): number | null {
+    const orm = this.#db.orm;
+    const tick = orm
+      .select()
+      .from(exchangeQuoteTicks)
+      .where(and(eq(exchangeQuoteTicks.code, code), lt(exchangeQuoteTicks.at, ts(ms))))
+      .orderBy(desc(exchangeQuoteTicks.at))
+      .limit(1)
+      .get();
+    const day = orm
+      .select()
+      .from(exchangeLocalDays)
+      .where(and(eq(exchangeLocalDays.code, code), lt(exchangeLocalDays.last_at, ts(ms))))
+      .orderBy(desc(exchangeLocalDays.day))
+      .limit(1)
+      .get();
+    if (day && (!tick || Date.parse(day.last_at) > Date.parse(tick.at))) return day.close;
+    return tick ? tick.price : null;
+  }
+
+  /**
+   * Where a local stock's walk goes on from: its last kept tick (a tick row, or the last of a day
+   * bar) and the price its day's band is measured from (the day before's last); `null`: never
+   * priced. An install from before the per-minute ticks continues from its last hourly tick.
+   */
+  localResume(code: string): { price: number; at: number; prev_close: number | null } | null {
+    this.#db.ensureOpen();
+    const orm = this.#db.orm;
+    const tick = orm
+      .select()
+      .from(exchangeQuoteTicks)
+      .where(eq(exchangeQuoteTicks.code, code))
+      .orderBy(desc(exchangeQuoteTicks.at))
+      .limit(1)
+      .get();
+    const day = orm
+      .select()
+      .from(exchangeLocalDays)
+      .where(eq(exchangeLocalDays.code, code))
+      .orderBy(desc(exchangeLocalDays.day))
+      .limit(1)
+      .get();
+    if (day && (!tick || Date.parse(day.last_at) > Date.parse(tick.at)))
+      return { price: day.close, at: Date.parse(day.last_at), prev_close: day.ref };
+    if (!tick) return null;
+    const at = Date.parse(tick.at);
+    const before = this.#closeBefore(code, taipeiDayWindow(taipeiDay(at)).start);
+    if (before !== null) return { price: tick.price, at, prev_close: before };
+    // Only today's ticks (a new instance's first day): the reference the quote was kept with.
+    const quote = this.quotes().get(code);
+    return { price: tick.price, at, prev_close: quote?.at === at ? quote.prev_close : null };
+  }
+
+  /**
+   * Rolls a local stock's ticks before `before` into day bars, the oldest `maxDays` days at most,
+   * each day in one transaction (its bar written, its ticks gone). Returns the days rolled.
+   */
+  rollupLocal(code: string, before: number, maxDays: number): number {
+    this.#db.ensureOpen();
+    const rows = this.#db.orm
+      .select()
+      .from(exchangeQuoteTicks)
+      .where(and(eq(exchangeQuoteTicks.code, code), lt(exchangeQuoteTicks.at, ts(before))))
+      .orderBy(asc(exchangeQuoteTicks.at))
+      .all()
+      .map((r) => ({ at: Date.parse(r.at), price: r.price }));
+    const byDay = new Map<number, { at: number; price: number }[]>();
+    for (const r of rows) {
+      const d = taipeiDay(r.at);
+      byDay.set(d, [...(byDay.get(d) ?? []), r]);
+    }
+    let rolled = 0;
+    for (const [day, points] of [...byDay].sort((a, b) => a[0] - b[0])) {
+      if (rolled >= maxDays) break;
+      const first = points[0];
+      const last = points.at(-1);
+      if (!first || !last) continue;
+      const { start, end } = taipeiDayWindow(day);
+      this.#write(() => {
+        const ref = this.#closeBefore(code, start) ?? first.price;
+        this.#mergeDay(code, {
+          day,
+          first_at: first.at,
+          last_at: last.at,
+          open: first.price,
+          high: Math.max(...points.map((p) => p.price)),
+          low: Math.min(...points.map((p) => p.price)),
+          close: last.price,
+          ref,
+          ticks: points.length,
+        });
+        this.#db.orm
+          .delete(exchangeQuoteTicks)
+          .where(
+            and(
+              eq(exchangeQuoteTicks.code, code),
+              gte(exchangeQuoteTicks.at, ts(start)),
+              lt(exchangeQuoteTicks.at, ts(end)),
+            ),
+          )
+          .run();
+      });
+      rolled++;
+    }
+    return rolled;
   }
 
   /** The house's lines of a step written on their own (a buy's charge, once it went through). */

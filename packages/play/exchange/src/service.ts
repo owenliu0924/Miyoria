@@ -575,6 +575,9 @@ export class ExchangeService {
    * wallets are paid what they are owed, and the notices go out. Off: the open orders go back.
    */
   async tick(): Promise<void> {
+    // The market's seed exists from the first pass: the local stocks' walk is seeded by it, so a
+    // new instance's prices do not change seed once someone first opens an account.
+    this.#ensure();
     await this.real.tick();
     if (!this.#d.config.local_enabled) {
       await this.flush();

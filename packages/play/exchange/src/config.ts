@@ -489,6 +489,28 @@ export const ExchangeConfigSchema = z
       ),
 
     /**
+     * How often the local stocks tick, in seconds, from 12:00 to 23:00 Taipei (owner 2026-11-22: as
+     * fast as the real quotes). Each step is scaled so a day is the same as the hourly model's (the
+     * same band, signal gap and day-to-day volatility, docs/design/exchange.md §9); 3600 is the
+     * hourly cadence before. Ticks are worked out at each pass (`quote_poll_seconds`), every missed
+     * one in order.
+     */
+    local_tick_seconds: z
+      .number()
+      .int()
+      .min(10)
+      .max(3600)
+      .default(60)
+      .meta(
+        setting({
+          kind: "number",
+          label: "獨家股票幾秒跳一次",
+          help: "每天 12:00–23:00;預設 60 秒,3600 = 以前的每小時一筆。不管多快,一天的漲跌幅度、±10% 和開盤跳空都一樣",
+          group: "market",
+        }),
+      ),
+
+    /**
      * The five local stocks as this profile names them, by role (docs/design/v5-profiles.md):
      * `feeding` (RICE 白飯食品), `songs` (WHLE 鯨落唱片), `silence` (NAPS 打盹床業), `game` (CUBE
      * 方塊礦業), `model` (DPSK DipSick AI). What moves each is fixed by its role; its code, name,

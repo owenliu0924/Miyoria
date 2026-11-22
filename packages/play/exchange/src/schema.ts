@@ -470,6 +470,31 @@ export const exchangeQuoteTicks = sqliteTable(
   (t) => [primaryKey({ name: "exchange_quote_ticks_pk", columns: [t.code, t.at] })],
 );
 
+/**
+ * A local stock's day rolled up from its ticks (version 4): the ticks of the current and previous
+ * Taipei day stay in `exchange_quote_ticks`; an older day becomes one row here, the bar the daily,
+ * weekly and monthly charts draw (first, highest, lowest, last), and its ticks go.
+ */
+export const exchangeLocalDays = sqliteTable(
+  "exchange_local_days",
+  {
+    code: text().notNull(),
+    /** The Taipei day number (days since 1970-01-01 in UTC+8). */
+    day: integer().notNull(),
+    /** The day's first and last tick. */
+    first_at: micros().notNull(),
+    last_at: micros().notNull(),
+    open: real().notNull(),
+    high: real().notNull(),
+    low: real().notNull(),
+    close: real().notNull(),
+    /** The price the day's ±10% band was measured from (the day before's last). */
+    ref: real().notNull(),
+    ticks: integer().notNull(),
+  },
+  (t) => [primaryKey({ name: "exchange_local_days_pk", columns: [t.code, t.day] })],
+);
+
 /** The house's own record of every coin it moved (and every write-off), append-only. */
 export const exchangeHouseLines = sqliteTable(
   "exchange_house_lines",

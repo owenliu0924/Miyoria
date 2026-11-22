@@ -2,7 +2,8 @@
 // four timeframes — 當日 (the current or last session in 5-minute bars), 日線 (about six months),
 // 週線 (about two years) and 月線 (ten years). Real stocks get them from Yahoo's chart endpoint, on
 // demand when someone opens a chart, and they are cached per (instrument, timeframe); the five
-// local stocks get them from their own ticks (one an hour, kept in `exchange_quote_ticks`), with no
+// local stocks get them from their own ticks (a minute apart by default: the current and previous
+// day in `exchange_quote_ticks`, older days one bar each in `exchange_local_days`), with no
 // volume: the game's own traded amount would let one person's trade be read off a quiet hour.
 //
 // What Yahoo answers was probed by hand (2026-11-21, `test/fixtures/yahoo-candles-*.json`):
@@ -72,6 +73,14 @@ export const SPAN_DAYS: Readonly<Record<Timeframe, number>> = {
 const MIN = 60_000;
 const HOUR = 60 * MIN;
 const DAY = 24 * HOUR;
+
+/**
+ * A local stock's 當日 bar: ten minutes (the 11-hour session is 66 bars, inside the picture's 80; a
+ * real ticker's shorter session is 5-minute bars), or the tick when that is longer.
+ */
+export function localStep(tickMs: number): number {
+  return Math.max(10 * MIN, tickMs);
+}
 
 /**
  * How long a timeframe's candles are kept before they are asked for again: short for the session
@@ -148,6 +157,20 @@ export function parseYahooCandles(
 
 /** Bars in the same period joined: the first's open and time, the extremes, the last close. */
 function mergePeriods(bars: readonly Candle[], tf: Timeframe, zone: string): Candle[] {
+  const out = joinPeriods(bars, tf, zone);
+  if (tf !== "intraday") return out;
+  // The current (or last) session only.
+  const last = out.at(-1);
+  if (!last) return out;
+  const day = zonedParts(last.at, zone).date;
+  return out.filter((b) => zonedParts(b.at, zone).date === day);
+}
+
+/**
+ * Bars (oldest first) joined by `tf`'s period in `zone`: the first's open, time and volume, the
+ * extremes, the last close (days into a week or a month).
+ */
+export function joinPeriods(bars: readonly Candle[], tf: Timeframe, zone: string): Candle[] {
   const out: Candle[] = [];
   let lastKey: string | null = null;
   for (const b of bars) {
@@ -167,17 +190,12 @@ function mergePeriods(bars: readonly Candle[], tf: Timeframe, zone: string): Can
     out.push(b);
     lastKey = k;
   }
-  if (tf !== "intraday") return out;
-  // The current (or last) session only.
-  const last = out.at(-1);
-  if (!last) return out;
-  const day = zonedParts(last.at, zone).date;
-  return out.filter((b) => zonedParts(b.at, zone).date === day);
+  return out;
 }
 
 /**
  * Bars made from price points (oldest first): the first, highest, lowest and last price of each
- * period, no volume. 當日 is the last date's points in steps of `stepMs` (an hour for the local
+ * period, no volume. 當日 is the last date's points in steps of `stepMs` (`localStep` for the local
  * stocks, five minutes otherwise); there a bar opens at the price before it (the day's first bar
  * at the day before's last), so one point a step still draws a body and the morning's gap shows.
  */

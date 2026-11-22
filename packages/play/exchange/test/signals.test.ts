@@ -8,6 +8,7 @@ import { type JsonValue, newId, toTimestamp } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { exchangeConfig, localCompaniesOf } from "../src/config.js";
 import {
+  cadenceOf,
   LOCAL_ROLES,
   LocalProvider,
   type LocalRole,
@@ -324,12 +325,14 @@ describe("the book", () => {
     const feeds = fixed(history(10, { [TODAY]: 9999 }), (v) => ({ feeds: v }));
     const book = new LocalSignalBook({ sources: { feeding: feeds.source }, config: () => config });
     const stored = { price: 100, at: NOON - 13 * HOUR, prev_close: 100 };
+    // The hourly cadence (`local_tick_seconds = 3600`): the 12:30 quote is the 12:00 tick.
     const provider = new LocalProvider(
       "s",
       (c, d) => book.signal(c, d),
       () => COMPANIES,
       () => stored,
       (days, now) => book.prepare(days, now),
+      { tickSeconds: 3600 },
     );
     const q = await provider.quotes(["RICE"], NOON + 30 * 60_000);
     expect(feeds.asked).not.toContain(TODAY);
@@ -353,6 +356,7 @@ describe("the book", () => {
       () => COMPANIES,
       () => stored,
       (days, now) => book2.prepare(days, now),
+      { tickSeconds: 3600 },
     );
     const open = (await p2.quotes(["RICE"], NOON)).get("RICE")?.price ?? 0;
     const pushed = nextPrice(
@@ -365,6 +369,34 @@ describe("the book", () => {
     );
     expect(open).toBe(pushed.price);
     expect(book2.fact("feeding", NOON)?.move).toBe(signalMove({ signal: 1 }));
+
+    // The default minute cadence: the same whole gap at 12:00, from yesterday only, and the ticks
+    // after it carry no more of the signal (the 12:01 step is the walk's alone).
+    const minute = cadenceOf(60);
+    const big3 = fixed(history(20, { [TODAY]: 9999 }), (v) => ({ feeds: v }));
+    const book3 = new LocalSignalBook({ sources: { feeding: big3.source }, config: () => config });
+    const p3 = new LocalProvider(
+      "s",
+      (c, d) => book3.signal(c, d),
+      () => COMPANIES,
+      () => stored,
+      (days, now) => book3.prepare(days, now),
+    );
+    const got = await p3.advance(["RICE"], NOON + 60_000);
+    expect(big3.asked).not.toContain(TODAY);
+    const [at12, at1201] = got.get("RICE") ?? [];
+    const gap = nextPrice(
+      "s",
+      RICE,
+      NOON,
+      { price: 100, at: stored.at, close: 100 },
+      () => ({ signal: 1 }),
+      100,
+      minute,
+    );
+    expect(at12?.price).toBe(gap.price);
+    const after = nextPrice("s", RICE, NOON + 60_000, gap, () => ({ signal: -1 }), 100, minute);
+    expect(at1201?.price).toBe(after.price);
   });
 
   it("is neutral for a missing source and says so in one plain line", async () => {

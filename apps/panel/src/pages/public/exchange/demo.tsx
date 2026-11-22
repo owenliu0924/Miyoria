@@ -156,9 +156,10 @@ const ZONE = { tw: "Asia/Taipei", us: "America/New_York", local: "Asia/Taipei" }
 function candlesOf(s: Stock, tf: ExchangeCandles["tf"]): ExchangeCandles {
   const r = rng(`${s.code}:${tf}`);
   const local = s.market === "local";
+  // The local stocks tick every minute; their 當日 is ten-minute bars (12:00 to 13:20 here).
   const step =
-    tf === "intraday" ? (local ? 3_600_000 : 300_000) : tf === "daily" ? 86_400_000 : tf === "weekly" ? 7 * 86_400_000 : 30.4 * 86_400_000;
-  const n = tf === "intraday" ? (local ? 2 : s.market === "us" ? 78 : 54) : tf === "daily" ? 126 : tf === "weekly" ? 105 : 120;
+    tf === "intraday" ? (local ? 600_000 : 300_000) : tf === "daily" ? 86_400_000 : tf === "weekly" ? 7 * 86_400_000 : 30.4 * 86_400_000;
+  const n = tf === "intraday" ? (local ? 9 : s.market === "us" ? 78 : 54) : tf === "daily" ? 126 : tf === "weekly" ? 105 : 120;
   const vol = tf === "intraday" ? 0.0025 : tf === "daily" ? 0.016 : tf === "weekly" ? 0.035 : 0.07;
   const drift = tf === "monthly" ? 0.012 : tf === "weekly" ? 0.003 : 0.0006;
   // Walk backwards from the last close so the chart ends at today's price.

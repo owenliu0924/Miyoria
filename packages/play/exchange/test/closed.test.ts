@@ -306,6 +306,13 @@ describe("a brand-new instance before the first local tick", () => {
     expect(placed).toMatchObject({ ok: true });
     await r.at(Date.UTC(2026, 10, 23, 4, 1)); // 12:01
     expect(r.store.real.openPositions("p-alice")).toHaveLength(1);
+    // At the first tick (12:00), not a later one of the same pass (12:01): ticks go through in order.
+    const fill = r.service.real.portfolio("p-alice").fills[0];
+    expect(fill?.price).toBe(r.store.real.ticks("RICE", 0)[0]?.price);
+    expect(r.store.real.ticks("RICE", 0).map((t) => t.at)).toEqual([
+      Date.UTC(2026, 10, 23, 4, 0),
+      Date.UTC(2026, 10, 23, 4, 1),
+    ]);
   });
 });
 

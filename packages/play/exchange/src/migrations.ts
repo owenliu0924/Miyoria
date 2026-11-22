@@ -391,6 +391,25 @@ ALTER TABLE \`exchange_instruments\` ADD \`close_prev\` real;
 ALTER TABLE \`exchange_instruments\` ADD \`close_at\` integer;
 `;
 
+/**
+ * Version 4 (2026-11-22, the local stocks tick every minute): a local stock's older days rolled up
+ * from its ticks, one bar a day; the ticks themselves stay where they were.
+ */
+const LOCAL_DAYS = `CREATE TABLE \`exchange_local_days\` (
+	\`code\` text NOT NULL,
+	\`day\` integer NOT NULL,
+	\`first_at\` integer NOT NULL,
+	\`last_at\` integer NOT NULL,
+	\`open\` real NOT NULL,
+	\`high\` real NOT NULL,
+	\`low\` real NOT NULL,
+	\`close\` real NOT NULL,
+	\`ref\` real NOT NULL,
+	\`ticks\` integer NOT NULL,
+	CONSTRAINT \`exchange_local_days_pk\` PRIMARY KEY(\`code\`, \`day\`)
+) STRICT;
+`;
+
 /** The market's state, the book, the vault, the news, the accounts, the notices, her words; the real side. */
 export const exchangeSchema: PluginSchema = {
   plugin: "exchange",
@@ -398,5 +417,6 @@ export const exchangeSchema: PluginSchema = {
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "real", sql: REAL },
     { version: 3, name: "names_and_closes", sql: NAMES_AND_CLOSES },
+    { version: 4, name: "local_days", sql: LOCAL_DAYS },
   ],
 };

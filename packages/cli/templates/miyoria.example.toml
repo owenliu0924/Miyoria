@@ -631,7 +631,8 @@ dirs = ["extensions"]
 # open = false                # 交易所開關:關著時不成交也不能下單;關掉時掛著的委託全部退回,持股留著
 # utc_offset_minutes = 480    # 「今天」從哪個時區算(每日上限、每日報表)
 # colors = "tw"               # 漲跌顏色的預設:"tw" 紅漲綠跌、"us" 綠漲紅跌;每個會員可以自己選(會員頁、/me market overview),每張圖都會標示
-# local_stocks = true         # 新手推薦的五檔獨家股票(價格由程式模擬,每天 12:00–23:00 每小時一筆)
+# local_stocks = true         # 新手推薦的五檔獨家股票(價格由程式模擬,每天 12:00–23:00)
+# local_tick_seconds = 60     # 獨家股票幾秒跳一次(10–3600;3600 = 以前的每小時一筆)。一天的漲跌幅度、±10% 和開盤跳空都一樣
 # twd_per_usd = 30            # 一美元等於幾台幣(固定;改了所有美股持股的市值一起變,股數不變)
 # # ---- 報價(預設兩個市場都用 Yahoo Finance)
 # provider_tw = "yahoo"
