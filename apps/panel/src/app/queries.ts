@@ -18,6 +18,7 @@ import { factEventsInput } from "@/lib/fact-events";
 import { startOfDay } from "@/lib/rules";
 import { fetchTurnEvents } from "@/lib/turn-events";
 import { useApi } from "./connection";
+import { useLivePoll } from "./events-store";
 import { createQueryClient, FINAL } from "./query-client";
 
 export { createQueryClient };
@@ -615,7 +616,9 @@ const spaceQuery = (space: string | null | undefined) => (space ? { space } : {}
 /** One server's song queue (`space`: identity's id; without it the Core's default). */
 export function useQueue(space?: string | null) {
   const api = useApi();
-  return useQuery({ queryKey: [...queryKeys.queue, space ?? ""], queryFn: ({ signal }) => api.rpc.queue.list({ query: spaceQuery(space) }, { signal }), refetchInterval: poll(3_000) });
+  // Fetched again on `queue.changed` while the admin event stream is open (`liveViews`).
+  const every = useLivePoll(3_000);
+  return useQuery({ queryKey: [...queryKeys.queue, space ?? ""], queryFn: ({ signal }) => api.rpc.queue.list({ query: spaceQuery(space) }, { signal }), refetchInterval: poll(every) });
 }
 
 export function useQueueMutations(space?: string | null) {
@@ -635,7 +638,8 @@ export function useQueueMutations(space?: string | null) {
 
 export function useStage() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.stage, queryFn: ({ signal }) => api.rpc.stage.status(undefined, { signal }), refetchInterval: poll(5_000) });
+  const every = useLivePoll(5_000);
+  return useQuery({ queryKey: queryKeys.stage, queryFn: ({ signal }) => api.rpc.stage.status(undefined, { signal }), refetchInterval: poll(every) });
 }
 
 export function useStageMutations() {
@@ -674,7 +678,8 @@ export function useSceneRoleMutations() {
 
 export function useVoice() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.voice, queryFn: ({ signal }) => api.rpc.voice.state(undefined, { signal }), refetchInterval: poll(5_000) });
+  const every = useLivePoll(5_000);
+  return useQuery({ queryKey: queryKeys.voice, queryFn: ({ signal }) => api.rpc.voice.state(undefined, { signal }), refetchInterval: poll(every) });
 }
 
 // --- inner life --------------------------------------------------------------
@@ -839,7 +844,8 @@ export function useMindMutations() {
 
 export function useSongs() {
   const api = useApi();
-  return useQuery({ queryKey: queryKeys.songs, queryFn: ({ signal }) => api.rpc.songs.list(undefined, { signal }), refetchInterval: poll(3_000) });
+  const every = useLivePoll(3_000);
+  return useQuery({ queryKey: queryKeys.songs, queryFn: ({ signal }) => api.rpc.songs.list(undefined, { signal }), refetchInterval: poll(every) });
 }
 
 export function useSongMutations() {
