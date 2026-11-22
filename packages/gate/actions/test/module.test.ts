@@ -11,6 +11,7 @@ import {
   DENY_ROUTE,
   PAUSED_KEY,
   PRIVACY_PROFILE,
+  PRIVACY_ROUTES,
 } from "../src/index.js";
 
 const GUILD: ContextKey = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" };
@@ -87,11 +88,42 @@ describe("actions module", () => {
     expect((await a.run("me privacy", "5", {}, DM)).text).toContain("私訊你：可以");
     const set = await a.run("me privacy", "5", { dm: "off" }, DM);
     expect(set.text).toContain("私訊你：不可以");
-    expect(await a.registry.privacy.get(me)).toEqual({ dm: false, approach: true });
+    expect(await a.registry.privacy.get(me)).toEqual({ dm: false, approach: true, watch: true });
     await a.run("me privacy", "5", { approach: "off", dm: "on" });
-    expect(await a.registry.privacy.get(me)).toEqual({ dm: true, approach: false });
+    expect(await a.registry.privacy.get(me)).toEqual({ dm: true, approach: false, watch: true });
     // Without the world module there is no presence opt-out to set.
     expect((await a.run("me privacy", "5", { presence: "off" }, DM)).text).toContain("沒有啟用");
+    await a.sup.stopAll();
+  });
+
+  it("me_privacy_sets_watch", async () => {
+    const a = await boot();
+    const me = { platform: "discord", id: "5" };
+    const set = await a.run("me privacy", "5", { watch: "off" }, DM);
+    expect(set.text).toContain("看你的直播：不可以");
+    expect(await a.registry.privacy.get(me)).toEqual({ dm: true, approach: true, watch: false });
+    expect((await a.run("me privacy", "5", {}, DM)).text).toContain("看你的直播：不可以");
+    await a.sup.stopAll();
+  });
+
+  it("the_watch_buttons_set_the_presser's_own_opt_out", async () => {
+    const a = await boot();
+    const me = { platform: "discord", id: "5" };
+    const off = await a.click(`mi:${PRIVACY_ROUTES.watchOff}`, "5");
+    expect(off?.result.type === "reply" && off.result.reply.text).toContain("看你的直播：不可以");
+    expect(off?.ephemeral).toBe(true);
+    expect(await a.registry.privacy.get(me)).toEqual({ dm: true, approach: true, watch: false });
+    expect((await a.registry.privacy.get({ platform: "discord", id: "6" })).watch).toBe(true);
+    await a.click(`mi:${PRIVACY_ROUTES.watchOn}`, "5");
+    expect((await a.registry.privacy.get(me)).watch).toBe(true);
+    // The toggle turns it the other way each time.
+    const toggled = await a.click(`mi:${PRIVACY_ROUTES.watchToggle}`, "5");
+    expect(toggled?.result.type === "reply" && toggled.result.reply.text).toContain(
+      "看你的直播：不可以",
+    );
+    expect((await a.registry.privacy.get(me)).watch).toBe(false);
+    await a.click(`mi:${PRIVACY_ROUTES.watchToggle}`, "5");
+    expect((await a.registry.privacy.get(me)).watch).toBe(true);
     await a.sup.stopAll();
   });
 
