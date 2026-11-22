@@ -4,8 +4,8 @@
 // The levels live in `place_settings` (plugin `agent`, keys `LEVEL_KEYS`; docs/design/v5-places.md)
 // and are read through the module's `PlaceConfig`: a room's own value, then its channel's (a
 // thread), then its Space's, then `[modules.agent]` (`channels`, then `default_mode`), then the
-// profile. A room of a server she joined after the original one, with nothing set for it or its
-// server, is `NEW_SPACE_MODE` (she answers who calls her and nothing else).
+// profile. A room of a new server (not established: first seen after servers were told apart),
+// with nothing set for it or its server, is `NEW_SPACE_MODE` (she answers who calls her and nothing else).
 //
 // Before phase 6 the runtime levels were `plugin_state` keys (`channel_mode:<context>`,
 // `activeness:<context>`). `migrateLegacy` moves them into `place_settings` once (marker
@@ -294,15 +294,17 @@ export class AgentHandle {
   }
 
   /**
-   * Whether `context` is in a server she joined after the original one (not the primary Space).
-   * `false` without the places services, in a DM, and while she knows no server at all.
+   * Whether `context` is in a new server: one she was not already in when servers were told apart
+   * (not established, `SpaceRef.established`), or one she has no record of. The primary and every
+   * other established server are not new. `false` without the places services, in a DM, and while
+   * she knows no server at all.
    */
   inNewSpace(context: ContextKey): boolean {
     const p = this.#places;
     if (p === null || context.scope === null) return false;
     try {
       const space = p.places.ofGuild(context.platform, context.scope);
-      if (space !== null) return !space.primary;
+      if (space !== null) return !space.established;
       return p.places.spaces().length > 0;
     } catch (error) {
       log.debug({ err: errorMessage(error) }, "cannot tell whether a server is new");

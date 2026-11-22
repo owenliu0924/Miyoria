@@ -2,7 +2,11 @@
 // its Space's, then `[modules.agent]` and the profile; a server joined later starts quiet; the old
 // `channel_mode:` / `activeness:` keys move into `place_settings` once.
 
-import { SqliteStore } from "@miyoria/store";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { Db, identitySchema, migrate, SqliteStore } from "@miyoria/store";
 import {
   type ContextKey,
   isJsonObject,
@@ -30,8 +34,10 @@ const ctx = (
 ): ContextKey => ({ platform: "discord", scope, channel, kind });
 
 const stores: SqliteStore[] = [];
+const cleanups: (() => void)[] = [];
 afterEach(async () => {
   for (const s of stores.splice(0)) await s.close();
+  for (const c of cleanups.splice(0)) c();
 });
 
 /**
@@ -113,6 +119,44 @@ async function setup(section: JsonObject = {}, mode = "quiet") {
   return { store, make, set, A, B, a1, at, av, b1 };
 }
 
+/**
+ * An install upgraded with two servers she was already in: gA (primary) and gE, both written in
+ * before identity v4 ran, so both are established; then gN, a server first seen after it.
+ */
+async function upgraded(section: JsonObject = {}) {
+  let now = Date.UTC(2026, 10, 22);
+  const clock = { now: () => now++ };
+  const dir = mkdtempSync(join(tmpdir(), "miyoria-established-"));
+  const path = join(dir, "core.db");
+  const before = new Db(new DatabaseSync(path), clock);
+  migrate(before, [{ ...identitySchema, migrations: identitySchema.migrations.slice(0, 3) }]);
+  // As the build of before wrote them (its own SQL: this build's tables have the v4 column).
+  before.run(
+    `INSERT INTO spaces (id, platform, external_id, name, joined_at, is_primary)
+     VALUES ('s-a', 'discord', 'gA', 'A', 1, 1), ('s-e', 'discord', 'gE', 'E', 2, 0)`,
+  );
+  before.close();
+  const author = (id: string) => ({ account: { platform: "discord", id }, display_name: id });
+  const store = await SqliteStore.open(path, { clock });
+  stores.push(store);
+  cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+  store.persons.resolve(ctx("gA", "a1"), author("1"));
+  store.persons.resolve(ctx("gE", "e1"), author("2"));
+  store.persons.resolve(ctx("gN", "n1"), author("3"));
+  const persona = new PersonaHandle(profile("quiet"));
+  const handle = new AgentHandle(
+    AgentConfigSchema.parse(section),
+    persona,
+    newOverrides(),
+    new Map(),
+    { state: "ok" },
+    store.settings,
+    { now: () => now },
+    { places: store.places, settings: store.config.places, config: placeConfigOf(store, section) },
+  );
+  return { store, handle };
+}
+
 describe("levels per place", () => {
   it("resolves the room, the thread's channel, the Space, the file, then the profile", async () => {
     const { make, set, A, a1 } = await setup({ channels: { "discord:gA:a2": "lively" } });
@@ -162,6 +206,22 @@ describe("levels per place", () => {
     expect(h.activeness(ctx("gB", "b1"))).toBe("high");
     // Server A's levels never reach B.
     expect(h.channelMode(ctx("gA", "a1"))).toBe("normal");
+  });
+
+  it("keeps every server she was already in at the upgrade as it was; only a later one starts quiet", async () => {
+    const { store, handle: h } = await upgraded({ default_mode: "normal" });
+    const space = (g: string) => store.places.ofGuild("discord", g);
+    expect(space("gA")).toMatchObject({ primary: true, established: true });
+    expect(space("gE")).toMatchObject({ primary: false, established: true });
+    expect(space("gN")).toMatchObject({ primary: false, established: false });
+    expect(h.inNewSpace(ctx("gE", "e1"))).toBe(false);
+    expect(h.inNewSpace(ctx("gN", "n1"))).toBe(true);
+    // The second server has the file's level and activeness, exactly like the primary.
+    expect(h.channelMode(ctx("gE", "e1"))).toBe(h.channelMode(ctx("gA", "a1")));
+    expect(h.channelMode(ctx("gE", "e1"))).toBe("normal");
+    expect(h.activeness(ctx("gE", "e1"))).toBe(h.activeness(ctx("gA", "a1")));
+    expect(h.channelMode(ctx("gN", "n1"))).toBe("mention-only");
+    expect(h.activeness(ctx("gN", "n1"))).toBe("low");
   });
 
   it("follows the file's per-context entry in a new server too", async () => {

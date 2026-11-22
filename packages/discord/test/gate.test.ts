@@ -6,6 +6,7 @@ import {
   ambientChannel,
   ambientFor,
   messageAllowed,
+  newGuild,
   perGuild,
 } from "../src/gate.js";
 
@@ -75,7 +76,8 @@ describe("ambient text gate", () => {
 });
 
 /**
- * Two servers: gA (primary) and gB (joined later). `perGuild` is each server's section after its
+ * Two servers: gA (primary) and gB (joined later, not established), and gE, a second server she
+ * was already in before the upgrade (established, not primary). `perGuild` is each server's section after its
  * place settings; `rooms` a room's own values on top; `own` the Space keys set for it.
  */
 function twoServers(
@@ -86,8 +88,30 @@ function twoServers(
 ): { cluster: DiscordConfig; places: AmbientPlaces } {
   const base = config(cluster);
   const spaces: SpaceRef[] = [
-    { id: "A", platform: "discord", external_id: "gA", name: "A", primary: true },
-    { id: "B", platform: "discord", external_id: "gB", name: "B", primary: false },
+    {
+      id: "A",
+      platform: "discord",
+      external_id: "gA",
+      name: "A",
+      primary: true,
+      established: true,
+    },
+    {
+      id: "B",
+      platform: "discord",
+      external_id: "gB",
+      name: "B",
+      primary: false,
+      established: false,
+    },
+    {
+      id: "E",
+      platform: "discord",
+      external_id: "gE",
+      name: "E",
+      primary: false,
+      established: true,
+    },
   ];
   const places = {
     ofGuild: (_p: string, g: string) => spaces.find((s) => s.external_id === g) ?? null,
@@ -116,6 +140,20 @@ describe("the gate per server", () => {
     const rules = ambientFor(cluster, places, "gA", { channel: "a1" });
     expect(rules.ambient_text).toBe("tiers");
     expect(messageAllowed(rules, message(), "gA", { channel: "a1" }, SELF)).toBe(true);
+  });
+
+  test("a_second_server_she_was_already_in_keeps_the_files_rules_too", () => {
+    const { cluster, places } = twoServers({ ambient_text: "tiers", ambient_follow: true });
+    const rules = ambientFor(cluster, places, "gE", { channel: "e1" });
+    expect(rules).toEqual(ambientFor(cluster, places, "gA", { channel: "a1" }));
+    expect(rules).toMatchObject({ ambient_text: "tiers", ambient_follow: true });
+    expect(messageAllowed(rules, message(), "gE", { channel: "e1" }, SELF)).toBe(true);
+    expect(newGuild(places.places, "gE")).toBe(false);
+    expect(newGuild(places.places, "gA")).toBe(false);
+    expect(newGuild(places.places, "gB")).toBe(true);
+    const emoji = twoServers({ emoji: { descriptions: { fanfan: "討飯用" } } });
+    const per = perGuild({ config: emoji.cluster, places: emoji.places }, (c) => c.emoji);
+    expect(per.descriptions("gE")).toEqual({ fanfan: "討飯用" });
   });
 
   test("a_server_joined_later_hears_only_who_calls_her_until_set", () => {

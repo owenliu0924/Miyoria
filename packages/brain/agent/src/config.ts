@@ -598,8 +598,7 @@ export const AgentConfigSchema = z
 export type AgentConfig = z.output<typeof AgentConfigSchema>;
 
 /**
- * The level of a room in a server she joined after the original one, while nothing was set for
- * it (owner decision 2026-11-22, Q5): she answers who calls her and nothing else.
+ * The level of a room in a new server (not established), while nothing was set for it (owner decision 2026-11-22, Q5): she answers who calls her and nothing else.
  */
 export const NEW_SPACE_MODE: ChannelMode = "mention-only";
 /** The activeness there in the same case. */

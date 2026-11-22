@@ -8,7 +8,8 @@
 // existed).
 //
 // Per server (docs/design/v5-places.md): `ambientFor` reads the rules for one guild and room from
-// the module's `PlaceConfig`. A server she joined after the original one starts quiet: until
+// the module's `PlaceConfig`. A new server (not established: first seen after servers were told
+// apart) starts quiet: until
 // `ambient_text` is set for it there, it is `allowlist`, and only its own followed channels count
 // (the channel rule of `PlaceConfig` already drops another server's channels).
 
@@ -68,10 +69,14 @@ export interface AmbientPlaces {
   own(space: string, key: string): boolean;
 }
 
-/** Whether `guild` is a server she joined after the original one (or one she has no record of). */
+/**
+ * Whether `guild` is a new server: one she was not already in when servers were told apart (not
+ * established, `SpaceRef.established`), or one she has no record of. The primary and every other
+ * established server behave as they always did.
+ */
 export function newGuild(places: Places, guild: string): boolean {
   const space = places.ofGuild(PLATFORM, guild);
-  if (space !== null) return !space.primary;
+  if (space !== null) return !space.established;
   return places.spaces().length > 0;
 }
 
@@ -91,7 +96,7 @@ export function ambientFor(
   };
   const here = places.config.for(where);
   if (!newGuild(places.places, guild)) return here;
-  // A server joined later: only what was set for it (or its rooms) counts.
+  // A new server: only what was set for it (or its rooms) counts.
   const base = places.config.base();
   const space = places.places.ofGuild(PLATFORM, guild);
   const text =
@@ -105,8 +110,8 @@ export function ambientFor(
 
 /**
  * The emoji's or the stickers' `enabled` and `descriptions` of one server (docs/design/v5-places.md):
- * the server's own, else the file's. A server joined after the original one takes the file's
- * `enabled` but not its descriptions, which are the original server's meanings.
+ * the server's own, else the file's. A new server (not established) takes the file's `enabled`
+ * but not its descriptions, which are the meanings of the servers she was already in.
  */
 export function perGuild(
   shared: { config: DiscordConfig; places: AmbientPlaces | null },
