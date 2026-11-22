@@ -44,7 +44,7 @@ import { access } from "node:fs/promises";
 import { CapabilityError } from "@miyoria/gate/actions";
 import { type RequestQueue, RequestQueueKey } from "@miyoria/play/queue";
 import { errorMessage, getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
-import { SettingsStoreKey } from "@miyoria/store";
+import { PeopleStoreKey, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
   type ArbiterDecision,
@@ -58,6 +58,8 @@ import {
   isJsonObject,
   type JsonValue,
   newImpulse,
+  type PersonId,
+  PlacesKey,
   type PlaybackState,
   type SetlistLine,
   type SongCue,
@@ -95,6 +97,7 @@ import {
   SetList,
   type SongEntry,
   type SongNo,
+  songGuild,
   songLabel,
 } from "./setlist.js";
 import { parseSongPatch, songNo } from "./steer.js";
@@ -296,7 +299,7 @@ export class Singer implements VoiceFloor, SpeechPause {
    */
   waitsForRequester(entry: SongEntry): boolean {
     if (entry.requester === null || entry.practice === true) return false;
-    const where = this.voiceContext(entry.context?.scope ?? null) ?? this.voiceContext();
+    const where = this.#voiceFor(entry);
     if (where === null || where.scope === null) return false;
     return this.#present(where.scope, entry.requester) === false;
   }
@@ -326,16 +329,31 @@ export class Singer implements VoiceFloor, SpeechPause {
     return this.#fetching.has(no);
   }
 
-  /** `VoiceFloor`: songs still to sing in `guild` (a song asked for outside a server counts too). */
+  /**
+   * `VoiceFloor`: songs still to sing in `guild`: asked for there, or outside a server for it (a
+   * song of before there were several servers, with no server at all, counts everywhere).
+   */
   pending(guild: string): number {
-    return this.list.open().filter((e) => e.context === null || e.context.scope === guild).length;
+    return this.list.open().filter((e) => this.#isFor(e, guild)).length;
+  }
+
+  /** Whether `e` is sung in `guild`. */
+  #isFor(e: SongEntry, guild: string): boolean {
+    const own = songGuild(e);
+    return own === null || own === guild;
+  }
+
+  /** Her voice channel where `e` is sung: its server's; any for a song with no server. */
+  #voiceFor(e: SongEntry): ContextKey | null {
+    const own = songGuild(e);
+    return own === null ? this.voiceContext() : this.voiceContext(own);
   }
 
   /** `VoiceFloor`: the songs of `pending`, by the numbers she sings them with. */
   setlist(guild: string): SetlistLine[] {
     return this.list
       .open()
-      .filter((e) => e.state !== "playing" && (e.context === null || e.context.scope === guild))
+      .filter((e) => e.state !== "playing" && this.#isFor(e, guild))
       .map((e) => ({ no: e.no, label: songLabel(e), ready: e.state === "ready" }));
   }
 
@@ -382,12 +400,21 @@ export class Singer implements VoiceFloor, SpeechPause {
         `already preparing ${this.cfg.max_practice} songs for yourself; sing one of them first`,
       );
     }
+    // Asked for outside a server (a DM, the member page): it is sung in one server, the one it
+    // names, else the requester's own (phase 6), never in whichever she happens to be in.
+    const guild =
+      req.context?.scope != null
+        ? null
+        : (req.guild ?? (await this.#homeGuild(req.requester).catch(() => null)));
     // A ticket is paid before the song is listed, and given back if it cannot be.
-    const ticket = req.priority === true ? await this.#chargePriority(req, query) : null;
+    const ticket =
+      req.priority === true
+        ? await this.#chargePriority(req, query, req.context?.scope ?? guild)
+        : null;
     let entry: SongEntry;
     try {
       entry = this.list.add(
-        { ...req, query, priority: ticket !== null, priority_key: ticket },
+        { ...req, query, guild, priority: ticket !== null, priority_key: ticket },
         toTimestamp(this.ctx.clock.now()),
       );
     } catch (error) {
@@ -415,14 +442,45 @@ export class Singer implements VoiceFloor, SpeechPause {
    * Takes one song priority ticket from the requester (`SongPriorityKey`, the market's): the key
    * it is charged under. Throws a `SongPriorityError` with the reason when it cannot.
    */
-  async #chargePriority(req: SongRequest, query: string): Promise<string> {
+  async #chargePriority(req: SongRequest, query: string, guild: string | null): Promise<string> {
     const port = this.ctx.services.get(SongPriorityKey);
     if (req.requester === null) throw new SongPriorityError("點歌優先券要有點歌的人");
     if (!port || port.terms() === null) throw new SongPriorityError("現在沒有賣點歌優先券");
     const key = `song:${randomUUID()}`;
-    const charged = await port.charge(req.requester, key, `song:${safeName(query, 60)}`);
+    // The ticket is used in the queue of the server the song is sung in.
+    const space =
+      guild === null
+        ? null
+        : (this.ctx.services.get(PlacesKey)?.ofGuild(req.requester.platform, guild)?.id ?? null);
+    const charged = await port.charge(req.requester, key, `song:${safeName(query, 60)}`, space);
     if (!charged.ok) throw new SongPriorityError(charged.message);
     return key;
+  }
+
+  /**
+   * The server a song asked for outside one is sung in, by the requester's own servers: the one
+   * she is in voice in now, else the primary, else their first; `null` without identity's places
+   * or for someone who is in none (the song is then sung in any).
+   */
+  async #homeGuild(requester: AccountRef | null): Promise<string | null> {
+    const places = this.ctx.services.get(PlacesKey);
+    if (places === undefined || requester === null) return null;
+    const person = await this.ctx.services.get(PeopleStoreKey)?.personByAccount(requester);
+    const mine = person ? places.spacesOf(person.id as PersonId) : [];
+    const pick =
+      mine.find((s) => this.voiceContext(s.external_id) !== null) ??
+      mine.find((s) => s.primary) ??
+      mine[0] ??
+      places.primary();
+    return pick?.external_id ?? null;
+  }
+
+  /**
+   * Whether a song asked for now for `guild` would wait: she is in voice, but in another server
+   * (it is sung the next time she is in voice there). `false` for no server or no voice at all.
+   */
+  waitsElsewhere(guild: string | null): boolean {
+    return guild !== null && this.#voices.length > 0 && this.voiceContext(guild) === null;
   }
 
   async #refundPriority(requester: AccountRef, key: string): Promise<boolean> {
@@ -784,7 +842,7 @@ export class Singer implements VoiceFloor, SpeechPause {
     this.list.finish(entry, "failed", why);
     this.#finishQueueItem(entry, false);
     void this.#giveBackPriority(entry);
-    const where = entry.context ?? this.voiceContext();
+    const where = entry.context ?? this.#voiceFor(entry);
     if (tell && where !== null && entry.requester !== null) {
       this.#tell(
         where,
@@ -845,10 +903,10 @@ export class Singer implements VoiceFloor, SpeechPause {
 
   /** Tells her the song is ready (again): an impulse she is woken with, and decides on. */
   #remind(entry: SongEntry): void {
-    const where = this.voiceContext(entry.context?.scope ?? null) ?? entry.context;
+    const where = this.#voiceFor(entry) ?? entry.context;
     entry.reminders += 1;
     entry.last_reminder_ms = this.ctx.clock.now();
-    const voice = this.voiceContext() === null ? "你現在不在語音頻道,要唱得先進語音。" : "";
+    const voice = this.#voiceFor(entry) === null ? "你現在不在語音頻道,要唱得先進語音。" : "";
     const game = this.#game();
     const busy =
       game === null
@@ -873,11 +931,18 @@ export class Singer implements VoiceFloor, SpeechPause {
    */
   #autoStart(): void {
     if (this.#playing || this.#closed) return;
+    // A song of another server waits until she is in voice there (phase 6).
     const next = this.list
       .ready()
-      .find((e) => e.practice !== true && !this.#mindDecides(e) && !this.waitsForRequester(e));
+      .find(
+        (e) =>
+          e.practice !== true &&
+          !this.#mindDecides(e) &&
+          !this.waitsForRequester(e) &&
+          this.#voiceFor(e)?.scope != null,
+      );
     if (!next) return;
-    const where = this.voiceContext(next.context?.scope ?? null) ?? this.voiceContext();
+    const where = this.#voiceFor(next);
     if (where === null || where.scope === null) return;
     const announcement = this.#tell(
       where,
@@ -901,7 +966,7 @@ export class Singer implements VoiceFloor, SpeechPause {
       // The first notice plus `max_reminders` (while she plays, every few minutes until it
       // starts), only while she is in voice (she can sing then).
       const more = this.#remindsMore(e, gaming);
-      if (more && now >= due && this.voiceContext() !== null) this.#remind(e);
+      if (more && now >= due && this.#voiceFor(e) !== null) this.#remind(e);
     }
     this.#autoStart();
   }
@@ -912,7 +977,13 @@ export class Singer implements VoiceFloor, SpeechPause {
    */
   play(no: SongNo | null, context: ContextKey | null, turn: TurnId | null): SongEntry {
     if (this.#playing) throw new SingError(`already singing ${songLabel(this.#playing.entry)}`);
-    const entry = no === null ? (this.list.ready()[0] ?? null) : this.list.get(no);
+    // Without a number: the first ready song of the server she would sing in.
+    const here = context?.scope ?? this.voiceContext()?.scope ?? null;
+    const ready = this.list.ready();
+    const entry =
+      no === null
+        ? (ready.find((e) => here === null || this.#isFor(e, here)) ?? ready[0] ?? null)
+        : this.list.get(no);
     if (entry === null) {
       const preparing = this.list.preparing();
       throw new SingError(
@@ -929,6 +1000,11 @@ export class Singer implements VoiceFloor, SpeechPause {
     if (entry.state !== "ready") throw new SingError(`song #${entry.no} is ${entry.state}`);
     const guild = this.#guildFor(context);
     if (guild === null) throw new SingError("she is not in a voice channel");
+    if (!this.#isFor(entry, guild)) {
+      throw new SingError(
+        `song #${entry.no} was asked for in another server; it is sung when you are in voice there`,
+      );
+    }
     this.#begin(entry, guild, turn, 0);
     return entry;
   }
@@ -1320,8 +1396,9 @@ export class Singer implements VoiceFloor, SpeechPause {
     if (is(Events.VoiceJoined, event)) {
       const c = event.data.context;
       this.#voices = [c, ...this.#voices.filter((v) => !contextKeyEquals(v, c))];
-      // Now she can sing: ready songs she decides about are brought up again.
+      // Now she can sing: ready songs of this server she decides about are brought up again.
       for (const e of this.list.ready()) {
+        if (c.scope !== null && !this.#isFor(e, c.scope)) continue;
         if (this.#mindDecides(e) && this.#remindsMore(e, false)) this.#remind(e);
       }
       this.#autoStart();
@@ -1366,12 +1443,17 @@ export class Singer implements VoiceFloor, SpeechPause {
     const requester = accountOf(payload.requester);
     const name = typeof payload.requester_name === "string" ? payload.requester_name : "觀眾";
     const context = contextOf(payload.context);
+    // The queue's item knows its server (a vote's winner has no context of its own).
+    const space = this.ctx.services.get(RequestQueueKey)?.get(item)?.space ?? null;
+    const guild =
+      space === null ? null : (this.ctx.services.get(PlacesKey)?.space(space)?.external_id ?? null);
     void this.request({
       query: text,
       key: 0,
       requester,
       requester_name: name,
       context,
+      ...(guild === null ? {} : { guild }),
       forced: true,
       queue_item: item,
     }).catch((error: unknown) => {
@@ -1569,6 +1651,14 @@ export class Singer implements VoiceFloor, SpeechPause {
       if (raw === null) return;
       const n = this.list.restore(raw);
       this.#saved = JSON.stringify(this.list.snapshot());
+      // A song of before there were several servers that was asked for outside one: the
+      // original server's (it was the only one). Its place in the list and its state stay.
+      const primary = this.ctx.services.get(PlacesKey)?.primary()?.external_id ?? null;
+      if (primary !== null) {
+        for (const e of this.list.open()) {
+          if (songGuild(e) === null && e.practice !== true) e.guild = primary;
+        }
+      }
       for (const e of this.list.preparing()) if (e.job === null) this.#orphans.add(e.no);
       // Ready means its audio is on Core: checked again (a disk cache finds it at once).
       for (const e of this.list.ready()) if (e.song !== null) this.#fetchAudio(e, true);

@@ -23,7 +23,7 @@ import type {
   PublicToday,
 } from "@miyoria/contracts/api";
 import { getLogger, type ModuleContext } from "@miyoria/runtime/kernel";
-import { SingerKey, type SongEntry } from "@miyoria/sing";
+import { SingerKey, type SongEntry, songGuild } from "@miyoria/sing";
 import { knownNames, type SettingsStore } from "@miyoria/store";
 import {
   ActivityManagerKey,
@@ -35,11 +35,13 @@ import {
   type JsonValue,
   type KnownName,
   ModerationKey,
+  PlacesKey,
   parseSongCue,
 } from "@miyoria/types";
 import { z } from "zod";
 import { os, type RpcContext } from "./contract.js";
 import { ApiError } from "./errors.js";
+import { adminSpace } from "./space-param.js";
 import type { ApiContext, ApiState } from "./state.js";
 
 const log = getLogger("api.public");
@@ -519,12 +521,26 @@ export function publicStatus(state: ApiState): PublicStatus {
 /** How many songs she just sang are listed. */
 const RECENT_SONGS = 5;
 
-/** `GET /api/public/songs`. Who asked for a song and what they typed stay out of it. */
-export function publicSongs(state: ApiState): PublicSongs {
+/**
+ * The server `?space=` names (`404` for one she is not in), else the primary; its guild id. `null`
+ * without identity's places (or any Space): every song, as there was one server.
+ */
+export function publicSongGuild(state: ApiState, requested: string | undefined): string | null {
+  if (state.optional(PlacesKey) === undefined) return null;
+  return adminSpace(state, requested)?.external_id ?? null;
+}
+
+/**
+ * `GET /api/public/songs`. Who asked for a song and what they typed stay out of it. `guild`: that
+ * server's songs only (a song of before there were several, with no server, is everyone's).
+ */
+export function publicSongs(state: ApiState, guild: string | null = null): PublicSongs {
   const singer = state.optional(SingerKey);
   if (!singer) return { playing: null, upcoming: [], recent: [] };
-  const all = singer.list.all();
-  const now = singer.playing();
+  const here = (e: SongEntry) => guild === null || (songGuild(e) ?? guild) === guild;
+  const all = singer.list.all().filter(here);
+  const playing = singer.playing();
+  const now = playing !== null && here(playing) ? playing : null;
   return {
     playing: now ? songLine(state, now) : null,
     upcoming: all
@@ -557,7 +573,8 @@ export const publicRpc = {
   status: os.public.status.handler(({ context }) =>
     servePublic(context, "status", () => publicStatus(context.state)),
   ),
-  songs: os.public.songs.handler(({ context }) =>
-    servePublic(context, "songs", () => publicSongs(context.state)),
-  ),
+  songs: os.public.songs.handler(({ input, context }) => {
+    const guild = publicSongGuild(context.state, input.query.space);
+    return servePublic(context, `songs:${guild ?? ""}`, () => publicSongs(context.state, guild));
+  }),
 };

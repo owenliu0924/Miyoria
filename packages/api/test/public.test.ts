@@ -81,6 +81,8 @@ import {
   ModerationKey,
   newId,
   type PersonId,
+  type Places,
+  PlacesKey,
   SelfStateKey,
   SocialSignalsKey,
 } from "@miyoria/types";
@@ -374,6 +376,8 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
   s.provide("sing", SingerKey, {
     playing: () => songs.find((e) => e.state === "playing") ?? null,
     singing: () => songs.find((e) => e.state === "playing") ?? null,
+    voiceContext: () => null,
+    waitsElsewhere: () => false,
     list: {
       all: () => {
         counters.songs += 1;
@@ -1723,6 +1727,99 @@ describe("song requests from the page", () => {
         requester: discord(ALICE),
       },
     ]);
+  });
+
+  it("go to one server: the member's own, or the one they picked, and say when it waits", async () => {
+    const r = await rig();
+    const space = (id: string, guild: string, primary: boolean) => ({
+      id,
+      platform: "discord",
+      external_id: guild,
+      name: guild,
+      primary,
+    });
+    const spaces = [space("S1", "g1", true), space("S2", "g2", false)];
+    let memberOf = ["S1", "S2"];
+    r.sup.services.provide("core", PlacesKey, {
+      primary: () => spaces[0] ?? null,
+      spaces: () => spaces,
+      space: (id: string) => spaces.find((s) => s.id === id) ?? null,
+      spacesOf: () => spaces.filter((s) => memberOf.includes(s.id)),
+      isMember: (_person: unknown, id: string) => memberOf.includes(id),
+    } as unknown as Places);
+    // She is in voice in g1 only.
+    const voice: ContextKey = { platform: "discord", scope: "g1", channel: "v1", kind: "voice" };
+    r.sup.services.removeOwnedBy("sing");
+    r.sup.services.provide("sing", SingerKey, {
+      playing: () => null,
+      singing: () => null,
+      list: { all: () => [] },
+      voiceContext: (guild: string | null) => (guild === "g1" ? voice : null),
+      waitsElsewhere: (guild: string | null) => guild !== null && guild !== "g1",
+    } as never);
+    const actuators = r.sup.services.require(ActuatorRegistryKey);
+    const invoke = actuators.invoke.bind(actuators);
+    const asked: { guild: unknown; context: unknown }[] = [];
+    actuators.invoke = (request) => {
+      asked.push({
+        guild: (request.args as { guild?: unknown }).guild,
+        context: request.principal.context,
+      });
+      return invoke(request);
+    };
+    const cookie = await r.login("alice");
+
+    const own = await r.post("/api/member/songs", cookie, { query: "song a" });
+    expect(own.status).toBe(200);
+    expect(own.body).toEqual({ accepted: true });
+    const picked = await r.post("/api/member/songs?space=S2", cookie, { query: "song b" });
+    expect(picked.status).toBe(200);
+    expect((picked.body as { waiting: string }).waiting).toContain("別的伺服器");
+    expect(asked).toEqual([
+      { guild: "g1", context: voice },
+      { guild: "g2", context: null },
+    ]);
+    expect((await r.post("/api/member/songs?space=S9", cookie, { query: "c" })).status).toBe(404);
+    memberOf = ["S1"];
+    const stranger = await r.post("/api/member/songs?space=S2", cookie, { query: "d" });
+    expect(stranger.status).toBe(403);
+    expect(asked).toHaveLength(2);
+  });
+
+  it("the public list is one server's: the asked one, else the primary", async () => {
+    const r = await rig();
+    const spaces = [
+      { id: "S1", platform: "discord", external_id: "g1", name: "g1", primary: true },
+      { id: "S2", platform: "discord", external_id: "g2", name: "g2", primary: false },
+    ];
+    r.sup.services.provide("core", PlacesKey, {
+      primary: () => spaces[0] ?? null,
+      spaces: () => spaces,
+      space: (id: string) => spaces.find((s) => s.id === id) ?? null,
+    } as unknown as Places);
+    const at = (guild: string | null) =>
+      guild === null ? null : { platform: "discord", scope: guild, channel: "t", kind: "channel" };
+    const entry = (title: string, guild: string | null, extra: object = {}) =>
+      ({
+        query: title,
+        state: "ready",
+        context: at(guild),
+        song: { id: title, title, artist: "A", duration_s: 1 },
+        ...extra,
+      }) as unknown as SongEntry;
+    r.sup.services.removeOwnedBy("sing");
+    r.sup.services.provide("sing", SingerKey, {
+      playing: () => null,
+      singing: () => null,
+      list: {
+        all: () => [entry("One", "g1"), entry("Two", "g2"), entry("Web", null, { guild: "g2" })],
+      },
+    } as never);
+    const titles = async (path: string) =>
+      ((await r.get(path)).body as { upcoming: { title: string }[] }).upcoming.map((s) => s.title);
+    expect(await titles("/api/public/songs")).toEqual(["One"]);
+    expect(await titles("/api/public/songs?space=S2")).toEqual(["Two", "Web"]);
+    expect((await r.get("/api/public/songs?space=S9")).status).toBe(404);
   });
 
   it("are bound by the capability's rate limit", async () => {

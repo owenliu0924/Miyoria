@@ -14594,6 +14594,12 @@
       "properties": {
         "accepted": {
           "type": "boolean"
+        },
+        "waiting": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

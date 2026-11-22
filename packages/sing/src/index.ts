@@ -70,6 +70,7 @@ export {
   type SongEntry,
   type SongNo,
   type SongState,
+  songGuild,
   songLabel,
 } from "./setlist.js";
 export {
