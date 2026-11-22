@@ -78,6 +78,8 @@ export function heardShare(text: string, heardMs: number, totalMs: number): stri
 interface LineInfo {
   attention(said: string): { key: string; revision: number };
   audience(): readonly Handle[];
+  /** Whom the line is said to (`FixedLine.to`); `undefined`: not known. */
+  to?(): readonly Handle[] | undefined;
   cause(): string | null;
 }
 
@@ -195,6 +197,7 @@ export class MainLine implements Mouth {
           attention_key: key,
           revision,
           audience: info.audience(),
+          to: info.to?.(),
           cause: info.cause(),
           blocked: action.blocked ?? null,
         });
@@ -276,6 +279,7 @@ export class MainLine implements Mouth {
       const mouth = this.#mouth(sink, {
         attention: (said) => about ?? { key: topicKey(said), revision: 1 },
         audience: () => line.audience ?? agent.audience(context),
+        to: () => line.to,
         cause: () => null,
       });
       const priority = "request" as const;

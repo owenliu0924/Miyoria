@@ -156,7 +156,7 @@ export function dmCapability(names: NameLookup | null = null): Capability<DmArgs
           turn: newId(),
           source: "self",
           blocked,
-          ...(audience === undefined ? {} : { audience: [audience] }),
+          ...(audience === undefined ? {} : { audience: [audience], to: [audience] }),
         });
       } else if (actions) {
         await actions.submit(
