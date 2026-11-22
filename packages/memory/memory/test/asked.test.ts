@@ -81,6 +81,13 @@ describe("the 2026-11-22 incident: a question by name in a turn for someone else
       expect(text).not.toContain(`你問過 ${N}`);
       expect(text).toContain(`你問過 ${B}「`);
       expect(text).toContain("還沒回你");
+      // What they said to her is theirs by handle, not by the nickname of the moment.
+      const elsewhere = await r.timeline.render(
+        { ...where(now, [pN]), context: guild("other") },
+        4000,
+      );
+      expect(elsewhere).toContain(`${N}對你說:「我的半碗呢?」`);
+      expect(elsewhere).not.toContain("Model-9 Lumen");
     });
   }
 
