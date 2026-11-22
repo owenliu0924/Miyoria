@@ -1111,3 +1111,125 @@ reason, `accept = false`, the owner's limit and running/queued (nothing for an o
 - Image generation keeps `pick` (scored, since `comfyui` is `job`); ComfyUI's own queue is not read.
 - Nothing of this ran on real hosts: the scores, the drain during an update and the variant hashes
   were checked with fake hosts and an injected clock only.
+
+## 16. 一台電腦的幾條連線路徑(2026-11-22)
+
+朋友那台經 Tailscale 傳大檔案(卡拉 OK 的影片、翻唱的結果)不穩,之後還要接更多朋友的電腦。所以一台電腦可以宣告好幾條「路徑」,Core 量每一條,照工作挑最適合的,一條失敗就換下一條。owner 同意的方向(2026-11-22)。
+
+### 16.1 四種路徑
+
+| 種類 | 怎麼連 | 適合 | 限制 |
+|---|---|---|---|
+| `tailnet` | 每個服務自己的埠,在 tailnet(或區網、這台本機)的位址上 | 即時語音、WebSocket、大檔案 | Tailscale 有時自己繞中繼,變慢 |
+| `direct` | hostd 的閘道,在公開的位址加轉發的埠 | 大檔案、最低延遲、即時語音 | 要有人在路由器上轉發埠(那台的主人做,不是我們);沒有 tailnet 保護,所以一定要 TLS 和 token |
+| `tunnel` | hostd 的閘道,在 tunnel 的主機名稱後面(Cloudflare) | 不用轉發埠,最簡單 | 每個請求的內容有上限(當成 100 MB),大檔案分段傳;延遲較高,不給即時語音 |
+| `relay` | 控制連線本身(§7.1) | 一定連得上 | 最慢;最後的退路 |
+
+`direct` 和 `tunnel` 都經過 hostd 的**閘道**:這台一個 HTTP(S) 入口,`<路徑的網址>/svc/<服務>/<路徑>` 轉給這台的服務,`/_miyoria/probe` 回 Core 的量測。所以不管這台跑幾個服務,只要轉發一個埠、或開一個 tunnel 主機名稱。
+
+### 16.2 怎麼宣告:`routes.toml`
+
+那台電腦的主人才知道自己的位址,所以寫在那台的 `routes.toml`,放在 `host.toml` 旁邊。Core 改不了它。另外一個檔案而不是 `host.toml` 的一張表,理由和 §15.1 的 `routing.toml` 一樣:舊的 hostd 讀 `host.toml` 很嚴格,遠端更新之後舊的 hostd 會讀到它不認得的表;舊的 hostd 根本不會打開 `routes.toml`。hostd 啟動時讀一次,改了要 `miyoria down` 再 `up`。
+
+```toml
+# routes.toml(完整的例子在 repo 根目錄的 routes.example.toml)
+[gateway]                     # 有 direct 或 tunnel 路徑時才需要
+bind = "127.0.0.1"            # 預設;聽 127.0.0.1 以外的位址一定要有下面兩個
+port = 7890
+# tls_cert = "certs/fullchain.pem"   # 相對於 host.toml 的資料夾
+# tls_key = "certs/privkey.pem"
+
+[[route]]
+kind = "tailnet"
+address = "friend-pc.tail1234.ts.net"   # 沒寫就用 host.toml 的 [network] advertise
+
+[[route]]
+kind = "direct"
+url = "https://friend.example.net:7890"
+
+[[route]]
+kind = "tunnel"
+url = "https://miyoria-friend.example.com"
+# max_body_mb = 100                     # tunnel 的預設
+```
+
+- 名字預設是種類(第二條同種類的是 `tunnel-2`),也可以自己寫 `name`。
+- 沒宣告也會有的:`[network] advertise`(檔案裡沒有 `tailnet` 路徑時,叫 `advertise`)、`local`(Core 就在這台時,服務本機的位址)、`relay`。
+- 檔案讀不進來(TOML 錯、不認得的鍵)是整個檔案一個問題:這台只回報沒宣告也會有的路徑,寫進 hostd 的日誌。
+- 一條路徑有問題(`direct` 用 http、閘道聽不了那個埠、讀不到憑證)會帶著原因回報,Core 不會用它,面板顯示原因。
+
+**沒有 `routes.toml` 的電腦和今天完全一樣**:回報裡沒有任何新欄位,Core 照舊用 `advertised`(沒有就經控制連線),一次、不換路徑,也不量測。
+
+### 16.3 回報
+
+`host.report` 多三個可省略的欄位:`routes`(每條路徑的名字、種類、網址、內容上限、為什麼不能用)、每個服務的 `reach`(路徑名字 → 這個服務在那條路徑上的網址)、`route_token`(Core 量測閘道時帶的 token,hostd 每次啟動重新產生,和服務 token 一樣只在控制連線上送)。協定版本照舊是 1;舊的 Core 會把這些欄位丟掉。
+
+### 16.4 量測
+
+Core 的 `RouteProber` 每 5 秒看一次哪些量測到期了,一次最多 4 個:
+
+- **延遲和連不連得上**:每條路徑每 `probe_secs`(300 秒)一個小 `GET`。閘道路徑是 `/_miyoria/probe`(帶 `route_token`);`tailnet` 是那條路徑上一個在跑的服務的 `/health`(帶它的 token);`relay` 用控制連線本來就有的 ping。
+- **流量**:閘道路徑每 `sample_secs`(1800 秒)抓一次 `sample_kib`(256 KiB)的隨機位元組。所有路徑在真的傳輸 1 MiB 以上時也會各記一筆(衰減平均,新的一筆佔 0.3)。
+- **花費**:一台大約每五分鐘每條路徑一個小請求,每半小時四分之一 MB。只量有 `routes.toml` 的電腦。
+- 閘道路徑的回應要有 `x-miyoria-route: gateway` 才算:Cloudflare 在 tunnel 斷掉時自己回的 502、530 算失敗。401 的原因是「閘道不認得這台的 token」,通常是網址指到別台。
+
+### 16.5 怎麼挑
+
+每個請求在送出時挑,照工作分三種:
+
+| 工作 | 什麼時候 | 能用的路徑 | 先後 |
+|---|---|---|---|
+| 即時 | `direct: true` 查到的端點(語音辨識、語音合成、VAD) | 只有 `tailnet`、`direct` | 延遲低的先 |
+| 一般 | 其他 | 全部 | 延遲低的先,`relay` 最後 |
+| 大檔 | `job` 或 `batch` 的能力(翻唱、歌詞、生圖) | 全部 | 流量大的先 |
+
+每一種裡面都是「通的」先於「還沒量過」先於「失敗過、休息完了」先於「還在休息」。還沒量過的照種類的預設值排(延遲 tailnet、direct 40 ms,tunnel 150 ms,relay 300 ms;流量 20、20、10、8 MB/s;本機的位址 1 ms、500 MB/s)。上傳的內容超過路徑上限的(或長度不知道的串流)不走那條。只有 `tunnel` 或 `relay` 的電腦,不會出現在即時的查詢裡。
+
+### 16.6 換路徑
+
+- 一條路徑失敗就休息 `rest_secs`(30、120、600 秒,連續失敗越多越久),排到最後;休息完先量一次。
+- **什麼時候可以換下一條重送**:請求根本沒送出去(連線被拒、名字查不到、relay 還沒送就拒絕、tunnel 的邊緣替斷掉的閘道回話),或方法是 `GET`、`HEAD`、`OPTIONS`、`PUT`、`DELETE`;而且內容可以送兩次(不是串流)。其他情況照原本的錯誤丟回去,呼叫的人自己的換台規則照舊(翻唱的送出不會送兩次)。
+- **下載會接續**:`GET` 的回應有 ETag(或 Last-Modified)、長度、支援 range 時,傳到一半斷了就從斷掉的那個位元組,用 `range` 和 `if-range` 從下一條路徑要剩下的,呼叫的人讀到的是一個沒斷過的內容。檔案在中間變了(if-range 對不上)就失敗,不會拼錯。最多試 5 次。
+- **tunnel 分段**:有上限的路徑一開始就分段要,每段 `chunk_mb`(64 MB),最多上限減 64 KiB。這用的就是唱歌 worker 本來就支援的 range(`#save` 的續傳也是靠它),worker 不用改。
+
+### 16.7 安全
+
+- `direct`、`tunnel` 一定要 `https`。只有指到這台本機(`127.x`、`localhost`、`::1`)的 `http` 可以:測試,和閘道前面放 TLS 反向代理的情況。hostd 檢查一次,Core 再自己檢查一次(不管 hostd 說什麼),網址裡有帳號密碼、`?`、`#` 都不用。服務在閘道路徑上的網址一定要在那條路徑的網址底下。
+- 閘道聽 `127.0.0.1` 以外的位址一定要有自己的憑證(`tls_cert`、`tls_key`)。Core 照一般方式驗證憑證,不會關掉驗證,所以 `direct` 要用 Core 信任的憑證(例如 Caddy 或 Let's Encrypt 配 DDNS 的名稱)。
+- 閘道收的 token:服務自己的 token 只能進那個服務,`route_token` 只能用量測。token 錯、沒帶、服務不存在,一律同樣的 401,外面的人看不出這台跑什麼。閘道只轉 worker:Core 自己和節點(語音節點、舞台)永遠不在閘道後面,所以沒有任何路徑能碰到 Core 的 API。
+- 轉給服務時拿掉 hop-by-hop 標頭,換成服務自己的 authorization;不跟隨轉址;路徑裡的 `..`、`%2e`、`%2f`、反斜線一律拒絕。
+- token 不寫進日誌;面板和管理 API 只看得到路徑的名字、種類、網址和量到的數字。
+
+### 16.8 那台電腦的主人要自己做的事
+
+- **direct**:路由器把一個外部埠轉到這台的閘道埠;一個 Core 信任的憑證(公開的名稱,例如 DDNS 加 Let's Encrypt,或 Caddy 自動申請);憑證放在閘道自己(`bind = "0.0.0.0"` 加 `tls_cert`、`tls_key`),或閘道聽 `127.0.0.1`、前面放 Caddy 之類的 TLS 反向代理。防火牆只開那一個埠。
+- **tunnel**:在那台裝 `cloudflared`,開一個 tunnel,一個主機名稱指到 `http://127.0.0.1:<閘道的埠>`。TLS 在 Cloudflare 那邊。免費方案的上傳上限是 100 MB,所以預設 `max_body_mb = 100`。
+- **tailnet**:和今天一樣,`host.toml` 的 `[network] bind` 要是 tailnet 的位址(或 `0.0.0.0`)。
+
+### 16.9 面板
+
+「電腦」頁的「每台電腦」底下列出每條路徑:種類、通不通、現在拿來做什麼(即時、一般、大檔)、量到的延遲和流量、上限、上次量的時間、失敗或不能用的原因。`GET /api/cluster/routing` 每台多一個 `routes`。
+
+### 16.10 Core 的設定
+
+```toml
+[modules.cluster.routes]   # 全部是預設值
+probe_secs = 300
+sample_secs = 1800         # 0:不主動測流量
+sample_kib = 256
+timeout_ms = 5000
+rest_secs = [30, 120, 600]
+chunk_mb = 64
+```
+
+### 16.11 程式在哪
+
+hostd:`src/routes.ts`(讀檔和檢查)、`src/gateway.ts`(閘道)、`daemon.ts` 的 `#routesReport`、`#startGateway`。Core:`packages/cluster/src/routes.ts`(`RouteTable`:路徑、健康、挑選)、`route-probe.ts`(`RouteProber`)、`routed.ts`(換路徑、續傳、分段)、`registry.ts` 的 `request` 和 `#all`。形狀在 `packages/contracts/host/src/routes.ts`。
+
+### 16.12 還沒做的、沒驗證的
+
+- **語音沒有改**:即時語音照舊每個請求用 `firstEndpoint(..., { direct: true })` 找端點、經 `registry.request` 送,所以有 `routes.toml` 的電腦,語音辨識和語音合成會走路徑表(只有 `tailnet`、`direct`,失敗了換另一條)。VAD 的 WebSocket 直接用端點的 `url`(查的那一刻最好的即時路徑),連上之後不換路徑,也不會因為斷線把那條路徑標成失敗。語音沒有開工作階段(§15.9),所以也沒有「一通電話黏在同一條路徑」。
+- 沒有在真的電腦上跑過:Cloudflare tunnel、轉發的埠、真的憑證、Tailscale 自己繞中繼時的量測,都只用本機的假服務和假時鐘測過。閘道自己的 HTTPS 模式沒有測試(要產生憑證)。
+- 上傳不分段:worker 的協定沒有分段上傳,超過上限的上傳就不走那條路徑。現在的上傳(卡拉 OK 的錄音、ASR 抽查)都遠小於 100 MB。
+- `cluster.resolve` 給 hostd 的端點是 Core 挑的那一刻的網址;服務拿去自己連時不會換路徑。
+- `routes.toml` 只在 hostd 啟動時讀。

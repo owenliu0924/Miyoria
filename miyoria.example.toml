@@ -269,6 +269,15 @@ token = "${MIYORIA_API_TOKEN:-}"
 # provides = ["sing"]
 # url = "http://100.83.26.41:8005"
 # token = "${FRIEND_SING_TOKEN}"  # 那個服務有檢查 token 時
+# 每台電腦可以在它自己的 routes.toml 宣告好幾條連線路徑(tailnet、direct、tunnel,加上一直都在的控制連線);
+# Core 量每一條、照工作挑、失敗就換下一條(docs/design/v5-hostd.md §16)。下面都是預設值,只影響有 routes.toml 的電腦。
+# [modules.cluster.routes]
+# probe_secs = 300               # 每條路徑多久量一次延遲和連不連得上(秒)
+# sample_secs = 1800             # 閘道路徑多久測一次流量(秒);0 = 不主動測
+# sample_kib = 256               # 測流量抓多少(KiB,最多 1024)
+# timeout_ms = 5000              # 量測多久沒回應算失敗
+# rest_secs = [30, 120, 600]     # 失敗的路徑先跳過多久(連續失敗越多越久,最後一個重複)
+# chunk_mb = 64                  # 有內容上限的路徑(tunnel)下載時每段最多多大
 
 # Self 帳號語音節點(apps/voice-node)連進來的位址;token 由 `miyoria init` 產生
 [modules."voice.link"]
