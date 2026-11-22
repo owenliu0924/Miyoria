@@ -7,7 +7,7 @@ import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
 import { reportTables } from "@miyoria/brain/report";
 import { initiativeTables } from "@miyoria/brain/selfhost";
-import { clusterTables } from "@miyoria/cluster";
+import { ClusterModule, type ClusterTables, clusterTables } from "@miyoria/cluster";
 import {
   BountyStoreKey,
   CoinLedgerStoreKey,
@@ -83,6 +83,7 @@ import {
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
+import { type Machines, openMachines } from "./machines.js";
 import {
   moduleEnabled,
   NEEDS_TOKEN,
@@ -90,6 +91,7 @@ import {
   REQUIRED_MODULES,
 } from "./module-ids.js";
 import { ModuleSettings } from "./module-settings.js";
+import type { MachineSource } from "./profiles.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
 const log = getLogger("core.boot");
@@ -128,6 +130,12 @@ export interface ModuleDeps {
   store: Store;
   /** Directory of `miyoria.toml`; relative paths in the config resolve against it. */
   baseDir: string;
+  /**
+   * The machines' tables (`cluster_*`), shared by every profile: the store's, or for a profile
+   * with a database of its own the install's database's (docs/design/v5-profiles.md §7). Absent
+   * (deps made by hand): the store's.
+   */
+  machines?: ClusterTables;
 }
 
 export interface DiscoveredExtension {
@@ -175,6 +183,13 @@ export interface CoreOptions {
    * it runs on the install's, as the first character always has. Only shown, never acted on.
    */
   ownProfile?: boolean;
+  /**
+   * For a profile with a database of its own (`machineSource`): the install's database, which
+   * holds the machines, and the install's `[modules.cluster]`, which the cluster module runs with
+   * instead of the profile's. Absent: the store's tables and the config's own section, as before
+   * profiles.
+   */
+  machines?: MachineSource | null;
 }
 
 /** A built (not yet started) core node. */
@@ -189,6 +204,8 @@ export class Core {
     readonly profileId: ProfileId,
     /** The panel's settings layer; `null` in a core built without one. */
     readonly settings: ModuleSettings | null = null,
+    /** The machine database, when it is not the store's: closed after the store. */
+    readonly machines: Pick<Machines, "close"> | null = null,
   ) {}
 
   get bus(): EventBus {
@@ -229,6 +246,7 @@ export class Core {
     this.#persist.abort();
     await this.#persistTask;
     await this.store.close();
+    this.machines?.close();
   }
 }
 
@@ -254,13 +272,21 @@ export async function buildCoreWith(
   const supervisor = new Supervisor({ bus, services });
 
   let store = options.store;
+  let storeUrl: string | null = null;
   if (!store) {
     const url = resolveDatabaseUrl(databaseUrl(config), baseDir);
+    storeUrl = url;
     try {
       store = await catalog.openStore(url);
     } catch (error) {
       throw new Error(`connecting to the database: ${errorMessage(error)}`, { cause: error });
     }
+  }
+  let machines: Machines;
+  try {
+    machines = openMachines(store, options.machines, { storeUrl });
+  } catch (error) {
+    throw new Error(`opening the machines' database: ${errorMessage(error)}`, { cause: error });
   }
 
   const k = KERNEL_MODULE;
@@ -355,7 +381,14 @@ export async function buildCoreWith(
   await directives.refresh();
   services.provide(k, DirectivesKey, directives);
 
-  const deps: ModuleDeps = { config, profile, profileId, store, baseDir };
+  const deps: ModuleDeps = {
+    config,
+    profile,
+    profileId,
+    store,
+    baseDir,
+    machines: machines.tables,
+  };
   catalog.provideServices?.(services, deps);
 
   const modules: Module[] = [
@@ -369,10 +402,13 @@ export async function buildCoreWith(
     modules.push(new CliPlatform(options.cliChatName, profileDisplayName, options.cli));
   }
 
+  // The machines' settings are the install's whichever profile runs: the hosts dial its listener.
+  const machineSection = options.machines?.cluster;
   for (const module of modules) {
     const id = module.manifest.id;
-    const section = config.module(id);
-    let enabled = moduleEnabled(config, id);
+    const machine = id === ClusterModule.ID ? machineSection : undefined;
+    const section = machine ?? config.module(id);
+    let enabled = machine?.enabled ?? moduleEnabled(config, id);
     const required = REQUIRED_MODULES.includes(id);
     // A module disabled at runtime (command / panel) stays disabled. A required one cannot be
     // disabled, so whatever an older build remembered about it is not followed.
@@ -402,7 +438,14 @@ export async function buildCoreWith(
     log.warn({ err: errorMessage(error) }, "extension discovery failed");
   }
 
-  const core = new Core(supervisor, store, profileDisplayName, profileId, settings);
+  const core = new Core(
+    supervisor,
+    store,
+    profileDisplayName,
+    profileId,
+    settings,
+    machines.path === null ? null : machines,
+  );
   core.persistModuleState((id) => moduleEnabled(config, id));
   return core;
 }

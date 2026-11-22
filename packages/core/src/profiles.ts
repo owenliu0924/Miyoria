@@ -11,12 +11,18 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 import { Config, type EnvLookup } from "@miyoria/runtime/kernel";
+import type { JsonValue } from "@miyoria/types";
 import {
+  DEFAULT_DATABASE_URL,
   DEFAULT_PROFILE,
   DEFAULT_PROFILES_DIR,
+  databaseUrl,
   resolveDatabaseUrl,
   sqlitePath,
 } from "./settings.js";
+
+/** The cluster module's id (`[modules.cluster]`), without loading its package. */
+const CLUSTER_MODULE = "cluster";
 
 /** Picks the profile over the install config's `core.profile`. */
 export const PROFILE_ENV = "MIYORIA_PROFILE";
@@ -159,6 +165,50 @@ export function listProfileFolders(profilesDir: string): ProfileFolder[] {
     .filter((e) => e.isDirectory() && existsSync(join(profilesDir, e.name, "profile.toml")))
     .map((e) => ({ id: e.name, own: existsSync(join(profilesDir, e.name, PROFILE_CONFIG_FILE)) }))
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+}
+
+/**
+ * Where the machines are for a profile of its own (docs/design/v5-profiles.md §7): the install's
+ * database and its `[modules.cluster]`, which every profile shares.
+ */
+export interface MachineSource {
+  /**
+   * The install's database (`core.database_url` of the install's config, resolved against its
+   * folder), whose `cluster_*` tables hold the machines; `null` when it is not a file
+   * (`memory://`), and then the profile's own store keeps them.
+   */
+  databaseUrl: string | null;
+  /** `[modules.cluster]` of the install's config: the listener, the static services, routing. */
+  cluster: { enabled: boolean; config: JsonValue | null };
+}
+
+/**
+ * The machines of a profile of its own; `null` for a profile on the install's config, whose
+ * store is the install's database already. `env` is the profile's environment (its own `.env`
+ * loaded, the install's taken out, as `loadProfileEnv` leaves it): the install's config is read as
+ * the install sees it, its references expanding from the real environment first, then the
+ * install's `.env`, never from the profile's own `.env`.
+ */
+export function machineSource(profile: ResolvedProfile, env: EnvLookup): MachineSource | null {
+  if (!profile.own) return null;
+  const install = readDotenv(profile.installPath);
+  const own = readDotenv(profile.configPath);
+  const lookup: EnvLookup = (name) => {
+    const value = env(name);
+    if (value !== undefined && value !== own.get(name)) return value;
+    return install.get(name);
+  };
+  const config = peekConfig(profile.installPath, lookup, new Map());
+  const url = resolveDatabaseUrl(
+    config === null ? DEFAULT_DATABASE_URL : databaseUrl(config),
+    dirname(profile.installPath),
+  );
+  const path = sqlitePath(url);
+  const section = config?.module(CLUSTER_MODULE) ?? { enabled: true, config: null };
+  return {
+    databaseUrl: path === null || path === ":memory:" ? null : url,
+    cluster: { enabled: section.enabled, config: section.config },
+  };
 }
 
 /** The folder of a `sqlite:` database URL resolved against `baseDir`; `null` for other stores. */

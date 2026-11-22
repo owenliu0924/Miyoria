@@ -8,6 +8,8 @@ import {
   loadProfile,
   logFilter,
   logLevel,
+  type MachineSource,
+  machineSource,
   type ResolvedProfile,
 } from "@miyoria/core/light";
 import { Config, configureLogging, getLogger } from "@miyoria/runtime/kernel";
@@ -50,16 +52,18 @@ function preferBundledPanel(config: Config): void {
 }
 
 /**
- * Where a core for `profile` resolves its relative paths and whether the profile has its own data
- * (docs/design/v5-profiles.md); without a profile, the config file's folder as always.
+ * Where a core for `profile` resolves its relative paths, whether the profile has its own data,
+ * and for one that does, where the install's machines are (docs/design/v5-profiles.md); without a
+ * profile, the config file's folder as always.
  */
 function profileOptions(
   configPath: string,
   profile: ResolvedProfile | undefined,
-): { baseDir: string; ownProfile: boolean } {
+): { baseDir: string; ownProfile: boolean; machines: MachineSource | null } {
   return {
     baseDir: profile?.baseDir ?? dirname(resolve(configPath)),
     ownProfile: profile?.own ?? false,
+    machines: profile === undefined ? null : machineSource(profile, (name) => process.env[name]),
   };
 }
 

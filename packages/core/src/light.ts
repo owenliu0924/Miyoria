@@ -12,6 +12,8 @@ export {
   databaseDir,
   isProfileFolderName,
   listProfileFolders,
+  type MachineSource,
+  machineSource,
   PROFILE_CONFIG_FILE,
   PROFILE_ENV,
   type ProfileFolder,

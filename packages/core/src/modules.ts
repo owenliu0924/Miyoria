@@ -163,6 +163,7 @@ async function coreModules({
   profileId,
   store,
   baseDir,
+  machines,
 }: ModuleDeps): Promise<Module[]> {
   // Where the modules' workers are: the cluster module's registry, with the address keys of the
   // modules' own sections added as static entries (endpoints.ts).
@@ -180,6 +181,8 @@ async function coreModules({
       complete: clusterComplete,
       links: () => links,
       checkout: coreCheckout(),
+      // The install's machines, whichever profile runs (docs/design/v5-profiles.md §7).
+      ...(machines === undefined ? {} : { machines }),
     }),
     SpeechModule.withDefaultFactories(config.get("speech", SpeechConfigSchema), { endpoints }),
     new VoiceLinkModule(),
