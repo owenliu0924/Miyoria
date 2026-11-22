@@ -30,12 +30,14 @@ import {
   type ContextKey,
   type JsonValue,
   newId,
+  PlacesKey,
   toTimestamp,
 } from "@miyoria/types";
 import type { EconomyDoc } from "./docs.js";
 import { type EconomyService, type Member, STRANGER } from "./economy.js";
 import { PredictionWatch } from "./prediction-watch.js";
 import { pickById, shortId } from "./purse.js";
+import { mayTakePart, spaceName, spaceToOpen } from "./spaces.js";
 import { EconomyError } from "./types.js";
 import type {
   BetResult,
@@ -60,6 +62,8 @@ const KEEP_MS = 3 * 86_400_000;
 export const NO_PREDICTION = "沒有這個預測";
 export const BETTING_CLOSED = "這個預測已經截止了";
 export const ALREADY_BET = "你已經押過這個預測了";
+/** A bet on a prediction of a server they are not in (`{server}`: its name). */
+export const NOT_THERE = "這個預測是{server}的,只有在那裡說過話的成員能押";
 
 /** The options of a prediction that settles by itself, by what settles it. */
 export const AUTO_OPTIONS: Readonly<Record<PredictionSourceKind, readonly [string, string]>> = {
@@ -124,8 +128,21 @@ export class PredictionDesk {
     return this.e.docs();
   }
 
-  async #predictions(statuses: readonly string[], limit = 50): Promise<EconomyDoc[]> {
-    return this.#docs().list(this.e.profile, PREDICTION, { statuses, limit });
+  #places() {
+    return this.e.services.get(PlacesKey);
+  }
+
+  /** Predictions by status, newest first; `spaces`: only those servers' (and the ones of none). */
+  async #predictions(
+    statuses: readonly string[],
+    limit = 50,
+    spaces?: readonly string[],
+  ): Promise<EconomyDoc[]> {
+    return this.#docs().list(this.e.profile, PREDICTION, {
+      statuses,
+      limit,
+      ...(spaces ? { spaces } : {}),
+    });
   }
 
   async #bets(predictionId?: string, statuses?: readonly string[]): Promise<EconomyDoc[]> {
@@ -169,7 +186,9 @@ export class PredictionDesk {
   /**
    * She opens a prediction people can stake on for `minutes`. With `settle_by` it is bound to the
    * soup or game goal of hers going on now (`context`: where she is, to tell soups apart) and
-   * settles by itself; its options are then fixed by that and the ones given are not used.
+   * settles by itself; its options are then fixed by that and the ones given are not used. It
+   * belongs to the server of `context` (with none, the primary): only that server's members see it
+   * and may bet, and `predictions_open` counts per server.
    */
   async open(req: {
     question: string;
@@ -221,8 +240,9 @@ export class PredictionDesk {
     if (!this.e.passes(as, [question, ...options].join(" "))) {
       throw new EconomyError(400, "這個預測通不過審查");
     }
+    const space = spaceToOpen(this.#places(), req.context);
     const made = await this.e.serial(async (): Promise<EconomyDoc> => {
-      const open = await this.#predictions(["open"]);
+      const open = await this.#predictions(["open"], 50, space === null ? undefined : [space]);
       if (open.length >= c.predictions_open) {
         throw new EconomyError(429, `同時開著的預測到上限了(${c.predictions_open} 個)`);
       }
@@ -245,6 +265,7 @@ export class PredictionDesk {
         data: data as unknown as EconomyDoc["data"],
         created_at: at,
         updated_at: at,
+        space,
       };
       await this.#docs().create(doc);
       return doc;
@@ -252,6 +273,7 @@ export class PredictionDesk {
     this.e.purse.audit("economy.prediction.open", {
       prediction: made.id,
       settles: source === null ? "her" : source.kind,
+      space,
     });
     return this.#view(made, [], null);
   }
@@ -275,6 +297,13 @@ export class PredictionDesk {
     const idem = `bet:${key}`;
     const out = await this.e.serial(async (): Promise<BetResult> => {
       const pred = await this.#pick(ref, ["open"]);
+      const places = this.#places();
+      if (!mayTakePart(places, who.person.id, pred.space)) {
+        throw new EconomyError(
+          403,
+          NOT_THERE.replace("{server}", spaceName(places, pred.space ?? "")),
+        );
+      }
       const data = asPrediction(pred);
       const option = this.#option(data.options, which);
       const betId = `bet:${pred.id}:${who.person.id}`;
@@ -312,6 +341,7 @@ export class PredictionDesk {
         } satisfies BetData,
         created_at: at,
         updated_at: at,
+        space: pred.space ?? null,
       };
       let created = false;
       try {
@@ -597,11 +627,14 @@ export class PredictionDesk {
         ? "closed"
         : (pred.status as "open" | "resolved" | "cancelled");
     const source = data.source ?? null;
+    const space = pred.space ?? null;
     // The cut a win would take: today's rate while it is open, the one it was settled with after.
     const rate = pred.status === "open" ? this.e.config.prediction_rake : (data.rake_rate ?? 0);
     const prize = total - Math.floor(total * rate);
     return {
       id: shortId(pred.id),
+      space:
+        space === null ? null : { id: space, name: this.#places()?.space(space)?.name ?? null },
       question: data.question,
       options: data.options.map((label, i) => {
         const on = bets.filter((b) => asBet(b).option === i);
@@ -639,11 +672,14 @@ export class PredictionDesk {
     };
   }
 
-  /** The predictions open now and the ones settled lately, with this person's own stake. */
-  async view(account: AccountRef | null): Promise<PredictionView[]> {
+  /**
+   * The predictions open now and the ones settled lately, with this person's own stake; `spaces`:
+   * only those servers' (and the ones of no server), all of them without.
+   */
+  async view(account: AccountRef | null, spaces?: readonly string[]): Promise<PredictionView[]> {
     const who = account === null ? null : await this.e.member(account);
     const now = this.e.now();
-    const preds = (await this.#predictions(["open", "resolved", "cancelled"], 30)).filter(
+    const preds = (await this.#predictions(["open", "resolved", "cancelled"], 30, spaces)).filter(
       (p) => p.status === "open" || now - Date.parse(p.updated_at) < KEEP_MS,
     );
     const bets = await this.#bets();

@@ -212,7 +212,9 @@ export function predictionsCapability(economy: EconomyService): Capability {
     check: (_args, principal) => noSpeaker(principal),
     async execute(_args, ctx) {
       const who = speakerOf(ctx);
-      const list = await economy.v2.predictions(who.account);
+      // This server's (in a DM, the speaker's servers'): never another server's.
+      const spaces = await economy.spacesFor(who.message.context, who.account);
+      const list = await economy.v2.predictions(who.account, spaces);
       if (list.length === 0) return { text: "現在沒有預測。", data: { predictions: [] } };
       return {
         text: list.map((p) => predictionLine(p, cur)).join("\n"),
@@ -269,7 +271,7 @@ export function placeBetCapability(economy: EconomyService): Capability {
         return refusal(
           "沒有押",
           "unconfirmed",
-          `語音裡可能聽錯,不能直接花錢;請對方在文字頻道用 ${typedCommand("me bet", "discord")}`,
+          `語音裡可能聽錯,不能直接花錢;請對方在文字頻道用 ${typedCommand("me bet", who.message.context.platform)}`,
         );
       }
       return answering("沒有押成", async (): Promise<Answer> => {
@@ -540,7 +542,7 @@ export function fundRoomCapability(economy: EconomyService): Capability {
         return refusal(
           "沒有出錢",
           "unconfirmed",
-          `語音裡可能聽錯,不能直接花錢;請對方在文字頻道用 ${typedCommand("me room", "discord")}`,
+          `語音裡可能聽錯,不能直接花錢;請對方在文字頻道用 ${typedCommand("me room", who.message.context.platform)}`,
         );
       }
       return answering("沒有出成", async (): Promise<Answer> => {

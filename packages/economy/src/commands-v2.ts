@@ -17,7 +17,7 @@ import {
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { newId } from "@miyoria/types";
 import { STRANGER, WALLET_NODE } from "./economy.js";
-import { EconomyError } from "./types.js";
+import { EconomyError, EconomyKey } from "./types.js";
 import { type Economy2, Economy2Key } from "./v2-types.js";
 
 const log = getLogger("economy.commands.v2");
@@ -31,11 +31,21 @@ const UNAVAILABLE = "錢包現在打不開";
  * `/me play` (it allows 25 subcommands per command), other places keep `/me <name>`.
  */
 const typed = (inv: Invocation, path: string): string => typedCommand(path, inv.invoker.platform);
-/** The same for static texts (descriptions), which are what Discord shows. */
+/**
+ * The same for static texts (descriptions): they are registered once, before anyone invokes, and
+ * the platform that shows command descriptions is Discord.
+ */
 const onDiscord = (path: string): string => typedCommand(path, "discord");
+/** A fresh idempotency key for a press, on the invoker's platform (`discord:<ulid>` on Discord). */
+const pressKey = (inv: Invocation): string => `${inv.context.platform}:${newId()}`;
 
 class Handler2 {
   constructor(readonly services: ServiceLookup) {}
+
+  /** The servers a list shown where `inv` was run covers (`spaces.ts`); `undefined`: all. */
+  async spaces(inv: Invocation): Promise<string[] | undefined> {
+    return this.services.get(EconomyKey)?.spacesFor(inv.context, inv.invoker);
+  }
 
   /** An answer: refusals are plain information, not errors. */
   async guard(run: (e: Economy2) => Promise<CommandReply>): Promise<CommandReply> {
@@ -71,10 +81,16 @@ class Handler2 {
     });
   }
 
-  /** `/me predictions`: what is open to stake on, and how the stakes lie. */
+  /**
+   * `/me predictions`: what is open to stake on, and how the stakes lie: this server's (in a DM,
+   * those of the servers the invoker is in, each named when there are several).
+   */
   predictions(inv: Invocation): Promise<CommandReply> {
     return this.guard(async (e) => {
-      const list = await e.predictions(inv.invoker);
+      const spaces = await this.spaces(inv);
+      const list = await e.predictions(inv.invoker, spaces);
+      const servers = new Set(list.map((p) => p.space?.id ?? null));
+      const named = inv.context.scope === null && servers.size > 1;
       if (list.length === 0) {
         return cardReply([{ type: "text", text: "現在沒有預測" }], { accent: "neutral" });
       }
@@ -95,7 +111,8 @@ class Handler2 {
           .map((o, i) => `${i + 1}. ${o.label}　${o.staked}（${o.backers} 人）`)
           .join("\n");
         const mine = p.my_bet ? `\n你押了 ${p.my_bet.amount} 在「${p.my_bet.option}」` : "";
-        return `**[${p.id}] ${p.question}**　${state}${how ? `\n-# ${how}` : ""}\n${options}${mine}`;
+        const server = named && p.space?.name ? `\n-# 在「${p.space.name}」` : "";
+        return `**[${p.id}] ${p.question}**　${state}${server}${how ? `\n-# ${how}` : ""}\n${options}${mine}`;
       });
       return cardReply(
         [
@@ -119,7 +136,7 @@ class Handler2 {
       if (prediction === "" || option === "" || amount === null) {
         return notice("warn", "要押哪個預測的哪個選項、押多少？");
       }
-      const r = await e.placeBet(inv.invoker, prediction, option, amount, `discord:${newId()}`);
+      const r = await e.placeBet(inv.invoker, prediction, option, amount, pressKey(inv));
       const line = `押了「${r.question}」的「${r.option}」${r.amount} ${e.currency}，剩 ${r.balance}。`;
       return cardReply([{ type: "text", text: line }], { accent: "neutral" });
     });
@@ -131,7 +148,7 @@ class Handler2 {
       const item = inv.str("item")?.trim() ?? "";
       const amount = inv.int("amount");
       if (item !== "" && amount !== null) {
-        const r = await e.fundRoom(inv.invoker, item, amount, `discord:${newId()}`);
+        const r = await e.fundRoom(inv.invoker, item, amount, pressKey(inv));
         const left = r.item.placed
           ? "湊齊了，放進她的房間了"
           : `${r.item.funded} / ${r.item.price}`;
