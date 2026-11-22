@@ -140,7 +140,10 @@ export class MarketRegistry implements Markets {
     await this.#common.tick(signal);
   }
 
-  /** The market of a Space she left: whatever is open there is settled with both off. */
+  /**
+   * The market of a Space she left: whatever is open there is settled with both off, and nothing
+   * is posted (she is no longer there to post in).
+   */
   #closing(id: string): MarketService {
     this.#bySpace.delete(id);
     const off = (): MarketConfig => ({
@@ -150,8 +153,15 @@ export class MarketRegistry implements Markets {
       auction_channel: "",
       lottery_channel: "",
     });
-    const ref: SpaceRef = { id, platform: "discord", external_id: "", name: "", primary: false };
-    return this.#make(ref, off);
+    return new MarketService({
+      ...this.#o.shared,
+      config: off,
+      store: this.#o.store.forSpace(id),
+      secondary: true,
+      trades: true,
+      songs: false,
+      post: async () => null,
+    });
   }
 
   #adopt(places: Places): void {

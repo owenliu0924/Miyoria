@@ -201,7 +201,8 @@ export class MarketModule implements Module {
 
 /**
  * Posts a notice in a channel of `space`, through its platform's sink; its message id, or `null`
- * (logged) when it could not. Without a Space (no identity) the one server's Discord channel.
+ * (logged) when it could not. Without a Space (no identity) the one server's channel, on the
+ * platform the sink is.
  */
 async function post(
   ctx: ModuleContext,
@@ -210,12 +211,16 @@ async function post(
   reply: CommandReply,
 ): Promise<string | null> {
   const sink = ctx.services.get(ReplySinkKey);
+  if (!sink?.sendCard) {
+    ctx.log.info({ channel }, "market: no platform to post in");
+    return null;
+  }
   const context: ContextKey =
     space === null
-      ? { platform: "discord", scope: null, channel, kind: "channel" }
-      : { platform: space.platform, scope: space.external_id || null, channel, kind: "channel" };
-  if (!sink?.sendCard || sink.platform !== context.platform) {
-    ctx.log.info({ channel }, "market: no Discord to post in");
+      ? { platform: sink.platform, scope: null, channel, kind: "channel" }
+      : { platform: space.platform, scope: space.external_id, channel, kind: "channel" };
+  if (sink.platform !== context.platform) {
+    ctx.log.info({ channel, platform: context.platform }, "market: no sink for that platform");
     return null;
   }
   try {

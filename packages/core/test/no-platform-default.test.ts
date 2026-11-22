@@ -41,12 +41,6 @@ const ALLOWED: Readonly<Record<string, string>> = {
   "economy/src/gift-commands.ts": "P4: idempotency keys",
   "play/exchange/src/commands.ts": "P4: idempotency keys",
   "api/src/wallet.ts": "P4: the recipient of a transfer",
-  // Waiting on P5 (shared rooms, queues, posts): remove when fixed.
-  "play/karaoke/src/config.ts": "P5: the comment channel as a discord: context",
-  "play/karaoke/src/commands.ts": 'P5: typedCommand(path, "discord")',
-  "play/market/src/module.ts": "P5: the market's posts",
-  "play/market/src/markets.ts": "P5: the market's Space",
-  "play/market/src/commands.ts": "P5: idempotency keys",
 };
 
 /** Every `.ts` file under a `src` directory of a package, Discord's and `dist` left out. */
