@@ -204,6 +204,7 @@ export {
 export {
   type BudgetState,
   EXHAUSTED_LINE,
+  HOUR_CAP_LINE,
   herStatusHint,
   parseBudgetState,
   shownHint,

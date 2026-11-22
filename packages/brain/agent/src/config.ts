@@ -552,6 +552,46 @@ export const AgentConfigSchema = z
           group: "levels",
         }),
       ),
+    /**
+     * What one conversation (a session: a channel, thread, DM or voice room) may spend on models
+     * in a rolling hour, in USD from `[llm.pricing]` (the runner's `sessionUsdPerHour`). At the cap
+     * she does not answer there until enough of the hour has aged out; someone waiting is told
+     * once when she is back. `0`: no hourly cap per conversation (the daily `[llm.budget]` still
+     * applies). May differ per Space or room.
+     */
+    session_usd_per_hour: z
+      .number()
+      .nonnegative()
+      .default(1)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "每個對話每小時花費上限（美元）",
+          help: "一個頻道、討論串、私訊或語音頻道一小時內最多花多少；到了她會說大概幾分鐘後回來。0 = 不限（每天的預算照算）",
+          step: 0.1,
+          group: "spend",
+        }),
+      ),
+    /**
+     * The same cap in prompt and completion tokens, for an hour in which a model without a price
+     * was used (its cost cannot be counted). `0`: no such cap.
+     */
+    session_tokens_per_hour: z
+      .number()
+      .int()
+      .nonnegative()
+      .default(3_000_000)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "每個對話每小時 token 上限",
+          help: "模型沒有價格時改用 token 算的同一個上限。0 = 不限",
+          step: 100_000,
+          group: "spend",
+        }),
+      ),
     /** Treat messages from other bots as input (they are always recorded). */
     respond_to_bots: z.boolean().default(false),
     /** Reply messages are dropped if not sent within this time. */
@@ -594,7 +634,12 @@ export const AgentConfigSchema = z
     files: FilesConfigSchema.prefault({}),
     prompt: PromptConfigSchema.prefault({}),
   })
-  .meta(settingGroups([{ id: "levels", label: "每個地方的聊天等級" }]));
+  .meta(
+    settingGroups([
+      { id: "levels", label: "每個地方的聊天等級" },
+      { id: "spend", label: "每個對話的花費上限" },
+    ]),
+  );
 export type AgentConfig = z.output<typeof AgentConfigSchema>;
 
 /**

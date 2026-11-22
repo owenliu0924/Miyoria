@@ -132,6 +132,7 @@ import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
 import { type AdmittedInput, Lane, type LaneHost, type LaneRun } from "./lane.js";
+import { hourCap } from "./limits.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
@@ -1100,7 +1101,10 @@ export class SelfHost implements TextRunner {
         this.runner.run({
           session: { id: place.session, context },
           wake: run.wake,
-          profile: withLimits(PROFILES.text, { pictureBytes: agent.config.vision.max_total_bytes }),
+          profile: withLimits(PROFILES.text, {
+            pictureBytes: agent.config.vision.max_total_bytes,
+            ...hourCap(agent, context),
+          }),
           signal: run.controller.signal,
           turn,
         }),
@@ -1452,6 +1456,8 @@ function runOutcome(state: TurnState, result: RunResult | null, error: string | 
     const cancel = state.run.cancel;
     return { type: "cancelled", cause: cancel?.cause ?? "shutdown", by: cancel?.by ?? null };
   }
+  // The hourly cap stays visible as such, even when someone waiting was told when she is back.
+  if (result.outcome === "over_budget") return { type: "error", error: result.outcome };
   if (state.lines > 0 || result.outcome === "said") {
     return { type: "sent", parts: Math.max(state.lines, result.lines.length) };
   }

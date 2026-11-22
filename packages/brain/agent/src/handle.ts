@@ -234,6 +234,22 @@ export class AgentHandle {
     return this.#places !== null;
   }
 
+  /**
+   * `[modules.agent]` at `context`: a room's own values, its channel's, its Space's, then the
+   * cluster's (docs/design/v5-places.md), for the fields marked `scope: "room"`. Without the places
+   * services, or when the place cannot be read: the cluster's.
+   */
+  configAt(context: ContextKey): AgentConfig {
+    const p = this.#places;
+    if (p === null) return this.#config;
+    try {
+      return p.config.for(context);
+    } catch (error) {
+      log.debug({ err: errorMessage(error) }, "cannot read the config of a place");
+      return this.#config;
+    }
+  }
+
   /** The LLM budget state last reported on `llm.budget` (`ok` until then). */
   llmBudget(): BudgetState {
     return this.#budget.state;

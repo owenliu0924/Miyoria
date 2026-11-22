@@ -3,7 +3,8 @@
 // the notes at a limit, the refusal texts, the titles of the data blocks the runner adds, the
 // `say` tool, and the summariser's instruction. The persona is not here (it is the profile's);
 // the fixed lines she says when the model fails or the budget is gone are the ones of today's
-// turn (`FALLBACK_LINES` in agent/mainline/main.ts, `EXHAUSTED_LINE` in agent/signals.ts).
+// turn (`FALLBACK_LINES` in agent/mainline/main.ts, `EXHAUSTED_LINE` in agent/signals.ts), and the
+// one of a conversation's hourly cap is beside them (`HOUR_CAP_LINE`).
 //
 // Nothing in this file is read by code: changing a sentence changes only what she is told.
 
