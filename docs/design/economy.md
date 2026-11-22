@@ -288,3 +288,13 @@ owner:「能買給她的東西太少;或者說,除了幾樣固定的,本來就�
 **程式**:`packages/economy/src/gifts.ts`(`GiftDesk`,`FreeGiftsKey`)、`gift-words.ts`(名字、快取鍵、規則、`coinsOf`、`bandOf`、`foodHunger`、帳本的 ref)、`gift-tables.ts` / `gift-schema.ts` / `gift-migrations.ts`(`gifts` 外掛)、`gift-tools.ts`(`answer_gift`)、`gift-commands.ts`(Discord)、`gift-config.ts`;`packages/api/src/gift-price.ts`、`gift-routes.ts`;`packages/card-face/src/pictures/gift.ts`。
 
 **還沒做、沒驗證的**:沒有接真的模型或 Discord 跑過;估價提示詞裡的例子要看一陣子實際的名字再調;交易所還讀它自己的 `twd_per_coin`,要改成讀 `[modules.economy] twd_per_coin`;直播 overlay 不顯示自己取名的禮物(`economy.gift` 的品項只有固定的食物);她答應或拒絕的那一則收據要等她在某個回合用工具,沒人和她說話時就是時間到自動收下。
+
+## 17. 很多伺服器(2026-11-22,階段 6)
+
+錢包、簽到、籤詩、餵食、任務、禮物、卡片、羈絆:每個人一份,全域,不分伺服器(一個人一個錢包)。分伺服器的只有下面這些([v5-places.md](v5-places.md) §2):
+
+- **預測**:開在哪個伺服器就是那個伺服器的(在私訊或她自己開的,算主要的伺服器);只有那個伺服器的成員(在那裡說過話)看得到、能押,不是的人押會收到「這個預測是「X」的,只有在那裡說過話的成員能押」(403);押的錢還是全域那個錢包。`predictions_open` 每個伺服器分開算;抽成、自動結算的規則不變,只是自動結算的海龜湯只綁同一個伺服器的。`/me predictions` 在伺服器裡是那裡的,在私訊是自己所在的每個伺服器的(不只一個時標出是哪裡的);她的 `check_predictions` 一樣。
+- **懸賞**:屬於貼出來的那個伺服器,在那裡列出,`bounties_open` 每個伺服器分開算,只能付給那裡的成員。
+- **贊助排行榜、富人榜**:兩種都有:全部,和一個伺服器的成員(名次只在他們之間排)。Discord 的 `/me board`、`/me market rich` 多一個 `範圍: 這個伺服器|全部`,在伺服器裡預設這個伺服器,私訊預設全部。會員頁兩種都有(`GET /api/member/board`、`GET /api/member/exchange/boards`,`?space=` 選自己的另一個伺服器,`scope=all` 是全部;哪裡都不是成員的人只有全部)。**公開網站只有全部**:公開的每個伺服器的榜會說出誰在哪個伺服器。
+- **資料**:migration 6(`spaces`)給 `economy_bounties`、`economy_docs` 加 `space_id`(`spaces.id`),舊的懸賞、預測和押注填主要的伺服器,她的房間和退休的種類留空;沒有任何伺服器的資料庫全部留空(空的是每個人的)。之後每一筆新寫的預測、押注、懸賞都寫 `space_id`。
+- **冪等鍵**:指令的鍵用下指令的平台(`discord:<ulid>`,在 Discord 上和以前一模一樣);交易所按鈕下單的鍵 `<平台>:<訊息>:<元件>` 在 Discord 上也和以前一樣,舊的重送還是同一筆。
