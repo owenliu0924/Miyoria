@@ -112,6 +112,11 @@ export interface PredictionOption {
 export interface PredictionView {
   /** The short code people and her tools name it by. */
   id: string;
+  /**
+   * The server it belongs to (identity's `spaces.id`, and its name while she is still there);
+   * `null` for one of no server, open to everyone she knows.
+   */
+  space: { id: string; name: string | null } | null;
   question: string;
   options: PredictionOption[];
   /** Everything staked. */
@@ -220,8 +225,11 @@ export interface Economy2 {
   completeQuest(account: AccountRef, quest: QuestId, topic?: string): Promise<QuestResult>;
   /** The achievements and titles of `account`. */
   achievements(account: AccountRef): Promise<AchievementsView>;
-  /** The predictions open now and the ones settled lately; `account` adds their own stake. */
-  predictions(account: AccountRef | null): Promise<PredictionView[]>;
+  /**
+   * The predictions open now and the ones settled lately; `account` adds their own stake.
+   * `spaces`: only those servers' (and the ones of no server); every one without (the owner).
+   */
+  predictions(account: AccountRef | null, spaces?: readonly string[]): Promise<PredictionView[]>;
   /**
    * A prediction people can stake on for `minutes` (`EconomyError`: 400 a bad one, 409 nothing to
    * bind `settle_by` to, 429 too many). With `settle_by` it settles by itself on the soup or game
@@ -237,7 +245,8 @@ export interface Economy2 {
   /**
    * Stakes `amount` on an option (its number from 1, or its words) of the prediction `ref`
    * (`EconomyError`: 400 a bad amount or option, 402 short, 403 a stranger, 409 closed or already
-   * staked, 429 the day's limit). The same key twice answers the first stake.
+   * staked, 429 the day's limit; 403 too for someone who is not a member of the prediction's
+   * server, with the reason). The same key twice answers the first stake.
    */
   placeBet(
     account: AccountRef,

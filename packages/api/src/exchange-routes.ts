@@ -4,7 +4,7 @@
 //   suggestions while typing, a lookup, a ticker's page, its candles in four timeframes (with the
 //   member's own cost and 2× lines), the heat maps, the watch list, their account (open it,
 //   take 2x's risks, hide from the rich list), a quote, a market order (with an
-//   `Idempotency-Key`), a cancel, their own portfolio, the rich list. The person is the
+//   `Idempotency-Key`), a cancel, their own portfolio, the rich list (one server's members or everyone, `BoardScopeQuery`). The person is the
 //   session's; a refusal is its status and sentence, the same as in Discord. Nobody sees anybody
 //   else's holdings or orders here (大家都在買 is counts only).
 // * Admin (`exchangeAdmin`): `GET /api/exchange`; blocking or removing a ticker, naming one,
@@ -43,6 +43,7 @@ import {
   EXCHANGE_DISCLAIMER_LEVERAGE,
   EXCHANGE_DISCLAIMER_REAL,
 } from "@miyoria/types";
+import { memberBoardScope } from "./board.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { SessionRecord } from "./session.js";
@@ -230,14 +231,19 @@ export const exchangeRpc = {
       return { ...x.real.portfolio(person), balance: view?.balance ?? null };
     },
   ),
-  boards: os.exchange.boards.handler(async ({ context: { state, c } }): Promise<ExchangeBoards> => {
-    const b = await service(state).boards(accountOf(c));
-    return {
-      currency: b.currency,
-      rich: b.rich,
-      me: b.me === null ? null : { rich: b.me.rich, hidden: b.me.hidden },
-    };
-  }),
+  boards: os.exchange.boards.handler(
+    async ({ input, context: { state, c } }): Promise<ExchangeBoards> => {
+      const x = service(state);
+      const { space, members } = await memberBoardScope(state, c, input?.query ?? {});
+      const b = await x.boards(accountOf(c), members);
+      return {
+        currency: b.currency,
+        space,
+        rich: b.rich,
+        me: b.me === null ? null : { rich: b.me.rich, hidden: b.me.hidden },
+      };
+    },
+  ),
 };
 
 export const exchangeAdminRpc = {

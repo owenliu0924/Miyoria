@@ -3,6 +3,8 @@
 // `/api/member/quests` and `/api/member/predictions` answer. Nothing here ticks a quest or settles
 // a prediction: a game, a song, she or the owner does. A Core without the routes or the economy
 // leaves the blocks out, and someone she does not know gets neither (the wallet already says why).
+// Predictions are per server: the ones of a server of theirs (a choice of which with two or more),
+// and only that server's members may bet; the coins are the one wallet.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
@@ -17,6 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Segmented } from "@/components/ui/segmented";
 import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { useOwnSpace } from "./board-scope";
+import { SpacePicker } from "./member-space";
 import { newKey, priceText, useWallet, WALLET } from "./spend";
 
 export const QUESTS = ["member", "quests"] as const;
@@ -80,11 +84,12 @@ export function QuestsCard() {
 
 export const PREDICTIONS = ["member", "predictions"] as const;
 
-function usePredictions() {
+function usePredictions(space: string | undefined, ready: boolean) {
   const api = useApi();
   return useQuery({
-    queryKey: PREDICTIONS,
-    queryFn: ({ signal }) => api.rpc.wallet.predictions(undefined, { signal }),
+    queryKey: [...PREDICTIONS, space ?? null],
+    queryFn: ({ signal }) => api.rpc.wallet.predictions({ query: { space } }, { signal }),
+    enabled: ready,
     refetchInterval: (q) => (q.state.error ? false : 30_000),
     retry: (n, e) => !gone(e) && n < 2,
   });
@@ -201,19 +206,23 @@ function Prediction({ p, currency, now }: { p: PredictionView; currency: string;
  */
 export function Predictions() {
   const wallet = useWallet();
-  const q = usePredictions();
+  const own = useOwnSpace();
+  const q = usePredictions(own.space, !own.loading);
   if (wallet.data && !wallet.data.can_earn) return null;
   if (q.isError && gone(q.error)) return null;
   // Usually there are none: nothing shows until there is something to show.
-  if (q.isPending || (q.isSuccess && q.data.predictions.length === 0)) return null;
+  if (q.isPending || (q.isSuccess && q.data.predictions.length === 0 && own.spaces.length <= 1)) return null;
   const now = q.dataUpdatedAt > 0 ? q.dataUpdatedAt : Date.now();
   return (
     <Card aria-label="預測">
       <CardHeader>
         <CardTitle>預測</CardTitle>
       </CardHeader>
+      <SpacePicker value={own.space ?? null} spaces={own.spaces} onChange={own.setSpace} />
       {q.isError ? (
         <ErrorLine error={q.error} onRetry={() => void q.refetch()} />
+      ) : q.data.predictions.length === 0 ? (
+        <p className="text-[13px] text-muted-foreground">這個伺服器現在沒有預測</p>
       ) : (
         <>
           <ul aria-label="預測的題目" className="grid">

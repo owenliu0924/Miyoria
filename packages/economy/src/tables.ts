@@ -33,7 +33,8 @@ import {
   type ProfileId,
   type Timestamp,
 } from "@miyoria/types";
-import { and, asc, desc, eq, getColumns, inArray, type SQL, sql } from "drizzle-orm";
+import { and, asc, desc, eq, getColumns, inArray, isNull, or, type SQL, sql } from "drizzle-orm";
+import type { SQLiteColumn } from "drizzle-orm/sqlite-core";
 import { economySchema } from "./migrations.js";
 import {
   type Bounty,
@@ -610,6 +611,11 @@ export class FortuneTables implements FortuneStore {
   }
 }
 
+/** A row of one of `spaces`, or of no Space (belongs to everyone). */
+function inSpaces(column: SQLiteColumn, spaces: readonly string[]): SQL | undefined {
+  return spaces.length === 0 ? isNull(column) : or(isNull(column), inArray(column, [...spaces]));
+}
+
 // ---- bounties ---------------------------------------------------------------------
 
 const B = economyBounties;
@@ -627,6 +633,7 @@ function bountyOf(
     expires_at: row.expires_at,
     closed_at: row.closed_at,
     winner: accountOf(row.platform, row.external_id),
+    space: row.space_id,
   };
 }
 
@@ -663,6 +670,7 @@ export class BountyTables implements BountyStore {
             expires_at: bounty.expires_at,
             closed_at: bounty.closed_at,
             winner_account_id: winner,
+            space_id: bounty.space,
           })
           .run();
       });
@@ -699,11 +707,16 @@ export class BountyTables implements BountyStore {
 
   async list(
     _profile: ProfileId,
-    filter: { statuses?: readonly BountyStatus[]; limit: number },
+    filter: { statuses?: readonly BountyStatus[]; spaces?: readonly string[]; limit: number },
   ): Promise<Bounty[]> {
     if (filter.statuses?.length === 0) return [];
     return this.#select()
-      .where(filter.statuses ? inArray(B.status, [...filter.statuses]) : undefined)
+      .where(
+        and(
+          filter.statuses ? inArray(B.status, [...filter.statuses]) : undefined,
+          filter.spaces ? inSpaces(B.space_id, filter.spaces) : undefined,
+        ),
+      )
       .orderBy(desc(B.created_at), sql`${B}.rowid DESC`)
       .limit(limitOf(filter.limit))
       .all()
@@ -725,6 +738,7 @@ function docOf(row: DocRow & { platform: string | null; external_id: string | nu
     data: row.data,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...(row.space_id === null ? {} : { space: row.space_id }),
   };
 }
 
@@ -764,6 +778,7 @@ export class DocTables implements EconomyDocStore {
               data: doc.data,
               created_at: doc.created_at,
               updated_at: doc.updated_at,
+              space_id: doc.space ?? null,
             })
             .onConflictDoNothing()
             .run().changes > 0,
@@ -818,6 +833,7 @@ export class DocTables implements EconomyDocStore {
           eq(X.kind, kind),
           filter.statuses ? inArray(X.status, [...filter.statuses]) : undefined,
           owners ? inArray(X.owner_account_id, owners) : undefined,
+          filter.spaces ? inSpaces(X.space_id, filter.spaces) : undefined,
         ),
       )
       .orderBy(desc(X.created_at), desc(X.id))
@@ -908,6 +924,7 @@ const economyData: readonly CategoryData[] = [
         expires_at: "ts",
         closed_at: "ts",
         winner_account_id: "text",
+        space_id: "text",
       }),
       // Economy 2.0: predictions and bets, her room, and the collectibles of before drawing was removed.
       tablePart("economy_docs", "economy_docs", "node", "updated_at", "created_at, kind, id", {
@@ -919,6 +936,7 @@ const economyData: readonly CategoryData[] = [
         data: "json",
         created_at: "ts",
         updated_at: "ts",
+        space_id: "text",
       }),
     ],
     // Each posting's record (`economy.posted`) goes with the ledger, not with the event log alone.

@@ -22,6 +22,7 @@ import {
   type PictureFile,
   type PictureKind,
   type Pictures,
+  type Places,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EXPIRED, NOT_YOURS, parseAmount, registerCommands } from "../src/commands.js";
@@ -437,6 +438,35 @@ describe("/me market", () => {
       expect(out, bad).toHaveProperty("error");
       expect((out as { error: string }).error, bad).toContain("前面加 $ 是魚幣");
     }
+  });
+
+  it("ranks this server's members in a server and everyone with 範圍:全部 or in a DM", async () => {
+    const r = await opened();
+    const registry = new CommandRegistry(Permissions.fromStrings(["discord:1", "discord:2"]));
+    const places = {
+      at: () => ({ space_id: "space-g", room_id: "room", parent_room_id: null, session: "s" }),
+      ofGuild: () => null,
+      members: () => new Set(["p-bob"]),
+    } as unknown as Places;
+    registerCommands(
+      registry,
+      () => r.service,
+      () => null,
+      undefined,
+      () => places,
+    );
+    const rich = (args: Record<string, string>, context: ContextKey = ctx) =>
+      registry.dispatch({ path: ["me", "market", "rich"], args, ...who, context });
+    const here = await rich({});
+    expect(here.text).toContain("1. Bob");
+    expect(here.text).not.toContain("Alice");
+    expect(here.text).toContain("範圍:這個伺服器");
+    expect(here.text).toContain(EXCHANGE_DISCLAIMER);
+    const all = await rich({ 範圍: "全部" });
+    expect(all.text).toContain("Alice");
+    expect(all.text).toContain("範圍:全部");
+    const dm = await rich({}, { platform: "discord", scope: null, channel: "dm", kind: "dm" });
+    expect(dm.text).toContain("Alice");
   });
 
   it("says the market is off while it is, with the small print", async () => {

@@ -299,6 +299,23 @@ export const COMMANDS: CommandSpec = {
           help: "把面板改過的設定寫進 miyoria.toml(保留註解),再清掉資料庫裡的這些值",
           run: (ctx) => configCmd.bake(ctx.config, ctx.yes, ctx.yes ? null : interactivePrompter()),
         },
+        {
+          name: "import",
+          help: "把 miyoria.toml 匯入資料庫成為下一版設定(保留面板改過的值;每個頻道、每個伺服器的值搬到那個地方);先備份資料庫,先用 --dry-run 看",
+          options: [
+            { name: "dry-run", help: "只列出會改什麼,不寫入" },
+            {
+              name: "replace",
+              help: "用檔案原樣蓋掉資料庫的設定(面板改過的值會拿掉,版本紀錄還在);已經匯入過時再匯入一次要用它",
+            },
+          ],
+          run: (ctx) =>
+            configCmd.importConfig(
+              ctx.config,
+              { replace: flag(ctx, "replace"), dryRun: flag(ctx, "dry-run"), yes: ctx.yes },
+              ctx.yes || !isInteractive() ? null : interactivePrompter(),
+            ),
+        },
       ],
     },
     {

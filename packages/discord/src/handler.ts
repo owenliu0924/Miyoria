@@ -14,6 +14,7 @@ import {
   Events as BusEvents,
   type ContextKind,
   ModerationKey,
+  PlacesKey,
   type PlatformHistories,
   type PlatformSinks,
   PresencePrivacyKey,
@@ -30,9 +31,17 @@ import {
   MessageType,
   Routes,
 } from "discord.js";
-import type { DiscordConfig } from "./config.js";
+import { allGuilds, type DiscordConfig } from "./config.js";
 import { type EmojiLike, EmojiTable, EmojiUsage, serverEmoji } from "./emoji.js";
-import { ambientChannel, messageAllowed } from "./gate.js";
+import {
+  type Ambient,
+  type AmbientPlaces,
+  ambientChannel,
+  ambientFor,
+  type ChannelIds,
+  messageAllowed,
+  perGuild,
+} from "./gate.js";
 import { DiscordHistory, type HistoryClientLike } from "./history.js";
 import {
   type ContextMenuInteractionLike,
@@ -52,6 +61,7 @@ import {
   kindOf,
   type MentionsLike,
   type MessageLike,
+  memberNick,
   mentionNames,
   PLATFORM,
   quotedMessage,
@@ -85,6 +95,8 @@ const MAX_KIND_CACHE = 10_000;
 /** The parts of a discord.js `Guild` the presence snapshot reads. */
 export interface GuildLike {
   id: string;
+  /** The server's name, when the gateway gave it. */
+  name?: string | null;
   members: {
     fetch(): Promise<unknown>;
     cache: { values(): Iterable<GuildMemberLike> };
@@ -95,6 +107,11 @@ export interface GuildLike {
   emojis?: { cache: { values(): Iterable<EmojiLike> } };
   /** Stickers (the server sticker table). */
   stickers?: { cache: { values(): Iterable<StickerSourceLike> } };
+}
+
+/** What `GuildDelete` says beyond the id: `available: false` is an outage, not a leave. */
+export interface LeftLike {
+  available?: boolean;
 }
 
 /** The parts of a discord.js `MessageReaction` the bridge reads. */
@@ -121,6 +138,12 @@ export class Shared {
     onError: (error) => log.debug({ error: errorMessage(error) }, "cannot disable a panel"),
   });
 
+  /**
+   * Syncs the slash commands once more (`command_guilds = ["*"]`: a guild she joined gets them);
+   * set when the sync task starts.
+   */
+  syncAgain: (() => void) | null = null;
+
   constructor(
     readonly config: DiscordConfig,
     selfIds: Iterable<string>,
@@ -128,8 +151,23 @@ export class Shared {
     readonly sinks: PlatformSinks | null,
     /** Where the message history reader is registered once connected. */
     readonly histories: PlatformHistories | null = null,
+    /** The module's config per server and room; `null`: the cluster's everywhere. */
+    readonly places: AmbientPlaces | null = null,
   ) {
     this.selfIds = new Set(selfIds);
+  }
+
+  /** The gate's rules for a room of `guild` (docs/design/v5-places.md). */
+  ambient(guild: string, ids: ChannelIds): Ambient {
+    try {
+      return ambientFor(this.config, this.places, guild, ids);
+    } catch (error) {
+      log.warn(
+        { guild, error: errorMessage(error) },
+        "cannot read the server's gate; it stays closed",
+      );
+      return { ambient_text: "allowlist", ambient_channels: [], ambient_follow: null };
+    }
   }
 
   /** `true` the first time, so the sync task starts once per module run. */
@@ -166,10 +204,8 @@ export class GatewayBridge {
       this.guard("typing", async () => {
         const parent = (typing.channel as { parentId?: string | null }).parentId ?? null;
         // Typing in a channel she may not follow is not published either.
-        if (
-          typing.guild &&
-          !ambientChannel(this.shared.config, { channel: typing.channel.id, parent })
-        ) {
+        const ids = { channel: typing.channel.id, parent };
+        if (typing.guild && !ambientChannel(this.shared.ambient(typing.guild.id, ids), ids)) {
           return;
         }
         const kind = await this.channelKind(
@@ -199,8 +235,8 @@ export class GatewayBridge {
     client.on(Events.PresenceUpdate, (_old, presence) =>
       this.guard("presence", () => this.onPresence(presence, false)),
     );
-    client.on(Events.VoiceStateUpdate, (_old, state) =>
-      this.guard("voice state", () => this.onVoiceState(state, false)),
+    client.on(Events.VoiceStateUpdate, (old, state) =>
+      this.guard("voice state", () => this.onVoiceState(state, false, old)),
     );
     client.on(Events.GuildMemberAdd, (member) =>
       this.guard("member", () => this.onMember(member, false)),
@@ -212,12 +248,10 @@ export class GatewayBridge {
       this.guard("member", () => this.onMember(member, true)),
     );
     client.on(Events.GuildCreate, (guild) =>
-      this.guard("guild snapshot", () => this.snapshotGuild(guild as unknown as GuildLike)),
+      this.guard("guild snapshot", () => this.joined(guild as unknown as GuildLike)),
     );
-    client.on(Events.GuildDelete, (guild) => {
-      this.shared.emoji.dropGuild(guild.id);
-      this.shared.stickers.dropGuild(guild.id);
-    });
+    // At once, like the emoji events: what she may use there goes with the server.
+    client.on(Events.GuildDelete, (guild) => this.left(guild as unknown as GuildLike & LeftLike));
     client.on(Events.GuildEmojiCreate, (emoji) => this.onEmoji(emoji.guild.id, emoji, false));
     client.on(Events.GuildEmojiUpdate, (_old, emoji) => this.onEmoji(emoji.guild.id, emoji, false));
     client.on(Events.GuildEmojiDelete, (emoji) => this.onEmoji(emoji.guild.id, emoji, true));
@@ -253,11 +287,43 @@ export class GatewayBridge {
     if (e) this.shared.emoji.upsert(guild, e);
   }
 
+  /** She joined a server (or it came back after an outage): recorded, and given the commands. */
+  async joined(guild: GuildLike): Promise<void> {
+    await this.snapshotGuild(guild);
+    if (allGuilds(this.shared.config)) this.shared.syncAgain?.();
+  }
+
+  /**
+   * She left a server, or was removed: recorded as left (`Places.left`). A server that only went
+   * unavailable (a Discord outage) is not left.
+   */
+  left(guild: GuildLike & LeftLike): void {
+    this.shared.emoji.dropGuild(guild.id);
+    this.shared.stickers.dropGuild(guild.id);
+    if (guild.available === false) return;
+    try {
+      this.ctx.services.get(PlacesKey)?.left(PLATFORM, guild.id);
+    } catch (error) {
+      log.warn({ guild: guild.id, error: errorMessage(error) }, "cannot record a server she left");
+    }
+  }
+
+  /** She is in `guild`: identity records it (`Places.seen`; the first one ever is primary). */
+  seen(guild: GuildLike): void {
+    try {
+      this.ctx.services.get(PlacesKey)?.seen(PLATFORM, guild.id, guild.name ?? null);
+    } catch (error) {
+      log.warn({ guild: guild.id, error: errorMessage(error) }, "cannot record a server she is in");
+    }
+  }
+
   /**
    * Publishes everyone the gateway cache knows in `guild` (members, presences, voice states) as
-   * `initial` updates, after fetching the member list when the members intent is on.
+   * `initial` updates, after fetching the member list when the members intent is on. The server
+   * is recorded first.
    */
   async snapshotGuild(guild: GuildLike): Promise<void> {
+    this.seen(guild);
     if (guild.emojis) {
       const list = [...guild.emojis.cache.values()].map(serverEmoji).filter((e) => e !== null);
       this.shared.emoji.setGuild(guild.id, list);
@@ -318,8 +384,42 @@ export class GatewayBridge {
     this.ctx.publish(BusEvents.PlatformReaction, event);
   }
 
-  onVoiceState(state: VoiceStateLike, initial: boolean): void {
+  /**
+   * A voice state, published for `world`. Someone who is in one of the server's voice channels on
+   * connecting, or who joins or moves into one, is a member of the server (`memberActed`); a mute,
+   * a deafen or a stream in the same channel writes nothing.
+   */
+  onVoiceState(
+    state: VoiceStateLike,
+    initial: boolean,
+    old: Pick<VoiceStateLike, "channelId"> | null = null,
+  ): void {
+    if (state.channelId !== null && (initial || old?.channelId !== state.channelId)) {
+      const member = state.member ?? null;
+      // Without the member, whether it is a bot is unknown: nobody is made a member blind.
+      if (member?.user) this.memberActed(state.guild.id, member.user, member.nickname ?? null);
+    }
     this.ctx.publish(BusEvents.PlatformVoiceState, voiceStateUpdate(state, initial));
+  }
+
+  /**
+   * Someone acted in `guild` without writing there (a message records itself): a command, a
+   * control or a modal, or being in one of its voice channels. Identity makes them a member of the
+   * server (`Places.memberSeen`), the way a message would, so the server's boards, predictions and
+   * bounties count them. Bots and her own accounts never become members this way. Never throws: a
+   * failed write must not cost the command.
+   */
+  memberActed(guild: string | null, user: UserLike | null | undefined, nick: string | null): void {
+    if (guild === null || !user || user.bot === true || this.shared.selfIds.has(user.id)) return;
+    const places = this.ctx.services.get(PlacesKey);
+    if (places === undefined) return;
+    try {
+      // A server not recorded yet (or marked left) is recorded, as a message there would.
+      const space = places.ofGuild(PLATFORM, guild)?.id ?? places.seen(PLATFORM, guild, null);
+      places.memberSeen(space, account(user.id), displayName(user, nick));
+    } catch (error) {
+      log.warn({ guild, error: errorMessage(error) }, "cannot record a server's member");
+    }
   }
 
   onMember(member: GuildMemberLike, left: boolean): void {
@@ -343,8 +443,15 @@ export class GatewayBridge {
     };
   }
 
-  /** Slash commands, autocomplete, buttons, select menus and modal submissions. */
+  /**
+   * Slash commands, autocomplete, buttons, select menus and modal submissions. Whoever uses one in
+   * a server is a member there from now (`memberActed`), before it is dispatched, so the command's
+   * own handler already sees them as one; typing an option (autocomplete) is not acting.
+   */
   private async onInteraction(client: Client, interaction: Interaction): Promise<void> {
+    if (!interaction.isAutocomplete()) {
+      this.memberActed(interaction.guildId, interaction.user, memberNick(interaction.member));
+    }
     const kindOfInteraction = async (): Promise<ContextKind> => {
       if (interaction.guildId === null) return "dm";
       if (interaction.channel) return kindOf(interaction.channel.type);
@@ -400,13 +507,16 @@ export class GatewayBridge {
     }
     const emojiConfig = this.shared.config.emoji;
     const stickerConfig = this.shared.config.stickers;
+    // On or off per server (docs/design/v5-places.md).
+    const emoji = perGuild(this.shared, (c) => c.emoji);
+    const stickers = perGuild(this.shared, (c) => c.stickers);
     const sink = new DiscordSink(
       client.rest,
       () => this.ctx.services.get(ModerationKey),
       {
         table: this.shared.emoji,
         usage: this.shared.emojiUsage,
-        enabled: () => emojiConfig.enabled,
+        enabled: (guild) => emoji.enabled(guild),
         limits: () => emojiConfig,
       },
       {
@@ -416,7 +526,7 @@ export class GatewayBridge {
       {
         table: this.shared.stickers,
         usage: this.shared.stickerUsage,
-        enabled: () => stickerConfig.enabled,
+        enabled: (guild) => stickers.enabled(guild),
         limits: () => stickerConfig,
         now: () => this.ctx.clock.now(),
       },
@@ -439,21 +549,23 @@ export class GatewayBridge {
 
     if (this.shared.claimSync()) {
       const { registry, config } = this.shared;
-      this.ctx.spawn("command-sync", (signal) =>
-        runSyncLoop({
+      this.ctx.spawn("command-sync", (signal) => {
+        const sync = syncRunner({
+          rest: client.rest,
+          applicationId: client.application.id,
           registry,
+          commandGuilds: config.command_guilds,
+          // `["*"]`: every guild she is in; once per run the sync clears the scope not in use.
+          guilds: () => [...client.guilds.cache.keys()],
           signal,
-          sync: syncRunner({
-            rest: client.rest,
-            applicationId: client.application.id,
-            registry,
-            commandGuilds: config.command_guilds,
-            // Once per run the sync clears the scope not in use (stale duplicates).
-            guilds: () => [...client.guilds.cache.keys()],
-            signal,
-          }),
-        }),
-      );
+        });
+        this.shared.syncAgain = () => {
+          void sync(false).catch((error: unknown) =>
+            log.warn({ error: errorMessage(error) }, "cannot sync the commands of a new server"),
+          );
+        };
+        return runSyncLoop({ registry, signal, sync });
+      });
     }
   }
 
@@ -477,7 +589,8 @@ export class GatewayBridge {
       parent: (msg.channel as { parentId?: string | null } | null)?.parentId ?? null,
     };
     // Ambient chat in channels she was not given never reaches her (see `gate.ts`).
-    if (!messageAllowed(this.shared.config, data, msg.guildId, ids, this.shared.selfIds)) return;
+    const rules = msg.guildId === null ? this.shared.config : this.shared.ambient(msg.guildId, ids);
+    if (!messageAllowed(rules, data, msg.guildId, ids, this.shared.selfIds)) return;
     this.ctx.publish(BusEvents.PlatformMessageCreated, data);
   }
 

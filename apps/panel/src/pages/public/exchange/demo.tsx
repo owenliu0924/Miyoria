@@ -297,6 +297,7 @@ const PORTFOLIO: ExchangePortfolio = {
 
 const BOARDS: ExchangeBoards = {
   currency: "魚幣",
+  space: null,
   rich: [
     { rank: 1, name: "海帶芽", worth: 23_420, holdings: null, me: false },
     { rank: 2, name: "小魚乾", worth: 8_185, holdings: null, me: true },

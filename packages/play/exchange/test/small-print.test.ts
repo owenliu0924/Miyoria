@@ -19,11 +19,19 @@ import {
   type PictureFile,
   type PictureKind,
   type Pictures,
+  type Places,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { card, LEVERAGE_CONFIRM, PATHS, registerCommands } from "../src/commands.js";
 import { discordProblems, modalProblems } from "./discord-limits.js";
 import { ALICE, BOB, local, rig } from "./rig.js";
+
+/** Identity's places as the rich list's `範圍` reads them: one server, `g`, with Alice in it. */
+const places = {
+  at: () => ({ space_id: "space-g", room_id: "room", parent_room_id: null, session: "s" }),
+  ofGuild: () => null,
+  members: () => new Set(["p-alice"]),
+} as unknown as Places;
 
 const ctx: ContextKey = { platform: "discord", scope: "g", channel: "100", kind: "channel" };
 
@@ -90,6 +98,8 @@ async function walk(
     registry,
     () => r.service,
     () => pictures,
+    undefined,
+    () => places,
   );
   const who = { ...base, invoker, invoker_display_name: name };
   const seen: CommandReply[] = [];
@@ -101,6 +111,25 @@ async function walk(
     const reply = await registry.dispatch({ path: path.split(" "), args, ...who });
     queue.push({ reply, depth: 0 });
   }
+  // The rich list's two forms, and the default of a DM (everyone's).
+  for (const scope of ["這個伺服器", "全部"]) {
+    const reply = await registry.dispatch({
+      path: ["me", "market", "rich"],
+      args: { 範圍: scope },
+      ...who,
+    });
+    queue.push({ reply, depth: 0 });
+  }
+  const dm: ContextKey = { platform: "discord", scope: null, channel: "dm", kind: "dm" };
+  queue.push({
+    reply: await registry.dispatch({
+      path: ["me", "market", "rich"],
+      args: {},
+      ...who,
+      context: dm,
+    }),
+    depth: 0,
+  });
   const pressed = new Set<string>();
   while (queue.length > 0) {
     const { reply, depth } = queue.shift() as { reply: CommandReply; depth: number };

@@ -71,6 +71,10 @@ import {
   is,
   type JsonValue,
   KERNEL_MODULE,
+  PlaceConfigKey,
+  PlaceDirectoryKey,
+  type Places,
+  PlacesKey,
   PlatformHistories,
   PlatformHistoriesKey,
   PlatformSinks,
@@ -80,6 +84,7 @@ import {
   PromptContributors,
   PromptContributorsKey,
   RunningProfileKey,
+  type SpaceRef,
 } from "@miyoria/types";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
@@ -91,6 +96,7 @@ import {
   REQUIRED_MODULES,
 } from "./module-ids.js";
 import { ModuleSettings } from "./module-settings.js";
+import { PlaceConfigs } from "./place-config.js";
 import type { MachineSource } from "./profiles.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
@@ -196,6 +202,7 @@ export interface CoreOptions {
 export class Core {
   readonly #persist = new AbortController();
   #persistTask: Promise<void> | undefined;
+  #membersTask: Promise<void> | undefined;
 
   constructor(
     readonly supervisor: Supervisor,
@@ -224,6 +231,11 @@ export class Core {
     this.#persistTask = persistModuleState(this.bus, this.store, wanted, this.#persist.signal);
   }
 
+  /** @internal Started by `buildCore`: a member who leaves a server is marked left there. */
+  followMembers(places: Places): void {
+    this.#membersTask = followMembers(this.bus, places, this.#persist.signal);
+  }
+
   /** Starts every enabled module and logs those that are not running. */
   async start(): Promise<void> {
     await this.supervisor.startAll();
@@ -245,6 +257,7 @@ export class Core {
     await this.supervisor.stopAll();
     this.#persist.abort();
     await this.#persistTask;
+    await this.#membersTask;
     await this.store.close();
     this.machines?.close();
   }
@@ -305,6 +318,18 @@ export async function buildCoreWith(
       }
       return null;
     },
+    // A module's own values per Space and Room (docs/design/v5-places.md).
+    ...(store.places && store.config
+      ? {
+          places: {
+            places: store.places,
+            settings: store.config.places,
+            ...(store.events ? { events: store.events } : {}),
+            directory: () => services.get(PlaceDirectoryKey),
+            ...roomMaker(store),
+          },
+        }
+      : {}),
   });
   services.provide(k, ModuleSettingsKey, settings);
   services.provide(k, StoreKey, store);
@@ -331,6 +356,18 @@ export async function buildCoreWith(
     services.provide(k, AttachmentSourceKey, new ArtifactAttachments(store.artifacts));
   }
   services.provide(k, ProfileDataStoreKey, store.profileData);
+  // Spaces, Rooms and members, and each module's config per place (docs/design/v5-places.md).
+  if (store.places) {
+    services.provide(k, PlacesKey, store.places);
+    if (store.config) {
+      const placeConfigs = new PlaceConfigs({
+        places: store.places,
+        settings: store.config.places,
+        directory: () => services.get(PlaceDirectoryKey),
+      });
+      services.provide(k, PlaceConfigKey, placeConfigs);
+    }
+  }
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
   let handles: PersonHandleDirectory | null = null;
   try {
@@ -447,7 +484,39 @@ export async function buildCoreWith(
     machines.path === null ? null : machines,
   );
   core.persistModuleState((id) => moduleEnabled(config, id));
+  if (store.places) core.followMembers(store.places);
   return core;
+}
+
+/** `platform.member` with `left`: the account's membership of that server is marked left. */
+async function followMembers(bus: EventBus, places: Places, signal: AbortSignal): Promise<void> {
+  const sub = bus.subscribe(Events.PlatformMember.type, { signal });
+  for await (const env of sub) {
+    if (!is(Events.PlatformMember, env) || !env.data.left) continue;
+    const { platform, guild, account } = env.data;
+    try {
+      const space = places.ofGuild(platform, guild);
+      if (space !== null) places.memberLeft(space.id, account);
+    } catch (error) {
+      log.warn({ guild, err: errorMessage(error) }, "failed to record a member leaving");
+    }
+  }
+}
+
+/**
+ * Creating a Space's room for a setting before anyone spoke there, when the store's identity can
+ * (the SQLite store's `persons`); test doubles without it only set rooms she has seen.
+ */
+function roomMaker(store: Store): { ensureRoom?: (space: SpaceRef, channel: string) => string } {
+  const persons = (store as { persons?: unknown }).persons as
+    | { ensureRoom?: (p: string, s: string, c: string, k: "text" | "voice") => { id: string } }
+    | undefined;
+  const ensure = persons?.ensureRoom;
+  if (typeof ensure !== "function") return {};
+  return {
+    ensureRoom: (space, channel) =>
+      ensure.call(persons, space.platform, space.external_id, channel, "text").id,
+  };
 }
 
 function tokenMissing(section: JsonValue | null): boolean {

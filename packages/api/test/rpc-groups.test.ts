@@ -73,6 +73,7 @@ const CASES: Case[] = [
   post("wallet.danmaku", "/api/member/danmaku", { text: "hi" }),
   post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
   post("wallet.board", "/api/member/board", { on: true }),
+  { name: "wallet.boardView", method: "GET", path: "/api/member/board", audience: "member" },
   post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
   { name: "wallet.quests", method: "GET", path: "/api/member/quests", audience: "member" },
   {
@@ -83,6 +84,7 @@ const CASES: Case[] = [
   },
   post("wallet.bet", "/api/member/bet", { prediction: "abc123", option: "1", amount: 1 }),
   post("member.pat", "/api/member/live/pat", {}),
+  { name: "member.spaces", method: "GET", path: "/api/member/spaces", audience: "member" },
   { name: "agency.bounties", method: "GET", path: "/api/member/bounties", audience: "member" },
   { name: "fortune.today", method: "GET", path: "/api/member/fortune", audience: "member" },
   { name: "cards.mine", method: "GET", path: "/api/member/cards", audience: "member" },
@@ -260,6 +262,10 @@ const ANSWERS = {
     to: "a",
   } satisfies ApiOutputs["wallet"]["transfer"],
   "wallet.board": { on_board: true } satisfies ApiOutputs["wallet"]["board"],
+  "wallet.boardView": {
+    space: { id: "space-1", name: "a" },
+    entries: [{ rank: 1, name: "a", spent: 1 }],
+  } satisfies ApiOutputs["wallet"]["boardView"],
   "wallet.frame": {
     owned: ["sakura"],
     selected: null,
@@ -279,6 +285,7 @@ const ANSWERS = {
     predictions: [
       {
         id: "abc123",
+        space: { id: "space-1", name: "a" },
         question: "a",
         options: [{ label: "a", staked: 1, backers: 1, multiplier: 1 }],
         total: 1,
@@ -304,6 +311,19 @@ const ANSWERS = {
   } satisfies ApiOutputs["agency"]["bounties"],
   "fortune.today": { fortune: SLIP, price: 10 } satisfies ApiOutputs["fortune"]["today"],
   "member.pat": { pats: { recent: 1, open: true } } satisfies ApiOutputs["member"]["pat"],
+  "member.spaces": {
+    spaces: [
+      {
+        id: "s1",
+        platform: "discord",
+        external_id: "1",
+        name: "Guild",
+        primary: true,
+        established: true,
+      },
+    ],
+    default: "s1",
+  } satisfies ApiOutputs["member"]["spaces"],
   "member.issueCard": CARD,
   "cards.mine": {
     cards: [{ ...CARD, price: 30, pity_hit: false, wished: ["hand.cat"], portrait: "live" }],
@@ -446,6 +466,7 @@ describe("the answers", () => {
       cards: os.member.cards.handler(answer("member.cards")),
       issueCard: os.member.issueCard.handler(answer("member.issueCard")),
       pat: os.member.pat.handler(answer("member.pat")),
+      spaces: os.member.spaces.handler(answer("member.spaces")),
     },
     cards: {
       mine: os.cards.mine.handler(answer("cards.mine")),
@@ -467,6 +488,7 @@ describe("the answers", () => {
       danmaku: os.wallet.danmaku.handler(answer("wallet.danmaku")),
       transfer: os.wallet.transfer.handler(answer("wallet.transfer")),
       board: os.wallet.board.handler(answer("wallet.board")),
+      boardView: os.wallet.boardView.handler(answer("wallet.boardView")),
       frame: os.wallet.frame.handler(answer("wallet.frame")),
       quests: os.wallet.quests.handler(answer("wallet.quests")),
       predictions: os.wallet.predictions.handler(answer("wallet.predictions")),

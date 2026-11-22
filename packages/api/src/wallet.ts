@@ -12,9 +12,11 @@
 //   given back by itself when the overlay did not show it).
 // * `GET /api/member/quests`, `GET /api/member/predictions`, `POST /api/member/bet`: economy 2.0's
 //   own, in `play-routes.ts` (joined to this group in `rpc.ts`).
-// * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member (403 in the
-//   same words for every reason they cannot take them); `POST /api/member/board` `{ on }`: join or
-//   leave the sponsor board (`GET /api/public/board` is in `board.ts`).
+// * `POST /api/member/transfer` `{ to_discord_id, amount }`: coins to another member on the
+//   sender's own platform (403 in the same words for every reason they cannot take them);
+//   `POST /api/member/board` `{ on }`: join or leave the sponsor board; `GET /api/member/board`
+//   (`?space=`, `scope=all`): the board of one server's members or of everyone (built in
+//   `board.ts`, beside `GET /api/public/board`).
 //
 // Spends take an `Idempotency-Key` header: the same key answers what it answered first. A
 // stranger (and a blocked person) reads an empty wallet and gets 403 for every spend, in the same
@@ -39,6 +41,7 @@ import {
 } from "@miyoria/economy";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type AccountRef, newId } from "@miyoria/types";
+import { memberBoard } from "./board.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { checkinFortune } from "./fortune-routes.js";
@@ -225,10 +228,10 @@ export const walletRpc = {
   transfer: os.wallet.transfer.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);
     const { to_discord_id, amount } = input.body;
-    const to: AccountRef = { platform: "discord", id: to_discord_id };
-    return transferResult(
-      await withWallet(state, (e) => e.transfer(accountOf(c), to, amount, key)),
-    );
+    // The receiver is on the sender's platform: the id the page asks for is that platform's.
+    const from = accountOf(c);
+    const to: AccountRef = { platform: from.platform, id: to_discord_id };
+    return transferResult(await withWallet(state, (e) => e.transfer(from, to, amount, key)));
   }),
   board: os.wallet.board.handler(async ({ input, context: { state, c } }) => {
     const { on } = input.body;
@@ -236,6 +239,9 @@ export const walletRpc = {
     if (!done) throw new ApiError(403, STRANGER);
     return { on_board: on };
   }),
+  boardView: os.wallet.boardView.handler(({ input, context: { state, c } }) =>
+    memberBoard(state, c, input?.query ?? {}),
+  ),
   frame: os.wallet.frame.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);
     const { buy, select } = input.body;

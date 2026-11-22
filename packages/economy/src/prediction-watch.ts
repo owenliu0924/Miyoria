@@ -26,9 +26,11 @@ import {
   type PartyOutcome,
   type PartyOutcomes,
   PartyOverviewKey,
+  PlacesKey,
 } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
 import type { PredictionDesk, PredictionSource } from "./predictions.js";
+import { spaceAt } from "./spaces.js";
 import type { PredictionSourceKind } from "./v2-types.js";
 
 /** Goal ends that say nothing about whether she could do it: the goal did not really end. */
@@ -60,8 +62,11 @@ export class PredictionWatch implements PartyOutcomes {
       const [game, goal] = going[0] as [string, string];
       return { kind, ref: goal, game, label: `她的遊戲目標「${goal}」` };
     }
+    // A soup of another server is never this one's to bet on.
+    const places = this.e.services.get(PlacesKey);
+    const space = spaceAt(places, context);
     const soups = (this.e.services.get(PartyOverviewKey)?.snapshot().sessions ?? []).filter(
-      (s) => s.game === "soup",
+      (s) => s.game === "soup" && (space === null || spaceAt(places, s.context) === space),
     );
     const here = context === null ? [] : soups.filter((s) => contextKeyEquals(s.context, context));
     const soup = here.length === 1 ? here[0] : soups.length === 1 ? soups[0] : undefined;

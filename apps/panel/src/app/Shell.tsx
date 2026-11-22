@@ -1,5 +1,5 @@
 import { Link, Outlet, useRouter, useRouterState } from "@tanstack/react-router";
-import { IdCard, LogOut, Search } from "lucide-react";
+import { IdCard, LogOut, Search, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import { CommandPalette } from "@/app/CommandPalette";
 import { EmergencyStop, HER_NAME, useHerNow } from "@/components/live-state";
@@ -10,6 +10,7 @@ import { Dot, type Tone } from "@/components/status";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Kbd } from "@/components/ui/misc";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Sidebar,
   SidebarContent,
@@ -32,6 +33,7 @@ import { useEvents } from "./events-store";
 import { groupFor, isActive, NAV, NAV_GROUPS, titleFor } from "./nav";
 import { useHealth, useMind, useRunningProfile, useStage, useWorld } from "./queries";
 import { READ_ONLY_HINT, useSession } from "./session";
+import { useAdminSpace } from "./space";
 
 const MOD_KEY = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
@@ -171,6 +173,30 @@ function NavHint({ to }: { to: string }) {
     );
   }
   return null;
+}
+
+/**
+ * Which server the admin pages are about (`?space=`, `useAdminSpace`). Nothing at all while she is in
+ * one server or none, so a single-server panel looks as it always did.
+ */
+function SpaceSwitcher() {
+  const { space, spaces, multiple, setSpace } = useAdminSpace();
+  if (!multiple) return null;
+  return (
+    <Select value={space ?? undefined} onValueChange={setSpace}>
+      <SelectTrigger aria-label="伺服器" size="sm" className="w-auto max-w-48 shrink-0 gap-1.5">
+        <Server className="size-3.5 text-muted-foreground" aria-hidden />
+        <SelectValue placeholder="選一個伺服器" />
+      </SelectTrigger>
+      <SelectContent align="end">
+        {spaces.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }
 
 /** Shown in the header on every page while her autonomy is stopped. */
@@ -342,6 +368,7 @@ function AppHeader({ pathname, onSearch, onSlot }: { pathname: string; onSearch:
       <PausedPill />
       <div ref={onSlot} className="order-last flex w-full min-w-0 flex-wrap items-center gap-2 empty:hidden md:order-none md:w-auto md:flex-nowrap" />
       <span className="flex-1" />
+      <SpaceSwitcher />
       <Button variant="outline" size="icon" className="md:hidden" aria-label="搜尋" onClick={onSearch}>
         <Search />
       </Button>

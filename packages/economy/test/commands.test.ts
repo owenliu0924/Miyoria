@@ -119,6 +119,8 @@ function fake(): Fake {
       };
     },
     bounties: async () => state.bounties,
+    // No identity here: no server filter.
+    spacesFor: async () => undefined,
     setOnBoard: async (_a: AccountRef, on: boolean) => {
       calls.push(`on_board:${on}`);
       state.view = { ...state.view, on_board: on };

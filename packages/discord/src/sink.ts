@@ -138,8 +138,8 @@ export type DiscordOutgoing = OutgoingMessage & { proactive?: boolean };
 export interface SinkEmoji {
   table: EmojiTable;
   usage: EmojiUsage;
-  /** Read per message, so a config change applies at once. */
-  enabled(): boolean;
+  /** Read per message, so a config change applies at once; per server. */
+  enabled(guild: string): boolean;
   limits(): EmojiLimits;
 }
 
@@ -147,8 +147,8 @@ export interface SinkEmoji {
 export interface SinkStickers {
   table: StickerTable;
   usage: StickerUsage;
-  /** Read per message, so a config change applies at once. */
-  enabled(): boolean;
+  /** Read per message, so a config change applies at once; per server. */
+  enabled(guild: string): boolean;
   limits(): StickerLimits;
   /** Clock ms, for the cap per hour. */
   now(): number;
@@ -188,7 +188,7 @@ export class DiscordSink implements PlatformSink, ReplySink {
   ): { text: string; sticker: ServerSticker | null } {
     const stickers = this.#stickers;
     const guild = context.scope;
-    const on = stickers !== null && guild !== null && stickers.enabled();
+    const on = stickers !== null && guild !== null && stickers.enabled(guild);
     const now = stickers?.now() ?? 0;
     const rendered = renderStickers(
       text,
@@ -251,7 +251,9 @@ export class DiscordSink implements PlatformSink, ReplySink {
   /** `:name:` → server emoji in guild channels, within the limits; recorded per channel. */
   #withEmoji(context: ContextKey, text: string): string {
     const emoji = this.#emoji;
-    if (emoji === null || context.scope === null || !emoji.enabled()) return uncodeEmoji(text);
+    if (emoji === null || context.scope === null || !emoji.enabled(context.scope)) {
+      return uncodeEmoji(text);
+    }
     const guild = context.scope;
     const rendered = renderEmoji(
       text,

@@ -10,6 +10,9 @@ import {
   type AnyComponentRoute,
   ArgKind,
   argSpec,
+  BOARD_SCOPE_ARG,
+  boardScope,
+  boardScopeArg,
   type CardBlock,
   type CardButton,
   type CommandRegistry,
@@ -24,7 +27,7 @@ import {
   pictureParts,
 } from "@miyoria/commands";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
-import { type KeepsakeFortune, KeepsakesKey, newId, PicturesKey } from "@miyoria/types";
+import { type KeepsakeFortune, KeepsakesKey, newId, PicturesKey, PlacesKey } from "@miyoria/types";
 import { registerV2, unregisterV2 } from "./commands-v2.js";
 import { STRANGER, WALLET_NODE } from "./economy.js";
 import {
@@ -82,6 +85,12 @@ function when(iso: string): string {
 
 /** Places `/me board` lists. */
 const BOARD_PLACES = 10;
+
+/**
+ * A fresh idempotency key for a press, on the invoker's platform (`discord:<ulid>` on Discord, as
+ * before): the platform does not hand a command its interaction id, so a press is its own key.
+ */
+const pressKey = (inv: Invocation): string => `${inv.context.platform}:${newId()}`;
 
 const HUNGER_WORD: Readonly<Record<Hunger, string>> = {
   full: "吃飽了",
@@ -247,7 +256,7 @@ class Handler {
     try {
       const drawn = await keepsakes.drawFortune(
         { account: inv.invoker, name: inv.invoker_display_name, avatar_url: null },
-        `discord:${newId()}`,
+        pressKey(inv),
       );
       if (!drawn.ok) return { public: [drawn.message] };
       const left = drawn.balance === null ? "" : `，剩 ${drawn.balance}`;
@@ -274,8 +283,7 @@ class Handler {
 
   feed(inv: Invocation, item: FeedItem): Promise<CommandReply> {
     return this.#guard(async (economy) => {
-      // The platform does not hand a command its interaction id, so a press is its own key.
-      const r = await economy.feed(inv.invoker, item, 1, `discord:${newId()}`);
+      const r = await economy.feed(inv.invoker, item, 1, pressKey(inv));
       if (!r.accepted) return result(r.message);
       const view = await economy.wallet(inv.invoker);
       return result(
@@ -293,7 +301,7 @@ class Handler {
       if (to === null || amount === null) return notice("warn", "要轉給誰、轉多少?");
       // The option is a Discord user; another platform's account is not someone one can reach.
       if (to.platform !== inv.invoker.platform) return notice("info", NO_RECEIVER);
-      const r = await economy.transfer(inv.invoker, to, amount, `discord:${newId()}`);
+      const r = await economy.transfer(inv.invoker, to, amount, pressKey(inv));
       const view = await economy.wallet(inv.invoker);
       return result(
         `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。
@@ -302,22 +310,29 @@ class Handler {
     });
   }
 
-  /** `/me board`: the sponsor board; `on` joins or leaves it first. */
-  board(inv: Invocation, on: boolean | null): Promise<CommandReply> {
+  /**
+   * `/me board`: the sponsor board; `on` joins or leaves it first. `scope` is the `範圍` option
+   * (in a server that server's members by default, in a DM everyone; `board-scope.ts`).
+   */
+  board(inv: Invocation, on: boolean | null, scope: string | null): Promise<CommandReply> {
     return this.#guard(async (economy) => {
       if (on !== null && !(await economy.setOnBoard(inv.invoker, on))) {
         return notice("info", STRANGER);
       }
+      const where = boardScope(this.services.get(PlacesKey), inv.context, scope);
       const [lines, view] = await Promise.all([
-        economy.board(BOARD_PLACES),
+        economy.board(BOARD_PLACES, where.members ?? undefined),
         economy.wallet(inv.invoker),
       ]);
+      // The join / leave button shows the same list again after the press.
+      const all = scope === "全部" ? ["all"] : [];
       const text =
         lines.length === 0
           ? "還沒有人上榜"
           : lines.map((l) => `${l.rank}. ${l.name}　${l.spent}`).join("\n");
       const blocks: CardBlock[] = [
         { type: "text", text },
+        ...(where.label === "" ? [] : [{ type: "muted" as const, text: where.label }]),
         {
           type: "muted",
           text: `最近花在她身上的${view.currency}（餵食、信、表情、商店買的東西、獻詞、目標等等），花過就預設在榜上，不想上榜可以退出；不顯示餘額。`,
@@ -328,8 +343,8 @@ class Handler {
           type: "buttons",
           buttons: [
             view.on_board
-              ? { id: componentId(R.board, "off"), label: "退出排行榜" }
-              : { id: componentId(R.board, "on"), label: "加入排行榜", style: "primary" },
+              ? { id: componentId(R.board, "off", ...all), label: "退出排行榜" }
+              : { id: componentId(R.board, "on", ...all), label: "加入排行榜", style: "primary" },
           ],
         });
         blocks.push({
@@ -346,7 +361,7 @@ class Handler {
     return this.#guard(async (economy) => {
       const text = inv.str("text")?.trim() ?? "";
       if (text === "") return notice("warn", "要寫什麼?");
-      const r = await economy.screenMessage(inv.invoker, text, `discord:${newId()}`);
+      const r = await economy.screenMessage(inv.invoker, text, pressKey(inv));
       if (!r.accepted) return result(r.message);
       const view = await economy.wallet(inv.invoker);
       return result(`${r.message}，花了 ${r.charged} ${view.currency}，剩 ${r.balance}。`);
@@ -361,17 +376,21 @@ class Handler {
     return this.#guard(async (economy) => {
       const text = inv.str("text")?.trim() ?? "";
       if (text === "") return notice("warn", "要寫什麼?");
-      const r = await economy.danmaku(inv.invoker, text, `discord:${newId()}`);
+      const r = await economy.danmaku(inv.invoker, text, pressKey(inv));
       if (!r.accepted) return result(r.message);
       const view = await economy.wallet(inv.invoker);
       return result(`${r.message}。花了 ${r.charged} ${view.currency}，剩 ${r.balance}。`);
     });
   }
 
-  /** `/me bounties`: what she has posted. */
-  bounties(): Promise<CommandReply> {
+  /**
+   * `/me bounties`: what she has posted in this server (in a DM: in the servers the invoker is
+   * in). Only a member of a bounty's server can be paid it.
+   */
+  bounties(inv: Invocation): Promise<CommandReply> {
     return this.#guard(async (economy) => {
-      const list = (await economy.bounties()).slice(0, BOUNTY_PLACES);
+      const spaces = await economy.spacesFor(inv.context, inv.invoker);
+      const list = (await economy.bounties(spaces)).slice(0, BOUNTY_PLACES);
       if (list.length === 0) return result("她現在沒有貼懸賞");
       const lines = list.map((b) => `・${b.task}　${b.reward}　到 ${when(b.expires_at)}`);
       return cardReply(
@@ -404,10 +423,14 @@ function register(registry: CommandRegistry, handler: Handler): void {
     }),
   ];
   const boardRoutes: AnyComponentRoute[] = [
-    defineRoute<boolean>({
+    defineRoute<{ on: boolean; scope: string | null }>({
       route: R.board,
-      parse: (p) => (p[0] === "on" ? true : p[0] === "off" ? false : null),
-      handle: async (inv, on) => ComponentResult.reply(await handler.board(inv, on)),
+      parse: (p) => {
+        const on = p[0] === "on" ? true : p[0] === "off" ? false : null;
+        return on === null ? null : { on, scope: p[1] === "all" ? "全部" : null };
+      },
+      handle: async (inv, { on, scope }) =>
+        ComponentResult.reply(await handler.board(inv, on, scope)),
     }),
   ];
   registry.register(
@@ -485,12 +508,17 @@ function register(registry: CommandRegistry, handler: Handler): void {
         argSpec("join", "加入（回到榜上）或退出排行榜（選填）", ArgKind.choice(["on", "off"]), {
           required: false,
         }),
+        boardScopeArg(),
       ],
       permission: WALLET_NODE,
     }),
     (inv) => {
       const join = inv.str("join");
-      return handler.board(inv, join === "on" ? true : join === "off" ? false : null);
+      return handler.board(
+        inv,
+        join === "on" ? true : join === "off" ? false : null,
+        inv.str(BOARD_SCOPE_ARG),
+      );
     },
     { components: boardRoutes },
   );
@@ -508,8 +536,9 @@ function register(registry: CommandRegistry, handler: Handler): void {
     }),
     (inv) => handler.danmaku(inv),
   );
-  registry.register(commandSpec("me bounties", "她貼著的懸賞", { permission: WALLET_NODE }), () =>
-    handler.bounties(),
+  registry.register(
+    commandSpec("me bounties", "她貼著的懸賞", { permission: WALLET_NODE }),
+    (inv) => handler.bounties(inv),
   );
 }
 

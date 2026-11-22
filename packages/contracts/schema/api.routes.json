@@ -504,6 +504,20 @@
             "path": "/api/places/rooms"
           }
         }
+      },
+      "spaces": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/places/spaces"
+          }
+        }
       }
     },
     "decisions": {
@@ -646,6 +660,20 @@
             "inputStructure": "detailed",
             "method": "PUT",
             "path": "/api/channels/level"
+          }
+        }
+      },
+      "setSpaceLevel": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.channel.mode"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "PUT",
+            "path": "/api/channels/space-level"
           }
         }
       }
@@ -2353,6 +2381,21 @@
             "path": "/api/member/live/pat"
           }
         }
+      },
+      "spaces": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/spaces"
+          }
+        }
       }
     },
     "cards": {
@@ -2624,6 +2667,21 @@
           "route": {
             "inputStructure": "detailed",
             "method": "POST",
+            "path": "/api/member/board"
+          }
+        }
+      },
+      "boardView": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
             "path": "/api/member/board"
           }
         }

@@ -134,8 +134,8 @@ export class V2 implements Economy2 {
     return this.achievement.view(account);
   }
 
-  predictions(account: AccountRef | null): Promise<PredictionView[]> {
-    return this.prediction.view(account);
+  predictions(account: AccountRef | null, spaces?: readonly string[]): Promise<PredictionView[]> {
+    return this.prediction.view(account, spaces);
   }
 
   openPrediction(req: {

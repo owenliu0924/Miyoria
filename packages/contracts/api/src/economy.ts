@@ -3,6 +3,16 @@
 
 import { z } from "zod";
 import { route } from "./route.js";
+import { SpaceQuery } from "./shared.js";
+
+/**
+ * The server a per-server thing belongs to or a list is narrowed to: identity's id (what `?space=`
+ * takes) and its name (`null` once she left it).
+ */
+export const ListedSpaceSchema = z
+  .object({ id: z.string(), name: z.string().nullable() })
+  .meta({ id: "ApiListedSpace" });
+export type ListedSpace = z.output<typeof ListedSpaceSchema>;
 
 /** One day of coins issued against coins recovered. */
 export const HealthDaySchema = z
@@ -55,6 +65,11 @@ export const PredictionViewSchema = z
   .object({
     /** The short code people and her tools name it by. */
     id: z.string(),
+    /**
+     * The server it belongs to: only its members see it and may bet. `null`: of no server (opened
+     * while she knew of none), open to everyone she knows.
+     */
+    space: ListedSpaceSchema.nullable(),
     question: z.string(),
     options: z.array(
       z.object({
@@ -164,10 +179,14 @@ export const economy = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/economy/health" })
     .output(EconomyHealthSchema),
-  /** The open predictions and the ones settled lately. */
+  /**
+   * The open predictions and the ones settled lately: of the server `?space=` names, or of every
+   * server without it.
+   */
   predictions: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/economy/predictions" })
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(z.object({ currency: z.string(), predictions: z.array(PredictionViewSchema) })),
   /**
    * Settles an open prediction by hand, the ones that settle by themselves too (`409`: it is not

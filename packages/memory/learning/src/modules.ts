@@ -708,6 +708,7 @@ export class ReflectModule implements Module {
       name: this.options.name ?? "她",
       store: settings,
       profile: this.profile,
+      conversations: () => s.get(ConversationStatesKey)?.list() ?? [],
     });
     await loadWithTimeout(ctx, "diary", () => diary.load());
     // With a channel, writing it is hers to choose too (the "diary" row of her activity table);

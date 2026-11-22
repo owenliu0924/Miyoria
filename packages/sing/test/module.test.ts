@@ -26,6 +26,8 @@ import {
   ImpulseHostKey,
   impulseReason,
   type JsonValue,
+  type Places,
+  PlacesKey,
   type PlaybackState,
   type PlayChunk,
   type PlayHandle,
@@ -379,9 +381,14 @@ class Harness {
   /** What was started as yt-dlp (`video_source = "local"`); nothing is run. */
   readonly spawned: { command: string; args: readonly string[] }[] = [];
 
-  private constructor(withMind: boolean, store: MemorySettingsStore | null) {
+  private constructor(
+    withMind: boolean,
+    store: MemorySettingsStore | null,
+    places: Places | null = null,
+  ) {
     const s = this.sup.services;
     if (store) s.provide("store", SettingsStoreKey, store);
+    if (places) s.provide("core", PlacesKey, places);
     this.registry = new ActuatorRegistry({ services: s, builtins: false });
     this.queue = new RequestQueue(undefined, {
       publisher: this.sup.bus.publisher("queue"),
@@ -406,9 +413,9 @@ class Harness {
   static async create(
     config: JsonValue = {},
     withMind = true,
-    restart: { store: MemorySettingsStore; worker?: FakeWorker } | null = null,
+    restart: { store: MemorySettingsStore; worker?: FakeWorker; places?: Places } | null = null,
   ): Promise<Harness> {
-    const h = new Harness(withMind, restart?.store ?? null);
+    const h = new Harness(withMind, restart?.store ?? null, restart?.places ?? null);
     if (restart?.worker) h.worker = restart.worker;
     h.module = new SingModule(() => h.worker, {
       endpoints: oneWorker(),
@@ -2119,5 +2126,122 @@ describe("backingOf", () => {
     expect(backingOf("drop")).toBe("drop");
     expect(backingOf(null)).toBe("keep");
     expect(backingOf("loud")).toBe("keep");
+  });
+});
+
+// Phase 6: she is in several servers. A song is sung in the server it was asked for in; one asked
+// for outside a server (a DM, the member page) in the server it names or the requester's own, and
+// it waits while she is in voice elsewhere. A song of before, asked for outside a server, is the
+// original server's after a restart.
+
+const VOICE2: ContextKey = { platform: "discord", scope: "g2", channel: "voice2", kind: "voice" };
+
+/** Two servers she is in: g1 (Space S1, the primary) and g2 (S2); everyone is in both. */
+function twoServers(): Places {
+  const space = (id: string, guild: string, primary: boolean) => ({
+    id,
+    platform: "discord",
+    external_id: guild,
+    name: guild,
+    primary,
+  });
+  const spaces = [space("S1", "g1", true), space("S2", "g2", false)];
+  return {
+    primary: () => spaces[0] ?? null,
+    spaces: () => spaces,
+    space: (id: string) => spaces.find((s) => s.id === id) ?? null,
+    ofGuild: (_platform: string, guild: string) =>
+      spaces.find((s) => s.external_id === guild) ?? null,
+    spacesOf: () => spaces,
+  } as unknown as Places;
+}
+
+describe("songs per server", () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(async () => {
+    await h?.stop();
+    vi.useRealTimers();
+  });
+
+  it("a member page request for another server waits there, and is offered once she is in its voice", async () => {
+    h = await Harness.create({}, true, { store: new MemorySettingsStore(), places: twoServers() });
+    await h.join(); // in voice in g1
+    const asked = await h.invoke(Principals.user(AMY, null), "sing.request", {
+      query: "Song W",
+      by: "Amy",
+      guild: "g2",
+    });
+    expect(asked.status).toBe("done");
+    expect(asked.status === "done" && asked.result.text).toContain("別的伺服器");
+    expect(h.singer.list.get(1)?.guild).toBe("g2");
+    h.worker.finish("j1", "Song W", 1);
+    await settle(200);
+    expect(h.singer.list.get(1)?.state).toBe("ready");
+    // Not g1's: not counted there, not offered to her there, not sung there.
+    expect(h.singer.pending("g1")).toBe(0);
+    expect(h.singer.pending("g2")).toBe(1);
+    expect(h.singer.setlist("g1")).toEqual([]);
+    expect(h.mind.suggestions).toHaveLength(0);
+    expect(() => h.singer.play(1, VOICE, null)).toThrow(/another server/);
+    await settle(6000);
+    expect(h.voice.plays).toHaveLength(0);
+    // She is in g2's voice now: it is offered there.
+    h.voice.channels.set("g2", "voice2");
+    await h.publish(Events.VoiceJoined, { context: VOICE2, participants: [listener(AMY)] });
+    expect(h.mind.suggestions).toHaveLength(1);
+    expect(h.mind.suggestions[0]?.context).toEqual(VOICE2);
+  });
+
+  it("a song asked for in a server is that server's; a request of her own tool cannot name another", async () => {
+    h = await Harness.create({}, true, { store: new MemorySettingsStore(), places: twoServers() });
+    await h.invoke(Principals.user(AMY, TEXT), "sing.request", { query: "Here", guild: "g2" });
+    expect(h.singer.list.get(1)?.guild).toBeUndefined();
+    expect(h.singer.pending("g1")).toBe(1);
+    expect(h.singer.pending("g2")).toBe(0);
+  });
+
+  it("a song of before, asked for outside a server, is the original server's after a restart", async () => {
+    const store = new MemorySettingsStore();
+    // Before phase 6: no places, the song belongs to no server.
+    h = await Harness.create({}, true, { store });
+    await h.invoke(Principals.user(AMY, null), "sing.request", { query: "Song D", by: "Amy" });
+    expect(h.singer.list.get(1)?.guild ?? null).toBeNull();
+    await h.stop();
+    const worker = h.worker;
+    h = await Harness.create({}, true, { store, worker, places: twoServers() });
+    await settle(200);
+    expect(h.singer.list.get(1)).toMatchObject({ state: "preparing", guild: "g1", job: "j1" });
+    expect(h.singer.pending("g1")).toBe(1);
+    expect(h.singer.pending("g2")).toBe(0);
+  });
+
+  it("a song priority ticket is charged for the Space whose queue the song is in", async () => {
+    h = await Harness.create({}, false, { store: new MemorySettingsStore(), places: twoServers() });
+    const spaces: (string | null | undefined)[] = [];
+    const ticket: SongPriority = {
+      terms: () => ({ price: 40, per_day: 2, currency: "魚幣" }),
+      charge: async (_account, _key, _ref, space) => {
+        spaces.push(space);
+        return { ok: true, balance: 0 };
+      },
+      refund: async () => 0,
+      consume: () => undefined,
+    };
+    h.sup.services.provide("market", SongPriorityKey, ticket);
+    await h.invoke(Principals.user(AMY, null), "sing.request", {
+      query: "Song P",
+      priority: true,
+      guild: "g2",
+    });
+    await h.invoke(Principals.command(OWEN, TEXT), "sing.request", {
+      query: "Song Q",
+      priority: true,
+    });
+    expect(spaces).toEqual(["S2", "S1"]);
   });
 });

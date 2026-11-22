@@ -27,6 +27,7 @@ import {
   accountRefString,
   CARD_REASONS,
   type Clock,
+  type ContextKey,
   EventLogKey,
   type EventPayload,
   Events,
@@ -42,6 +43,8 @@ import {
   ModerationKey,
   newId,
   type PersonId,
+  type Places,
+  PlacesKey,
   Principals,
   type ProfileId,
   type Publish,
@@ -69,6 +72,7 @@ import {
   type CoinRule,
 } from "./records.js";
 import { MAX_SCREEN_CHARS, screenEvent, screenText, screenWait, waitMinutes } from "./screen.js";
+import { spacesToShow } from "./spaces.js";
 import { otherName, sendCoins } from "./transfer.js";
 import {
   type AdjustResult,
@@ -476,6 +480,25 @@ export class EconomyService implements Economy {
     return this.#d.services;
   }
 
+  /** Identity's places (servers and their members); `undefined` without Core's identity. */
+  places(): Places | undefined {
+    return this.#d.services.get(PlacesKey);
+  }
+
+  /**
+   * The servers a list shown in `ctx` covers (`spaces.ts`): that server, or in a DM the ones the
+   * person of `account` is a member of. `undefined`: no filter.
+   */
+  async spacesFor(
+    ctx: ContextKey | null | undefined,
+    account: AccountRef | null,
+  ): Promise<string[] | undefined> {
+    const places = this.places();
+    if (!places) return undefined;
+    const who = account === null ? null : await this.member(account);
+    return spacesToShow(places, ctx, who?.person.id ?? null);
+  }
+
   get profile(): ProfileId {
     return this.#d.profile;
   }
@@ -541,8 +564,8 @@ export class EconomyService implements Economy {
 
   // ---- her bounties (§13) -------------------------------------------------------
 
-  bounties(): Promise<BountyView[]> {
-    return this.bountyDesk.view();
+  bounties(spaces?: readonly string[]): Promise<BountyView[]> {
+    return this.bountyDesk.view(spaces);
   }
 
   /** Something she knows from now on, silently; `writer` is the working-context bucket. */
@@ -985,8 +1008,8 @@ export class EconomyService implements Economy {
     return sendCoins(this, from, to, amount, key);
   }
 
-  board(limit?: number): Promise<BoardLine[]> {
-    return sponsorBoard(this, limit);
+  board(limit?: number, members?: ReadonlySet<PersonId>): Promise<BoardLine[]> {
+    return sponsorBoard(this, limit, members);
   }
 
   setOnBoard(account: AccountRef, on: boolean): Promise<boolean> {

@@ -123,6 +123,7 @@ export { configSchema } from "./config/migrations.js";
 export { PersonaOverrides } from "./config/persona.js";
 export {
   type PlaceSetting,
+  type PlaceSettingChange,
   type PlaceSettingFilter,
   PlaceSettings,
   type PlaceSettingsOptions,
@@ -315,11 +316,14 @@ export {
   HOME_SESSION,
   Identity,
   linkCodeHash,
+  onPlaceRows,
   type Place,
   type PlaceAuthor,
+  type PlaceRowChange,
   type ResolveOptions,
 } from "./identity/identity.js";
 export { identitySchema } from "./identity/migrations.js";
+export { isMemberOf, SpacePlaces } from "./identity/places.js";
 export {
   type AccountRow,
   // The Drizzle tables other plugins' foreign keys point at.

@@ -112,7 +112,8 @@ export function peopleInPrompt(configured: boolean | null, profilesPresent: bool
  * `[modules.reflect.diary]`: after the daily reflection she writes a short diary entry and posts
  * it to `channel` (`discord:<guild>:<channel>`; empty = no diary). With a channel, writing it is
  * also something she can choose to do (capability `diary.write`, the "diary" row of her activity
- * table), one entry per daily reflection.
+ * table), one entry per daily reflection. One diary for all her servers (phase 6): once the day
+ * had talk in another server, nothing of it goes into the entry (`diaryRecaps`).
  */
 export const DiaryConfigSchema = z.object({
   channel: z.string().default(""),

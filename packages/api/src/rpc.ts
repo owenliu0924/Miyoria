@@ -87,6 +87,7 @@ import { opsRpc } from "./ops.js";
 import { partyRpc } from "./party.js";
 import { peopleRpc } from "./people.js";
 import { personWalletRpc } from "./people-wallet.js";
+import { memberSpacesRpc, placesSpacesRpc } from "./places-routes.js";
 import { planRpc } from "./plan.js";
 import { walletPlayRpc } from "./play-routes.js";
 import { outcomesRpc, promptsRpc } from "./prompts.js";
@@ -126,7 +127,7 @@ export const router = os.router({
   workspace: workspaceRpc,
   skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
-  member: { ...memberRpc, ...livePatRpc },
+  member: { ...memberRpc, ...livePatRpc, ...memberSpacesRpc },
   cards: cardsRpc,
   cardsAdmin: cardsAdminRpc,
   wallet: { ...walletRpc, ...walletPlayRpc },
@@ -150,7 +151,7 @@ export const router = os.router({
   ...coreRpc,
   // The settings routes before `POST /api/modules/{id}/{action}` (see the contract).
   modules: { list: coreRpc.modules.list, ...settingsRpc, action: coreRpc.modules.action },
-  places: placesRpc,
+  places: { ...placesRpc, ...placesSpacesRpc },
   events: eventsRpc,
   llm: { ...coreRpc.llm, ...llmCallsRpc },
   economy: economyRpc,

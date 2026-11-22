@@ -5,8 +5,11 @@
 //
 // Her inbox. What is for her but is not a line of a conversation is an item of the `initiative`
 // table: a due schedule of hers, a salient world event, a due followup of memory, an overdue
-// promise, a long action's result. It is shown in block 6 of her next run in its place (an item
-// of no place, her home, in any place) and seen once a run that showed it finished.
+// promise, a long action's result. It is shown in block 6 of her next run in its place and seen
+// once a run that showed it finished. An item of no place (her home) keeps the Space it came from
+// (phase 6, docs/design/v5-places.md): it is shown only in the runs of that Space, and an item of
+// no Space at all (her own timers, her morning) in every run. A voice event of one server never
+// reaches a run in another one.
 //
 // Opportunities, looked at every `tick_secs` and when something arrives:
 //
@@ -262,6 +265,8 @@ export class Initiative {
         key: `world:${s.key}:${s.first_at}`,
         kind: "world",
         context,
+        // The server it happened in, also when it goes to her home.
+        space_id: this.#spaceOf(s.context),
         text: s.detail,
         person: s.display_name,
       });
@@ -295,6 +300,16 @@ export class Initiative {
     });
   }
 
+  /** The Space of a place (identity's id); `null`: none (a DM, her home, a server unknown). */
+  #spaceOf(context: ContextKey | null): string | null {
+    try {
+      return this.#h.store.spaceOf(context);
+    } catch (error) {
+      this.#h.agent.log.debug({ err: errorMessage(error) }, "no space for an inbox item");
+      return null;
+    }
+  }
+
   #add(item: Omit<NewInboxItem, "session" | "at">): InboxRow | null {
     const voice = item.context?.kind === "voice";
     const kept = item.kind === "world" && item.context !== null && this.#h.inVoice?.(item.context);
@@ -303,6 +318,8 @@ export class Initiative {
       return this.#h.store.addItem({
         ...item,
         context,
+        // Where it came from, also when it goes to her home: a voice event stays its server's.
+        space_id: item.space_id !== undefined ? item.space_id : this.#spaceOf(item.context),
         session: context === null ? null : this.#h.sessionOf(context),
         text: item.text.trim(),
         at: this.#now,
@@ -323,9 +340,13 @@ export class Initiative {
 
   // ---- a run ----------------------------------------------------------------------------------
 
-  /** Block 6's inbox for a run: its place's unseen items and home's. */
+  /** Block 6's inbox for a run: its place's unseen items, and home's of its Space or of none. */
   inboxBlock(input: PromptInput): string | null {
-    const rows = this.#h.store.unseenFor(input.session.id, this.#h.settings.own.inbox_items);
+    const rows = this.#h.store.unseenFor(
+      input.session.id,
+      this.#h.settings.own.inbox_items,
+      this.#spaceOf(input.session.context),
+    );
     const waking = this.#runs.get(input.wake)?.o.item ?? null;
     const job = input.wake.kind === "result" ? input.wake.job : null;
     const offset = this.book.offsetMinutes;
@@ -532,9 +553,13 @@ export class Initiative {
   async #opportunities(now: number): Promise<Opportunity[]> {
     const out: Opportunity[] = [];
     const home = this.#home();
+    const homeSpace = this.#spaceOf(home);
     const open = this.#h.store.unseen();
     for (const row of open) {
       if (row.woke_at !== null || !WAKING.has(row.kind)) continue;
+      // A home item of a server wakes her only where that server is; elsewhere it waits for a
+      // run there (it is never told in another server).
+      if (row.context === null && row.space_id !== null && row.space_id !== homeSpace) continue;
       out.push({
         id: row.key,
         kind: row.kind as OpportunityKind,
@@ -909,6 +934,7 @@ export function startInitiative(
     book: initiative.book,
     resolve: wiring.resolve,
     describe: wiring.describe,
+    spaceOf: (place) => store.spaceOf(place),
   });
   for (const tool of tools) agent.tools.register(tool);
   initiative.start(wiring.signal);

@@ -134,7 +134,14 @@ export async function askGift(
   const gifts = desk(services);
   if (!gifts || !services.get(EconomyKey)) return notice("warn", UNAVAILABLE);
   try {
-    const asked = await gifts.ask(inv.invoker, text, `discord:${newId()}`, "discord");
+    // The key is the invoker's platform's (`discord:<ulid>` on Discord, as before). The gift's
+    // `source` is the record's own word for where it was asked (`discord` or `web`), not a platform.
+    const asked = await gifts.ask(
+      inv.invoker,
+      text,
+      `${inv.context.platform}:${newId()}`,
+      "discord",
+    );
     if (asked.status === "fixed") return await feed(asked.item);
     if (asked.status === "refused") return privately(`沒辦法送:${asked.message}。`, "沒有扣錢。");
     return quoteCard(asked.quote, gifts.confirmWindowS);

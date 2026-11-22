@@ -6,9 +6,10 @@
 // charged when it is sent and given back by itself when the overlay could not show it.
 
 import { z } from "zod";
-import { PredictionViewSchema, QuestsViewSchema } from "./economy.js";
+import { ListedSpaceSchema, PredictionViewSchema, QuestsViewSchema } from "./economy.js";
 import { IssuedFortuneSchema } from "./fortune.js";
 import { IdempotencyHeaders, route } from "./route.js";
+import { SpaceQuery } from "./shared.js";
 
 export const FeedItemSchema = z.enum(["rice", "big_bowl", "dessert"]).meta({ id: "ApiFeedItem" });
 export type FeedItem = z.output<typeof FeedItemSchema>;
@@ -195,6 +196,35 @@ export const BoardRequestSchema = z
   .meta({ id: "ApiBoardRequest" });
 export type BoardRequest = z.input<typeof BoardRequestSchema>;
 
+/**
+ * Which form of a board a member page asks for (the sponsor board, the exchange's rich list):
+ * `space` (the default) is one server's members, the server `?space=` names or their own
+ * (preferring the primary; someone who is a member nowhere gets everyone); `all` is everyone, as
+ * on the public site. Coins and prices are global either way; only who is listed differs.
+ */
+export const BoardScopeQuery = z
+  .object({ ...SpaceQuery.shape, scope: z.enum(["space", "all"]).optional() })
+  .meta({ id: "ApiBoardScopeQuery" });
+export type BoardScopeQueryIn = z.input<typeof BoardScopeQuery>;
+
+/** `GET /api/member/board`: the sponsor board, of one server's members or of everyone. */
+export const MemberBoardSchema = z
+  .object({
+    /** The server whose members are listed; `null`: everyone. */
+    space: ListedSpaceSchema.nullable(),
+    entries: z.array(
+      z.object({
+        rank: z.number(),
+        /** The name they show (匿名 when it does not pass moderation). */
+        name: z.string(),
+        /** Coins spent on her over the board's window. */
+        spent: z.number(),
+      }),
+    ),
+  })
+  .meta({ id: "ApiMemberBoard" });
+export type MemberBoard = z.output<typeof MemberBoardSchema>;
+
 /** `POST /api/member/board`. */
 export const BoardChoiceSchema = z.object({ on_board: z.boolean() }).meta({ id: "ApiBoardChoice" });
 export type BoardChoice = z.output<typeof BoardChoiceSchema>;
@@ -275,6 +305,15 @@ export const wallet = {
     .route({ method: "POST", path: "/api/member/board" })
     .input(z.object({ body: BoardRequestSchema }))
     .output(BoardChoiceSchema),
+  /**
+   * The sponsor board on the member page: one server's members (`404` an unknown server, `403`
+   * one they are not in) or everyone (`scope=all`).
+   */
+  boardView: route
+    .meta({ audience: "member", permission: null, limited: true })
+    .route({ method: "GET", path: "/api/member/board" })
+    .input(z.object({ query: BoardScopeQuery }).optional())
+    .output(MemberBoardSchema),
   frame: spend("/api/member/frame", FrameRequestSchema).output(FramesResultSchema),
   /**
    * Today's three quests (`quests` is empty for someone she does not know). The first look of the
@@ -284,14 +323,20 @@ export const wallet = {
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/quests" })
     .output(QuestsViewSchema),
-  /** The predictions open now and the ones settled lately, with their own stake (`my_bet`). */
+  /**
+   * The predictions open now and the ones settled lately, with their own stake (`my_bet`): of the
+   * server `?space=` names (`404` unknown, `403` not theirs), else their own (preferring the
+   * primary). Only that server's members may bet.
+   */
   predictions: route
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/predictions" })
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(z.object({ currency: z.string(), predictions: z.array(PredictionViewSchema) })),
   /**
    * A stake on an option of an open prediction (`409` closed or already staked, `402` short, `429`
-   * the day's limit, `403` someone she does not know). The same `Idempotency-Key` is the same stake.
+   * the day's limit, `403` someone she does not know or not a member of the prediction's server,
+   * with the reason). The same `Idempotency-Key` is the same stake.
    */
   bet: spend("/api/member/bet", BetRequestSchema).output(BetResultSchema),
 };

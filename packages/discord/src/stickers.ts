@@ -291,8 +291,8 @@ export function renderStickers(
 
 /** Where the meaning of each sticker comes from. */
 export interface StickerMeanings {
-  /** The owner's line for a sticker name, if any. */
-  owner(name: string): string | undefined;
+  /** The owner's line for a sticker name in a server (its own lines, docs/design/v5-places.md). */
+  owner(name: string, guild: string | null): string | undefined;
   /** A line the image model wrote for a sticker id, if any. */
   described(id: string): string | undefined;
 }
@@ -309,9 +309,10 @@ export function stickerLines(
   stickers: readonly ServerSticker[],
   meanings: StickerMeanings,
   max: number,
+  guild: string | null = null,
 ): string[] {
   const rows = stickers.map((s) => {
-    const meaning = meanings.owner(s.name) ?? meanings.described(s.id) ?? s.description;
+    const meaning = meanings.owner(s.name, guild) ?? meanings.described(s.id) ?? s.description;
     return {
       name: stickerName(s.name),
       meaning: meaning ? safeName(meaning, MAX_MEANING) : null,
@@ -343,15 +344,20 @@ export const STICKER_BLOCK = {
 export function stickerContributor(
   table: StickerTable,
   meanings: StickerMeanings,
-  options: { max_listed: number; enabled: () => boolean },
+  options: { max_listed: number; enabled: (guild: string) => boolean },
 ): PromptContributor {
   return {
     key: STICKER_CONTRIBUTOR,
     async contribute(request: PromptRequest): Promise<PromptSection[]> {
-      if (!options.enabled() || request.voice) return [];
       const context = request.context;
-      if (context.platform !== "discord" || context.scope === null) return [];
-      const lines = stickerLines(table.list(context.scope), meanings, options.max_listed);
+      if (request.voice || context.platform !== "discord" || context.scope === null) return [];
+      if (!options.enabled(context.scope)) return [];
+      const lines = stickerLines(
+        table.list(context.scope),
+        meanings,
+        options.max_listed,
+        context.scope,
+      );
       if (lines.length === 0) return [];
       return [
         {

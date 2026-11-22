@@ -891,6 +891,64 @@
         "gifts"
       ]
     },
+    "ApiAdminSpace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "established": {
+          "type": "boolean"
+        },
+        "members": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "external_id",
+        "name",
+        "primary",
+        "established",
+        "members"
+      ]
+    },
+    "ApiAdminSpaces": {
+      "type": "object",
+      "properties": {
+        "spaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiAdminSpace"
+          }
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "spaces",
+        "default"
+      ]
+    },
     "ApiAffectBiases": {
       "type": "object",
       "properties": {
@@ -1542,6 +1600,23 @@
         "on"
       ],
       "additionalProperties": false
+    },
+    "ApiBoardScopeQuery": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "space",
+            "all"
+          ]
+        }
+      }
     },
     "ApiBondRing": {
       "type": "object",
@@ -2242,11 +2317,22 @@
           "items": {
             "$ref": "#/$defs/ApiChannelLevelView"
           }
+        },
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSpaceLevelView"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "levels",
-        "channels"
+        "channels",
+        "space"
       ]
     },
     "ApiCheckinRequest": {
@@ -5604,6 +5690,16 @@
         "currency": {
           "type": "string"
         },
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiListedSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "rich": {
           "type": "array",
           "items": {
@@ -5696,6 +5792,7 @@
       },
       "required": [
         "currency",
+        "space",
         "rich",
         "me"
       ]
@@ -12293,6 +12390,24 @@
         "portrait"
       ]
     },
+    "ApiListedSpace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
     "ApiLlmCallDetail": {
       "type": "object",
       "properties": {
@@ -13948,6 +14063,47 @@
         "description"
       ]
     },
+    "ApiMemberBoard": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiListedSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rank": {
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              },
+              "spent": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "rank",
+              "name",
+              "spent"
+            ]
+          }
+        }
+      },
+      "required": [
+        "space",
+        "entries"
+      ]
+    },
     "ApiMemberBond": {
       "type": "object",
       "properties": {
@@ -14442,6 +14598,12 @@
       "properties": {
         "accepted": {
           "type": "boolean"
+        },
+        "waiting": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
@@ -14464,6 +14626,27 @@
         "query"
       ],
       "additionalProperties": false
+    },
+    "ApiMemberSpaces": {
+      "type": "object",
+      "properties": {
+        "spaces": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiSpace"
+          }
+        },
+        "default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "spaces",
+        "default"
+      ]
     },
     "ApiMemberView": {
       "type": "object",
@@ -15261,6 +15444,16 @@
         },
         "currency": {
           "type": "string"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSettingsPlaceView"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -17170,6 +17363,16 @@
         "id": {
           "type": "string"
         },
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiListedSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "question": {
           "type": "string"
         },
@@ -17292,6 +17495,7 @@
       },
       "required": [
         "id",
+        "space",
         "question",
         "options",
         "total",
@@ -19212,7 +19416,8 @@
             "restarted",
             "deferred",
             "stored",
-            "unchanged"
+            "unchanged",
+            "immediate"
           ]
         },
         "state": {
@@ -19703,6 +19908,20 @@
         "scene"
       ]
     },
+    "ApiSetSpaceLevelRequest": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "mode"
+      ]
+    },
     "ApiSetWishlistRequest": {
       "type": "object",
       "properties": {
@@ -19773,7 +19992,15 @@
           "type": "string",
           "enum": [
             "cluster",
-            "space"
+            "space",
+            "room"
+          ]
+        },
+        "merge": {
+          "type": "string",
+          "enum": [
+            "replace",
+            "union"
           ]
         },
         "unit": {
@@ -19909,6 +20136,7 @@
         "danger",
         "secret",
         "scope",
+        "merge",
         "unit",
         "labels",
         "room",
@@ -19960,6 +20188,43 @@
         "rows"
       ]
     },
+    "ApiSettingPlaceValue": {
+      "type": "object",
+      "properties": {
+        "own": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "own_set": {
+          "type": "boolean"
+        },
+        "inherited": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "inherited_from": {
+          "$ref": "#/$defs/ApiSettingSource"
+        }
+      },
+      "required": [
+        "own",
+        "own_set",
+        "inherited",
+        "inherited_from"
+      ]
+    },
     "ApiSettingProblem": {
       "type": "object",
       "properties": {
@@ -19973,6 +20238,16 @@
       "required": [
         "path",
         "message"
+      ]
+    },
+    "ApiSettingSource": {
+      "type": "string",
+      "enum": [
+        "default",
+        "file",
+        "panel",
+        "space",
+        "room"
       ]
     },
     "ApiSettingValue": {
@@ -19989,12 +20264,7 @@
           ]
         },
         "source": {
-          "type": "string",
-          "enum": [
-            "default",
-            "file",
-            "panel"
-          ]
+          "$ref": "#/$defs/ApiSettingSource"
         },
         "file": {
           "anyOf": [
@@ -20022,6 +20292,16 @@
           "type": [
             "string",
             "null"
+          ]
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiSettingPlaceValue"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -20095,6 +20375,42 @@
               "after"
             ]
           }
+        },
+        "place": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "space",
+                    "room"
+                  ]
+                },
+                "room": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "scope",
+                "room",
+                "name"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -20125,6 +20441,55 @@
       "required": [
         "items",
         "next_before"
+      ]
+    },
+    "ApiSettingsPlaceView": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "name"
+          ]
+        },
+        "room": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "space",
+        "room"
       ]
     },
     "ApiShopItem": {
@@ -20420,6 +20785,74 @@
         "said",
         "panel"
       ]
+    },
+    "ApiSpace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "external_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "established": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "platform",
+        "external_id",
+        "name",
+        "primary",
+        "established"
+      ]
+    },
+    "ApiSpaceLevelView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "custom": {
+          "type": "boolean"
+        },
+        "default": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "mode",
+        "custom",
+        "default"
+      ]
+    },
+    "ApiSpaceQuery": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
     },
     "ApiSpendResult": {
       "type": "object",

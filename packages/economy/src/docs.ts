@@ -74,6 +74,8 @@ export class MemoryDocs implements EconomyDocStore {
     for (const doc of this.#docs.values()) {
       if (doc.kind !== kind) continue;
       if (filter.statuses && !filter.statuses.includes(doc.status)) continue;
+      const space = doc.space ?? null;
+      if (filter.spaces && space !== null && !filter.spaces.includes(space)) continue;
       if (filter.owners) {
         const owner = doc.owner;
         if (owner === null || !filter.owners.some((a) => sameAccount(a, owner))) continue;
