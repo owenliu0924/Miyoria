@@ -188,11 +188,24 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
   ];
 }
 
-function toResponse(error: unknown): Response {
-  if (error instanceof ApiError) return error.toResponse();
+/**
+ * An error's answer. `hide`: the caller is anyone out there (a public route, the public side), so a
+ * failure's own text stays in the log: an unexpected error, or a 500 / 502 that carries one.
+ */
+export function toResponse(error: unknown, hide = false): Response {
+  if (error instanceof ApiError) {
+    if (!hide || (error.status !== 500 && error.status !== 502)) return error.toResponse();
+    log.warn({ error: error.message, status: error.status }, "public request failed");
+    return new ApiError(error.status, SOMETHING_WENT_WRONG).toResponse();
+  }
   log.warn({ error: errorMessage(error) }, "request failed");
-  return ApiError.internal(error).toResponse();
+  return hide
+    ? new ApiError(500, SOMETHING_WENT_WRONG).toResponse()
+    : ApiError.internal(error).toResponse();
 }
+
+/** What anyone out there is told of a failure on this side. */
+const SOMETHING_WENT_WRONG = "something went wrong";
 
 /** A member route's answer: never kept by a cache, and no internal error text in it. */
 async function memberResponse(run: () => Promise<Response>): Promise<Response> {
@@ -203,7 +216,7 @@ async function memberResponse(run: () => Promise<Response>): Promise<Response> {
     if (error instanceof ApiError) response = error.toResponse();
     else {
       log.warn({ error: errorMessage(error) }, "member request failed");
-      response = new ApiError(500, "something went wrong").toResponse();
+      response = new ApiError(500, SOMETHING_WENT_WRONG).toResponse();
     }
   }
   const headers = new Headers(response.headers);
@@ -240,7 +253,7 @@ export function createApp(state: ApiState, options: AppOptions = {}): Hono<ApiEn
           if (!route.public) c.set("principal", await authenticate(state, c));
           return await route.handler(c);
         } catch (error) {
-          return toResponse(error);
+          return toResponse(error, route.public === true);
         }
       });
     }
@@ -281,6 +294,6 @@ export function createApp(state: ApiState, options: AppOptions = {}): Hono<ApiEn
     }
     return ApiError.notFound(NO_SUCH_ENDPOINT).toResponse();
   });
-  app.onError((error) => toResponse(error));
+  app.onError((error, c) => toResponse(error, fromPublicSide(state, c, side)));
   return app;
 }
