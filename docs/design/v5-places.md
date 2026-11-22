@@ -209,7 +209,17 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 
 **日記**:還是 owner 選的一個頻道。那一天在別的伺服器也有聊天時,日記不用反省的總結(它是所有地方的),改用日記頻道那個伺服器自己頻道的前情提要,加上心情、學到的事、目標。只在一個伺服器聊的日子照舊。
 
-**還沒做**:home 那一輪「每個地方合併成一行」的通知,和用 `disclose` 檢查權限的讀取工具 `look(place)`;現在 home 的項目只是按 Space 過濾。
+**home 看別的地方**(`brain/selfhost` 的 `initiative.ts`、`look-tool.ts`):
+
+- 在 home 那個地方(`[modules.agent.initiative] home`)跑的一輪,收件匣多一塊「別的地方在等你的事」:home 所在的伺服器以外,每個有未看項目的 Space 一行,只有名字和各種類的件數(`- 伺服器B:2 件(時間到了 1、外面的事 1)`),不給內容。最多 4 個地方,會叫醒她的件數多的、最新的排前面,其餘合成「還有 N 個地方也有事」。她離開的 Space 不列。在別的地方跑的一輪沒有這一塊;逐字稿從來不合併。
+- `look(place)`(核心工具,唯讀):place 是那一行的名字或 Space 的代號。看的規則就是記憶的 `disclose`(`memory/memory/src/places.ts`),觀看者是這一輪所在的地方,home 也一樣:home 對收件匣來說不屬於任何 Space,但她在 home 寫的字是寫在一個真的頻道或私訊裡,那裡的人看得到。所以:
+  - 一個項目的來處是它的地方;沒有地方的(放進 home 的語音事件)是那個 Space 本身。`disclose` 是 `show` 才給:同一個伺服器的頻道看得到(owner 隱藏的、`PlaceAccess` 說這裡有人看不到的除外);私訊裡只看得到對方也在場的(項目的 `person` 是對方);伺服器的頻道看別的伺服器的,永遠看不到。
+  - 一件都不能給:回一個看得到的拒絕(那裡有幾件、在這裡不能看),不是默默給空的。不認得的地方、她離開的地方也拒絕。
+  - 最多 8 件(最新的);其餘說「還有 N 件在這裡不能看」「還有 N 件更早的」。看了不算看過,項目照樣等那個地方的一輪。
+  - 回答開頭是 `ELSEWHERE_MARK`(`〔別的地方的事〕`)加「以下是某某的事,只在那裡說」,內容在 `look` 的資料區塊裡。記憶的段落整理(`notes` 的 segment pass)跳過這種工具結果,所以她看到的不會變成這個地方的筆記、再被帶到別的地方去。
+  - 結果是:home 設成伺服器的頻道時,別的伺服器的事只看得到合併那一行;home 設成和某人的私訊時,看得到那個人在場的事。要讓她在 home 看別的伺服器的全部,得先有一個沒有別人讀的 home(v5-architecture §6 的 home session),還沒有。
+- 從 home 說話:已經有 `say(place, text)`(`brain/self/src/say.ts`),對別的頻道說一句,照常過 guard 和 outlet;私訊走 `message_dm`。這一步沒有加新的說話方式。
+- 測試:`brain/selfhost/test/home-places.test.ts`(兩個以上 Space:合併的那一行和上限、在 A 跑的一輪沒有 B 的任何東西、`look` 在別的伺服器和頻道 home 被拒、不認得和離開的地方被拒、同一個伺服器和私訊 home 看得到的部分),`memory/notes/test/elsewhere.test.ts`(段落整理跳過 `look` 的結果)。
 
 ## 10. 拍賣、樂透、佇列、點歌、卡片掉落(P5,做成的樣子)
 
@@ -228,6 +238,14 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 
 **卡片掉落**(`play/cards`):`drop_channels` 是每個 Space 的清單,`drops` 每個 Room 可以自己開關;一個頻道在它伺服器的清單裡、而且開著才會掉。其他數字是 cluster 的,每人每天能撿幾張跨伺服器算。
 
-**卡拉 OK**:講評頻道和指令的字不再只認 Discord。KTV 房每個 Space 一份(`karaoke` v6、房間和講評頻道照 Space)還沒做,見 backlog。
+**卡拉 OK**(`play/karaoke`):講評頻道和指令的字不再只認 Discord。KTV 房每個 Space 一份;歌、參考、分數照舊是每個人全域的。
+
+- 一間房屬於開房時的 Space(`RoomPlaces`,`module.ts` 的 `roomPlaces`):會員頁的 `?space=`(`memberSpace`)、指令所在的伺服器(私訊是主要的),都沒有就是主要的。只有她在那個 Space 的語音頻道時才能開、能開始;她離開那個 Space 的語音,那裡的房間關掉(別的伺服器的語音不算)。房間的公告和給她的通知走那個 Space 的 `comment_channel`(`placeConfig`,用到時才讀,改了不用重啟;頻道要在那個 Space 裡的規則照用)。
+- 原有的伺服器照以前:她在那裡的語音就能開房。新的伺服器在替它設好自己的講評頻道之前沒有房間(「這個伺服器還沒有設定唱 K 的講評頻道」)。
+- 一個人同時只在一間房(不分伺服器);房號照舊是全域的,拿到房號或連結就能加入。同時最多幾間房(`room_max`)是全部伺服器加起來(一台唱歌的機器在算分)。直播的唱 K 場景還是一個舞台。
+- 一個人自己唱的講評還是 cluster 的講評頻道(分數是每個人全域的,沒有伺服器)。
+- `GET` / `POST /api/member/karaoke/rooms` 有 `?space=`(不在的伺服器 404,不是成員 403;沒給是他自己的);`/me play karaoke` 列它所在伺服器的房間(加上他自己在的那間)。`GET /api/karaoke/results?space=`:那個伺服器的房間加上自己唱的,每筆多 `space`;沒給是全部。會員頁的「一起唱」用 `useMemberSpace()`,在好幾個伺服器的人才有 `SpacePicker`(「在哪個伺服器開房」),能不能按開房看的是那個伺服器的語音。
+- `karaoke` v6(需要 identity):`karaoke_rooms.space_id REFERENCES spaces(id)`。房間的列沒有記頻道或伺服器(公告的頻道沒存),所以舊的房間都補主要的 Space;那時一個 Space 都沒有的資料庫留 `NULL`。只加欄位,不搬不刪。
+- 測試:`play/karaoke/test/spaces.test.ts`(v6 的補值、兩個 Space 各自的房間、公告和通知、每個 Space 自己的語音、新的伺服器、一人一間)、`api/test/karaoke-rooms.test.ts`(`?space=` 的 403 / 404、預設、管理頁的結果)、面板 `rooms.test.tsx`(一個和兩個伺服器)。
 
 **面板**:經濟 / 市集和即時的佇列卡跟著殼的 `?space=`;會員頁的市集和點歌用自己的伺服器,只在好幾個伺服器時有選擇。
