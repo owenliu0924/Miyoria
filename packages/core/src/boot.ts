@@ -71,6 +71,10 @@ import {
   is,
   type JsonValue,
   KERNEL_MODULE,
+  PlaceConfigKey,
+  PlaceDirectoryKey,
+  type Places,
+  PlacesKey,
   PlatformHistories,
   PlatformHistoriesKey,
   PlatformSinks,
@@ -91,6 +95,7 @@ import {
   REQUIRED_MODULES,
 } from "./module-ids.js";
 import { ModuleSettings } from "./module-settings.js";
+import { PlaceConfigs } from "./place-config.js";
 import type { MachineSource } from "./profiles.js";
 import { databaseUrl, loadProfile, resolveDatabaseUrl } from "./settings.js";
 
@@ -196,6 +201,7 @@ export interface CoreOptions {
 export class Core {
   readonly #persist = new AbortController();
   #persistTask: Promise<void> | undefined;
+  #membersTask: Promise<void> | undefined;
 
   constructor(
     readonly supervisor: Supervisor,
@@ -224,6 +230,11 @@ export class Core {
     this.#persistTask = persistModuleState(this.bus, this.store, wanted, this.#persist.signal);
   }
 
+  /** @internal Started by `buildCore`: a member who leaves a server is marked left there. */
+  followMembers(places: Places): void {
+    this.#membersTask = followMembers(this.bus, places, this.#persist.signal);
+  }
+
   /** Starts every enabled module and logs those that are not running. */
   async start(): Promise<void> {
     await this.supervisor.startAll();
@@ -245,6 +256,7 @@ export class Core {
     await this.supervisor.stopAll();
     this.#persist.abort();
     await this.#persistTask;
+    await this.#membersTask;
     await this.store.close();
     this.machines?.close();
   }
@@ -331,6 +343,18 @@ export async function buildCoreWith(
     services.provide(k, AttachmentSourceKey, new ArtifactAttachments(store.artifacts));
   }
   services.provide(k, ProfileDataStoreKey, store.profileData);
+  // Spaces, Rooms and members, and each module's config per place (docs/design/v5-places.md).
+  if (store.places) {
+    services.provide(k, PlacesKey, store.places);
+    if (store.config) {
+      const placeConfigs = new PlaceConfigs({
+        places: store.places,
+        settings: store.config.places,
+        directory: () => services.get(PlaceDirectoryKey),
+      });
+      services.provide(k, PlaceConfigKey, placeConfigs);
+    }
+  }
   // Her stable names for people (`Owen`, `Owen#2`): never per-call codes (`u1`).
   let handles: PersonHandleDirectory | null = null;
   try {
@@ -447,7 +471,23 @@ export async function buildCoreWith(
     machines.path === null ? null : machines,
   );
   core.persistModuleState((id) => moduleEnabled(config, id));
+  if (store.places) core.followMembers(store.places);
   return core;
+}
+
+/** `platform.member` with `left`: the account's membership of that server is marked left. */
+async function followMembers(bus: EventBus, places: Places, signal: AbortSignal): Promise<void> {
+  const sub = bus.subscribe(Events.PlatformMember.type, { signal });
+  for await (const env of sub) {
+    if (!is(Events.PlatformMember, env) || !env.data.left) continue;
+    const { platform, guild, account } = env.data;
+    try {
+      const space = places.ofGuild(platform, guild);
+      if (space !== null) places.memberLeft(space.id, account);
+    } catch (error) {
+      log.warn({ guild, err: errorMessage(error) }, "failed to record a member leaving");
+    }
+  }
 }
 
 function tokenMissing(section: JsonValue | null): boolean {
