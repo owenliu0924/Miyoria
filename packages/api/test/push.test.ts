@@ -445,7 +445,7 @@ describe("?topics=", () => {
 // ---- the streams through the app ----------------------------------------------------------------
 
 const TOKEN = "push-test-token";
-const TERMS = { currency: "魚幣", price: 10, prize: 5, finish: 1, rounds: 3, max_singers: 4 };
+const TERMS = { currency: "點數", price: 10, prize: 5, finish: 1, rounds: 3, max_singers: 4 };
 const ALICE: AccountRef = { platform: "discord", id: "1" };
 const BOB: AccountRef = { platform: "discord", id: "2" };
 
@@ -620,7 +620,7 @@ function world(): World {
         danmakuView: async (account: AccountRef) => ({
           open: true,
           live: activity.live,
-          currency: "魚幣",
+          currency: "點數",
           price: 2,
           max_chars: 30,
           cooldown_s: 20,

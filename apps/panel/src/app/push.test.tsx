@@ -187,7 +187,7 @@ describe("the push client", () => {
 const DANMAKU_VIEW = {
   open: true,
   live: false,
-  currency: "魚幣",
+  currency: "點數",
   price: 2,
   max_chars: 30,
   cooldown_s: 20,
@@ -220,7 +220,7 @@ describe("pages under push", () => {
     const rooms = {
       available: false,
       reason: "她不在語音頻道",
-      terms: { currency: "魚幣", price: 10, prize: 5, finish: 1, rounds: 3, max_singers: 4 },
+      terms: { currency: "點數", price: 10, prize: 5, finish: 1, rounds: 3, max_singers: 4 },
       balance: 50,
       mine: null,
     };
