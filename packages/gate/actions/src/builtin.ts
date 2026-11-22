@@ -54,8 +54,8 @@ export function handleLookup(services: ServiceLookup): NameLookup {
 
 /**
  * The account `to` names: `speaker` (default) is the person asking; otherwise a mention
- * (`<@123>`), a bare id on the requester's platform, or (with `names`) the name she knows them
- * by, `@` optional.
+ * (`<@123>`), a bare id on the requester's platform (or the place's; `null` when neither is
+ * known), or (with `names`) the name she knows them by, `@` optional.
  */
 export function recipient(
   to: string | null | undefined,
@@ -66,8 +66,9 @@ export function recipient(
   if (raw === "" || raw === "speaker") return principal.requester;
   const id = /^<@!?(\d+)>$/.exec(raw)?.[1] ?? (/^\d+$/.test(raw) ? raw : null);
   if (id === null) return names ? (names(raw) ?? names(raw.replace(/^@/, ""))) : null;
-  const platform = principal.requester?.platform ?? principal.context?.platform ?? "discord";
-  return { platform, id };
+  // The requester's platform, else the place's; neither (a panel call): nobody (v5-architecture §6).
+  const platform = principal.requester?.platform ?? principal.context?.platform ?? null;
+  return platform === null ? null : { platform, id };
 }
 
 const DmArgs = z.object({

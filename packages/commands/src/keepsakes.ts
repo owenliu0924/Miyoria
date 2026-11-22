@@ -289,7 +289,8 @@ export function registerKeepsakes(registry: CommandRegistry, services: ServiceLo
               : "願望單清空了。",
           );
         }
-        const key = `discord:${newId()}`;
+        // Idempotency key on the invoker's own platform (no default platform, v5-architecture §6).
+        const key = `${inv.invoker.platform}:${newId()}`;
         const today = await keepsakes.cardsToday(inv.invoker);
         // The first look of someone from before the cards: their keepsake, and nothing charged.
         if (today.keepsake !== undefined) {
