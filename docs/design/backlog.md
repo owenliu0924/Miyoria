@@ -510,6 +510,14 @@
 - **home 的合併只到 Space**:home 所在伺服器的其他頻道、私訊裡在等的事沒有合併成一行(它們在自己的地方醒來時會看到)。
 - **home 是伺服器的頻道時,`look` 看不到別的伺服器**:照 `disclose`,那裡的人會聽到她說的;要在 home 看全部得先有沒有別人讀的 home session(v5-architecture §6)。
 
+### 每個對話每小時的上限改成設定之後留下的(2026-11-22)
+
+[v5-brain.md](v5-brain.md)「設計的結論」裡「每個對話每小時的上限」是做成的樣子。
+
+- **上限的數字要 owner 決定**:`session_usd_per_hour` 先維持 1 美元、`session_tokens_per_hour` 3,000,000(和改之前一樣);2026-11-22 一個忙的頻道半小時就到了,之後她沉默了半小時。
+- **重啟會忘記這一小時**:帳本只在記憶體裡,Core 或 agent 模組重啟(改了 cluster 層的設定也會重啟模組)之後從 0 算。`llm.call` 事件有 `cost_usd`、用量、`module` / `label` 和信封上的 `turn`,但沒有 session;要接回來得用同一個 `turn` 去對 `agent.turn.outcome` 的 `context` 再換成 session(`transcript.sessionFor`),而且要一條新的 store 查詢(現在的 `LlmCallStore` 只有按模型的總數)。
+- **總覽的「需要注意」沒有列出被擋的對話**:它讀 `/api/llm/cost`(router 的每天預算),每個對話的帳本在 selfhost 的跑者裡,API 拿不到。現在看得到的是記錄裡的警告和回合結果(活動頁、意識流寫「這個對話這一小時的花費到上限了」)。要列出來得加一個服務和一條路由。
+
 ## 4. 自我修復與自我改進(備忘)
 
 三層,越下面風險越高:

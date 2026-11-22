@@ -796,7 +796,7 @@
         "properties": {
           "to": {
             "type": "string",
-            "description": "給誰:你對他的稱呼或名字"
+            "description": "給誰:他的名字(對話紀錄每行開頭那個);他現在的顯示名或你對他的稱呼也可以,但要寫完整。對不上時會告訴你可能是誰"
           },
           "amount": {
             "type": "integer",
@@ -938,13 +938,13 @@
     },
     {
       "name": "message_dm",
-      "description": "私訊某個人(Discord DM)。to 省略或填 speaker = 正在跟你說話的人;也可以填對方的名字(你看到的那個)或 mention(<@id>)。已經在跟對方私訊時直接說就好,不用這個工具。不要私訊陌生人,也不要一直傳。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "description": "私訊某個人(Discord DM)。to 省略或填 speaker = 正在跟你說話的人;也可以填對方的名字(對話紀錄每行開頭那個;他現在的顯示名或你對他的稱呼也可以,要寫完整)或 mention(<@id>)。已經在跟對方私訊時直接說就好,不用這個工具。不要私訊陌生人,也不要一直傳。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
           "to": {
             "type": "string",
-            "description": "speaker、對方的名字,或 mention <@id>"
+            "description": "speaker、對方的名字(對話紀錄每行開頭那個),或 mention <@id>"
           },
           "text": {
             "type": "string",
@@ -1466,7 +1466,7 @@
           },
           "person": {
             "type": "string",
-            "description": "跟誰有關(可省略)"
+            "description": "跟誰有關(可省略):他的名字(對話紀錄每行開頭那個),或他現在的顯示名"
           },
           "id": {
             "type": "string",
@@ -2958,7 +2958,7 @@
         "properties": {
           "to": {
             "type": "string",
-            "description": "給誰:你對他的稱呼或名字"
+            "description": "給誰:他的名字(對話紀錄每行開頭那個);他現在的顯示名或你對他的稱呼也可以,但要寫完整。對不上時會告訴你可能是誰"
           },
           "amount": {
             "type": "integer",
@@ -3080,13 +3080,13 @@
     },
     {
       "name": "message_dm",
-      "description": "私訊某個人(Discord DM)。to 省略或填 speaker = 正在跟你說話的人;也可以填對方的名字(你看到的那個)或 mention(<@id>)。已經在跟對方私訊時直接說就好,不用這個工具。不要私訊陌生人,也不要一直傳。",
+      "description": "私訊某個人(Discord DM)。to 省略或填 speaker = 正在跟你說話的人;也可以填對方的名字(對話紀錄每行開頭那個;他現在的顯示名或你對他的稱呼也可以,要寫完整)或 mention(<@id>)。已經在跟對方私訊時直接說就好,不用這個工具。不要私訊陌生人,也不要一直傳。",
       "parameters": {
         "type": "object",
         "properties": {
           "to": {
             "type": "string",
-            "description": "speaker、對方的名字,或 mention <@id>"
+            "description": "speaker、對方的名字(對話紀錄每行開頭那個),或 mention <@id>"
           },
           "text": {
             "type": "string",
@@ -3508,7 +3508,7 @@
           },
           "person": {
             "type": "string",
-            "description": "跟誰有關(可省略)"
+            "description": "跟誰有關(可省略):他的名字(對話紀錄每行開頭那個),或他現在的顯示名"
           },
           "id": {
             "type": "string",

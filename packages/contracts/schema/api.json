@@ -11964,6 +11964,32 @@
         },
         "waiting_for_response": {
           "type": "boolean"
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "capability": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "at": {
+                "type": "string"
+              },
+              "until": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "capability",
+              "reason",
+              "at",
+              "until"
+            ]
+          }
         }
       },
       "required": [
