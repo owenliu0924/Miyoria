@@ -141,6 +141,14 @@ export function assertLibraryShape(conn: unknown): void {
   }
 }
 
+/** Loads the native libraries a watch needs; the startup probe and the first watch share the import. */
+export async function loadWatchLibrary(): Promise<WatchLibrary> {
+  return {
+    dvs: await import("@dank074/discord-video-stream"),
+    dc: await import("@lng2004/node-datachannel"),
+  };
+}
+
 export class DiscordWatchEngine implements WatchEngine {
   private lib: WatchLibrary | undefined;
   private streamer: Dvs.Streamer | undefined;
@@ -149,11 +157,8 @@ export class DiscordWatchEngine implements WatchEngine {
   constructor(
     private readonly client: Client<true>,
     private readonly log: Logger,
-    /** Test hook / alternative loader. The libraries are native, so they load only when someone is watched. */
-    private readonly load: () => Promise<WatchLibrary> = async () => ({
-      dvs: await import("@dank074/discord-video-stream"),
-      dc: await import("@lng2004/node-datachannel"),
-    }),
+    /** Test hook / alternative loader. */
+    private readonly load: () => Promise<WatchLibrary> = loadWatchLibrary,
   ) {}
 
   requestKeyframe(): void {

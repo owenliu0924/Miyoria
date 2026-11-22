@@ -31,9 +31,10 @@ import {
 export const PROTOCOL_VERSION = VOICE_LINK_VERSION;
 /**
  * Optional protocol features this node implements, announced in `hello.capabilities` so Core
- * only sends what the node understands.
+ * only sends what the node understands. `watch` is left out when this machine cannot watch.
  */
 export const NODE_CAPABILITIES: readonly string[] = VOICE_LINK_CAPABILITIES;
+export const CAPABILITY_WATCH = "watch";
 export const CAPTURE_SAMPLE_RATE = 16_000;
 
 export const FRAME_CAPTURE = VOICE_LINK_FRAME.CAPTURE;

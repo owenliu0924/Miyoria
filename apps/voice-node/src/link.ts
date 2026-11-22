@@ -40,6 +40,8 @@ export interface CoreLinkOptions {
   backoffMaxMs?: number;
   /** Drop outgoing audio once this many bytes are waiting in the socket send buffer. */
   maxBufferedBytes?: number;
+  /** What `hello.capabilities` announces (default: everything the node implements). */
+  capabilities?: readonly string[];
   /** Treat the link as dead after this long without any frame from Core (Core pings every 15 s). */
   idleTimeoutMs?: number;
   /** Max time to wait for `welcome` after sending `hello`. */
@@ -84,6 +86,7 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
       backoffMinMs: opts.backoffMinMs ?? 1000,
       backoffMaxMs: opts.backoffMaxMs ?? 30_000,
       maxBufferedBytes: opts.maxBufferedBytes ?? 512 * 1024,
+      capabilities: opts.capabilities ?? NODE_CAPABILITIES,
       idleTimeoutMs: opts.idleTimeoutMs ?? 60_000,
       helloTimeoutMs: opts.helloTimeoutMs ?? 10_000,
     };
@@ -200,7 +203,7 @@ export class CoreLink extends EventEmitter<CoreLinkEvents> implements LinkSink {
           token: this.o.token,
           node: "voice-node",
           self_account: { platform: "discord", id: this.o.selfAccountId },
-          capabilities: [...NODE_CAPABILITIES],
+          capabilities: [...this.o.capabilities],
         }),
       );
       this.helloTimer = setTimeout(() => {

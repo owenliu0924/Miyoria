@@ -157,6 +157,19 @@ describe("CoreLink", () => {
     for (let i = 0; i < 2000; i++) results.push(link.sendAudio(Buffer.alloc(64 * 1024)));
     expect(results.includes(false)).toBe(true);
   });
+
+  it("announces only the capabilities it is given", async () => {
+    let hello: Record<string, unknown> | undefined;
+    const url = await startServer((ws, h) => {
+      hello = h;
+      ws.send(JSON.stringify({ type: "welcome", session: "S" }));
+    });
+    link = new CoreLink({ url, token: "t", selfAccountId: "1", capabilities: ["play_duck", "play_pause"] });
+    const ready = once<[string]>(link, "ready");
+    link.start();
+    await ready;
+    expect(hello?.capabilities).toEqual(["play_duck", "play_pause"]);
+  });
 });
 
 describe("CoreLink snapshots", () => {
