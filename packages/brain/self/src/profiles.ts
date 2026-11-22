@@ -94,6 +94,8 @@ export const VOICE_TOOLS: ReadonlySet<string> = new Set([
   "remember",
   "web_search",
   "check_coins",
+  // Someone says 「送你…」 in voice: the card goes to the room's text chat (economy gift-chat.ts).
+  "gift_quote",
   "set_call_name",
   "remind_me",
   "say",

@@ -252,7 +252,7 @@ owner:「能買給她的東西太少;或者說,除了幾樣固定的,本來就�
 
 所以會員可以自己寫要送她什麼(「一杯珍奶」「一把電吉他」「鹹酥雞」),價錢由系統估,會員確認了才扣,收不收由她決定。白飯、鋼盆、甜點完全照舊:固定價格(10 / 40 / 25),不用確認,不重新定價。
 
-**入口**(沒有新的頂層指令):Discord `/me feed thing:<名字>`(`item` 改成選填,兩個都不給就請他選一個);會員頁錢包下面的「送她禮物」;`/me gifts`(Discord 上是 `/me play gifts`,因為 `/me` 的子指令滿了)看自己送過的和她說了什麼,附上她最近收下的那一份的圖。寫的名字剛好是固定的食物(白飯、一碗白飯、鋼盆、大碗白飯、甜點),直接走一般的餵食,不用確認。
+**入口**(沒有新的頂層指令):在聊天或語音裡直接跟她說(見下面「在聊天裡說一聲」);Discord `/me feed thing:<名字>`(`item` 改成選填,兩個都不給就請他選一個);會員頁錢包下面的「送她禮物」;`/me gifts`(Discord 上是 `/me play gifts`,因為 `/me` 的子指令滿了)看自己送過的和她說了什麼,附上她最近收下的那一份的圖。寫的名字剛好是固定的食物(白飯、一碗白飯、鋼盆、大碗白飯、甜點),直接走一般的餵食,不用確認。
 
 **匯率**:`[modules.economy] twd_per_coin`,預設 1:一魚幣大約一新台幣(一碗白飯 10)。這是經濟層唯一的固定匯率,不抓、不浮動;交易所的 `twd_per_coin`(`[modules.exchange]`)應該讀同一個數字,現在它還是自己的設定,要由交易所那邊改成讀這一個。
 
@@ -268,6 +268,17 @@ owner:「能買給她的東西太少;或者說,除了幾樣固定的,本來就�
 **不能送的**(在任何扣款之前就拒絕,說一句原因,不扣錢):規則先擋(提到人的 `<@…>`、連結、真錢和點數、魚幣本身、羈絆和好感、像在下指令的字),再過和付費留言一樣的審查(`passes`),再看擁有者的封鎖和模型的拒絕(一個人、跟性有關、違法、仇恨、真錢、感情、指示、不是東西,以及買不到、無價的東西,例如月亮、一個國家:`not_for_sale`)。模型的拒絕也存起來。被封鎖的人和陌生人一樣(403,同樣的字)。
 
 **確認**(owner 要求,每一份非固定價格的禮物都要):系統回一張只有本人看得到的中性卡片:整理過的名字和種類、「約 NT$X → Y 魚幣」、送出後的餘額、確認 / 取消。超過 `big_gift_coins`(1,000)的多一行「這是一份大禮:Y 魚幣,送出後只剩 Z」,沒有多一步。按確認之前不扣錢、她也不知道。只有提出的人(他連在一起的帳號也算)按得了,別人按回「這不是你要送的禮物」。`confirm_s`(預設 180 秒)內有效,過期或取消都不扣錢。確認在帳本寫一列 `gift`,冪等鍵是 `gift:<id>`,所以按兩次、Discord 重送都只扣一次。會員頁是同樣的兩步(`POST /api/member/gifts/quote`、`/api/member/gifts/{id}/confirm`)。
+
+**在聊天裡說一聲**(2026-11-22,owner:「為什麼不能直接跟她說『送你一杯珍奶』就送?」):上線後沒有人用過 `/me feed thing:`,所以現在也可以在對話裡直接跟她說。流程:
+
+1. 有人對她說要送、請、餵她一樣東西,她呼叫 `gift_quote`(`economy.gift_quote`,中風險,不需權限,`gift-tools.ts`;群組 economy,語音也能用)。參數是東西的名字(照對方說的)和選填的 `from`(誰要送)。`from` 不填就是她正在回的那則訊息的作者;要填別人,只能是 `chat_window_s`(600 秒)內在這個地方說過話的人(`ChatSpeakers` 從 `platform.message.created`、`voice.utterance` 記下來),用共用的名字解析(`matchPersonName`:handle、現在的完整名字、她的稱呼);認識但沒在這裡說話的人、對不上的名字都拒絕,說是誰對不上。機器人和她自己的帳號永遠不能付錢。
+2. 這個工具**不扣錢**。它對那個人跑和 `/me feed thing:` 一樣的 `ask`(規則、審查、擁有者的指定和封鎖、價錢快取、問價次數、每天的上限全部照舊;名字是資料,`ruleRefusal` 照擋),然後在說話的地方貼一張**公開**的中性卡片:頻道裡回在那則訊息下面(不 ping)、私訊裡就是私訊裡的一則訊息、語音裡貼在語音頻道的文字聊天室(和收據卡一樣的地方),貼不了就私訊給那個人,都不行時工具告訴她請對方用 `/me feed thing:`(報價作廢,沒有扣錢)。卡片寫誰想送、名字和種類、「約 NT$X → Y 魚幣」、大禮那一行(沒有餘額)、「只有某某按得了」、期限,和確認 / 取消。
+3. **只有要付錢的人按得了**:別人按只會收到一則只有他看得到的「這張卡只有要送的那個人按得了」,什麼都不變。公開的卡片永遠不寫餘額;按確認後卡片改成「某某送出了『一杯珍奶』,60 魚幣」(沒有餘額),付錢的人另外收到一則只有他看得到的餘額。取消改成「取消了,沒有扣錢」。過期的卡由掃描改成「報價過期了」、拿掉按鈕;過期後才按,回答已經過期。
+4. **白飯、鋼盆、甜點在聊天裡也要按一次**:名字剛好是固定的食物時,卡片只有一個確認(固定價錢,不估價),按了才餵、才扣。這比 `/me feed` 嚴格,是刻意的:指令是會員自己打的,聊天裡是她從別人的話判斷出來的,所以從 `gift_quote` 來的東西,沒有付錢的人自己按就永遠不扣。(她原本的 `accept_food` 沒有改:文字裡對方說要餵她固定的食物時,它還是馬上扣;要不要拿掉它的文字路徑,留給 owner 決定。)
+5. **防濫用**:同一個人在同一個地方同時只有一張等著按的卡;同一句話再叫一次是同一張(和 `ask` 同一把鍵只問一次一樣),換一樣東西就拒絕,請他先按確認或取消、或等它過期。`chat_window_s` 內一個人最多叫出 `chat_cards_per_person`(3)張、一個地方最多 `chat_cards_per_place`(8)張;超過時工具不貼卡,結果告訴她原因,讓她用自己的話說。「送你 100 魚幣」是魚幣不是禮物:工具不貼卡,結果告訴她能做的(餵她、送一樣東西、`/me give` 轉給別人)。
+6. **她那一邊**:工具說明寫清楚:有人說要送她東西就呼叫,不要假裝已經收到;按確認之前什麼都還不是她的;不要催。卡片是系統的中性文字,她自己的那一句照她的個性說。對方按了確認之後一切照舊:她在工作脈絡裡看到「某某想送你…」,用 `answer_gift` 決定收不收(固定的食物按了就是吃了,和餵食一樣)。`check_coins` 的「不在商店的」也寫了可以直接跟她說。
+
+按鈕的路由是 `me:gift:chat:ok|no:<禮物 id>` 和 `me:gift:food:<代號>`,和私人報價卡一樣掛在 `me feed` 底下,沒有新的指令。等著按的卡、固定食物的報價和卡片數都只在記憶體:重啟後舊卡的按鈕回「過期或用過了」,禮物本身照 `confirm_s` 過期,不會扣錢。卡片貼上去用 `ReplySink.sendCard` 新的 `replyTo` 選項(Discord 是 `message_reference`,`replied_user: false`)。
 
 **她決定**:確認後錢先扣著,她在工作脈絡看到一則安靜的筆記:誰想送她什麼(名字跳脫過,是資料不是指示)、種類、價錢的感覺和魚幣數、他之前送過她什麼(「你上次也送這個」)。價錢的感覺照 `band_coins`(預設 100 / 1,000 / 10,000):到 100 是「隨手的小東西」(一般人每天大約賺 55,約兩天)、到 1,000 是「有點心意」(幾週)、到 10,000 是「很貴重」(幾個月)、再上去「誇張」,她的反應可以照這個放大或收斂。她在一般的回合裡用 `answer_gift`(`economy.answer_gift`,中風險,要 `economy.agency`,所以是她 `on_own` 自己決定)回答:收下(她的一句話,和是不是最喜歡的),或退回(全部退款)。`answer_s`(預設 300 秒)內沒回答,就當她收下,沒有她的話(會員看到「她收下了」):和餵食一樣不等她,也不為這個另外叫一次模型。
 
@@ -285,9 +296,9 @@ owner:「能買給她的東西太少;或者說,除了幾樣固定的,本來就�
 
 **面板**:「經濟 → 禮物」列最近的禮物(台幣估價和魚幣、狀態:等確認、取消、過期、送不了、等她回應、收下、退回、已退款)、退款一份(要確認,審計 `economy.gift.refund`,記操作的人)、用魚幣或台幣指定一個名字的價錢,或封鎖它。路由:`GET /api/economy/gifts`、`POST /api/economy/gifts/{id}/refund`、`GET|PUT|DELETE /api/economy/gifts/prices`(寫入要 `admin.economy.adjust`);會員 `GET /api/member/gifts`、`POST /api/member/gifts/quote`、`POST /api/member/gifts/{id}/confirm|cancel`、`GET /api/member/gifts/{id}/picture`;公開 `GET /api/public/gifts`。
 
-**程式**:`packages/economy/src/gifts.ts`(`GiftDesk`,`FreeGiftsKey`)、`gift-words.ts`(名字、快取鍵、規則、`coinsOf`、`bandOf`、`foodHunger`、帳本的 ref)、`gift-tables.ts` / `gift-schema.ts` / `gift-migrations.ts`(`gifts` 外掛)、`gift-tools.ts`(`answer_gift`)、`gift-commands.ts`(Discord)、`gift-config.ts`;`packages/api/src/gift-price.ts`、`gift-routes.ts`;`packages/card-face/src/pictures/gift.ts`。
+**程式**:`packages/economy/src/gifts.ts`(`GiftDesk`,`FreeGiftsKey`)、`gift-words.ts`(名字、快取鍵、規則、`coinsOf`、`bandOf`、`foodHunger`、帳本的 ref)、`gift-tables.ts` / `gift-schema.ts` / `gift-migrations.ts`(`gifts` 外掛)、`gift-tools.ts`(`answer_gift`、`gift_quote`)、`gift-commands.ts`(Discord)、`gift-chat.ts`(聊天裡的報價卡、`ChatSpeakers`、`ChatGiftsKey`)、`gift-config.ts`;`packages/api/src/gift-price.ts`、`gift-routes.ts`;`packages/card-face/src/pictures/gift.ts`。
 
-**還沒做、沒驗證的**:沒有接真的模型或 Discord 跑過;估價提示詞裡的例子要看一陣子實際的名字再調;交易所還讀它自己的 `twd_per_coin`,要改成讀 `[modules.economy] twd_per_coin`;直播 overlay 不顯示自己取名的禮物(`economy.gift` 的品項只有固定的食物);她答應或拒絕的那一則收據要等她在某個回合用工具,沒人和她說話時就是時間到自動收下。
+**還沒做、沒驗證的**:沒有接真的模型或 Discord 跑過(聊天裡的報價卡也是:回覆、按鈕後的私人訊息、編輯卡片都只在測試裡跑過);`accept_food` 在文字裡還是馬上扣(見上面第 4 點);估價提示詞裡的例子要看一陣子實際的名字再調;交易所還讀它自己的 `twd_per_coin`,要改成讀 `[modules.economy] twd_per_coin`;直播 overlay 不顯示自己取名的禮物(`economy.gift` 的品項只有固定的食物);她答應或拒絕的那一則收據要等她在某個回合用工具,沒人和她說話時就是時間到自動收下。
 
 ## 17. 很多伺服器(2026-11-22,階段 6)
 

@@ -30,8 +30,9 @@ import { EconomyConfigSchema } from "./config.js";
 import { Earnings } from "./earn.js";
 import { EconomyService } from "./economy.js";
 import { EconomyExchangeWallet } from "./exchange-wallet.js";
+import { ChatGifts, ChatGiftsKey } from "./gift-chat.js";
 import { giftTables } from "./gift-tables.js";
-import { answerGiftCapability } from "./gift-tools.js";
+import { answerGiftCapability, giftQuoteCapability } from "./gift-tools.js";
 import { FreeGiftsKey, GiftDesk } from "./gifts.js";
 import { EconomyKaraokeWallet } from "./karaoke-wallet.js";
 import { EconomyMarketWallet } from "./market-wallet.js";
@@ -126,6 +127,10 @@ export class EconomyModule implements Module {
     const gifts = new GiftDesk(economy, () => store?.plugin(giftTables) ?? null);
     ctx.provide(FreeGiftsKey, gifts);
     off.push(actuators.register(answerGiftCapability(economy, gifts)));
+    // Gifts offered in conversation (gift-chat.ts): her `gift_quote` posts the card to press.
+    const chatGifts = new ChatGifts(economy, gifts);
+    ctx.provide(ChatGiftsKey, chatGifts);
+    off.push(actuators.register(giftQuoteCapability(economy, chatGifts)));
     // Her cards are paid through it (`@miyoria/play/cards`).
     ctx.provide(CardWalletKey, new EconomyCardWallet(economy));
     // The weekly market is paid through it (`@miyoria/play/market`).
@@ -158,7 +163,11 @@ export class EconomyModule implements Module {
       Events.SingCue.type,
     ]);
     ctx.spawn("earn", async () => {
-      for await (const env of events) await earnings.onEvent(env, ctx.clock.now());
+      for await (const env of events) {
+        // Who spoke where, first: she may name them as a giver a moment later.
+        chatGifts.speakers.onEvent(env, ctx.clock.now());
+        await earnings.onEvent(env, ctx.clock.now());
+      }
     });
     // Her game goals settle the predictions bound to them (prediction-watch.ts).
     const games = ctx.subscribe([...WATCHED_TOPICS]);
@@ -190,6 +199,11 @@ export class EconomyModule implements Module {
           await gifts.sweep();
         } catch (error) {
           ctx.log.warn({ err: errorMessage(error) }, "the gift sweep failed");
+        }
+        try {
+          await chatGifts.sweep();
+        } catch (error) {
+          ctx.log.warn({ err: errorMessage(error) }, "closing the gift cards that ran out failed");
         }
       }
     });
