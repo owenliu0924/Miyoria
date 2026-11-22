@@ -1,5 +1,5 @@
 import { CommandMount, ReplySinkKey } from "@miyoria/commands";
-import { actuatorsFor } from "@miyoria/gate/actions";
+import { actuatorsFor, PrivacyChoicesKey, type PrivacyChoicesService } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   defineManifest,
@@ -59,8 +59,10 @@ interface Running {
  * `watch.stop` and `watch.look` (tools `watch_start`, `watch_stop`, `watch_look`, always offered:
  * what cannot be done at the moment comes back as the reason) and the prompt section `watch`.
  * Something worth a line becomes an impulse of source `watch` for the Arbiter; the module never
- * writes her words. Services used (all optional): `VoiceLink` (without it the tools only say there
- * is no voice node), `StreamHearing`, `VoiceFloor`, `LlmRouter`, `WorldState`, `PlatformSinks`,
+ * writes her words. Commands: `/voice watch start [user]` and `/voice watch stop`. Services used
+ * (all optional): `PrivacyChoices` (module `actions`; without it nobody could opt out, so she
+ * watches no one and the tools say why), `VoiceLink` (without it the tools only say there is no
+ * voice node), `StreamHearing`, `VoiceFloor`, `LlmRouter`, `WorldState`, `PlatformSinks`,
  * `PromptContributors`. `optional` does not restart this module with them, so services are looked
  * up on each use, never kept; one watch keeps the link that started it.
  */
@@ -87,15 +89,47 @@ export class WatchModule implements Module {
     const now = () => ctx.clock.now();
     const warn = (message: string, error?: unknown) =>
       ctx.log.warn({ error: String(error ?? "") }, message);
-    // The registry's own instance: without a store its choices live only in there.
     const actuators = actuatorsFor(ctx);
-    const watchAllowed = async (account: AccountRef) =>
-      (await actuators.privacy.get(account)).watch;
+    /** What each streamer's `watch` was when last read; a list of choices names only `true`. */
+    const known = new Map<string, boolean>();
+    let source: DiscordSource | null = null;
+    // Assigned below; an opt-out ends a watch of that person at once.
+    let onOptOut: (account: AccountRef) => void = () => {};
+    /** The opt-out service we listen to, followed when module `actions` restarts. */
+    let listened: { service: PrivacyChoicesService; off: () => void } | null = null;
+    const choices = (): PrivacyChoicesService | undefined => {
+      const service = s.get(PrivacyChoicesKey);
+      if (service !== listened?.service) {
+        listened?.off();
+        listened =
+          service === undefined
+            ? null
+            : {
+                service,
+                off: service.onChange((account, now) => {
+                  known.set(accountRefString(account), now.watch);
+                  if (!now.watch) onOptOut(account);
+                }),
+              };
+      }
+      return service;
+    };
+    if (choices() === undefined) {
+      ctx.log.warn(
+        "no privacy choices (module actions is off): nobody could opt out, so she watches no one",
+      );
+    }
+    /** Without the opt-outs nobody could refuse: everyone counts as refused. */
+    const watchAllowed = async (account: AccountRef): Promise<boolean> => {
+      const key = accountRefString(account);
+      known.set(key, false); // until the read says otherwise
+      const service = choices();
+      const allowed = service === undefined ? false : (await service.get(account)).watch;
+      known.set(key, allowed);
+      return allowed;
+    };
     /** Guilds where her own line is playing. */
     const playing = new Set<string>();
-    /** Streamers with `watch` off when the prompt last looked. */
-    const hidden = new Set<string>();
-    let source: DiscordSource | null = null;
 
     const canLook = () => {
       const router = s.get(LlmRouterKey);
@@ -157,6 +191,7 @@ export class WatchModule implements Module {
       seen: ({ kind, text, topic, worth }) =>
         ctx.log.info({ kind, topic, worth, text }, "watch look"),
     });
+    onOptOut = (account) => watcher.optedOut(account);
     const pending = new PendingStart();
     const stopFor = (reason: string): void => {
       void halt({ pending, watcher }, reason).catch((error: unknown) =>
@@ -176,8 +211,10 @@ export class WatchModule implements Module {
         sink: (platform) => s.get(PlatformSinksKey)?.get(platform),
         cards: () => s.get(ReplySinkKey),
         canLook,
+        canRefuse: () => choices() !== undefined,
         watchAllowed,
-        hidden: (account) => hidden.has(accountRefString(account)),
+        hidden: (account) => known.get(accountRefString(account)) === false,
+        watchable: (account) => known.get(accountRefString(account)) === true,
         now,
         warn,
       }),
@@ -199,11 +236,6 @@ export class WatchModule implements Module {
           const allowed = await Promise.all(
             live.map((m) => watchAllowed(m.account).catch(() => false)),
           );
-          live.forEach((m, i) => {
-            const key = accountRefString(m.account);
-            if (allowed[i]) hidden.delete(key);
-            else hidden.add(key);
-          });
           return live.filter((_, i) => allowed[i]);
         },
         now,
@@ -225,8 +257,11 @@ export class WatchModule implements Module {
           if (is(Events.VoiceWatch, event)) {
             source?.onStatus(event.data);
           } else if (is(Events.VoiceSpeaking, event)) {
-            const { speaking, account } = event.data;
-            if (speaking && link()?.isSelf(account) === false) watcher.noteVoice(now());
+            // Only the stream's own room keeps her looking: the watcher keeps one time per room.
+            const { speaking, account, context } = event.data;
+            if (speaking && context.scope !== null && link()?.isSelf(account) === false) {
+              watcher.noteVoice(now(), context.scope, context.channel);
+            }
           } else if (is(Events.VoicePlaybackEvent, event)) {
             const { context, state } = event.data;
             if (context.scope === null) continue;
@@ -250,13 +285,29 @@ export class WatchModule implements Module {
 
     const commands = new CommandMount(
       "watch",
-      (registry) => registerCommands(registry, () => actuators),
+      (registry) =>
+        registerCommands(
+          registry,
+          () => actuators,
+          async (guild) => {
+            // So a list of who streams can name those who let her watch.
+            const channel = link()?.channel(guild) ?? null;
+            const room = s
+              .get(WorldStateKey)
+              ?.snapshot()
+              .voice_channels.find((c) => c.guild === guild && c.channel === channel);
+            const live = room ? streamers(room) : [];
+            await Promise.all(live.map((m) => watchAllowed(m.account).catch(() => false)));
+          },
+        ),
       unregisterCommands,
     );
     commands.attach(ctx);
 
     this.#running = {
       close: async () => {
+        listened?.off();
+        listened = null;
         commands.detach();
         for (const off of unregister) off();
         prompts?.unregister(PROMPT_KEY);

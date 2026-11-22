@@ -30,8 +30,16 @@ import {
 import { CONSENT_ROUTES, type VoiceLink, VoiceLinkError, voiceContext } from "@miyoria/voice/voice";
 import { z } from "zod";
 import type { WatchConfig } from "./config.js";
+import { cutNote } from "./look.js";
 import type { WatchTarget } from "./source.js";
-import { notWatchable, untilAborted, type Watcher, WatchRefused } from "./watcher.js";
+import {
+  LooksUsedUp,
+  notWatchable,
+  OptedOut,
+  untilAborted,
+  type Watcher,
+  WatchRefused,
+} from "./watcher.js";
 
 const HOUR_MS = 3_600_000;
 
@@ -49,8 +57,16 @@ const STARTING = "已經在準備看一場直播了,等一下。";
 const NO_STREAM = "連不上這場直播,這次沒看成。";
 const ENDED = "直播已經結束了。";
 const NOT_SEEN = "這次沒看清楚畫面,等一下再試。";
-const NOT_HERE = "你看的直播在別的地方,在這裡不能看。";
+const NOT_HERE = "你看的直播在別的地方,只有在那個語音頻道(或它的文字區)才能看。";
 const NOT_WATCHING = "你現在沒有在看直播。";
+const FROM_DM = "私訊裡沒辦法管看直播的事,要在你所在語音頻道的那個伺服器裡說。";
+const STOP_ELSEWHERE = "你看的直播在別的伺服器,要在那裡才能叫你不看。";
+const NO_OPT_OUT = "現在沒有人能拒絕被看(管隱私設定的模組沒有開),所以你不看任何人的直播。";
+
+/** What a stream that is not there answers; an opted-out one answers the same. */
+function notLive(wanted: string | null | undefined): string {
+  return wanted == null ? NOBODY_LIVE : `${safeName(wanted)} 現在沒有在這裡開播。`;
+}
 
 /** People streaming in `room`, not counting her. */
 export function streamers(room: VoiceChannelState): VoiceMember[] {
@@ -190,12 +206,16 @@ export interface WatchActionDeps {
   /** Where a card goes (`ReplySinkKey`); without one the notice is plain text through `sink`. */
   cards?(): Pick<ReplySink, "platform" | "sendCard"> | undefined;
   canLook(): boolean;
+  /** Someone can opt out at all (module `actions` serves `/me privacy`); without it she watches no one. */
+  canRefuse(): boolean;
   watchAllowed(account: AccountRef): Promise<boolean>;
   /**
-   * `watch` was off the last time the prompt looked. `check` is synchronous and cannot read the
-   * store, so this only narrows what she chooses from; the gate still asks about who she picks.
+   * `watch` was off the last time it was read. `check` is synchronous and cannot read the store,
+   * so this only narrows what she chooses from; the gate still asks about who she picks.
    */
   hidden(account: AccountRef): boolean;
+  /** `watch` was on the last time it was read: only such people are named in a list. */
+  watchable(account: AccountRef): boolean;
   now(): number;
   warn(message: string, error?: unknown): void;
 }
@@ -229,14 +249,16 @@ const roster = (members: readonly VoiceMember[]): string =>
 
 /**
  * Who `wanted` is among the people streaming in the room, or why it cannot be told. Nobody named
- * while she watches someone means someone else: that is how she switches.
+ * while she watches someone means someone else: that is how she switches. A list of choices
+ * names only people known to let her watch (`named`), so it never shows who opted out.
  */
 function pick(
   live: readonly VoiceMember[],
   wanted: string | null,
   watching: AccountRef | null,
+  named: (m: VoiceMember) => boolean,
 ): VoiceMember | string {
-  if (live.length === 0) return NOBODY_LIVE;
+  if (live.length === 0) return notLive(wanted);
   const others = live.filter((m) => watching === null || !sameAccount(m.account, watching));
   const hits =
     wanted === null
@@ -246,8 +268,10 @@ function pick(
       : live.filter((m) => m.account.id === wanted || sameName(m.display_name, wanted));
   const [only] = hits;
   if (only !== undefined && hits.length === 1) return only;
-  if (hits.length === 0) return `${safeName(wanted ?? "")} 現在沒有在這裡開播。`;
-  return `現在有好幾個人在開播,要用 user 指定看誰:${roster(hits)}`;
+  if (hits.length === 0) return notLive(wanted);
+  const shown = hits.filter(named);
+  const choices = shown.length > 0 ? `:${roster(shown)}` : "";
+  return `現在有好幾個人在開播,要用 user 指定看誰(名字或 id)${choices}`;
 }
 
 /** `watch.start` (also switching) and `watch.stop`. */
@@ -261,8 +285,11 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
 
   /** The stream `args` mean for `principal`, or why there is none. */
   function find(args: StartArgs, principal: Principal): Stream | string {
+    if (!deps.canRefuse()) return NO_OPT_OUT;
     const link = deps.link();
     if (link === null) return NO_NODE;
+    // A DM is in no server: it would fall back to wherever she is, for someone who may not be there.
+    if (principal.context != null && principal.context.scope === null) return FROM_DM;
     const world = deps.world();
     if (world === undefined) return NOBODY_LIVE;
     const snapshot = world.snapshot();
@@ -280,7 +307,9 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
     const room = snapshot.voice_channels.find((c) => c.guild === guild && c.channel === channel);
     if (room === undefined) return NOBODY_LIVE;
     const seen = streamers(room).filter((m) => asker !== null || !deps.hidden(m.account));
-    const member = pick(seen, args.user ?? null, watcher.view()?.target.account ?? null);
+    const member = pick(seen, args.user ?? null, watcher.view()?.target.account ?? null, (m) =>
+      deps.watchable(m.account),
+    );
     if (typeof member === "string") return member;
     return { guild, channel, platform: room.platform, member };
   }
@@ -343,16 +372,26 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
     return true;
   }
 
+  /**
+   * Why `member` is not watched, for whoever asked: plainly to the streamer asking themselves,
+   * to anyone else as if they were not streaming, so the choice is not given away.
+   */
+  const optedOut = (member: VoiceMember, args: StartArgs, principal: Principal): string =>
+    principal.requester !== null && sameAccount(principal.requester, member.account)
+      ? notWatchable(member.display_name)
+      : notLive(args.user);
+
   async function begin(
     stream: Stream,
-    ctx: { signal: AbortSignal },
+    args: StartArgs,
+    ctx: { signal: AbortSignal; principal: Principal },
     claim: AbortSignal,
   ): Promise<WatchTarget> {
     const { member } = stream;
     const signal = AbortSignal.any([claim, ctx.signal]);
     // Before anything public: a notice about a watch that cannot happen would be a false one.
     if (!(await deps.watchAllowed(member.account))) {
-      throw new CapabilityError(notWatchable(member.display_name));
+      throw new CapabilityError(optedOut(member, args, ctx.principal));
     }
     const target: WatchTarget = {
       guild: stream.guild,
@@ -361,9 +400,19 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
       account: member.account,
       name: member.display_name,
     };
-    const noticed = await notify(target, signal);
-    if (signal.aborted) throw new CapabilityError(STOPPED);
-    await watcher.start(target, signal);
+    let noticed = false;
+    try {
+      // The notice goes out once the stream is live, before any of it reaches a model: a switch
+      // to someone whose stream never starts posts nothing.
+      await watcher.start(target, signal, async (live) => {
+        noticed = await notify(target, live);
+      });
+    } catch (error) {
+      if (error instanceof OptedOut) {
+        throw new CapabilityError(optedOut(member, args, ctx.principal));
+      }
+      throw error;
+    }
     if (!noticed) deps.starts.add();
     return target;
   }
@@ -392,6 +441,9 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
     scope: (args, principal) => asFound(args, principal)?.guild ?? null,
     target: (args, principal) => asFound(args, principal)?.member.account ?? null,
     check,
+    // The streamer asking for themselves passes the consent stage; everyone else, her included,
+    // hears what a stream that is not there would answer.
+    consentRefused: (args) => notLive(args.user),
     async execute(args, ctx) {
       const stream = find(args, ctx.principal);
       if (typeof stream === "string") throw new CapabilityError(stream);
@@ -400,7 +452,7 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
       const claim = deps.pending.claim(stream.guild, stream.channel);
       if (claim === null) throw new CapabilityError(STARTING);
       try {
-        const target = await begin(stream, ctx, claim);
+        const target = await begin(stream, args, ctx, claim);
         return `開始看 ${safeName(target.name)} 的直播了`;
       } catch (error) {
         if (error instanceof CapabilityError) throw error;
@@ -430,6 +482,14 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
         "看夠了、對方不想被看、想專心聊天時,你自己決定;沒有在看直播時用它只會告訴你沒在看。",
       properties: {},
     },
+    check(_args, principal) {
+      const where = watcher.view()?.target ?? deps.pending.where();
+      if (where == null) return null; // nothing to stop: `execute` says so
+      const from = principal.context;
+      if (from == null) return isAutonomous(principal) ? null : STOP_ELSEWHERE;
+      if (from.scope === null) return FROM_DM;
+      return from.scope === where.guild ? null : STOP_ELSEWHERE;
+    },
     async execute() {
       if (watcher.view() === null && deps.pending.where() === null) {
         return { text: NOT_WATCHING, data: { stopped: false } };
@@ -444,8 +504,9 @@ export function watchCapabilities(deps: WatchActionDeps): Capability[] {
 
 /**
  * `watch.look`, offered like the other two. The answer comes from a model that read the stream, so
- * it goes back to her as data, and it stays in the server the stream is in. When it cannot be done
- * (she is not watching, the stream ended, no picture) the result says why.
+ * it goes back to her as data, and it stays in the stream's voice room: its voice context or the
+ * room's own text chat, where the people in the room are. When it cannot be done (she is not
+ * watching, the stream ended, no picture, no look left this hour) the result says why.
  */
 export function watchLookCapability(
   watcher: Pick<Watcher, "view" | "look">,
@@ -455,9 +516,11 @@ export function watchLookCapability(
   return defineCapability<z.output<typeof LookArgs>>({
     name: "watch.look",
     summary: "仔細看一眼正在看的直播",
-    risk: "low",
+    // Medium so the gate counts it: every look is a paid picture.
+    risk: "medium",
     args: LookArgs,
     permission: null,
+    limits: { per_day: 200, per_person_per_day: 30, cooldown_ms: 0 },
     tool: {
       name: "watch_look",
       meta: { effect: "read", speed: "instant", group: "watch", core: true },
@@ -470,7 +533,15 @@ export function watchLookCapability(
     },
     check(_args, principal) {
       const view = watcher.view();
-      return view === null || principal.context?.scope === view.target.guild ? null : NOT_HERE;
+      if (view === null) return null; // `execute` says she is not watching
+      const from = principal.context;
+      const { target } = view;
+      const inRoom =
+        from != null &&
+        from.platform === target.context.platform &&
+        from.scope === target.guild &&
+        from.channel === target.channel;
+      return inRoom ? null : NOT_HERE;
     },
     async execute(args, ctx) {
       const scope = AbortSignal.any([signal(), ctx.signal]);
@@ -481,6 +552,14 @@ export function watchLookCapability(
           data: { looked: true },
         };
       } catch (error) {
+        if (error instanceof LooksUsedUp) {
+          const notes = error.notes.map(cutNote).join("\n");
+          return nothing(
+            notes === ""
+              ? `${error.message}現在也還沒有筆記。`
+              : `${error.message}只能照之前看到的回答:\n${dataBlock("watch", "之前看到的", notes)}`,
+          );
+        }
         if (error instanceof WatchRefused) return nothing(error.message);
         return nothing(scope.aborted || watcher.view() === null ? ENDED : NOT_SEEN);
       }

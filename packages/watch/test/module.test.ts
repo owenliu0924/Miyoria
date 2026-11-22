@@ -5,7 +5,7 @@ import {
   Permissions,
   splitPath,
 } from "@miyoria/commands";
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, PrivacyChoicesKey } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import { Supervisor } from "@miyoria/runtime/kernel";
 import {
@@ -77,7 +77,7 @@ class Rig {
   readonly watchStop = vi.fn(async (_guild: string) => {});
   readonly send = vi.fn(async (context: ContextKey) => ({ context, id: "m" }) as MessageRef);
 
-  constructor(withLink = true) {
+  constructor(withLink = true, withPrivacy = true) {
     const s = this.sup.services;
     this.registry = new ActuatorRegistry({
       services: s,
@@ -85,6 +85,8 @@ class Rig {
       clock: { now: () => Date.now() + this.skew } as never,
     });
     s.provide("app", ActuatorRegistryKey, this.registry);
+    // What module actions provides while it serves /me privacy.
+    if (withPrivacy) s.provide("actions", PrivacyChoicesKey, this.registry.privacy);
     s.provide("app", PromptContributorsKey, this.prompts);
     s.provide("app", CommandRegistryKey, this.commands);
     s.provide("app", PlatformSinksKey, this.sinks);
@@ -289,22 +291,82 @@ describe("WatchModule", () => {
   it("watch_start_and_stop_commands_run_the_capabilities_through_the_gate", async () => {
     rig = new Rig();
     await rig.start();
-    expect((await rig.command("watch start")).tone).toBe("warn"); // two people stream
-    const started = await rig.command("watch start", { user: "小明" });
+    expect((await rig.command("voice watch start")).tone).toBe("warn"); // two people stream
+    const started = await rig.command("voice watch start", { user: "小明" });
     expect(started.tone).toBe("success");
     expect(started.text).toContain("開始看 小明 的直播了");
     expect(rig.watchStart).toHaveBeenCalledWith(G, "u1");
     expect(rig.send).toHaveBeenCalledTimes(1); // the notice in the channel
-    const stopped = await rig.command("watch stop");
+    const stopped = await rig.command("voice watch stop");
     expect(stopped.tone).toBe("success");
     expect(rig.watchStop).toHaveBeenCalled();
     // The streamer's privacy still decides.
     await rig.registry.privacy.set(account("u2"), { watch: false });
     rig.skew += 60_000;
-    expect((await rig.command("watch start", { user: "阿華" })).tone).toBe("warn");
-    expect(rig.commands.get(["watch", "start"])).toBeDefined();
+    expect((await rig.command("voice watch start", { user: "阿華" })).tone).toBe("warn");
+    expect(rig.commands.get(["voice", "watch", "start"])).toBeDefined();
     await rig.sup.stopAll();
-    expect(rig.commands.get(["watch", "start"])).toBeUndefined();
+    expect(rig.commands.get(["voice", "watch", "start"])).toBeUndefined();
+  });
+
+  it("its_commands_are_a_group_under_voice_and_no_command_of_their_own", async () => {
+    rig = new Rig();
+    await rig.start();
+    const paths = rig.commands.specs().map((spec) => spec.path.join(" "));
+    expect(paths).toEqual(expect.arrayContaining(["voice watch start", "voice watch stop"]));
+    expect(paths.filter((p) => p.split(" ")[0] === "watch")).toEqual([]);
+    expect(rig.commands.groupDescription("voice watch")).toBeDefined();
+  });
+
+  it("a_members_command_counts_toward_the_gate_cooldown_like_her_tool", async () => {
+    rig = new Rig();
+    await rig.start();
+    expect((await rig.command("voice watch start", { user: "小明" })).tone).toBe("success");
+    expect((await rig.command("voice watch stop")).tone).toBe("success");
+    const again = await rig.command("voice watch start", { user: "小明" });
+    expect(again.tone).toBe("warn");
+    expect(again.text).toContain("cooling down");
+    expect(rig.watchStart).toHaveBeenCalledOnce();
+    rig.skew += 30_000;
+    expect((await rig.command("voice watch start", { user: "小明" })).tone).toBe("success");
+  });
+
+  it("without_the_opt_outs_she_watches_no_one_and_says_why", async () => {
+    rig = new Rig(true, false);
+    await rig.start();
+    const outcome = await rig.watch();
+    expect(outcome.status).toBe("denied");
+    expect(reason(outcome)).toContain("拒絕被看");
+    expect((await rig.command("voice watch start", { user: "小明" })).tone).toBe("warn");
+    expect(rig.watchStart).not.toHaveBeenCalled();
+    expect(rig.send).not.toHaveBeenCalled();
+    // Nobody is offered either.
+    expect(await rig.prompt(voice("c1"))).toEqual([]);
+  });
+
+  it("an_opt_out_ends_the_watch_at_once_while_she_is_not_looking", async () => {
+    rig = new Rig();
+    // A long wait between looks: only the opt-out itself can end the watch in time.
+    await rig.start({ snapshot_secs: 3600 });
+    expect((await rig.watch()).status).toBe("done");
+    await expect.poll(() => rig.modelCalls).toBeGreaterThan(0);
+    await rig.registry.privacy.set(account("u1"), { watch: false });
+    await expect.poll(() => rig.watchStop.mock.calls.length).toBeGreaterThan(0);
+    // Her prompt holds nothing of that watch any more.
+    const [section] = await rig.prompt(voice("c1"));
+    expect(section?.body).not.toContain("小明");
+    expect(section?.body).not.toContain("note");
+  });
+
+  it("a_switch_to_a_stream_that_fails_posts_no_notice_for_it", async () => {
+    rig = new Rig();
+    await rig.start({ min_watch_secs: 0 });
+    expect((await rig.watch("小明")).status).toBe("done");
+    expect(rig.send).toHaveBeenCalledTimes(1);
+    rig.skew += 30_000;
+    rig.watchStart.mockImplementationOnce(async (_guild, user) => rig.status(user, "failed"));
+    expect((await rig.watch("阿華")).status).toBe("failed");
+    expect(rig.send).toHaveBeenCalledTimes(1);
   });
 
   it("prompt_says_who_she_watches", async () => {
@@ -467,7 +529,9 @@ describe("WatchModule", () => {
     await vi.waitFor(() => expect(rig.send).toHaveBeenCalled());
     rig.left(voice("c1"));
     expect((await running).status).toBe("failed");
-    expect(rig.watchStart).not.toHaveBeenCalled();
+    // The stream had gone live for the notice; it is stopped again and never looked at.
+    await vi.waitFor(() => expect(rig.watchStop).toHaveBeenCalledWith(G));
+    expect(rig.modelCalls).toBe(0);
   });
 
   it("a_start_the_tool_gave_up_on_does_not_begin_late", async () => {
@@ -643,6 +707,20 @@ describe("WatchModule", () => {
     await rig.watch();
     await rig.rounds(3);
     expect(rig.impulses).toEqual([]);
+  });
+
+  it("speech_in_another_voice_room_does_not", async () => {
+    rig = new Rig();
+    rig.worth = true;
+    await rig.start({ quiet_secs: 1000 });
+    rig.sup.bus.publish("test", Events.VoiceSpeaking, {
+      context: voice("c2"),
+      account: account("u2"),
+      speaking: true,
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    await rig.watch();
+    await expect.poll(() => rig.impulses.length).toBeGreaterThan(0);
   });
 
   it("her_own_speech_does_not", async () => {

@@ -28,7 +28,7 @@ import {
 import { type WatchConfig, WatchConfigSchema } from "../src/config.js";
 import type { WatchTarget } from "../src/source.js";
 import type { WatchView } from "../src/watcher.js";
-import { WatchRefused } from "../src/watcher.js";
+import { LooksUsedUp, WatchRefused } from "../src/watcher.js";
 
 const HOUR = 3_600_000;
 const G = "g1";
@@ -74,6 +74,10 @@ class Rig {
   otherServer: ContextKey | null = null;
   view: WatchView | null = null;
   hidden = new Set<string>();
+  /** Streamers whose choice was never read. */
+  unread = new Set<string>();
+  /** Module `actions` is there, so people can opt out. */
+  refusable = true;
   linkMissing = false;
   cfg: WatchConfig = WatchConfigSchema.parse({});
   canLook = true;
@@ -93,10 +97,19 @@ class Rig {
     this.sent.push({ context, text: message.text, mentions: message.mentions });
     return { context, id: "m" } as MessageRef;
   });
-  start = vi.fn(async (target: WatchTarget, _signal?: AbortSignal) => {
-    this.order.push("start");
-    this.view = viewOf(target, this.clock.t);
-  });
+  /** Like the watcher: the stream goes live, then `ready` (the notice), then the watch. */
+  start = vi.fn(
+    async (
+      target: WatchTarget,
+      signal?: AbortSignal,
+      ready?: (signal: AbortSignal) => Promise<void>,
+    ) => {
+      this.order.push("start");
+      await ready?.(signal ?? new AbortController().signal);
+      this.order.push("watching");
+      this.view = viewOf(target, this.clock.t);
+    },
+  );
   stop = vi.fn(async (_reason: string) => {
     this.view = null;
   });
@@ -152,8 +165,10 @@ class Rig {
     cards: () =>
       this.cardSink ? ({ platform: "discord", sendCard: this.sendCard } as never) : undefined,
     canLook: () => this.canLook,
+    canRefuse: () => this.refusable,
     watchAllowed: this.allowed,
     hidden: (a) => this.hidden.has(a.id),
+    watchable: (a) => !this.hidden.has(a.id) && !this.unread.has(a.id),
     now: () => this.clock.t,
     warn: this.warn,
   };
@@ -204,6 +219,21 @@ class Rig {
       startedAt,
     );
   }
+}
+
+/** A watch that went live and posted its notice, then failed. */
+async function failsAfterReady(
+  _target: WatchTarget,
+  signal?: AbortSignal,
+  ready?: (signal: AbortSignal) => Promise<void>,
+): Promise<void> {
+  await ready?.(signal ?? new AbortController().signal);
+  throw new Error("nope");
+}
+
+/** A watch whose stream never went live. */
+async function neverLive(): Promise<void> {
+  throw new Error("the stream did not go live in time");
 }
 
 const reason = (outcome: Awaited<ReturnType<Rig["invoke"]>>): string =>
@@ -351,7 +381,7 @@ describe("the watch capabilities", () => {
     rig.deps.starts = new StartLog(1, () => rig.clock.t);
     rig.send.mockRejectedValueOnce(new Error("nope"));
     expect((await rig.own()).status).toBe("failed");
-    expect(rig.start).not.toHaveBeenCalled();
+    expect(rig.view).toBeNull();
 
     rig.later();
     expect((await rig.own()).status).toBe("done");
@@ -365,13 +395,13 @@ describe("the watch capabilities", () => {
 
   it("a_start_that_failed_after_the_notice_counts", async () => {
     rig.deps.starts = new StartLog(2, () => rig.clock.t);
-    rig.start.mockRejectedValueOnce(new Error("nope"));
+    rig.start.mockImplementationOnce(failsAfterReady);
     expect((await rig.own()).status).toBe("failed");
     expect(rig.send).toHaveBeenCalledOnce();
 
     // No card this time, so nothing public happened.
     rig.later();
-    rig.start.mockRejectedValueOnce(new Error("nope"));
+    rig.start.mockImplementationOnce(failsAfterReady);
     expect((await rig.own()).status).toBe("failed");
     expect(rig.send).toHaveBeenCalledOnce();
 
@@ -513,9 +543,9 @@ describe("the watch capabilities", () => {
     expect(rig.start.mock.calls[0]?.[0].account).toEqual(account("u4"));
   });
 
-  it("notice_goes_first_and_only_once", async () => {
+  it("notice_goes_out_once_live_before_the_watch_and_only_once", async () => {
     expect((await rig.own()).status).toBe("done");
-    expect(rig.order).toEqual(["notice", "start"]);
+    expect(rig.order).toEqual(["start", "notice", "watching"]);
     expect(rig.sent).toEqual([
       {
         context: { platform: "discord", scope: G, channel: "c1", kind: "channel" },
@@ -538,7 +568,7 @@ describe("the watch capabilities", () => {
   it("the_notice_is_a_card_where_cards_can_be_sent", async () => {
     rig.cardSink = true;
     expect((await rig.own()).status).toBe("done");
-    expect(rig.order).toEqual(["notice", "start"]);
+    expect(rig.order).toEqual(["start", "notice", "watching"]);
     expect(rig.send).not.toHaveBeenCalled();
     expect(rig.cards).toHaveLength(1);
     const { context, reply } = rig.cards[0] as { context: ContextKey; reply: CommandReply };
@@ -563,7 +593,8 @@ describe("the watch capabilities", () => {
     rig.cardSink = true;
     rig.sendCard.mockRejectedValueOnce(new Error("Missing Permissions"));
     expect((await rig.own()).status).toBe("failed");
-    expect(rig.start).not.toHaveBeenCalled();
+    expect(rig.order).not.toContain("watching");
+    expect(rig.view).toBeNull();
   });
 
   it("the_notice_says_how_to_opt_out_and_the_name_is_inert", () => {
@@ -578,18 +609,21 @@ describe("the watch capabilities", () => {
     const outcome = await rig.own();
     expect(outcome.status).toBe("failed");
     expect(reason(outcome)).not.toContain("Missing");
-    expect(rig.start).not.toHaveBeenCalled();
+    expect(rig.view).toBeNull();
     expect(rig.notices.due(account("u1"))).toBe(true);
   });
 
   it("no_voice_channel_text_sink_no_watching", async () => {
     rig.sinkMissing = true;
     expect((await rig.own()).status).toBe("failed");
-    expect(rig.start).not.toHaveBeenCalled();
+    expect(rig.view).toBeNull();
   });
 
   it("a_start_that_fails_after_the_notice_does_not_send_it_again", async () => {
-    rig.start.mockRejectedValueOnce(new WatchRefused("你現在沒辦法看圖片。"));
+    rig.start.mockImplementationOnce(async (_t, signal, ready) => {
+      await ready?.(signal ?? new AbortController().signal);
+      throw new WatchRefused("你現在沒辦法看圖片。");
+    });
     const outcome = await rig.own();
     expect(outcome.status).toBe("failed");
     expect(reason(outcome)).toBe("你現在沒辦法看圖片。");
@@ -609,11 +643,101 @@ describe("the watch capabilities", () => {
     expect(rig.warn).toHaveBeenCalled();
   });
 
-  it("the_gate_keeps_opted_out_people_from_others", async () => {
+  it("the_gate_keeps_opted_out_people_from_others_and_does_not_say_so", async () => {
     await rig.registry.privacy.set(account("u1"), { watch: false });
     const outcome = await rig.own();
     expect(outcome.status).toBe("denied");
-    expect(outcome.decision.stage).toBe("consent");
+    expect(rig.start).not.toHaveBeenCalled();
+    // What a room with nobody streaming answers.
+    rig.rooms.c1 = [member("her", "她", { is_self: true, streaming: false })];
+    const nobody = await rig.own();
+    expect(outcome.decision).toMatchObject({
+      stage: nobody.decision.stage,
+      reason: nobody.decision.reason,
+    });
+  });
+
+  it("asking_for_someone_who_opted_out_answers_as_if_they_were_not_streaming", async () => {
+    await rig.registry.privacy.set(account("u1"), { watch: false });
+    for (const principal of [Principals.user(asker, textCtx), Principals.command(asker, textCtx)]) {
+      const named = await rig.invoke({ user: "小明" }, principal);
+      const absent = await rig.invoke({ user: "小華" }, principal);
+      expect(named.status).toBe("denied");
+      expect(named.decision.stage).toBe(absent.decision.stage);
+      expect(reason(named)).toBe("小明 現在沒有在這裡開播。");
+      expect(reason(absent)).toBe("小華 現在沒有在這裡開播。");
+    }
+    // Between the gate and the start (her choice changed): the same answer.
+    await rig.registry.privacy.set(account("u1"), { watch: true });
+    rig.allowed.mockResolvedValueOnce(false);
+    const late = await rig.ask({ user: "小明" });
+    expect(reason(late)).toBe("小明 現在沒有在這裡開播。");
+    expect(rig.send).not.toHaveBeenCalled();
+    expect(rig.start).not.toHaveBeenCalled();
+  });
+
+  it("a_list_of_who_streams_names_only_people_known_to_let_her_watch", async () => {
+    rig.rooms.c1?.push(member("u4", "阿德"), member("u5", "阿花"));
+    rig.hidden.add("u4"); // opted out
+    rig.unread.add("u5"); // never read
+    const outcome = await rig.ask();
+    expect(outcome.status).toBe("denied");
+    expect(reason(outcome)).toContain("小明");
+    expect(reason(outcome)).not.toContain("阿德");
+    expect(reason(outcome)).not.toContain("u4");
+    expect(reason(outcome)).not.toContain("阿花");
+    // With nobody known, it still asks for a name and lists no one.
+    rig.unread.add("u1");
+    const none = await rig.ask();
+    expect(reason(none)).toContain("要用 user 指定");
+    expect(reason(none)).not.toMatch(/小明|阿德|阿花/);
+  });
+
+  it("a_switch_to_a_stream_that_never_starts_posts_no_notice", async () => {
+    rig.rooms.c1?.push(member("u4", "阿德"));
+    rig.watch("u1", "小明");
+    rig.start.mockImplementationOnce(neverLive);
+    const outcome = await rig.ask({ user: "阿德" });
+    expect(outcome.status).toBe("failed");
+    expect(rig.send).not.toHaveBeenCalled();
+    expect(rig.notices.due(account("u4"))).toBe(true);
+  });
+
+  it("from_a_dm_she_neither_starts_nor_stops", async () => {
+    const dm: ContextKey = { platform: "discord", scope: null, channel: "d1", kind: "dm" };
+    for (const principal of [
+      Principals.user(asker, dm),
+      Principals.command(asker, dm, false),
+      Principals.self(dm, asker),
+    ]) {
+      const outcome = await rig.invoke({ user: "小明" }, principal);
+      expect(outcome.status).toBe("denied");
+      expect(reason(outcome)).toContain("私訊");
+    }
+    expect(rig.start).not.toHaveBeenCalled();
+
+    rig.watch("u1", "小明");
+    const stop = await rig.registry.invoke(
+      rig.request("watch.stop", {}, Principals.user(asker, dm)),
+    );
+    expect(stop.status).toBe("denied");
+    const elsewhere = { ...textCtx, scope: "g9" };
+    const far = await rig.registry.invoke(
+      rig.request("watch.stop", {}, Principals.user(asker, elsewhere)),
+    );
+    expect(far.status).toBe("denied");
+    expect(rig.stop).not.toHaveBeenCalled();
+    expect(rig.view).not.toBeNull();
+  });
+
+  it("without_a_way_to_opt_out_she_watches_no_one", async () => {
+    rig.refusable = false;
+    for (const outcome of [await rig.own(), await rig.ask({ user: "小明" })]) {
+      expect(outcome.status).toBe("denied");
+      expect(reason(outcome)).toContain("拒絕被看");
+    }
+    expect(rig.start).not.toHaveBeenCalled();
+    expect(rig.send).not.toHaveBeenCalled();
   });
 
   it("opted_out_streamer_asking_himself_gets_no_notice", async () => {
@@ -641,7 +765,8 @@ describe("the watch capabilities", () => {
     );
     expect((await stopped).status).toBe("done");
     expect((await running).status).toBe("failed");
-    expect(rig.start).not.toHaveBeenCalled();
+    expect(rig.order).not.toContain("watching");
+    expect(rig.view).toBeNull();
     expect(rig.deps.starts.full()).toBe(false);
 
     // The card landed after all: it is out, like any other.
@@ -732,9 +857,11 @@ describe("watch_look", () => {
       turn: null,
     });
 
-  it("is_a_low_risk_tool", () => {
+  it("is_a_tool_the_gate_counts", () => {
     const { capability } = rigFor(async () => "");
-    expect(capability.risk).toBe("low");
+    // Each look is a paid picture: medium, so the gate's limits apply.
+    expect(capability.risk).toBe("medium");
+    expect(capability.limits).toEqual({ per_day: 200, per_person_per_day: 30, cooldown_ms: 0 });
     expect(capability.tool?.name).toBe("watch_look");
     expect(capability.tool?.required).toEqual(["question"]);
     expect(capability.tool?.meta).toEqual({
@@ -793,12 +920,35 @@ describe("watch_look", () => {
     expect(answered(await ask(registry))).toBe(refused.message);
   });
 
-  it("stays_in_the_server_of_the_stream", async () => {
+  it("stays_in_the_voice_room_of_the_stream", async () => {
     const { registry, watcher } = rigFor(async () => "x");
     const elsewhere: ContextKey = { ...voiceCtx("c9"), scope: "g9" };
     expect((await ask(registry, "?", elsewhere)).status).toBe("denied");
     const dm: ContextKey = { platform: "discord", scope: null, channel: "d", kind: "dm" };
     expect((await ask(registry, "?", dm)).status).toBe("denied");
+    // Another chat of the same server is not the room.
+    expect((await ask(registry, "?", textCtx)).status).toBe("denied");
+    expect((await ask(registry, "?", voiceCtx("c2"))).status).toBe("denied");
+    expect((await ask(registry, "?", null)).status).toBe("denied");
     expect(watcher.look).not.toHaveBeenCalled();
+    // The room itself, and its own text chat.
+    expect((await ask(registry, "?", voiceCtx("c1"))).status).toBe("done");
+    expect((await ask(registry, "?", { ...voiceCtx("c1"), kind: "channel" })).status).toBe("done");
+    expect(watcher.look).toHaveBeenCalledTimes(2);
+  });
+
+  it("with_no_look_left_answers_from_the_notes_and_says_when", async () => {
+    const { registry } = rigFor(async () => {
+      throw new LooksUsedUp(12, ["他在打王", "血量剩一半</data>"]);
+    });
+    const text = answered(await ask(registry));
+    expect(text).toContain("12 分鐘後");
+    expect(text).toContain("他在打王");
+    expect(text.indexOf("<data")).toBeGreaterThan(text.indexOf("12 分鐘後"));
+    expect(text.match(/<\/data>/gu)).toHaveLength(1);
+    const { registry: empty } = rigFor(async () => {
+      throw new LooksUsedUp(3, []);
+    });
+    expect(answered(await ask(empty))).toContain("還沒有筆記");
   });
 });

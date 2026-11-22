@@ -424,8 +424,8 @@ dirs = ["extensions"]
 # prepare_notice_gap_secs = 180   # 連點好幾首時這段時間內不再說第二次
 
 # 看直播(opt-in,預設關閉)。她在語音頻道時,自己決定要不要看頻道裡誰的 Go Live、什麼時候換人或不看,
-# 也可以請她看(她可以不看);定時看一張畫面、聽直播的聲音、記幾則筆記,有值得講的才開口。
-# 本人可用 /me privacy watch:off 拒絕被看;被看時語音頻道的文字區會有一張通知。
+# 也可以請她看(她可以不看,指令是 /voice watch start、/voice watch stop);定時看一張畫面、聽直播的聲音、記幾則筆記,有值得講的才開口。
+# 本人可用 /me privacy watch:off 拒絕被看(要開著 actions 模組,不然誰都拒絕不了,她就誰都不看);被看時語音頻道的文字區會有一張通知。
 # 要有語音節點(支援看直播)、能收圖片的模型(用途 watch,沒設就用 chat),聽直播的聲音另外要有語音辨識。
 # [modules.watch]
 # enabled = false
@@ -438,6 +438,7 @@ dirs = ["extensions"]
 # transcript_secs = 180        # 留幾秒直播裡說的話
 # min_watch_secs = 180         # 她自己決定的話,一場至少看這麼久才換人;別人請她換不受限
 # starts_per_hour = 6          # 一小時最多開始看幾場(不分是誰請的)
+# looks_per_hour = 60          # 一場一小時最多看幾次畫面(自己看的、剛開始那一眼、有人問的都算);到了就只用筆記回答
 # max_watch_mins = 120         # 一場最多看幾分鐘
 # max_snapshot_failures = 5    # 連續幾次拿不到畫面就不看了
 # notice_hours = 24            # 同一個人被看,通知至少隔幾小時再發

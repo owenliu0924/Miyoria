@@ -35,6 +35,12 @@ export const WatchConfigSchema = z.object({
   min_watch_secs: z.number().nonnegative().default(180),
   /** Watches started an hour, whoever asked. */
   starts_per_hour: z.number().int().positive().default(6),
+  /**
+   * Looks one watch may pay for in any hour: her own, the first one, and those for a question
+   * (`watch_look`). At the limit she stops looking on her own, and a question is answered from
+   * the notes she has.
+   */
+  looks_per_hour: z.number().int().positive().default(60),
   /** Minutes a single watch lasts at most. */
   max_watch_mins: z.number().positive().default(120),
   /** Snapshot failures in a row that end the watch. */

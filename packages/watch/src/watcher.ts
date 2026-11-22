@@ -6,7 +6,7 @@ import {
   NoImageModelError,
 } from "@miyoria/llm/llm";
 import type { AccountRef } from "@miyoria/types";
-import { dataBlock, safeName } from "@miyoria/types";
+import { dataBlock, safeName, sameAccount } from "@miyoria/types";
 import type { StreamHearing } from "@miyoria/voice/voice";
 import type { WatchConfig } from "./config.js";
 import { listenTo } from "./ears.js";
@@ -20,17 +20,44 @@ export const SNAPSHOT_TIMEOUT_MS = 8_000;
 /** Topics she remembers having spoken about. */
 export const RECENT_TOPICS = 5;
 const TOPIC_MAX_CHARS = 40;
+const HOUR_MS = 3_600_000;
 const CANNOT_SEE = "你現在沒辦法看圖片(模型不收圖片,或這陣子的預算用完了)。";
+/** Said of a stream that turned unwatchable: nothing about whose choice it was. */
+const NO_LONGER = "這場直播現在不能看了,所以沒看。";
 
 /** A start or a look she may not do; the message is written for her. */
 export class WatchRefused extends Error {
   override name = "WatchRefused";
 }
 
-/** Why she does not watch someone whose `watch` is off, including the one who asked. */
+/**
+ * The streamer's `watch` is off (or cannot be read). The message is for the streamer asking
+ * themselves; anyone else is told something that does not give the choice away.
+ */
+export class OptedOut extends WatchRefused {
+  override name = "OptedOut";
+}
+
+/** No look is left in this watch's hour (`looks_per_hour`). */
+export class LooksUsedUp extends WatchRefused {
+  override name = "LooksUsedUp";
+
+  constructor(
+    /** Minutes until a look is free again, at least 1. */
+    readonly minutes: number,
+    /** The notes she has, newest last. */
+    readonly notes: readonly string[],
+  ) {
+    super(`這一小時看畫面的次數用完了,${minutes} 分鐘後才能再看。`);
+  }
+}
+
+/** Why she does not watch someone whose `watch` is off: told to that person only. */
 export function notWatchable(name: string): string {
   return `${safeName(name)} 沒有開放讓你看他的直播,或是現在確認不了。要他自己先用 /me privacy 把 watch 打開,你才能看。`;
 }
+
+const roomKey = (guild: string, channel: string): string => `${guild}\u0000${channel}`;
 
 export interface WatcherDeps {
   source(target: WatchTarget): WatchSource;
@@ -72,6 +99,8 @@ interface Run {
   ctl: AbortController;
   notes: WatchNotes;
   recentTopics: string[];
+  /** When each paid look of the last hour began, oldest first. */
+  looks: number[];
   failures: number;
   /** Aborted by `look` to restart the wait for the next round. */
   wake: AbortController | null;
@@ -117,7 +146,8 @@ export class Watcher {
   /** Starts that have not produced a watch yet; `stop` aborts them. */
   readonly #pending = new Set<AbortController>();
   #lastSpokeAt: number | null = null;
-  #lastVoiceAt: number | null = null;
+  /** When someone other than her last spoke, per voice room. */
+  readonly #lastVoiceAt = new Map<string, number>();
 
   constructor(cfg: WatchConfig, deps: WatcherDeps) {
     this.#cfg = cfg;
@@ -138,13 +168,19 @@ export class Watcher {
 
   /**
    * Starts watching `target`; a watch in progress is stopped first. `caller` gives up on the start
-   * and nothing else: a watch that began no longer listens to it.
+   * and nothing else: a watch that began no longer listens to it. `ready` runs once the stream is
+   * live and before anything of it reaches a model (the notice in the channel goes out there, so
+   * it never names a stream that did not start); when it throws, the stream is stopped again.
    */
-  start(target: WatchTarget, caller?: AbortSignal): Promise<void> {
+  start(
+    target: WatchTarget,
+    caller?: AbortSignal,
+    ready?: (signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
     const ctl = new AbortController();
     this.#pending.add(ctl);
     const p = this.#chain
-      .then(() => this.#start(target, ctl, caller))
+      .then(() => this.#start(target, ctl, caller, ready))
       .finally(() => this.#pending.delete(ctl));
     this.#chain = p.catch(noop);
     return p;
@@ -168,19 +204,22 @@ export class Watcher {
     }
     if (!(await this.#allowed(run.target.account))) {
       void this.#finish(run, "opted out", false);
-      throw new WatchRefused("對方不再讓你看他的直播了,所以不看。");
+      throw new WatchRefused(NO_LONGER);
     }
     const scope = AbortSignal.any([run.ctl.signal, signal]);
     this.#assertLive(run);
     scope.throwIfAborted();
+    this.#assertLookLeft(run);
     const jpeg = await this.#snapshot(run, scope);
     this.#assertLive(run);
     if (!(await this.#allowed(run.target.account))) {
       void this.#finish(run, "opted out", false);
-      throw new WatchRefused("對方不再讓你看他的直播了,所以不看。");
+      throw new WatchRefused(NO_LONGER);
     }
     this.#assertLive(run);
     scope.throwIfAborted();
+    this.#assertLookLeft(run);
+    run.looks.push(this.#deps.now());
     let res: ChatResponse;
     try {
       res = await untilAborted(
@@ -209,8 +248,20 @@ export class Watcher {
     return res.text.trim();
   }
 
-  noteVoice(at: number): void {
-    this.#lastVoiceAt = at;
+  /** Someone other than her spoke in the voice room `channel` of `guild`. */
+  noteVoice(at: number, guild: string, channel: string): void {
+    this.#lastVoiceAt.set(roomKey(guild, channel), at);
+  }
+
+  /**
+   * `account` turned `watch` off: a watch of them ends now, without waiting for the next look.
+   * The loop checks on every tick as well, so a missed call only delays the end.
+   */
+  optedOut(account: AccountRef): void {
+    const run = this.#live();
+    if (run !== null && sameAccount(run.target.account, account)) {
+      void this.#finish(run, "opted out", false);
+    }
   }
 
   noteSpoke(at: number): void {
@@ -230,7 +281,12 @@ export class Watcher {
 
   // -- start -----------------------------------------------------------------------------
 
-  async #start(target: WatchTarget, ctl: AbortController, caller?: AbortSignal): Promise<void> {
+  async #start(
+    target: WatchTarget,
+    ctl: AbortController,
+    caller?: AbortSignal,
+    ready?: (signal: AbortSignal) => Promise<void>,
+  ): Promise<void> {
     const signal = caller ? AbortSignal.any([ctl.signal, caller]) : ctl.signal;
     const stopped = (): WatchRefused => new WatchRefused("看直播被停掉了,沒有開始看。");
     if (!this.#canLook()) {
@@ -239,7 +295,7 @@ export class Watcher {
       );
     }
     if (!(await this.#allowed(target.account))) {
-      throw new WatchRefused(notWatchable(target.name));
+      throw new OptedOut(notWatchable(target.name));
     }
     if (signal.aborted) throw stopped();
     if (this.#run !== null) await this.#finish(this.#run, "switching", false);
@@ -248,6 +304,11 @@ export class Watcher {
     const source = this.#deps.source(target);
     try {
       await untilAborted(source.start(target, signal), signal);
+      // Going live takes seconds: the choice may have changed meanwhile.
+      if (!signal.aborted && !(await this.#allowed(target.account))) {
+        throw new OptedOut(notWatchable(target.name));
+      }
+      if (!signal.aborted) await ready?.(signal);
     } catch (error) {
       ctl.abort();
       await source.stop().catch(noop);
@@ -280,6 +341,7 @@ export class Watcher {
       ctl,
       notes: new WatchNotes(this.#cfg, this.#deps.now),
       recentTopics: [],
+      looks: [],
       failures: 0,
       wake: null,
       loop: Promise.resolve(),
@@ -341,7 +403,13 @@ export class Watcher {
           continue;
         }
         due = false;
-        if (this.#active(run)) await this.#round(run);
+        // Every tick, quiet room or not: an opt-out ends the watch, not only the next look.
+        if (!(await this.#allowed(run.target.account))) {
+          void this.#finish(run, "opted out", false);
+          return;
+        }
+        if (signal.aborted) return;
+        if (this.#active(run) && this.#lookLeft(run)) await this.#round(run);
       }
     } catch (error) {
       if (!signal.aborted) void this.#finish(run, "the watch loop failed", true, error);
@@ -349,24 +417,38 @@ export class Watcher {
   }
 
   /**
-   * Whether a look on her own is worth paying for: someone spoke in the voice channel (or the watch
-   * began) within `active_secs`. A stream left running to an empty room costs nothing; a question
-   * (`look`) is answered either way.
+   * Whether a look on her own is worth paying for: someone spoke in the stream's voice room (or
+   * the watch began) within `active_secs`. A stream left running to an empty room costs nothing;
+   * a question (`look`) is answered either way.
    */
   #active(run: Run): boolean {
     if (this.#cfg.active_secs === 0) return true;
-    const last = Math.max(run.startedAt, this.#lastVoiceAt ?? Number.NEGATIVE_INFINITY);
+    const last = Math.max(run.startedAt, this.#voiceAt(run) ?? Number.NEGATIVE_INFINITY);
     return this.#deps.now() - last <= this.#cfg.active_secs * 1000;
+  }
+
+  #voiceAt(run: Run): number | null {
+    return this.#lastVoiceAt.get(roomKey(run.target.guild, run.target.channel)) ?? null;
+  }
+
+  /** Whether this watch's hour has a look left (`looks_per_hour`, every kind of look). */
+  #lookLeft(run: Run): boolean {
+    const now = this.#deps.now();
+    run.looks = run.looks.filter((at) => now - at < HOUR_MS);
+    return run.looks.length < this.#cfg.looks_per_hour;
+  }
+
+  /** A question with no look left is answered from the notes, with when she can look again. */
+  #assertLookLeft(run: Run): void {
+    if (this.#lookLeft(run)) return;
+    const oldest = run.looks[0] ?? this.#deps.now();
+    const minutes = Math.max(1, Math.ceil((oldest + HOUR_MS - this.#deps.now()) / 60_000));
+    throw new LooksUsedUp(minutes, run.notes.notes());
   }
 
   async #round(run: Run): Promise<void> {
     const { signal } = run.ctl;
     try {
-      if (!(await this.#allowed(run.target.account))) {
-        void this.#finish(run, "opted out", false);
-        return;
-      }
-      if (signal.aborted) return;
       if (!this.#canLook()) {
         void this.#finish(run, "cannot look any more", false);
         return;
@@ -389,6 +471,9 @@ export class Watcher {
         return;
       }
       if (signal.aborted) return;
+      // A question may have taken the last look while the snapshot came.
+      if (!this.#lookLeft(run)) return;
+      run.looks.push(this.#deps.now());
 
       let look: ReturnType<typeof LookResultSchema.parse>;
       try {
@@ -445,7 +530,7 @@ export class Watcher {
         topic,
         now,
         lastSpokeAt: this.#lastSpokeAt,
-        lastVoiceAt: this.#lastVoiceAt,
+        lastVoiceAt: this.#voiceAt(run),
         busy,
         recentTopics: run.recentTopics,
       },
@@ -492,15 +577,26 @@ export class Watcher {
     if (hearing === null) return Promise.resolve();
     const { signal } = run.ctl;
     const account = run.target.account;
-    const allowed = (): Promise<boolean> => hearing.allowed(account).catch(() => false);
+    const heard = (): Promise<boolean> => hearing.allowed(account).catch(() => false);
+    // Hearing needs both: voice consent, and `watch` (turning watching off ends the watch).
+    const watched = async (): Promise<boolean> => {
+      if (await this.#allowed(account)) return !signal.aborted;
+      void this.#finish(run, "opted out", false);
+      return false;
+    };
+    const may = async (): Promise<boolean> => (await heard()) && (await watched());
     return (async () => {
       try {
-        if (!(await allowed()) || signal.aborted) return;
+        if (!(await may()) || signal.aborted) return;
         await listenTo(
           run.source.audio(),
           {
-            transcribe: async (samples, s) =>
-              (await allowed()) ? hearing.transcribe(samples, s) : null,
+            transcribe: async (samples, s) => {
+              if (!(await may())) return null;
+              const text = await hearing.transcribe(samples, s);
+              // Either choice may have changed while the ASR worked.
+              return text !== null && (await may()) ? text : null;
+            },
           },
           (text) => {
             if (!signal.aborted) run.notes.addLine(text);

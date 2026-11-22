@@ -3,7 +3,14 @@ import type { AccountRef } from "@miyoria/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type WatchConfig, WatchConfigSchema } from "../src/config.js";
 import type { WatchSource, WatchTarget } from "../src/source.js";
-import { untilAborted, Watcher, type WatcherDeps, WatchRefused } from "../src/watcher.js";
+import {
+  LooksUsedUp,
+  OptedOut,
+  untilAborted,
+  Watcher,
+  type WatcherDeps,
+  WatchRefused,
+} from "../src/watcher.js";
 
 const target = (name = "小明"): WatchTarget => ({
   guild: "g1",
@@ -163,6 +170,58 @@ describe("start", () => {
     expect(h.source.start).not.toHaveBeenCalled();
   });
 
+  it("ready runs once the stream is live and before the first look", async () => {
+    const h = track(harness({}, {}, { manualSleep: true }));
+    const order: string[] = [];
+    h.source.start.mockImplementationOnce(async () => {
+      order.push("live");
+    });
+    h.source.snapshot.mockImplementation(async () => {
+      order.push("snapshot");
+      return Buffer.from([1]);
+    });
+    await h.watcher.start(target(), undefined, async () => {
+      order.push("ready");
+    });
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(1));
+    expect(order).toEqual(["live", "ready", "snapshot"]);
+  });
+
+  it("a stream that never goes live never reaches ready", async () => {
+    const h = track(harness());
+    const ready = vi.fn(async () => {});
+    h.source.start.mockRejectedValueOnce(new Error("never live"));
+    await expect(h.watcher.start(target(), undefined, ready)).rejects.toThrow("never live");
+    expect(ready).not.toHaveBeenCalled();
+  });
+
+  it("a ready that throws stops the stream and leaves no watch", async () => {
+    const h = track(harness());
+    const err = await h.watcher
+      .start(target(), undefined, async () => {
+        throw new Error("no notice");
+      })
+      .catch((e: unknown) => e);
+    expect((err as Error).message).toBe("no notice");
+    expect(h.source.stop).toHaveBeenCalled();
+    expect(h.watcher.view()).toBeNull();
+    await h.watcher.idle();
+    expect(h.source.snapshot).not.toHaveBeenCalled();
+  });
+
+  it("an opt-out while the stream goes live stops it before ready", async () => {
+    const h = track(harness());
+    const ready = vi.fn(async () => {});
+    h.source.start.mockImplementationOnce(async () => {
+      h.allowed = false;
+    });
+    const err = await h.watcher.start(target(), undefined, ready).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(OptedOut);
+    expect(ready).not.toHaveBeenCalled();
+    expect(h.source.stop).toHaveBeenCalled();
+    expect(h.watcher.view()).toBeNull();
+  });
+
   it("a failed start leaves nothing running", async () => {
     const h = track(harness());
     h.source.start.mockRejectedValueOnce(new Error("no stream"));
@@ -249,10 +308,57 @@ describe("the loop", () => {
     await vi.waitFor(() => expect(h.sleeps.length).toBe(5));
     // At 0, 30 and 60 s the watch is fresh; at 90 and 120 s nobody has spoken for over a minute.
     expect(h.source.snapshot).toHaveBeenCalledTimes(3);
-    h.watcher.noteVoice(h.clock.t);
+    h.watcher.noteVoice(h.clock.t, "g1", "c1");
     h.sleeps[4]?.wake();
     await vi.waitFor(() => expect(h.sleeps.length).toBe(6));
     expect(h.source.snapshot).toHaveBeenCalledTimes(4);
+  });
+
+  it("speech in another voice room does not keep her looking", async () => {
+    const h = track(harness({ snapshot_secs: 30, active_secs: 60 }, {}, { manualSleep: true }));
+    await h.watcher.start(target());
+    for (let i = 1; i <= 4; i++) {
+      await vi.waitFor(() => expect(h.sleeps.length).toBe(i));
+      h.sleeps[i - 1]?.wake();
+    }
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(5));
+    expect(h.source.snapshot).toHaveBeenCalledTimes(3);
+    h.watcher.noteVoice(h.clock.t, "g1", "c9");
+    h.watcher.noteVoice(h.clock.t, "g2", "c1");
+    h.sleeps[4]?.wake();
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(6));
+    expect(h.source.snapshot).toHaveBeenCalledTimes(3);
+  });
+
+  it("an opt-out ends the watch on the next tick even while the room is quiet", async () => {
+    const h = track(harness({ snapshot_secs: 30, active_secs: 60 }, {}, { manualSleep: true }));
+    await h.watcher.start(target());
+    for (let i = 1; i <= 4; i++) {
+      await vi.waitFor(() => expect(h.sleeps.length).toBe(i));
+      h.sleeps[i - 1]?.wake();
+    }
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(5));
+    // Nobody spoke for over a minute: no looks of her own, but the choice is still read.
+    const snaps = h.source.snapshot.mock.calls.length;
+    h.allowed = false;
+    h.sleeps[4]?.wake();
+    await h.watcher.idle();
+    expect(h.watcher.view()).toBeNull();
+    expect(h.source.stop).toHaveBeenCalledOnce();
+    expect(h.source.snapshot).toHaveBeenCalledTimes(snaps);
+  });
+
+  it("optedOut ends a watch of that person at once and leaves others alone", async () => {
+    const h = track(harness({ snapshot_secs: 3600 }, {}, { manualSleep: true }));
+    await h.watcher.start(target());
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(1));
+    h.watcher.optedOut({ platform: "discord", id: "someone else" });
+    expect(h.watcher.view()).not.toBeNull();
+    h.watcher.optedOut({ platform: "discord", id: "u1" });
+    // Her prompt no longer gets its notes or lines.
+    expect(h.watcher.view()).toBeNull();
+    await h.watcher.idle();
+    expect(h.source.stop).toHaveBeenCalledOnce();
   });
 
   it("looks every snapshot_secs with active_secs = 0, however quiet the room", async () => {
@@ -344,7 +450,7 @@ describe("the loop", () => {
   it("stays quiet right after someone spoke", async () => {
     const h = track(harness({ quiet_secs: 10 }, {}, { manualSleep: true }));
     h.reply = () => ({ note: "n", worth_saying: true, topic: "t" });
-    h.watcher.noteVoice(h.clock.t);
+    h.watcher.noteVoice(h.clock.t, "g1", "c1");
     await h.watcher.start(target());
     await vi.waitFor(() => expect(h.sleeps.length).toBe(1));
     expect(h.modelCalls).toBe(1);
@@ -475,6 +581,24 @@ describe("the loop", () => {
     expect(h.watcher.view()).toBeNull();
   });
 
+  it("looks_per_hour pauses her own looks and they come back as the hour moves on", async () => {
+    const h = track(
+      harness({ snapshot_secs: 600, active_secs: 0, looks_per_hour: 3 }, {}, { manualSleep: true }),
+    );
+    await h.watcher.start(target());
+    for (let i = 1; i <= 5; i++) {
+      await vi.waitFor(() => expect(h.sleeps.length).toBe(i));
+      h.sleeps[i - 1]?.wake();
+    }
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(6));
+    // At 0, 10 and 20 minutes; at 30 and 40 the hour is full.
+    expect(h.modelCalls).toBe(3);
+    expect(h.watcher.view()).not.toBeNull();
+    h.sleeps[5]?.wake(); // 60 minutes: the first look has left the hour
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(7));
+    expect(h.modelCalls).toBe(4);
+  });
+
   it("stop is idempotent and awaits the end", async () => {
     const h = track(harness());
     await h.watcher.start(target());
@@ -559,6 +683,39 @@ describe("stream audio", () => {
     expect(h.watcher.view()?.transcript).toEqual([]);
   });
 
+  it("turning watching off stops transcribing and ends the watch, whatever the room does", async () => {
+    const hr = hearing(() => true, "不該出現");
+    const h = track(harness({}, { hearing: hr }, { manualSleep: true }));
+    const go = deferred<void>();
+    h.source.audio.mockImplementation(() =>
+      (async function* () {
+        await go.promise;
+        yield* speech();
+      })(),
+    );
+    await h.watcher.start(target());
+    // The loop sleeps after its first look; only the audio is moving.
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(1));
+    h.allowed = false;
+    go.resolve();
+    await h.watcher.idle();
+    expect(hr.transcribe).not.toHaveBeenCalled();
+    expect(h.watcher.view()).toBeNull();
+  });
+
+  it("an opt-out while the ASR works drops what it heard", async () => {
+    const heardIt = deferred<string | null>();
+    const hr = { allowed: vi.fn(async () => true), transcribe: vi.fn(() => heardIt.promise) };
+    const h = track(harness({}, { hearing: hr }, { manualSleep: true }));
+    h.source.audio.mockImplementation(() => speech());
+    await h.watcher.start(target());
+    await vi.waitFor(() => expect(hr.transcribe).toHaveBeenCalled());
+    h.allowed = false;
+    heardIt.resolve("不該出現");
+    await h.watcher.idle();
+    expect(h.watcher.view()).toBeNull();
+  });
+
   it("stream speech never reaches the voice pipeline, even with her name in it", async () => {
     const hr = hearing(() => true, "Miyoria 你在嗎");
     const h = track(harness({}, { hearing: hr }, { manualSleep: true }));
@@ -596,6 +753,30 @@ describe("look", () => {
     await vi.waitFor(() => expect(h.sleeps.length).toBe(2));
     expect((h.sleeps[1] as PendingSleep).ms).toBe(30_000);
     expect(h.source.snapshot).toHaveBeenCalledTimes(2); // the old timer did not fire a round
+  });
+
+  it("counts toward looks_per_hour, and with none left answers from the notes", async () => {
+    const h = track(
+      harness({ snapshot_secs: 30, active_secs: 0, looks_per_hour: 2 }, {}, { manualSleep: true }),
+    );
+    await h.watcher.start(target());
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(1));
+    expect(await h.watcher.look("?", new AbortController().signal)).toBe("他在打王");
+    h.clock.t += 5 * 60_000;
+    const snaps = h.source.snapshot.mock.calls.length;
+    const calls = h.complete.mock.calls.length;
+    const refused = await h.watcher.look("?", new AbortController().signal).catch((e) => e);
+    expect(refused).toBeInstanceOf(LooksUsedUp);
+    expect(refused.notes).toEqual(["note 1"]);
+    // The first look was at the start, five minutes ago.
+    expect(refused.minutes).toBe(55);
+    expect(refused.message).toContain("55 分鐘");
+    expect(h.source.snapshot.mock.calls.length).toBe(snaps);
+    expect(h.complete.mock.calls.length).toBe(calls);
+    // Her own looks wait too.
+    (h.sleeps.at(-1) as PendingSleep).wake();
+    await vi.waitFor(() => expect(h.sleeps.length).toBe(3));
+    expect(h.modelCalls).toBe(1);
   });
 
   it("without a watch refuses", async () => {
