@@ -22,6 +22,7 @@ import { ChartEmpty } from "@/components/charts/charts";
 import { ErrorLine, SkeletonRows } from "@/components/query-state";
 import { Segmented } from "@/components/ui/segmented";
 import { readStorage, writeStorage } from "@/lib/storage";
+import { WORLD } from "@/lib/world";
 
 type MapKind = ExchangeMap["kind"];
 type Tile = ExchangeMap["tiles"][number];
@@ -38,7 +39,7 @@ const OTHER = "其他";
 export const shortCode = (code: string) => code.replace(/\.TWO?$/, "");
 
 const priceOf = (t: Tile) =>
-  t.price === null ? "—" : t.currency === "COIN" ? `${t.price.toFixed(2)} 魚幣` : `${t.currency} ${t.price.toFixed(2)}`;
+  t.price === null ? "—" : t.currency === "COIN" ? `${t.price.toFixed(2)} ${WORLD.currency}` : `${t.currency} ${t.price.toFixed(2)}`;
 
 /** What a tile says to a screen reader and in its tooltip: always the name and the code. */
 export function tileLabel(t: Tile): string {

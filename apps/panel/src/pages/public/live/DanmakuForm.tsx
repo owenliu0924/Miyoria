@@ -5,6 +5,7 @@ import { useApi } from "@/app/connection";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
+import { WORLD } from "@/lib/world";
 import { newKey, priceText } from "../spend";
 
 const DANMAKU = ["member", "danmaku"] as const;
@@ -34,7 +35,7 @@ export function DanmakuForm() {
     mutationFn: (t: string) => api.rpc.wallet.danmaku({ headers: { "idempotency-key": newKey() }, body: { text: t } }),
     onSuccess: (r) => {
       if (r.accepted) setText("");
-      setNote({ ok: r.accepted, text: r.message || (r.accepted ? "彈幕送出了" : "這則沒有送出,沒有扣魚幣") });
+      setNote({ ok: r.accepted, text: r.message || (r.accepted ? "彈幕送出了" : `這則沒有送出,沒有扣${WORLD.currency}`) });
       void client.invalidateQueries({ queryKey: DANMAKU });
     },
     onError: (e) => {

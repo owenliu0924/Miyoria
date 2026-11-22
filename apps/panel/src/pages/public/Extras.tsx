@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { WORLD } from "@/lib/world";
 import { BoardScopePicker, useBoardScope, useOwnSpace } from "./board-scope";
 import { FortuneSlip } from "./FortuneSlip";
 import { SpacePicker } from "./member-space";
@@ -157,15 +158,15 @@ export function Transfer() {
           轉出
         </Button>
         <p className="text-xs text-muted-foreground">
-          只能轉給她認識的人,每天有上限。另收{fmtInt(Math.round(w.transfer_fee * 100))}% 手續費(至少 1),由你付,不會到任何人手上。
+          只能轉給{WORLD.pronoun}認識的人,每天有上限。另收{fmtInt(Math.round(w.transfer_fee * 100))}% 手續費(至少 1),由你付,不會到任何人手上。
         </p>
         <p className="text-xs text-muted-foreground">
-          魚幣只是遊戲裡的點數,沒有現金價值。禁止用真錢或任何現實物品買賣、交換魚幣;違反者可能被凍結錢包,衍生的糾紛或損失請自行負責。
+          {`${w.currency}只是遊戲裡的點數,沒有現金價值。禁止用真錢或任何現實物品買賣、交換${w.currency};違反者可能被凍結錢包,衍生的糾紛或損失請自行負責。`}
         </p>
       </form>
       <ConfirmDialog
         open={asking}
-        title="轉出魚幣"
+        title={`轉出${w.currency}`}
         confirmLabel="轉出"
         busy={send.isPending}
         onConfirm={() => send.mutate()}

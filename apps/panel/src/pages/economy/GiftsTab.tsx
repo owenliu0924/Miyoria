@@ -21,6 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { WORLD } from "@/lib/world";
 import { GIFT_KIND, GIFT_KINDS, GIFT_STATUS_ADMIN, PRICED_BY, twdText } from "@/pages/public/gift-labels";
 
 const MODULE = "禮物(economy 模組)";
@@ -188,7 +189,7 @@ function Recent({ denied, onDenied }: { denied: boolean; onDenied: () => void })
 const SOURCE: Record<GiftOverride["source"], string> = { model: "模型估的", pinned: "指定", blocked: "封鎖" };
 
 const PIN_IN: { value: PinIn; label: string }[] = [
-  { value: "coins", label: "魚幣價錢" },
+  { value: "coins", label: `${WORLD.currency}價錢` },
   { value: "twd", label: "台幣估價" },
 ];
 
@@ -200,7 +201,7 @@ function OverridesTable({ overrides, denied, busy, onRemove }: { overrides: Gift
           <TableHead className="min-w-[7rem]">名字</TableHead>
           <TableHead className="hidden w-20 md:table-cell">種類</TableHead>
           <TableHead className="w-24 text-right">台幣</TableHead>
-          <TableHead className="w-24 text-right">指定魚幣</TableHead>
+          <TableHead className="w-24 text-right">{`指定${WORLD.currency}`}</TableHead>
           <TableHead className="min-w-[5rem] text-right">現在的價錢</TableHead>
           <TableHead className="hidden w-20 md:table-cell">來源</TableHead>
           <TableHead className="hidden w-36 lg:table-cell">誰 · 時間</TableHead>
@@ -392,7 +393,7 @@ export function GiftsTab() {
   const [denied, setDenied] = useState(false);
   const deny = () => setDenied(true);
   const running = !q.isError;
-  const currency = q.data?.currency ?? "魚幣";
+  const currency = q.data?.currency ?? WORLD.currency;
   return (
     <div className="grid gap-(--stage-gap)">
       {denied && (
