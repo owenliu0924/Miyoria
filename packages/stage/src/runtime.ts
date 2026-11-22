@@ -66,6 +66,12 @@ export const StageConfigSchema = z.object({
   overlay_dir: z.string().default("apps/overlay/dist"),
   /** The stream's background picture (the overlay's `?layer=backdrop`); none: a dark gradient. */
   overlay_backdrop: z.string().trim().min(1).nullable().default(null),
+  /**
+   * Pages other than the overlay server's own (and this machine's) that may open `/overlay/ws`,
+   * as origins (`http://192.168.1.20:5173`). `"null"` lets a page opened from a file in, but
+   * also any site's sandboxed frame, so only on a machine whose browser opens nothing else.
+   */
+  overlay_origins: z.array(z.string().trim().min(1)).default([]),
   /** Core is considered gone after this long without traffic. */
   peer_timeout_ms: z.number().int().nonnegative().default(45_000),
   vts: VtsConfigSchema.prefault({}),
@@ -178,6 +184,7 @@ export async function runStageWith(
       overlay,
       tasks.signal,
       config.overlay_backdrop,
+      config.overlay_origins,
     );
     background.push(overlayServer.done);
 
