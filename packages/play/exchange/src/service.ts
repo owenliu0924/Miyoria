@@ -1714,12 +1714,19 @@ export class ExchangeService {
 
   // ---- the boards -------------------------------------------------------------------------
 
-  /** The rich list (wallet plus holdings at market value) and this week's volume, without the hidden. */
-  async boards(account: AccountRef | null): Promise<BoardsView> {
+  /**
+   * The rich list (wallet plus holdings at market value) and this week's volume, without the
+   * hidden. `members`: only these persons (one server's members, `Places.members`), ranked among
+   * themselves; everyone without. Prices and holdings are the same global ones either way.
+   */
+  async boards(
+    account: AccountRef | null,
+    members?: ReadonlySet<string> | null,
+  ): Promise<BoardsView> {
     const { book } = this.#ensure();
     const wallet = this.#d.wallet();
     const viewer = account ? await this.#who(account) : null;
-    const accounts = this.#d.store.accounts();
+    const accounts = this.#d.store.accounts().filter((a) => !members || members.has(a.person));
     const hidden = new Set(accounts.filter((a) => a.hide_boards).map((a) => a.person));
     const worth: {
       person: string;
@@ -1756,6 +1763,7 @@ export class ExchangeService {
     const week = weekOf(this.#today());
     const volumes = this.#d.store
       .volumeSince(week * this.params.rounds_per_day)
+      .filter((v) => !members || members.has(v.person))
       .sort((x, y) => y.volume - x.volume || (x.person < y.person ? -1 : 1));
     const shownRich = worth.filter((w) => !hidden.has(w.person));
     const shownVolume = volumes.filter((v) => !hidden.has(v.person));

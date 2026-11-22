@@ -14,7 +14,8 @@
 // - `/me market quote code:` a ticker's quote card (the code has suggestions while typing).
 // - `/me market mine`: their own holdings, only to them, with 分享 buttons that post the holdings
 //   or the latest trade's receipt publicly with their name, only when pressed.
-// - `/me market rich`: the rich list.
+// - `/me market rich`: the rich list; `範圍` picks this server's members or everyone (in a server
+//   the server's by default, in a DM everyone's). Prices and holdings are global either way.
 //
 // Component hygiene: every control's id carries a tag of the member who opened it and its expiry,
 // so a press by someone else gets a neutral refusal, an expired one says how to reopen, and both
@@ -23,6 +24,9 @@
 import {
   ArgKind,
   argSpec,
+  BOARD_SCOPE_ARG,
+  boardScope,
+  boardScopeArg,
   type CardBlock,
   type CardButton,
   type CommandRegistry,
@@ -42,6 +46,7 @@ import {
   DEFAULT_CHARACTER,
   exchangeSmallPrint,
   type Pictures,
+  type Places,
   parseOrderAmount,
 } from "@miyoria/types";
 import {
@@ -567,8 +572,9 @@ async function placeOrder(
   lev: number,
   back: ListKind,
 ): Promise<CommandReply> {
-  // The same press (message and control) is the same order.
-  const key = `discord:${inv.messageId ?? "none"}:${inv.customId}`;
+  // The same press (message and control) is the same order. The prefix is the invoker's platform:
+  // `discord` on Discord, so a key written before stays the same key (no second order on a retry).
+  const key = `${inv.context.platform}:${inv.messageId ?? "none"}:${inv.customId}`;
   const r = await x.real.place(
     inv.invoker,
     await requestOf(x, inv.invoker, side, code, amount, lev),
@@ -729,6 +735,8 @@ export function registerCommands(
   pictures: () => Pictures | null,
   /** The exchange's name in this profile (`[character] exchange_name`). */
   title: () => string = () => DEFAULT_CHARACTER.exchange_name,
+  /** Identity's servers and members, for the per-server rich list; none: one list. */
+  places: () => Places | undefined = () => undefined,
 ): void {
   registry.setGroupDescription("me market", `${title()}:新手推薦、台股美股行情、你的持股、富人榜`);
   const open = (): ExchangeService | null => {
@@ -1070,14 +1078,22 @@ export function registerCommands(
   );
 
   registry.register(
-    commandSpec("me market rich", `${title()}:富人榜(圖)`, { permission: NODE }),
+    commandSpec("me market rich", `${title()}:富人榜(圖)`, {
+      args: [boardScopeArg()],
+      permission: NODE,
+    }),
     (inv) =>
       run(async (x) => {
-        const b = await x.boards(inv.invoker);
+        const where = boardScope(places(), inv.context, inv.str(BOARD_SCOPE_ARG));
+        const b = await x.boards(inv.invoker, where.members);
         const rows = b.rich.slice(0, 10).map((r) => `${r.rank}. ${r.name} ${r.worth}`);
         const text = card(
           "富人榜",
-          [...(rows.length === 0 ? ["還沒有人上榜"] : rows), "預設會上榜;會員頁可以設定不上榜。"],
+          [
+            ...(rows.length === 0 ? ["還沒有人上榜"] : rows),
+            ...(where.label === "" ? [] : [where.label]),
+            "預設會上榜;會員頁可以設定不上榜。",
+          ],
           { real: true },
         );
         // The board is posted where anyone sees it: nobody's own place is on the picture.

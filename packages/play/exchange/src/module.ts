@@ -44,6 +44,7 @@ import {
   newId,
   type PersonId,
   PicturesKey,
+  PlacesKey,
   SongTicketsKey,
   serviceKey,
   toTimestamp,
@@ -186,6 +187,7 @@ export class ExchangeModule implements Module {
           () => service,
           () => ctx.services.get(PicturesKey) ?? null,
           () => exchangeName(ctx),
+          () => ctx.services.get(PlacesKey),
         ),
       unregisterCommands,
     );

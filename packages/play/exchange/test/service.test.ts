@@ -408,6 +408,28 @@ describe("the boards", () => {
     expect(b.rich[1]?.holdings?.[0]?.code).toBe("NAPS");
     expect(b.me).toEqual({ rich: 1, volume: null, hidden: true });
   });
+
+  it("rank one server's members among themselves, with the same prices and holdings", async () => {
+    const r = await rig();
+    await opened(r, ALICE, 1000);
+    await opened(r, BOB, 400);
+    await opened(r, CAROL, 700);
+    await r.service.place(BOB, { side: "buy", company: "NAPS", coins: 200 }, "b");
+    await r.at(local(0, 12, 1));
+    const everyone = await r.service.boards(BOB);
+    const server = await r.service.boards(BOB, new Set(["p-alice", "p-bob"]));
+    expect(server.rich.map((x) => [x.rank, x.name])).toEqual([
+      [1, "Alice"],
+      [2, "Bob"],
+    ]);
+    // Bob's worth is the global one: only who is ranked differs.
+    expect(server.rich[1]?.worth).toBe(everyone.rich.find((x) => x.name === "Bob")?.worth);
+    expect(server.volume.map((x) => x.name)).toEqual(["Bob"]);
+    expect(server.me).toEqual({ rich: 2, volume: 1, hidden: false });
+    // Someone who is not a member there has no place on that list.
+    const other = await r.service.boards(CAROL, new Set(["p-alice", "p-bob"]));
+    expect(other.me).toEqual({ rich: null, volume: null, hidden: false });
+  });
 });
 
 describe("people", () => {
