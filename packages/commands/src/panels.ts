@@ -11,7 +11,13 @@
 // added later is reachable before someone adds a control for it.
 
 import type { ServiceLookup } from "@miyoria/runtime/kernel";
-import { type Character, CharacterKey, DEFAULT_CHARACTER } from "@miyoria/types";
+import {
+  type Character,
+  CharacterKey,
+  CurrencyKey,
+  DEFAULT_CHARACTER,
+  DEFAULT_CURRENCY,
+} from "@miyoria/types";
 import {
   type FieldAsk,
   mappedPaths,
@@ -441,7 +447,7 @@ function songPages(): PanelPage[] {
 
 // ---- /me ----------------------------------------------------------------------------------
 
-function mePages(policyUrl: string | null, her: Character): PanelPage[] {
+function mePages(policyUrl: string | null, her: Character, coin: string): PanelPage[] {
   const policy = (): CardBlock[] =>
     policyUrl
       ? [
@@ -559,7 +565,7 @@ function mePages(policyUrl: string | null, her: Character): PanelPage[] {
       // Commands come from the economy module; without it the page is hidden.
       id: "wallet",
       label: "錢包",
-      description: "魚幣、簽到、餵她",
+      description: `${coin}、簽到、餵${her.pronoun}`,
       refresh: true,
       status: [{ path: "me wallet", label: "我的錢包", args: { picture: false } }],
       actions: [
@@ -589,8 +595,11 @@ function mePages(policyUrl: string | null, her: Character): PanelPage[] {
           label: "轉給別人",
           path: "me give",
           ask: {
-            title: "轉魚幣給別人（另收手續費，會燒掉）",
-            fields: [USER_FIELD, field("amount", "對方收到多少魚幣", { placeholder: "1 到 50" })],
+            title: `轉${coin}給別人（另收手續費，會燒掉）`,
+            fields: [
+              USER_FIELD,
+              field("amount", `對方收到多少${coin}`, { placeholder: "1 到 50" }),
+            ],
           },
         },
         { id: "board", label: "排行榜", path: "me board" },
@@ -611,11 +620,11 @@ function mePages(policyUrl: string | null, her: Character): PanelPage[] {
           label: "押預測",
           path: "me bet",
           ask: {
-            title: "押魚幣猜結果",
+            title: `押${coin}猜結果`,
             fields: [
               field("prediction", "預測的代號", { placeholder: "「看預測」裡的代號" }),
               field("option", "選項的號碼或名字"),
-              field("amount", "押多少魚幣"),
+              field("amount", `押多少${coin}`),
             ],
           },
         },
@@ -625,8 +634,8 @@ function mePages(policyUrl: string | null, her: Character): PanelPage[] {
           label: "出錢佈置房間",
           path: "me room",
           ask: {
-            title: "出魚幣佈置她的房間",
-            fields: [field("item", "要出錢的東西（名字或代號）"), field("amount", "出多少魚幣")],
+            title: `出${coin}佈置${her.pronoun}的房間`,
+            fields: [field("item", "要出錢的東西（名字或代號）"), field("amount", `出多少${coin}`)],
           },
         },
         { id: "karaoke", label: "唱 K", path: "me karaoke" },
@@ -864,7 +873,7 @@ export function panelDefs(options: PanelsOptions = {}): PanelDef[] {
       title: "我的面板",
       description: "你的資料、隱私、語音同意與她記得的事",
       ephemeral: true,
-      pages: mePages(policyUrl, her),
+      pages: mePages(policyUrl, her, options.services?.get(CurrencyKey) ?? DEFAULT_CURRENCY),
     },
     {
       command: "admin",

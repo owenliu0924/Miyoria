@@ -19,6 +19,7 @@ import { newId } from "@miyoria/types";
 import { STRANGER, WALLET_NODE } from "./economy.js";
 import { EconomyError, EconomyKey } from "./types.js";
 import { type Economy2, Economy2Key } from "./v2-types.js";
+import { coinName, pronounOf } from "./words.js";
 
 const log = getLogger("economy.commands.v2");
 
@@ -207,6 +208,8 @@ export function unregisterV2(registry: CommandRegistry): void {
 
 export function registerV2(registry: CommandRegistry, services: ServiceLookup): void {
   const handler = new Handler2(services);
+  const coin = coinName(services);
+  const her = pronounOf(services);
   registry.register(
     commandSpec("me quests", "今天的三個小任務：聊新的事、和大家一起玩、她替你想的一件事", {
       permission: WALLET_NODE,
@@ -222,11 +225,11 @@ export function registerV2(registry: CommandRegistry, services: ServiceLookup): 
     (inv) => handler.predictions(inv),
   );
   registry.register(
-    commandSpec("me bet", "押魚幣猜預測的結果（猜中的人平分大家押的）", {
+    commandSpec("me bet", `押${coin}猜預測的結果（猜中的人平分大家押的）`, {
       args: [
         argSpec("prediction", `預測的代號（${onDiscord("me predictions")} 看）`, ArgKind.string),
         argSpec("option", "選項的號碼或名字", ArgKind.string),
-        argSpec("amount", "押多少魚幣", ArgKind.integer),
+        argSpec("amount", `押多少${coin}`, ArgKind.integer),
       ],
       permission: WALLET_NODE,
       ephemeral: true,
@@ -234,12 +237,12 @@ export function registerV2(registry: CommandRegistry, services: ServiceLookup): 
     (inv) => handler.bet(inv),
   );
   registry.register(
-    commandSpec("me room", "看她的房間大家湊到哪了，或出魚幣一起佈置", {
+    commandSpec("me room", `看${her}的房間大家湊到哪了，或出${coin}一起佈置`, {
       args: [
         argSpec("item", "要出錢的東西（名字或代號），不填就只看", ArgKind.string, {
           required: false,
         }),
-        argSpec("amount", "出多少魚幣", ArgKind.integer, { required: false }),
+        argSpec("amount", `出多少${coin}`, ArgKind.integer, { required: false }),
       ],
       permission: WALLET_NODE,
     }),

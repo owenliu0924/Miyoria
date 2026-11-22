@@ -15,7 +15,7 @@
 //   a whole number, a kind, or a refusal), turned into coins at the economy's fixed rate
 //   (`coinsOf`). An estimate that is not a whole number above zero, or is absurd, is no answer.
 
-import { serviceKey } from "@miyoria/types";
+import { DEFAULT_CURRENCY, serviceKey } from "@miyoria/types";
 import type { CoinEntry } from "./records.js";
 import type { FeedItem } from "./types.js";
 
@@ -41,7 +41,7 @@ export const GIFT_REFUSALS = [
 ] as const;
 export type GiftRefusal = (typeof GIFT_REFUSALS)[number];
 
-/** The plain reason a member reads. */
+/** The plain reason a member reads, with the default coin name (`refusalText` names the profile's). */
 export const REFUSAL_TEXT: Readonly<Record<GiftRefusal, string>> = {
   not_a_thing: "這不是能送的東西",
   person: "人不能當禮物送",
@@ -55,6 +55,11 @@ export const REFUSAL_TEXT: Readonly<Record<GiftRefusal, string>> = {
   blocked: "這個現在不能送",
   not_for_sale: "這不是買得到的東西",
 };
+
+/** The plain reason a member reads, with `currency` as the coins' name. */
+export function refusalText(reason: GiftRefusal, currency: string = DEFAULT_CURRENCY): string {
+  return reason === "money" ? `真錢、點數和${currency}都不能當禮物送` : REFUSAL_TEXT[reason];
+}
 
 /** How a kind reads (her context, the notice). */
 export const KIND_WORD: Readonly<Record<GiftKind, string>> = {
@@ -190,11 +195,21 @@ const RULES: readonly [GiftRefusal, RegExp][] = [
 /** The coins themselves (「100 魚幣」): a transfer, not a gift. */
 const COINS = /^\d*(?:魚幣|鯨幣|coins?)$/;
 
-/** A refusal that needs no one to ask, or `null`. */
-export function ruleRefusal(name: string): GiftRefusal | null {
+/**
+ * A refusal that needs no one to ask, or `null`. `currency` is the profile's coin name:「100 貝殼」
+ * is coins too, like 魚幣, 鯨幣 and coins always are.
+ */
+export function ruleRefusal(name: string, currency: string = DEFAULT_CURRENCY): GiftRefusal | null {
   const flat = name.normalize("NFKC");
   for (const [reason, pattern] of RULES) if (pattern.test(flat)) return reason;
-  if (COINS.test(giftKey(flat))) return "money";
+  const key = giftKey(flat);
+  if (COINS.test(key)) return "money";
+  const own = currency
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[\s\p{P}\p{S}]+/gu, "");
+  if (own !== "" && key.endsWith(own) && /^\d*$/.test(key.slice(0, key.length - own.length)))
+    return "money";
   return null;
 }
 
