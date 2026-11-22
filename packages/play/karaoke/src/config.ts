@@ -422,7 +422,7 @@ export const KaraokeConfigSchema = z
       .max(50)
       .default(12)
       .meta(setting({ kind: "number", label: "一間房最多排幾首", group: "rooms" })),
-    /** Rooms open at once. */
+    /** Rooms open at once, over every server (one song worker scores them all). */
     room_max: z
       .number()
       .int()

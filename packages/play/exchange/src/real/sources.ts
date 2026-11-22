@@ -3,24 +3,27 @@
 // counter of its own and imports no other module. Each source counts one completed Taipei day
 // ([00:00, 24:00) Asia/Taipei, the local stocks' own day) and only rows, never whose they are.
 //
-// - RICE, feedings: `economy.posted` (the coin ledger, kept forever). A `feed` charge counts the
+// The five sources by role (the stock each moves is the profile's: RICE WHLE NAPS CUBE DPSK by
+// default).
+//
+// - feeding, feedings: `economy.posted` (the coin ledger, kept forever). A `feed` charge counts the
 //   bowls it bought (its `ref` is `<food>:<count>`); a `gift` charge counts once when it was food or
 //   drink (its `ref` is `<id>:<hunger in thousandths>:<name>` and the hunger is above zero: things
 //   that are not food take none); either does not count once refunded (a gift she said no to, a
 //   refund by the owner) within two days after. Her own purse (`self`) never counts.
-// - WHLE, songs finished: her observations of `sing.cue` (`facts.observation.ambient`, source
+// - songs, songs finished: her observations of `sing.cue` (`facts.observation.ambient`, source
 //   `sing`) whose state is `ended` and outcome `finished`: sung to the end, not stopped, skipped,
 //   failed or cancelled. Ambient rows are folded after `[modules.facts] fold_after_days` (14), so
 //   only the days still whole on record count.
-// - NAPS, silent hours: the 24 hours of the day, less every hour in which one of her lines was
+// - silence, silent hours: the 24 hours of the day, less every hour in which one of her lines was
 //   delivered (`facts.delivered`: a message the platform took or a voice line that played to the
 //   end, text and voice alike), less every hour in which a model call failed (`llm.call` with
 //   status `error`), so making her model fail can never make her look quiet. Hours Core was not
 //   running count as silent: she was asleep.
-// - CUBE, game goals and deaths: her observations (`facts.observation`) of `game.director.goal`
+// - game, game goals and deaths: her observations (`facts.observation`) of `game.director.goal`
 //   with status `done`, and of a game's `death` events (`game.<game>.*` whose type is `death`). The
 //   value is goals − deaths: no game played is 0, a neutral day.
-// - DPSK, model errors and slow calls: `llm.call` (every call the router made, kept 90 days) with
+// - model, model errors and slow calls: `llm.call` (every call the router made, kept 90 days) with
 //   status `error`, plus those that answered (`ok`) slower than `slow_call_seconds`. Calls the
 //   caller cancelled count as neither.
 //
@@ -38,7 +41,7 @@ import {
   type LoggedEvent,
 } from "@miyoria/store";
 import { isJsonObject, type JsonObject, timestampMs, toTimestamp } from "@miyoria/types";
-import type { LocalCode } from "./local.js";
+import type { LocalRole } from "./local.js";
 import { taipeiDayWindow } from "./local.js";
 import type { CountSource, DayCount, LocalSources } from "./signals.js";
 
@@ -118,20 +121,20 @@ export interface SourceDeps {
   /** The event log; `null`: there is none (every source is missing). */
   events: () => EventLogStore | null;
   /** Whether each company's module runs now (its service is there). */
-  present: Readonly<Record<LocalCode, () => boolean>>;
+  present: Readonly<Record<LocalRole, () => boolean>>;
   /** What each company's module is called, for "is off". */
-  modules?: Readonly<Partial<Record<LocalCode, string>>>;
-  /** DPSK: a call slower than this (ms) is slow. */
+  modules?: Readonly<Partial<Record<LocalRole, string>>>;
+  /** The model stock: a call slower than this (ms) is slow. */
   slowMs: () => number;
   keeping?: Keeping;
 }
 
-const MODULE: Readonly<Record<LocalCode, string>> = {
-  RICE: "economy",
-  WHLE: "sing",
-  NAPS: "facts",
-  CUBE: "game",
-  DPSK: "llm",
+const MODULE: Readonly<Record<LocalRole, string>> = {
+  feeding: "economy",
+  songs: "sing",
+  silence: "facts",
+  game: "game",
+  model: "llm",
 };
 
 /** The five sources over the event log. */
@@ -143,7 +146,7 @@ export function eventLogSources(deps: SourceDeps): LocalSources {
     return coverage.c;
   };
   const make = (
-    code: LocalCode,
+    role: LocalRole,
     label: string,
     keepDays: number,
     count: (events: EventLogStore, day: number, now: number) => Promise<DayCount>,
@@ -151,7 +154,7 @@ export function eventLogSources(deps: SourceDeps): LocalSources {
     label,
     missing: () => {
       if (deps.events() === null) return "沒有事件紀錄";
-      return deps.present[code]() ? null : `${deps.modules?.[code] ?? MODULE[code]} 沒有開`;
+      return deps.present[role]() ? null : `${deps.modules?.[role] ?? MODULE[role]} 沒有開`;
     },
     count: async (day, now) => {
       const events = deps.events();
@@ -160,11 +163,16 @@ export function eventLogSources(deps: SourceDeps): LocalSources {
     },
   });
   return {
-    RICE: make("RICE", "餵食(經濟模組的帳)", Number.POSITIVE_INFINITY, countFeedings),
-    WHLE: make("WHLE", "唱完的歌(唱歌模組)", keep.ambient, countSongs),
-    NAPS: make("NAPS", "沒說話的小時(她送出的話)", Math.min(keep.long, keep.short), countSilence),
-    CUBE: make("CUBE", "遊戲目標和死掉(遊戲模組)", keep.short, countGame),
-    DPSK: make("DPSK", "模型出錯和太慢(模型路由)", keep.short, (events, day) =>
+    feeding: make("feeding", "餵食(經濟模組的帳)", Number.POSITIVE_INFINITY, countFeedings),
+    songs: make("songs", "唱完的歌(唱歌模組)", keep.ambient, countSongs),
+    silence: make(
+      "silence",
+      "沒說話的小時(她送出的話)",
+      Math.min(keep.long, keep.short),
+      countSilence,
+    ),
+    game: make("game", "遊戲目標和死掉(遊戲模組)", keep.short, countGame),
+    model: make("model", "模型出錯和太慢(模型路由)", keep.short, (events, day) =>
       countModel(events, day, deps.slowMs()),
     ),
   };
@@ -172,7 +180,7 @@ export function eventLogSources(deps: SourceDeps): LocalSources {
 
 // ---- the counting rules ------------------------------------------------------------------------
 
-/** RICE: bowls fed and food or drink gifts taken on `day`, refunds taken out. */
+/** feeding: bowls fed and food or drink gifts taken on `day`, refunds taken out. */
 export async function countFeedings(
   events: EventLogStore,
   day: number,
@@ -219,7 +227,7 @@ export function giftIsFood(ref: string | null): boolean {
   return Number.isFinite(milli) && milli > 0;
 }
 
-/** WHLE: songs sung to the end on `day`. */
+/** songs: songs sung to the end on `day`. */
 export async function countSongs(events: EventLogStore, day: number): Promise<DayCount> {
   const { start, end } = taipeiDayWindow(day);
   let songs = 0;
@@ -240,7 +248,7 @@ export async function countSongs(events: EventLogStore, day: number): Promise<Da
   return { value: songs, parts: { songs } };
 }
 
-/** NAPS: hours of `day` with no line of hers delivered and no failed model call. */
+/** silence: hours of `day` with no line of hers delivered and no failed model call. */
 export async function countSilence(events: EventLogStore, day: number): Promise<DayCount> {
   const { start, end } = taipeiDayWindow(day);
   const busy = new Set<number>();
@@ -262,7 +270,7 @@ export async function countSilence(events: EventLogStore, day: number): Promise<
   return { value: hours, parts: { hours } };
 }
 
-/** CUBE: game goals reached less deaths on `day`. */
+/** game: game goals reached less deaths on `day`. */
 export async function countGame(events: EventLogStore, day: number): Promise<DayCount> {
   const { start, end } = taipeiDayWindow(day);
   let goals = 0;
@@ -286,7 +294,7 @@ export async function countGame(events: EventLogStore, day: number): Promise<Day
   return { value: goals - deaths, parts: { goals, deaths } };
 }
 
-/** DPSK: model calls that failed, and those that answered slower than `slowMs`, on `day`. */
+/** model: model calls that failed, and those that answered slower than `slowMs`, on `day`. */
 export async function countModel(
   events: EventLogStore,
   day: number,

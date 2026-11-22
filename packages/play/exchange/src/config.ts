@@ -20,10 +20,18 @@
 import { setting, settingGroups } from "@miyoria/runtime/kernel";
 import { BOND_LADDER } from "@miyoria/types";
 import { z } from "zod";
+import { companiesOf } from "./engine/companies.js";
 import { DEFAULT_RULES, type Rules } from "./engine/guards.js";
 import { DEFAULT_PARAMS, type EngineParams } from "./engine/params.js";
 import type { HouseParams } from "./real/house.js";
 import { DEFAULT_SESSIONS, type MarketKind, type Session } from "./real/instruments.js";
+import {
+  DEFAULT_LOCAL,
+  LOCAL_ROLES,
+  type LocalCompany,
+  type LocalRole,
+  resolveLocal,
+} from "./real/local.js";
 
 /** The bond tiers a requirement may name, lowest first. */
 const TIERS = BOND_LADDER.map((t) => t.label) as [string, ...string[]];
@@ -132,7 +140,29 @@ const tier = (d: string) => z.enum(TIERS).default(d);
 const date = () => z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /** A local stock's anchor price in coins. */
-const localAnchor = (d: number) => z.number().min(10).max(1000).default(d);
+const anchorPrice = () => z.number().min(10).max(1000);
+
+/**
+ * One local stock as the profile names it (docs/design/v5-profiles.md): its ticker, zh-TW name and
+ * anchor; what moves it and the old market's line are written from the name unless given. Today's
+ * five by default. A code is keyed into the store (holdings, orders, price history): changing it on
+ * a database that has rows under the old one is refused at start (`localCodeConflicts`).
+ */
+const localCompany = (role: LocalRole) =>
+  z
+    .object({
+      code: z
+        .string()
+        .trim()
+        .regex(/^[A-Z]{4}$/, "four capital letters, like RICE")
+        .default(DEFAULT_LOCAL[role].code),
+      name: z.string().trim().min(1).max(24).default(DEFAULT_LOCAL[role].name),
+      /** Unset: the legacy `local_anchors` entry, else today's. */
+      anchor: anchorPrice().optional(),
+      what_moves: z.string().trim().min(1).max(60).optional(),
+      blurb: z.string().trim().min(1).max(40).optional(),
+    })
+    .prefault({});
 
 /**
  * How one local stock's count becomes its signal (`real/signals.ts`): a full signal (the whole
@@ -140,13 +170,21 @@ const localAnchor = (d: number) => z.number().min(10).max(1000).default(d);
  * within `up` and `down` (shares of the full one).
  */
 const localMapping = (floor: number) =>
-  z
-    .object({
-      floor: z.number().positive().max(1000).default(floor),
-      up: ratio(1),
-      down: ratio(1),
-    })
-    .prefault({});
+  z.object({
+    floor: z.number().positive().max(1000).default(floor),
+    up: ratio(1),
+    down: ratio(1),
+  });
+export type LocalMapping = z.output<ReturnType<typeof localMapping>>;
+
+/** Each role's floor when its table is not given. */
+export const LOCAL_FLOORS: Readonly<Record<LocalRole, number>> = {
+  feeding: 10,
+  songs: 3,
+  silence: 3,
+  game: 3,
+  model: 10,
+};
 
 export const ExchangeConfigSchema = z
   .object({
@@ -451,18 +489,49 @@ export const ExchangeConfigSchema = z
       ),
 
     /**
-     * Each local stock's anchor in coins: its first price and the level its walk returns to (owner
-     * 2026-11-21: cheap, about 100 a share). Soft bounds keep it within 0.5×–2× of the anchor.
+     * The five local stocks as this profile names them, by role (docs/design/v5-profiles.md):
+     * `feeding` (RICE 白飯食品), `songs` (WHLE 鯨落唱片), `silence` (NAPS 打盹床業), `game` (CUBE
+     * 方塊礦業), `model` (DPSK DipSick AI). What moves each is fixed by its role; its code, name,
+     * anchor (its first price and the level its walk returns to, about 100 a share: owner
+     * 2026-11-21) and words are the profile's. Soft bounds keep a price within 0.5×–2× of it.
+     */
+    local_companies: z
+      .object({
+        feeding: localCompany("feeding"),
+        songs: localCompany("songs"),
+        silence: localCompany("silence"),
+        game: localCompany("game"),
+        model: localCompany("model"),
+      })
+      .prefault({})
+      .superRefine((companies, ctx) => {
+        const seen = new Map<string, string>();
+        for (const role of LOCAL_ROLES) {
+          const code = companies[role].code;
+          const other = seen.get(code);
+          if (other !== undefined)
+            ctx.addIssue({
+              code: "custom",
+              path: [role, "code"],
+              message: `${role} and ${other} have the same code ${code}`,
+            });
+          seen.set(code, role);
+        }
+      }),
+
+    /**
+     * Legacy: each local stock's anchor keyed by the first character's codes (`RICE = 100`), read as
+     * that role's when `local_companies.<role>.anchor` is not set. `local_companies` replaces it.
      */
     local_anchors: z
       .object({
-        RICE: localAnchor(100),
-        WHLE: localAnchor(108),
-        NAPS: localAnchor(88),
-        CUBE: localAnchor(116),
-        DPSK: localAnchor(94),
+        RICE: anchorPrice().optional(),
+        WHLE: anchorPrice().optional(),
+        NAPS: anchorPrice().optional(),
+        CUBE: anchorPrice().optional(),
+        DPSK: anchorPrice().optional(),
       })
-      .default({ RICE: 100, WHLE: 108, NAPS: 88, CUBE: 116, DPSK: 94 }),
+      .prefault({}),
 
     /**
      * How her real things move the local stocks (`real/signals.ts`, docs/design/exchange.md §9).
@@ -473,12 +542,14 @@ export const ExchangeConfigSchema = z
      * a full signal is the whole ±3% gap at the next day's 12:00 tick. Fewer than
      * `min_history_days` days on record (a new instance), or no record of the day: no signal.
      *
-     * Directions are fixed in code: more feedings, songs, silent hours, goals (fewer deaths) push
-     * RICE, WHLE, NAPS, CUBE up; more model errors and slow calls push DPSK down, and never up (a
-     * quiet day gives it nothing), with its fall held below one round trip's fees (`fee` × 2), so
-     * nobody gains by causing errors and buying the dip. The floors are the anti-gaming numbers:
-     * `test/signals.test.ts` shows that feeding her as much as the caps allow, buying RICE before
-     * the day ends and selling after the next open loses money once the feedings and fees count.
+     * Directions are fixed in code, by role: more feedings, songs, silent hours, goals (fewer
+     * deaths) push the `feeding`, `songs`, `silence`, `game` stocks up; more model errors and slow
+     * calls push the `model` stock down, and never up (a quiet day gives it nothing), with its fall
+     * held below one round trip's fees (`fee` × 2), so nobody gains by causing errors and buying
+     * the dip. The floors are the anti-gaming numbers: `test/signals.test.ts` shows that feeding
+     * her as much as the caps allow, buying the feeding stock before the day ends and selling
+     * after the next open loses money once the feedings and fees count. The per-role tables are
+     * keyed by role; the first character's codes (`RICE = {…}`) are still read as their roles.
      */
     local_signals: z
       .object({
@@ -486,18 +557,24 @@ export const ExchangeConfigSchema = z
         min_history_days: z.number().int().min(1).max(60).default(7),
         spread: z.number().min(0).max(20).default(3),
         relative: z.number().min(0).max(10).default(0.5),
-        /** DPSK: a call that answered but took longer than this counts as slow. */
+        /** The model stock: a call that answered but took longer than this counts as slow. */
         slow_call_seconds: z.number().min(1).max(600).default(30),
-        /** Feedings (fixed foods by bowl, and food or drink gifts she took). */
-        RICE: localMapping(10),
-        /** Songs she sang to the end. */
-        WHLE: localMapping(3),
-        /** Hours of the Taipei day with no line of hers delivered and no failed model call. */
-        NAPS: localMapping(3),
-        /** Game goals reached less deaths. */
-        CUBE: localMapping(3),
-        /** Failed model calls plus slow ones; `up` is ignored (always 0). */
-        DPSK: localMapping(10),
+        /** Feedings (fixed foods by bowl, and food or drink gifts she took). Floor 10. */
+        feeding: localMapping(LOCAL_FLOORS.feeding).optional(),
+        /** Songs she sang to the end. Floor 3. */
+        songs: localMapping(LOCAL_FLOORS.songs).optional(),
+        /** Hours of the Taipei day with no line of hers delivered and no failed model call. Floor 3. */
+        silence: localMapping(LOCAL_FLOORS.silence).optional(),
+        /** Game goals reached less deaths. Floor 3. */
+        game: localMapping(LOCAL_FLOORS.game).optional(),
+        /** Failed model calls plus slow ones; `up` is ignored (always 0). Floor 10. */
+        model: localMapping(LOCAL_FLOORS.model).optional(),
+        /** Legacy keys (the first character's codes), read as their roles when those are not set. */
+        RICE: localMapping(LOCAL_FLOORS.feeding).optional(),
+        WHLE: localMapping(LOCAL_FLOORS.songs).optional(),
+        NAPS: localMapping(LOCAL_FLOORS.silence).optional(),
+        CUBE: localMapping(LOCAL_FLOORS.game).optional(),
+        DPSK: localMapping(LOCAL_FLOORS.model).optional(),
       })
       .prefault({}),
 
@@ -587,6 +664,18 @@ export function exchangeConfig(overrides: Partial<ExchangeConfig> = {}): Exchang
   return { ...ExchangeConfigSchema.parse({}), ...overrides };
 }
 
+/** The mapping of a role's signal: its own table, else its legacy code's, else the defaults. */
+export function localMappingOf(c: ExchangeConfig, role: LocalRole): LocalMapping {
+  const s = c.local_signals;
+  const legacy = DEFAULT_LOCAL[role].code as "RICE" | "WHLE" | "NAPS" | "CUBE" | "DPSK";
+  return s[role] ?? s[legacy] ?? localMapping(LOCAL_FLOORS[role]).parse({});
+}
+
+/** The five local stocks of `c`, in role order; `pronoun` is how their words name her. */
+export function localCompaniesOf(c: ExchangeConfig, pronoun = "她"): LocalCompany[] {
+  return resolveLocal(c.local_companies, c.local_anchors, pronoun);
+}
+
 /** A tier's place on the ladder (0: 認識). */
 export function tierIndex(label: string): number {
   return BOND_LADDER.findIndex((t) => t.label === label);
@@ -596,6 +685,7 @@ export function tierIndex(label: string): number {
 export function engineParams(c: ExchangeConfig): EngineParams {
   return {
     ...DEFAULT_PARAMS,
+    companies: companiesOf(localCompaniesOf(c)),
     daily_limit: c.daily_limit,
     round_limit: c.round_limit,
     breaker: c.breaker,

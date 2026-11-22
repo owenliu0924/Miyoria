@@ -15,6 +15,7 @@ import {
   EXCHANGE_DISCLAIMER,
   EXCHANGE_DISCLAIMER_LEVERAGE,
   EXCHANGE_DISCLAIMER_REAL,
+  exchangeDisclaimer,
   type PictureDataMap,
   type PictureFile,
   type PictureKind,
@@ -23,6 +24,7 @@ import {
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { card, LEVERAGE_CONFIRM, PATHS, registerCommands } from "../src/commands.js";
+import type { ExchangeConfig } from "../src/config.js";
 import { discordProblems, modalProblems } from "./discord-limits.js";
 import { ALICE, BOB, local, rig } from "./rig.js";
 
@@ -81,33 +83,40 @@ async function walk(
   draws: boolean,
   invoker: typeof ALICE,
   name: string,
-): Promise<{ seen: CommandReply[]; pictures: Drawn }> {
-  const r = await rig({ open: true });
+  world: World = FIRST,
+): Promise<{ seen: CommandReply[]; pictures: Drawn; forms: unknown[]; specs: unknown[] }> {
+  // The wallet keeps the first character's coin name: the profile's is the one source.
+  const r = await rig({ open: true, ...world.config }, undefined, {
+    name: () => world.exchange,
+    currency: () => world.currency,
+  });
   r.wallet.fund(ALICE, 500);
   r.wallet.fund(BOB, 500);
   await r.service.openAccount(ALICE);
   await r.at(local(0, 12, 30));
-  await r.service.real.place(ALICE, { side: "buy", code: "RICE", shares: 1 }, "a");
+  await r.service.real.place(ALICE, { side: "buy", code: world.codes[0], shares: 1 }, "a");
   await r.at(local(0, 13, 1));
   // A waiting order (its cancel button), placed after the day's last tick.
   await r.at(local(0, 23, 30));
-  await r.service.real.place(ALICE, { side: "buy", code: "WHLE", shares: 1 }, "b");
+  await r.service.real.place(ALICE, { side: "buy", code: world.codes[1], shares: 1 }, "b");
   const pictures = new Drawn(draws);
   const registry = new CommandRegistry(Permissions.fromStrings(["discord:1", "discord:2"]));
   registerCommands(
     registry,
     () => r.service,
     () => pictures,
-    undefined,
+    () => world.exchange,
     () => places,
+    () => world.currency,
   );
+  const forms: unknown[] = [];
   const who = { ...base, invoker, invoker_display_name: name };
   const seen: CommandReply[] = [];
   const queue: { reply: CommandReply; depth: number }[] = [];
   const check = (reply: CommandReply) =>
     expect(discordProblems(reply), reply.card?.title ?? reply.text).toEqual([]);
   for (const path of PATHS) {
-    const args: Record<string, string> = path.endsWith("quote") ? { code: "RICE" } : {};
+    const args: Record<string, string> = path.endsWith("quote") ? { code: world.codes[0] } : {};
     const reply = await registry.dispatch({ path: path.split(" "), args, ...who });
     queue.push({ reply, depth: 0 });
   }
@@ -161,6 +170,7 @@ async function walk(
         if (!out) continue;
         if (out.result.type === "modal") {
           const m = out.result.modal;
+          forms.push(m);
           expect(modalProblems(m), m.title).toEqual([]);
           // Each form of the one amount: shares, coins, and garbage (the line with both forms).
           for (const amount of ["1", "$50", "全部", "三股"]) {
@@ -182,8 +192,61 @@ async function walk(
       }
     }
   }
-  return { seen, pictures };
+  return {
+    seen,
+    pictures,
+    forms,
+    specs: [...registry.specs(), registry.groupDescription("me market")],
+  };
 }
+
+/** A profile's world: its coin and exchange names, its local stocks, the two codes bought. */
+interface World {
+  currency: string;
+  exchange: string;
+  config: Partial<ExchangeConfig>;
+  codes: [string, string];
+}
+
+/** The first character's: no profile words at all. */
+const FIRST: World = {
+  currency: "魚幣",
+  exchange: "深海交易所",
+  config: {},
+  codes: ["RICE", "WHLE"],
+};
+
+/** Another profile's: every word of the first character's world renamed. */
+const OTHER: World = {
+  currency: "貝殼",
+  exchange: "珊瑚交易所",
+  config: {
+    local_companies: {
+      feeding: { code: "FOOD", name: "海帶便當", anchor: 60 },
+      songs: { code: "TUNE", name: "浪花錄音", anchor: 70 },
+      silence: { code: "NAPZ", name: "珊瑚睡袋" },
+      game: { code: "PLAY", name: "貝殼遊樂" },
+      model: { code: "MIND", name: "潮汐智慧" },
+    },
+  },
+  codes: ["FOOD", "TUNE"],
+};
+
+/** What only the first character's world says: none of it may show in another profile's. */
+const FIRST_WORDS = [
+  "魚幣",
+  "深海交易所",
+  "RICE",
+  "WHLE",
+  "NAPS",
+  "CUBE",
+  "DPSK",
+  "白飯食品",
+  "鯨落唱片",
+  "打盹床業",
+  "方塊礦業",
+  "DipSick",
+];
 
 const base = {
   context: ctx,
@@ -228,6 +291,30 @@ describe("the small print", () => {
         expect(d.data.small_print, d.kind).toContain(EXCHANGE_DISCLAIMER);
       // Bob had no account: the walk reached the 開戶 card and went on after it.
       if (invoker === BOB) expect(seen.some((x) => x.text.includes("開戶不花錢"))).toBe(true);
+    });
+  }
+
+  for (const [draws, invoker, name] of [
+    [true, ALICE, "Alice"],
+    [false, BOB, "Bob"],
+  ] as const) {
+    it(`speaks another profile's coin, exchange and stocks on every surface (${name}, pictures ${draws ? "drawn" : "failing"})`, async () => {
+      const { seen, pictures, forms, specs } = await walk(draws, invoker, name, OTHER);
+      expect(seen.length).toBeGreaterThan(10);
+      const base = exchangeDisclaimer("貝殼");
+      for (const reply of seen) {
+        const where = reply.card?.title ?? reply.text;
+        const { card, drawn } = printed(reply, pictures);
+        // The same small print, in this profile's coin name, on every message.
+        expect([card, ...drawn].join(" "), where).toContain(base);
+        expect(reply.text, where).toContain(base);
+      }
+      for (const d of pictures.data) expect(d.data.small_print, d.kind).toContain(base);
+      const all = JSON.stringify([seen, pictures.data, forms, specs]);
+      for (const word of FIRST_WORDS) expect(all, word).not.toContain(word);
+      // Its own names are there: the coin, the exchange, the renamed stocks.
+      for (const word of ["貝殼", "珊瑚交易所", "FOOD", "海帶便當", "MIND", "潮汐智慧"])
+        expect(all, word).toContain(word);
     });
   }
 

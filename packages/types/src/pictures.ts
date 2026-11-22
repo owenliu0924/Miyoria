@@ -297,6 +297,8 @@ export interface ExchangePortfolioPicture {
 
 /** The market at a glance: the five local stocks with their lines, what the server holds most, the sessions. */
 export interface ExchangeOverviewPicture {
+  /** The coins' name (absent: `DEFAULT_CURRENCY`, 魚幣). */
+  currency?: string;
   /** The five local stocks (新手推薦 · 這裡獨家), prices in cents of coins. */
   local: { code: string; name: string; price: number; change: number; series: number[] }[];
   /** The tickers most held in the server: counts of holders only, never who. */

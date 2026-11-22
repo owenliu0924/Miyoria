@@ -36,7 +36,15 @@ export interface PageMeta {
   index: boolean;
   /** `og:site_name`: her name (default `SITE_NAME`). */
   siteName?: string;
+  /**
+   * The words of her world for the panel (`<meta name="miyoria:world">`, JSON); absent: the panel
+   * uses the first character's, and no tag is written.
+   */
+  world?: object;
 }
+
+/** The tag the panel reads the words of her world from (`apps/panel/src/lib/world.ts`). */
+export const WORLD_META = "miyoria:world";
 
 /** The default preview image: the panel serves it (`og.ts`). */
 export const DEFAULT_IMAGE_PATH = "/og/default.png";
@@ -78,6 +86,9 @@ export function metaTags(meta: PageMeta): string {
     `<meta name="twitter:description" content="${d}" />`,
     `<meta name="twitter:image" content="${i}" />`,
     `<meta name="twitter:image:alt" content="${alt}" />`,
+    ...(meta.world === undefined
+      ? []
+      : [`<meta name="${WORLD_META}" content="${escapeHtml(JSON.stringify(meta.world))}" />`]),
     META_END,
   ].join("\n    ");
 }

@@ -47,13 +47,13 @@ import {
   type Hunger,
   type WalletView,
 } from "./types.js";
+import { coinName, pronounOf, transferSmallPrint } from "./words.js";
 
 /**
- * Under every transfer: coins are play points and may never be traded for money or goods.
- * Discord draws a line that starts with `-# ` as small print.
+ * Under every transfer, with the default coin name (`transferSmallPrint` of `words.ts`). Discord
+ * draws a line that starts with `-# ` as small print.
  */
-export const TRANSFER_SMALL_PRINT =
-  "魚幣只是遊戲裡的點數,沒有現金價值。禁止用真錢或任何現實物品買賣、交換魚幣;違反者可能被凍結錢包,衍生的糾紛或損失請自行負責。";
+export const TRANSFER_SMALL_PRINT = transferSmallPrint();
 
 const log = getLogger("economy.commands");
 
@@ -235,7 +235,7 @@ class Handler {
       const r = slipOnly ? null : await economy.checkin(inv.invoker);
       const head = r
         ? `簽到了，+${r.gained} ${view.currency}。連續 ${r.streak} 天，現在有 ${r.balance} ${view.currency}。`
-        : "今天已經簽到過了，這次只買籤詩，沒有再領魚幣。";
+        : `今天已經簽到過了，這次只買籤詩，沒有再領${view.currency}。`;
       const unlocked = mutedText(unlockLines(r?.unlocked));
       if (!fortune) return result(head, unlocked);
       const blocks: CardBlock[] = [{ type: "text", text: head }];
@@ -305,7 +305,7 @@ class Handler {
       const view = await economy.wallet(inv.invoker);
       return result(
         `轉了 ${r.sent} ${view.currency}給 ${r.to}，另付手續費 ${r.fee}（燒掉），剩 ${r.balance}。
--# ${TRANSFER_SMALL_PRINT}`,
+-# ${transferSmallPrint(view.currency)}`,
       );
     });
   }
@@ -411,6 +411,8 @@ function unregister(registry: CommandRegistry): void {
 }
 
 function register(registry: CommandRegistry, handler: Handler): void {
+  const coin = coinName(handler.services);
+  const her = pronounOf(handler.services);
   const routes: AnyComponentRoute[] = [
     {
       route: R.checkin,
@@ -434,7 +436,7 @@ function register(registry: CommandRegistry, handler: Handler): void {
     }),
   ];
   registry.register(
-    commandSpec("me wallet", "你的魚幣：餘額、今天還能賺多少，可以簽到和餵她", {
+    commandSpec("me wallet", `你的${coin}：餘額、今天還能賺多少，可以簽到和餵${her}`, {
       args: [
         argSpec("picture", "附上這一週收支的圖（預設附上；false 只要文字）", ArgKind.boolean, {
           required: false,
@@ -446,11 +448,11 @@ function register(registry: CommandRegistry, handler: Handler): void {
     { components: routes },
   );
   registry.register(
-    commandSpec("me checkin", "每日簽到，領魚幣（可以加買今天的籤詩）", {
+    commandSpec("me checkin", `每日簽到，領${coin}（可以加買今天的籤詩）`, {
       args: [
         argSpec(
           "fortune",
-          "順便抽今天的籤詩（要花魚幣；已經簽到過也能只買籤詩）",
+          `順便抽今天的籤詩（要花${coin}；已經簽到過也能只買籤詩）`,
           ArgKind.boolean,
           {
             required: false,
@@ -462,7 +464,7 @@ function register(registry: CommandRegistry, handler: Handler): void {
     (inv) => handler.checkin(inv, inv.bool("fortune") === true),
   );
   registry.register(
-    commandSpec("me feed", "用魚幣餵她一碗飯，或自己取名送她一樣東西", {
+    commandSpec("me feed", `用${coin}餵${her}一碗飯，或自己取名送${her}一樣東西`, {
       args: [
         argSpec("item", "要餵什麼（白飯、鋼盆、甜點）", ArgKind.choice(FEED_ITEMS), {
           required: false,
@@ -492,10 +494,10 @@ function register(registry: CommandRegistry, handler: Handler): void {
   );
   registerGiftCommands(registry, handler.services);
   registry.register(
-    commandSpec("me give", "把魚幣轉給她認識的另一個人（另收手續費，會燒掉）", {
+    commandSpec("me give", `把${coin}轉給${her}認識的另一個人（另收手續費，會燒掉）`, {
       args: [
         argSpec("user", "要轉給誰", ArgKind.user),
-        argSpec("amount", "對方收到多少魚幣（手續費你另付）", ArgKind.integer),
+        argSpec("amount", `對方收到多少${coin}（手續費你另付）`, ArgKind.integer),
       ],
       permission: WALLET_NODE,
       ephemeral: true,
@@ -523,14 +525,14 @@ function register(registry: CommandRegistry, handler: Handler): void {
     { components: boardRoutes },
   );
   registry.register(
-    commandSpec("me screen", "花魚幣在直播大螢幕上留一則短留言（60 字內）", {
+    commandSpec("me screen", `花${coin}在直播大螢幕上留一則短留言（60 字內）`, {
       args: [argSpec("text", "留言", ArgKind.string)],
       permission: WALLET_NODE,
     }),
     (inv) => handler.screen(inv),
   );
   registry.register(
-    commandSpec("me danmaku", "花魚幣在她直播的畫面上發一則彈幕（從右邊飄過的短句）", {
+    commandSpec("me danmaku", `花${coin}在${her}直播的畫面上發一則彈幕（從右邊飄過的短句）`, {
       args: [argSpec("text", "彈幕", ArgKind.string)],
       permission: WALLET_NODE,
     }),

@@ -8,6 +8,7 @@
 // written twice. The exchange keeps what the rows are for (the order, the fill, the vault) in its
 // own tables; the rows are what the wallet sees.
 
+import { DEFAULT_CURRENCY } from "./character.js";
 import type { PersonId } from "./ids.js";
 import type { AccountRef } from "./platform.js";
 import { serviceKey } from "./service-key.js";
@@ -90,18 +91,27 @@ export const ExchangeWalletKey = serviceKey<ExchangeWallet>("ExchangeWallet");
 
 // ---- the small print (owner 2026-11-21): one wording, under every exchange surface -------------
 
-/** Under every exchange surface: Discord cards, pictures, panel sections, the opt-in. */
-export const EXCHANGE_DISCLAIMER =
-  "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。";
+/**
+ * Under every exchange surface: Discord cards, pictures, panel sections, the opt-in. `currency` is
+ * the profile's coin name (`CurrencyKey`); the wording around it never changes.
+ */
+export function exchangeDisclaimer(currency: string = DEFAULT_CURRENCY): string {
+  return `${currency}是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。`;
+}
+
+/** The base line with the default coin name (what every surface of the first character shows). */
+export const EXCHANGE_DISCLAIMER = exchangeDisclaimer();
 /** Added on surfaces with real stocks. */
 export const EXCHANGE_DISCLAIMER_REAL = "資料來源:Yahoo Finance,報價可能延遲。";
 /** Added on surfaces with leverage. */
 export const EXCHANGE_DISCLAIMER_LEVERAGE = "槓桿可能讓你賠光錢包和其他持股。";
 
 /** The small print for a surface: always the base line, the others when they apply. */
-export function exchangeSmallPrint(o: { real?: boolean; leverage?: boolean } = {}): string {
+export function exchangeSmallPrint(
+  o: { real?: boolean; leverage?: boolean; currency?: string } = {},
+): string {
   return [
-    EXCHANGE_DISCLAIMER,
+    exchangeDisclaimer(o.currency),
     o.real ? EXCHANGE_DISCLAIMER_REAL : null,
     o.leverage ? EXCHANGE_DISCLAIMER_LEVERAGE : null,
   ]

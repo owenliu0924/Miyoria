@@ -117,6 +117,7 @@ describe("ownIdentity and the character", () => {
       other_names: ["庫"],
       pronoun: "她",
       exchange_name: "黑市",
+      creature: "貓",
     };
     expect(ownIdentity("黑貓", kuro)).toBe(
       "你的本名是 Kuro,大家也叫你 Ku(庫)。「黑貓」也是你,是大家在這裡認識的你;有人叫 Kuro、Ku 或 黑貓 都是在叫你。問你叫什麼,你知道自己叫 Kuro。",
@@ -135,6 +136,7 @@ describe("ownIdentity and the character", () => {
       other_names: [],
       pronoun: "她",
       exchange_name: "黑市",
+      creature: "貓",
     };
     const p = await Profile.load(PROFILES, "deepseek-chan", kuro);
     expect(p.character).toEqual(kuro);

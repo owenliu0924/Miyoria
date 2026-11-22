@@ -16,9 +16,11 @@
 import { type Logger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  DEFAULT_CURRENCY,
   EXCHANGE_DISCLAIMER,
   type ExchangeEntry,
   type ExchangeWallet,
+  exchangeDisclaimer,
   newId,
   type PersonId,
   type Timestamp,
@@ -27,12 +29,12 @@ import {
 import {
   type ExchangeConfig,
   houseParams,
+  localCompaniesOf,
   OTHER_SECTOR,
   type StarterEntry,
   sessionsOf,
   starterEntries,
 } from "../config.js";
-import { companyOf } from "../engine/companies.js";
 import {
   checkOpen,
   type GuardRefusal,
@@ -92,14 +94,7 @@ import {
   toCoins,
   tradingDate,
 } from "./instruments.js";
-import {
-  LOCAL_CODES,
-  LOCAL_WHAT_MOVES,
-  type LocalCode,
-  LocalProvider,
-  type LocalSignalFeed,
-  lastTick,
-} from "./local.js";
+import { type LocalCompany, LocalProvider, type LocalSignalFeed, lastTick } from "./local.js";
 import {
   type HeldValue,
   holdingsMap,
@@ -168,9 +163,12 @@ export interface MintReport {
 
 /** The base small print (the shared constant, `exchangeSmallPrint`). */
 export const DISCLAIMER = EXCHANGE_DISCLAIMER;
-/** On the rules: fish coins never become money or goods. */
-export const NO_EXCHANGE_RULE =
-  "魚幣永遠不能換成真錢或現實中的物品,也不能用真錢或物品買魚幣,在伺服器裡外都一樣。";
+/** On the rules: fish coins never become money or goods (`currency`: the profile's coin name). */
+export function noExchangeRule(currency: string = DEFAULT_CURRENCY): string {
+  return `${currency}永遠不能換成真錢或現實中的物品,也不能用真錢或物品買${currency},在伺服器裡外都一樣。`;
+}
+/** `noExchangeRule` with the default coin name. */
+export const NO_EXCHANGE_RULE = noExchangeRule();
 /** On the rules: no dividends here. */
 export const NO_DIVIDENDS = "不發放股息;除息日股價下跌屬正常。";
 /** What a 2x order's confirmation always says. */
@@ -209,6 +207,10 @@ export interface RealDeskDeps {
   /** The account layer: who is asking, their trader facts and the rules; `null` for a stranger. */
   ask: (account: AccountRef) => Promise<Asker | null>;
   newId?: () => string;
+  /** The coins' name (`CurrencyKey`); none: the wallet's, else the default. */
+  currency?: () => string;
+  /** How texts name her (`[character] pronoun`); none: 她. */
+  pronoun?: () => string;
 }
 
 /**
@@ -526,6 +528,34 @@ export class RealDesk {
     return (this.#d.newId ?? newId)();
   }
 
+  /** The coins' name: the profile's (one source), else the wallet's, else the default. */
+  #currency(): string {
+    return this.#d.currency?.() ?? this.#d.wallet()?.currency ?? DEFAULT_CURRENCY;
+  }
+
+  /** The coins' name, for the texts the service and the commands build around the desk. */
+  get currency(): string {
+    return this.#currency();
+  }
+
+  #localCache: { config: ExchangeConfig; pronoun: string; list: LocalCompany[] } | null = null;
+
+  /** The five local stocks as the profile names them, in role order. */
+  localCompanies(): readonly LocalCompany[] {
+    const config = this.#d.config;
+    const pronoun = this.#d.pronoun?.() ?? "她";
+    const c = this.#localCache;
+    if (c && c.config === config && c.pronoun === pronoun) return c.list;
+    const list = localCompaniesOf(config, pronoun);
+    this.#localCache = { config, pronoun, list };
+    return list;
+  }
+
+  /** The local stock of `code` (`null`: not one of the five). */
+  localOf(code: string): LocalCompany | null {
+    return this.localCompanies().find((l) => l.code === code) ?? null;
+  }
+
   /** Every instrument people have looked up and not removed (any status). */
   instruments(): RealInstrument[] {
     return this.#rows().map((i) => this.#instOf(i));
@@ -549,6 +579,9 @@ export class RealDesk {
   /** The owner's name for it, else its starter list's, else the provider's (stored whole). */
   #displayName(i: Pick<InstrumentRecord, "code" | "name" | "name_override">): string {
     if (i.name_override) return i.name_override;
+    // A local stock is named by the profile, whatever name its row was first stored with.
+    const local = this.localOf(i.code);
+    if (local) return local.name;
     const c = this.#d.config;
     if (this.#names?.config !== c) {
       const byCode = new Map<string, string>();
@@ -588,7 +621,7 @@ export class RealDesk {
     const k = this.#known(row, quotes);
     if (!k) {
       if (inst.market !== "local") return null;
-      const anchor = this.#d.config.local_anchors[inst.code as LocalCode];
+      const anchor = this.localOf(inst.code)?.anchor;
       return anchor === undefined
         ? null
         : { price: anchor, prev: null, at: null, basis: "reference" };
@@ -677,8 +710,8 @@ export class RealDesk {
       const feed = this.#d.signals;
       this.#local ??= new LocalProvider(
         this.#d.store.state()?.seed ?? "local",
-        feed ? (code, day) => feed.signal(code, day) : () => null,
-        (code) => this.#d.config.local_anchors[code],
+        feed ? (role, day) => feed.signal(role, day) : () => null,
+        () => this.localCompanies(),
         (code) => {
           const q = this.#d.store.real.quotes().get(code);
           return q ? { price: q.price, at: q.at, prev_close: q.prev_close } : null;
@@ -694,14 +727,18 @@ export class RealDesk {
   #ensureLocal(): void {
     if (!this.#d.config.local_stocks) return;
     const now = this.#now();
-    for (const code of LOCAL_CODES) {
-      if (this.#d.store.real.instrument(code)) continue;
-      const spec = companyOf(code);
+    for (const local of this.localCompanies()) {
+      const code = local.code;
+      const row = this.#d.store.real.instrument(code);
+      // A code unlisted while no profile named it is listed again once one does.
+      if (row?.market === "local" && row.status === "removed")
+        this.#d.store.real.setInstrument(code, { status: "active" }, now);
+      if (row) continue;
       this.#d.store.real.addInstrument(
         {
           code,
           market: "local",
-          name: spec?.name ?? code,
+          name: local.name,
           exchange: "LOCAL",
           type: "LOCAL",
           currency: "COIN",
@@ -1067,7 +1104,7 @@ export class RealDesk {
       person: n.person,
       kind: n.kind,
       position: n.position,
-      text: noticeText(n, this.#inst(n.code)?.name ?? n.code),
+      text: noticeText(n, this.#inst(n.code)?.name ?? n.code, this.#currency()),
       created_at: at,
       quiet: n.kind === "shortfall",
     }));
@@ -1130,7 +1167,7 @@ export class RealDesk {
     const hours = (s: Session) => `${s.open}–${s.close}`;
     return {
       enabled: c.open,
-      currency: this.#d.wallet()?.currency ?? "魚幣",
+      currency: this.#currency(),
       instruments: this.#rows().map((row) => this.#line(row, quotes, now)),
       sessions: (["tw", "us"] as const).map((m) => {
         const open = isOpenAt(this.sessions[m], now);
@@ -1175,8 +1212,8 @@ export class RealDesk {
         quote_max_age_seconds: c.quote_max_age_seconds,
         payout_cap_daily: c.payout_cap_daily,
       },
-      disclaimer: DISCLAIMER,
-      no_exchange: NO_EXCHANGE_RULE,
+      disclaimer: exchangeDisclaimer(this.#currency()),
+      no_exchange: noExchangeRule(this.#currency()),
       no_dividends: NO_DIVIDENDS,
     };
   }
@@ -1192,6 +1229,7 @@ export class RealDesk {
     const session = this.sessions[i.market];
     const open = isOpenAt(session, now);
     const shown = this.#shown(i, row, quotes, now);
+    const local = i.market === "local" ? this.localOf(i.code) : null;
     const date = shown && shown.at !== null ? tradingDate(session, shown.at) : null;
     const next = open ? null : nextOpenAt(session, now);
     const note =
@@ -1226,8 +1264,10 @@ export class RealDesk {
       local:
         i.market === "local"
           ? {
-              what_moves: LOCAL_WHAT_MOVES[i.code as LocalCode] ?? "",
-              today: this.#d.signals?.line(i.code as LocalCode, now) ?? null,
+              what_moves: local?.what_moves ?? "",
+              today: local
+                ? (this.#d.signals?.line(local.role, now, this.#d.pronoun?.() ?? "她") ?? null)
+                : null,
             }
           : null,
       change:
@@ -1367,6 +1407,7 @@ export class RealDesk {
           l.market === "local" ? LOCAL_SECTOR : (sectors.get(l.code) ?? OTHER_SECTOR),
         minHolders: this.#d.config.map_min_holders,
         maxShare: this.#d.config.map_max_share,
+        currency: this.#currency(),
       });
     }
     const entries = this.starterLines(kind).map((s) => ({
@@ -1402,6 +1443,7 @@ export class RealDesk {
       this.#day(),
       circulation,
       this.#d.config.mint_warn_share,
+      this.#currency(),
     );
   }
 
@@ -1482,21 +1524,26 @@ export class RealDesk {
           `破產冷靜期到 ${new Date(b.until).toISOString().slice(0, 10)},之前不能買進`,
         );
       if (buysHalted(book.state) && book.state.today.day === this.#day())
-        return refuse(409, "cap", "今天交易所發出的魚幣到上限了,今天停止買進(賣出照常)");
+        return refuse(
+          409,
+          "cap",
+          `今天交易所發出的${this.#currency()}到上限了,今天停止買進(賣出照常)`,
+        );
       // A buy by shares (the local stocks' ticket default): what those shares cost now, fee
       // included, in whole coins. It still fills at the next valid quote, so the shares may differ
       // a little; 1x only.
       let coins = req.coins ?? 0;
       if (req.coins === undefined && req.shares !== undefined) {
         const px = latest?.price ?? null;
-        if (px === null) return refuse(409, "no_quote", "還沒有報價,請用魚幣金額下單");
+        if (px === null)
+          return refuse(409, "no_quote", `還沒有報價,請用${this.#currency()}金額下單`);
         if (!(req.shares > 0) || (req.leverage ?? 1) !== 1)
           return refuse(409, "qty", "照股數買只能 1 倍、股數要大於 0");
         const exposure = Math.ceil(req.shares * px - 1e-9);
         coins = exposure + feeOn(exposure, c.fee, c.fee_min);
       }
       if (!Number.isSafeInteger(coins) || coins < c.order_min || over(coins, c.order_max))
-        return refuse(409, "size", sizeRule(c.order_min, c.order_max));
+        return refuse(409, "size", sizeRule(c.order_min, c.order_max, this.#currency()));
       const leverage = req.leverage === 2 ? 2 : 1;
       if (req.leverage !== undefined && req.leverage !== 1 && req.leverage !== 2)
         return refuse(409, "leverage", "槓桿只有 1 倍或 2 倍");
@@ -1509,7 +1556,7 @@ export class RealDesk {
           return refuse(
             409,
             "leverage_ticker",
-            `這檔只能 1 倍:2 倍只開放一股至少 ${c.leverage_min_coin_price} 魚幣、有前一天收盤價的標的`,
+            `這檔只能 1 倍:2 倍只開放一股至少 ${c.leverage_min_coin_price} ${this.#currency()}、有前一天收盤價的標的`,
           );
         }
         if (t.tier < asker.rules.leverage_min_tier)
@@ -1526,7 +1573,7 @@ export class RealDesk {
         return refuse(
           409,
           "daily",
-          `一天最多買 ${c.buy_per_day} 魚幣(今天還能買 ${Math.max(0, c.buy_per_day - counted.bought)})`,
+          `一天最多買 ${c.buy_per_day} ${this.#currency()}(今天還能買 ${Math.max(0, c.buy_per_day - counted.bought)})`,
         );
       const wallet = this.#d.wallet();
       if (!wallet) return refuse(503, "wallet", "錢包現在打不開");
@@ -1540,9 +1587,9 @@ export class RealDesk {
           ? refuse(
               402,
               "transfer_lock",
-              `別人轉給你的魚幣要過 ${c.transfer_lock_hours} 小時才能投入`,
+              `別人轉給你的${this.#currency()}要過 ${c.transfer_lock_hours} 小時才能投入`,
             )
-          : refuse(402, "short", "魚幣不夠");
+          : refuse(402, "short", `${this.#currency()}不夠`);
       }
       const split = splitRealBuy(coins, leverage, this.params);
       if (!split) return refuse(409, "size", "這筆太小了");
@@ -1553,9 +1600,17 @@ export class RealDesk {
       const held = this.#holdingsCost(book, asker.person);
       const cap = limitsFor(asker.rules, t).total;
       if (over(held.cost + split.exposure, cap))
-        return refuse(409, "limit_total", `持有上限是成本 ${cap} 魚幣(槓桿照全部部位算)`);
+        return refuse(
+          409,
+          "limit_total",
+          `持有上限是成本 ${cap} ${this.#currency()}(槓桿照全部部位算)`,
+        );
       if (leverage > 1 && over(held.margin + split.margin, c.leverage_margin_cap))
-        return refuse(409, "margin_cap", `槓桿的保證金合計最多 ${c.leverage_margin_cap} 魚幣`);
+        return refuse(
+          409,
+          "margin_cap",
+          `槓桿的保證金合計最多 ${c.leverage_margin_cap} ${this.#currency()}`,
+        );
       const price = latest?.price ?? null;
       const qty = price ? Math.floor((split.exposure * QTY_REAL) / price) : 0;
       const line =
@@ -1603,8 +1658,8 @@ export class RealDesk {
           next_open: next === null ? null : toTimestamp(next),
           sentence:
             leverage > 1
-              ? `付 ${split.margin + split.fee} 魚幣(保證金 ${split.margin}、手續費 ${split.fee}),買 2 倍的部位 ${split.exposure};${when}。${line ? `跌到約 ${line.toFixed(2)} 會依規則自動賣出。` : ""}`
-              : `付 ${split.margin + split.fee} 魚幣(含手續費 ${split.fee}),${est}約 ${(qty / QTY_REAL).toFixed(4)} 股,${when}。買進後 ${c.min_hold_minutes} 分鐘才能賣。`,
+              ? `付 ${split.margin + split.fee} ${this.#currency()}(保證金 ${split.margin}、手續費 ${split.fee}),買 2 倍的部位 ${split.exposure};${when}。${line ? `跌到約 ${line.toFixed(2)} 會依規則自動賣出。` : ""}`
+              : `付 ${split.margin + split.fee} ${this.#currency()}(含手續費 ${split.fee}),${est}約 ${(qty / QTY_REAL).toFixed(4)} 股,${when}。買進後 ${c.min_hold_minutes} 分鐘才能賣。`,
           warning: leverage > 1 ? LEVERAGE_WARNING : null,
         },
       };
@@ -1674,7 +1729,7 @@ export class RealDesk {
         line_price: null,
         price_note: priceNote,
         next_open: next === null ? null : toTimestamp(next),
-        sentence: `賣出 ${(qty / QTY_REAL).toFixed(4)} 股,${when};${est}大約拿回 ${Math.max(0, gross - loan - fee)} 魚幣(手續費 ${fee} 燒掉)。`,
+        sentence: `賣出 ${(qty / QTY_REAL).toFixed(4)} 股,${when};${est}大約拿回 ${Math.max(0, gross - loan - fee)} ${this.#currency()}(手續費 ${fee} 燒掉)。`,
         warning: loan > 0 && gross - loan < 0 ? LEVERAGE_WARNING : null,
       },
     };
@@ -2052,7 +2107,7 @@ export class RealDesk {
         const first = this.#d.store.real.orderByKey(known.person, key);
         if (first)
           return first.status === "void"
-            ? refuse(409, "void", "這筆沒有成立(魚幣不夠),請再下一次")
+            ? refuse(409, "void", `這筆沒有成立(${this.#currency()}不夠),請再下一次`)
             : { ok: true, order: orderLine(first, this.#orderNextOpen(first.code, this.#now())) };
       }
       const r = await this.#check(account, req);
@@ -2124,7 +2179,7 @@ export class RealDesk {
       if (post.ok) this.#d.store.real.lines(out.lines, this.#day(), now);
       if (!post.ok)
         return post.reason === "short"
-          ? refuse(402, "short", "魚幣不夠")
+          ? refuse(402, "short", `${this.#currency()}不夠`)
           : refuse(409, "refused", post.message);
       return {
         ok: true,
@@ -2418,6 +2473,7 @@ export function mintReportOf(
   today: number,
   circulation: number | null,
   warnShare: number,
+  currency: string = DEFAULT_CURRENCY,
 ): MintReport {
   const byDay = new Map<number, { burned: number; minted: number }>();
   for (const d of days) if (d.day <= today && d.day > today - 30) byDay.set(d.day, d);
@@ -2442,7 +2498,7 @@ export function mintReportOf(
   const pct = (x: number) => `${(Math.round(x * 1000) / 10).toFixed(1)}%`;
   const warning =
     week.share !== null && week.net > 0 && week.share > warnShare
-      ? `過去 7 天交易所淨發出 ${week.net.toLocaleString("en-US")} 魚幣,是現在所有錢包合計的 ${pct(week.share)},超過提醒線 ${pct(warnShare)}。沒有每天淨發出上限時,上漲的市場會讓魚幣變多;要限制,在 系統 / 交易所 設「每天最多淨發出」。`
+      ? `過去 7 天交易所淨發出 ${week.net.toLocaleString("en-US")} ${currency},是現在所有錢包合計的 ${pct(week.share)},超過提醒線 ${pct(warnShare)}。沒有每天淨發出上限時,上漲的市場會讓${currency}變多;要限制,在 系統 / 交易所 設「每天最多淨發出」。`
       : null;
   return { windows, circulation, warn_share: warnShare, warning };
 }
@@ -2466,7 +2522,11 @@ function orderLine(o: RealOrderRecord, nextOpen: Timestamp | null = null): RealO
 const price2 = (n: number) => n.toFixed(2);
 
 /** What a member is told, in plain words: the rule did it, never her. */
-export function noticeText(n: RealNotice, name: string): string {
+export function noticeText(
+  n: RealNotice,
+  name: string,
+  currency: string = DEFAULT_CURRENCY,
+): string {
   const who = `${n.code}(${name})`;
   const left = `${Math.max(0, Math.round(n.ratio * 100))}%`;
   switch (n.kind) {
@@ -2475,11 +2535,11 @@ export function noticeText(n: RealNotice, name: string): string {
     case "warn_near":
       return `${who} 的 2 倍部位:保證金剩 ${left},接近自動賣出的價格 ${price2(n.line_price)}。可以自己先賣掉。`;
     case "liquidated":
-      return `${who} 的 2 倍部位${n.warned === false ? "(價格跳空,來不及先通知)" : ""}依規則以 ${price2(n.price)} 自動賣出,退回 ${n.amount} 魚幣。`;
+      return `${who} 的 2 倍部位${n.warned === false ? "(價格跳空,來不及先通知)" : ""}依規則以 ${price2(n.price)} 自動賣出,退回 ${n.amount} ${currency}。`;
     case "shortfall":
-      return `${who} 那筆賠超過保證金 ${n.amount} 魚幣,依規則從錢包和其他持股扣了。`;
+      return `${who} 那筆賠超過保證金 ${n.amount} ${currency},依規則從錢包和其他持股扣了。`;
     case "bankrupt":
-      return `錢包和持股都扣完了還差 ${n.amount} 魚幣,依規則由交易所吸收:你破產了,所有持股已經結清,冷靜期過後才能再交易。不會欠錢。`;
+      return `錢包和持股都扣完了還差 ${n.amount} ${currency},依規則由交易所吸收:你破產了,所有持股已經結清,冷靜期過後才能再交易。不會欠錢。`;
   }
 }
 

@@ -19,6 +19,11 @@ export interface Character {
   readonly pronoun: string;
   /** The name of her stock exchange (`深海交易所`). */
   readonly exchange_name: string;
+  /**
+   * What she is, in a word, where a text means her nature (`鯨魚`: the 「鯨魚的小毛病」 her card
+   * words may have); `""`: nothing in particular.
+   */
+  readonly creature: string;
 }
 
 /** Miyoria's values: the defaults of every field. */
@@ -28,7 +33,20 @@ export const DEFAULT_CHARACTER: Character = Object.freeze({
   other_names: Object.freeze(["米優", "みよ"]),
   pronoun: "她",
   exchange_name: "深海交易所",
+  creature: "鯨魚",
 });
+
+/**
+ * The coins' name when the profile names none: the default of `[modules.economy] currency`, the one
+ * place the name is configured (docs/design/v5-profiles.md).
+ */
+export const DEFAULT_CURRENCY = "魚幣";
+
+/**
+ * The running profile's coin name (`[modules.economy] currency`), provided by Core at boot like
+ * `CharacterKey`; absent in a bare test registry (use `DEFAULT_CURRENCY`).
+ */
+export const CurrencyKey = serviceKey<string>("Currency");
 
 /** The running profile's character; absent in a bare test registry (use `DEFAULT_CHARACTER`). */
 export const CharacterKey = serviceKey<Character>("Character");

@@ -30,6 +30,7 @@ import { marketTables } from "@miyoria/play/market";
 import {
   type Config,
   ConfigError,
+  currencyOf,
   EventBus,
   errorMessage,
   getLogger,
@@ -39,7 +40,7 @@ import {
   Supervisor,
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
-import type { Profile } from "@miyoria/runtime/profile";
+import { loadLanding, type Profile } from "@miyoria/runtime/profile";
 import { ReplayRecorderModule } from "@miyoria/runtime/replay-log";
 import {
   ArtifactAttachments,
@@ -65,6 +66,7 @@ import {
   ActuatorExecutorKey,
   AttachmentSourceKey,
   CharacterKey,
+  CurrencyKey,
   DirectivesKey,
   Events,
   HandleDirectoryKey,
@@ -81,6 +83,7 @@ import {
   PlatformSinksKey,
   type ProfileId,
   ProfileIdKey,
+  ProfileLandingKey,
   PromptContributors,
   PromptContributorsKey,
   RunningProfileKey,
@@ -399,6 +402,13 @@ export async function buildCoreWith(
   services.provide(k, ProfileIdKey, profileId);
   // Who she is in this profile, for the texts that name her (`[character]`).
   services.provide(k, CharacterKey, profile.character);
+  // The coins' name, for every text that names them (`[modules.economy] currency`).
+  services.provide(k, CurrencyKey, currencyOf(config.section("modules.economy")));
+  // Her front page (`profiles/<id>/landing/`): a file that does not read is reported, never fatal.
+  const front = await loadLanding(profile.dir);
+  for (const problem of front.problems)
+    log.warn({ problem }, "front page: part of the profile's landing is left out");
+  services.provide(k, ProfileLandingKey, front.landing);
   services.provide(k, RunningProfileKey, {
     id: profileId,
     own: options.ownProfile ?? false,

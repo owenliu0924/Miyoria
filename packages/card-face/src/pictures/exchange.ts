@@ -22,6 +22,7 @@ import type {
   ExchangeReceiptPicture,
   ExchangeTimeframe,
 } from "@miyoria/types";
+import { DEFAULT_CURRENCY } from "@miyoria/types";
 import {
   changeText,
   layoutMap,
@@ -323,7 +324,7 @@ export function exchangeOverviewPicture(d: ExchangeOverviewPicture): Out {
     c.text(X0 + CONTENT, ty, delta, { size: TYPE.label, weight: 700, fill: colorOf(s.change, d.colors), anchor: "end", max: dw });
     y += rowH;
   });
-  y = plainLine(c, y - 4, "價格單位:魚幣一股");
+  y = plainLine(c, y - 4, `價格單位:${d.currency ?? DEFAULT_CURRENCY}一股`);
   y += SPACE.stage - 12;
   y = blockTitle(c, y, "大家都在買", "持有人數;不顯示是誰");
   y =
@@ -515,7 +516,7 @@ export function exchangeReceiptPicture(d: ExchangeReceiptPicture): Out {
     { label: "手續費", value: num(d.fee), unit: d.currency },
   ]);
   y += 10;
-  y = plainLine(c, y, d.side === "buy" ? "手續費燒掉,不會回到誰手上。" : "賣出的魚幣已經進錢包。");
+  y = plainLine(c, y, d.side === "buy" ? "手續費燒掉,不會回到誰手上。" : `賣出的${d.currency}已經進錢包。`);
   const alt = `${d.name}${word} ${d.code} ${d.shares} 股,成交價 ${d.price},${d.side === "buy" ? "付出" : "拿到"} ${num(d.coins)} ${d.currency}(手續費 ${num(d.fee)})。`;
   y = smallPrint(c, y, d.small_print);
   return { drawn: finish(c, y), alt };

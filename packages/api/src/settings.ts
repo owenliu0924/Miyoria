@@ -40,6 +40,8 @@ import {
 import {
   type AccountRef,
   AuthorizerKey,
+  CurrencyKey,
+  DEFAULT_CURRENCY,
   type JsonValue,
   type ModuleId,
   PlaceDirectoryKey,
@@ -285,7 +287,8 @@ async function readSettings(
     ...view,
     updated: view.updated && { ...view.updated, by_label: authorLabel(state, view.updated.by) },
     can_edit: mayEdit(state, c, id, place?.space ?? null),
-    currency: state.optional(Economy2Key)?.currency ?? "魚幣",
+    currency:
+      state.optional(Economy2Key)?.currency ?? state.optional(CurrencyKey) ?? DEFAULT_CURRENCY,
   };
 }
 

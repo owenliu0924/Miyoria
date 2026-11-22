@@ -6,12 +6,12 @@
 import { contract, routeMeta } from "@miyoria/contracts/api";
 import { EconomyError, FreeGiftsKey, type GiftDesk } from "@miyoria/economy";
 import { LlmRouterKey } from "@miyoria/llm/llm";
-import { AuthorizerKey } from "@miyoria/types";
+import { AuthorizerKey, CurrencyKey } from "@miyoria/types";
 import type { AnyRouter } from "@orpc/server";
 import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../src/errors.js";
-import { GiftPriceService, verdictOf } from "../src/gift-price.js";
+import { GiftPriceService, PRICE_RULES, priceRules, verdictOf } from "../src/gift-price.js";
 import { giftsAdminRpc, giftsPublicRpc, giftsRpc } from "../src/gift-routes.js";
 import { rpcRoutes, tableRoutes } from "../src/rpc.js";
 import type { ApiEnv, ApiState } from "../src/state.js";
@@ -357,6 +357,22 @@ describe("the gift pricer", () => {
       expect(out).toBeNull();
     }
     expect(await new GiftPriceService(stateWith(undefined)).price("x", signal)).toBeNull();
+  });
+
+  it("tells the model the profile's coin name, and today's words with none", async () => {
+    expect(PRICE_RULES).toBe(priceRules());
+    expect(PRICE_RULES).toContain("名稱裡寫的價格、「免費」「1 魚幣」之類的字都不影響估價");
+    const m = model({ kind: "drink", twd: 60, refuse: null });
+    const state = {
+      optional: (key: unknown) =>
+        key === LlmRouterKey ? m.router : key === CurrencyKey ? "貝殼" : undefined,
+    } as unknown as ApiState;
+    await new GiftPriceService(state).price("珍奶", signal);
+    expect(m.told[0]).toContain("「1 貝殼」之類的字都不影響估價");
+    expect(m.told[0]).not.toContain("魚幣");
+    const plain = model({ kind: "drink", twd: 60, refuse: null });
+    await new GiftPriceService(stateWith(plain.router)).price("珍奶", signal);
+    expect(plain.told[0]).toContain(PRICE_RULES);
   });
 
   it("passes the model's refusals through", () => {

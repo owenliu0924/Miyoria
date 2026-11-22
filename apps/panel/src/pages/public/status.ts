@@ -5,24 +5,28 @@ import { useQuery } from "@tanstack/react-query";
 import type { PublicState, PublicStatus } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
 import type { Tone } from "@/components/status";
+import { WORLD } from "@/lib/world";
+
+/** Her pronoun in this profile (`lib/world.ts`). */
+const HER = WORLD.pronoun;
 
 /** The Core rebuilds these every few seconds at most, so polling faster buys nothing. */
 const POLL_MS = 15_000;
 
 export const STATE: Record<PublicState, { label: string; tone: Tone; pulse?: boolean }> = {
-  singing: { label: "她在唱歌", tone: "brand", pulse: true },
-  playing: { label: "她在玩遊戲", tone: "success" },
-  live: { label: "她在直播", tone: "brand", pulse: true },
-  in_voice: { label: "她在語音頻道", tone: "success" },
-  idle: { label: "她現在閒著", tone: "neutral" },
-  offline: { label: "她現在不在", tone: "neutral" },
+  singing: { label: `${HER}在唱歌`, tone: "brand", pulse: true },
+  playing: { label: `${HER}在玩遊戲`, tone: "success" },
+  live: { label: `${HER}在直播`, tone: "brand", pulse: true },
+  in_voice: { label: `${HER}在語音頻道`, tone: "success" },
+  idle: { label: `${HER}現在閒著`, tone: "neutral" },
+  offline: { label: `${HER}現在不在`, tone: "neutral" },
 };
 
 const GAMES: Record<string, string> = { minecraft: "Minecraft" };
 
 export function stateLabel(status: PublicStatus): string {
   if (status.state === "playing" && status.game) {
-    return `她在玩 ${GAMES[status.game] ?? status.game}`;
+    return `${HER}在玩 ${GAMES[status.game] ?? status.game}`;
   }
   return STATE[status.state].label;
 }

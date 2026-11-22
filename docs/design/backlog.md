@@ -485,10 +485,19 @@
 
 [v5-places.md](v5-places.md) §10 是做成的樣子。
 
-- **KTV 房每個伺服器一份還沒做**:`karaoke_rooms` 還沒有 `space_id`(`karaoke` v6),房間列表、開房、講評頻道都還是全域的一份;要做的時候房間記開房的人選的伺服器(會員頁的 `SpacePicker`),講評照那個伺服器的 `comment_channel`,舊房間補主要的伺服器。歌、參考、分數照舊是每個人全域的。
 - **她離開的伺服器的歌**:在那個伺服器點、還沒唱的歌會一直等,直到她回去或有人取消;沒有自動取消退券。
 - **管理頁的歌單卡**(即時 / 歌)還是她全部的歌,沒有標是哪個伺服器的,也沒有跟著殼的伺服器切換。
-- **佇列的 overlay**:`queue.changed` 只帶變了的那個佇列,overlay 只有一個舞台,兩個伺服器同時在用佇列時它顯示最後變的那個。
+- **佇列的 overlay**:`queue.changed` 只帶變了的那個佇列,overlay 只有一個舞台,兩個伺服器同時在用佇列時它顯示最後變的那個。這個 repo 裡沒有 overlay 讀 `queue.changed`(`apps/overlay` 的 `queue` 只是 demo,只有 SDK 把事件給外面的外掛),要修得先讓事件帶它是哪個 Space 的、或 Core 只送她正在唱的那個伺服器的。
+
+### 階段 6 的卡拉 OK 房和 home 留下的(2026-11-22)
+
+[v5-places.md](v5-places.md) §9、§10 是做成的樣子。
+
+- **一個人自己唱的講評**還是 cluster 的講評頻道:分數沒有伺服器,要分得讓會員頁開唱時也帶 `?space=`。
+- **`room_max` 是全部伺服器加起來的**:一個伺服器開滿,別的伺服器就開不了;要每個伺服器各自的上限得先確定唱歌的機器撐得住。
+- **`look` 不知道 owner 隱藏的頻道**:那是記憶的 `recent.hidden_channels`,selfhost 拿不到;現在靠平台的 `PlaceAccess`。
+- **home 的合併只到 Space**:home 所在伺服器的其他頻道、私訊裡在等的事沒有合併成一行(它們在自己的地方醒來時會看到)。
+- **home 是伺服器的頻道時,`look` 看不到別的伺服器**:照 `disclose`,那裡的人會聽到她說的;要在 home 看全部得先有沒有別人讀的 home session(v5-architecture §6)。
 
 ## 4. 自我修復與自我改進(備忘)
 

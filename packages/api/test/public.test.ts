@@ -715,6 +715,8 @@ describe("the route table", () => {
       "GET /api/public/card/:serial",
       "GET /api/public/cards/odds",
       "GET /api/public/gifts",
+      "GET /api/public/landing",
+      "GET /api/public/landing/files/:file",
       "GET /api/public/live",
       "GET /api/public/live/video/:file",
       "GET /api/public/songs",

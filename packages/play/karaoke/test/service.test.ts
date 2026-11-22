@@ -70,7 +70,7 @@ interface Rig {
 let rig: Rig;
 
 async function makeRig(overrides: Partial<KaraokeConfig> = {}): Promise<Rig> {
-  const raw = openTestDb({ plugins: [karaokeSchema] });
+  const raw = openTestDb({ identity: true, plugins: [karaokeSchema] });
   const store = new KaraokeStore(raw.db, raw.events);
   const worker = new FakeKaraokeWorker();
   const notes: KaraokeNote[] = [];

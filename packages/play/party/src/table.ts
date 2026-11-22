@@ -14,6 +14,7 @@ import {
   type Clock,
   type ContextKey,
   contextKeyString,
+  DEFAULT_CURRENCY,
   newId,
   PARTY_RECENT_MAX,
   type PartyPlayerView,
@@ -101,6 +102,8 @@ export interface TableDeps {
   timers?: Timers;
   output: PartyOutput;
   rewards?: () => PartyRewards | null;
+  /** The coins' name of the running profile (default 魚幣). */
+  currency?: () => string;
   clips?: () => SongClips | null;
   judge?: () => SoupJudge | null;
   warn?: (message: string, detail?: unknown) => void;
@@ -375,6 +378,7 @@ export class Table {
   readonly timers: Timers;
   readonly output: PartyOutput;
   readonly #rewards: () => PartyRewards | null;
+  readonly #currency: () => string;
   readonly #clips: () => SongClips | null;
   readonly #judge: () => SoupJudge | null;
   readonly #warn: (message: string, detail?: unknown) => void;
@@ -392,6 +396,7 @@ export class Table {
     this.timers = deps.timers ?? realTimers;
     this.output = deps.output;
     this.#rewards = deps.rewards ?? (() => null);
+    this.#currency = deps.currency ?? (() => DEFAULT_CURRENCY);
     this.#clips = deps.clips ?? (() => null);
     this.#judge = deps.judge ?? (() => null);
     this.#warn = deps.warn ?? (() => {});
@@ -641,7 +646,7 @@ export class Table {
           key: `party:${session.id}:rewards`,
           answers: null,
           revision: 1,
-          summary: `「${session.game.title}」的魚幣發好了:${paid}。`,
+          summary: `「${session.game.title}」的${this.#currency()}發好了:${paid}。`,
           speak: false,
           untrusted: false,
           person: null,

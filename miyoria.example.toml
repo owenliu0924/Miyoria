@@ -14,6 +14,7 @@ log = "info,miyoria=debug"
 # other_names = ["米優", "みよ"]     # 簡稱的其他寫法,叫到也算在叫她
 # pronoun = "她"
 # exchange_name = "深海交易所"       # 交易所的名字(幣名是 [modules.economy] currency)
+# creature = "鯨魚"                 # 她是什麼,一個詞(卡上的字「有…的小毛病」);"" = 不特別寫
 
 # ---- LLM ----------------------------------------------------------------
 # 任何 OpenAI 相容 API 都可以:填 base_url、api_key,模型 id 在 purposes 裡。
@@ -724,23 +725,29 @@ dirs = ["extensions"]
 # leverage_min_tier = "朋友"  # 2 倍:羈絆至少到哪一級
 # leverage_margin_cap = 0     # 一個人所有 2 倍部位的保證金合計最多(0 = 不限)
 # bankrupt_cooling_days = 7   # 破產後幾天不能買進
-# # [modules.exchange.local_anchors]   # 五檔獨家股票的起始價和長期會回到的價位(魚幣)
-# # RICE = 100
-# # WHLE = 108
-# # NAPS = 88
-# # CUBE = 116
-# # DPSK = 94
+# # 五檔獨家股票,照什麼推動它分(角色固定在程式裡,代號、名字、起始價和說明是這個 profile 的;不寫 = 下面這些):
+# # feeding = 餵食、songs = 唱完的歌、silence = 沒說話的小時、game = 遊戲目標和死掉、model = 模型出錯
+# # anchor 是起始價和長期會回到的價位(魚幣);what_moves 不寫 = 照名字自動寫一句「大家多餵她,…就容易漲」
+# # 代號是資料庫裡持股和價格紀錄的鍵:已經有人買過或有價格紀錄時改代號,交易所模組不會啟動、模組頁寫原因(改回來,或用新的 profile)
+# # [modules.exchange.local_companies]
+# # feeding = { code = "RICE", name = "白飯食品", anchor = 100 }
+# # songs = { code = "WHLE", name = "鯨落唱片", anchor = 108 }
+# # silence = { code = "NAPS", name = "打盹床業", anchor = 88 }
+# # game = { code = "CUBE", name = "方塊礦業", anchor = 116 }
+# # model = { code = "DPSK", name = "DipSick AI", anchor = 94 }
+# # 舊寫法照樣能讀:[modules.exchange.local_anchors] RICE = 100 …(用第一個角色的代號當鍵,等於 feeding 的 anchor)
 # # [modules.exchange.local_signals]   # 她的真事怎麼推動五檔獨家股票(docs/design/exchange.md §9)
 # # baseline_days = 14        # 和前幾天比:那些天的中位數和離散
 # # min_history_days = 7      # 紀錄不到這麼多天就不推(新的實例)
 # # spread = 3                # 滿格要離中位數幾個離散
 # # relative = 0.5            # 也至少要離中位數的這個比例
-# # slow_call_seconds = 30    # DPSK:模型回得比這慢就算太慢
-# # RICE = { floor = 10, up = 1, down = 1 }   # 滿格至少要比平常多(少)幾次;up / down 是最多推到滿格的幾成
-# # WHLE = { floor = 3, up = 1, down = 1 }
-# # NAPS = { floor = 3, up = 1, down = 1 }
-# # CUBE = { floor = 3, up = 1, down = 1 }
-# # DPSK = { floor = 10, down = 1 }   # 只會跌(up 一律 0),跌幅壓在一次來回手續費以下
+# # slow_call_seconds = 30    # model:模型回得比這慢就算太慢
+# # feeding = { floor = 10, up = 1, down = 1 }   # 滿格至少要比平常多(少)幾次;up / down 是最多推到滿格的幾成
+# # songs = { floor = 3, up = 1, down = 1 }
+# # silence = { floor = 3, up = 1, down = 1 }
+# # game = { floor = 3, up = 1, down = 1 }
+# # model = { floor = 10, down = 1 }   # 只會跌(up 一律 0),跌幅壓在一次來回手續費以下
+# # (舊寫法 RICE = {…}、DPSK = {…} 也照樣能讀,等於 feeding、model)
 # # [modules.exchange.yahoo]
 # # host = "query1.finance.yahoo.com"
 # # daily_budget = 3000       # 一天最多幾次請求,用完就停到隔天、報價標為停滯

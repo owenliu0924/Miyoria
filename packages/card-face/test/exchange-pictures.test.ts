@@ -144,6 +144,18 @@ describe("the heat map picture", () => {
     expect(rawBig && area(rawBig) / all).toBeGreaterThan(0.6);
   });
 
+  it("names the coins as the data does: the default name without a field, another profile's with it", () => {
+    const overview = PICTURE_SAMPLES.exchange_overview;
+    expect(layoutPicture("exchange_overview", overview).svg(null)).toContain("價格單位:魚幣一股");
+    const shell = layoutPicture("exchange_overview", { ...overview, currency: "貝殼" }).svg(null);
+    expect(shell).toContain("價格單位:貝殼一股");
+    expect(shell).not.toContain("價格單位:魚幣");
+    const receipt = { ...PICTURE_SAMPLES.exchange_receipt, side: "sell" as const };
+    expect(layoutPicture("exchange_receipt", receipt).svg(null)).toContain("賣出的魚幣已經進錢包。");
+    const sold = layoutPicture("exchange_receipt", { ...receipt, currency: "貝殼" }).svg(null);
+    expect(sold).toContain("賣出的貝殼已經進錢包。");
+  });
+
   it("names the tiles too small for text in the picture and the alt text", () => {
     const tiny = {
       ...m,

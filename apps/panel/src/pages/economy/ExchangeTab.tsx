@@ -22,6 +22,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { fmtDateTime, fmtInt } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { WORLD } from "@/lib/world";
 
 const KEY = ["exchange", "admin"] as const;
 const DENIED = "你的帳號沒有交易所的權限(需要 admin.economy.adjust)";
@@ -72,7 +73,7 @@ function Report({ v }: { v: ExchangeAdmin }) {
         <Fact label="帳">{balanced ? "對得上" : `對不上(錢包 ${r.books.postings}、交易所 ${r.books.lines})`}</Fact>
         <Fact label="還沒入帳">{fmtInt(r.books.pending)}</Fact>
         <Fact label="報價更新">{`約每 ${v.refresh_seconds} 秒`}</Fact>
-        <Fact label="固定匯率">{`1 魚幣 = NT$${v.rates.twd_per_coin}・1 美元 = NT$${v.rates.twd_per_usd}`}</Fact>
+        <Fact label="固定匯率">{`1 ${COIN} = NT$${v.rates.twd_per_coin}・1 美元 = NT$${v.rates.twd_per_usd}`}</Fact>
       </dl>
       <p className="text-xs text-muted-foreground">改匯率會讓所有人的台股、美股持股市值一起變(股數不變)。匯率在 系統 / 經濟(twd_per_coin)和 系統 / 交易所(twd_per_usd)。</p>
       {r.days.length > 0 && (
@@ -90,6 +91,8 @@ function Report({ v }: { v: ExchangeAdmin }) {
   );
 }
 
+/** The coins' name in this profile (`lib/world.ts`). */
+const COIN = WORLD.currency;
 const WINDOW: Record<number, string> = { 1: "今天", 7: "7 天", 30: "30 天" };
 const share = (x: number | null) => (x === null ? "—" : `${(Math.round(x * 1000) / 10).toFixed(1)}%`);
 const signedInt = (n: number) => (n > 0 ? `+${fmtInt(n)}` : fmtInt(n));
@@ -102,9 +105,9 @@ const signedInt = (n: number) => (n > 0 ? `+${fmtInt(n)}` : fmtInt(n));
 function Mint({ v }: { v: ExchangeAdmin }) {
   const mint = v.report.mint;
   return (
-    <Card aria-label="魚幣發出">
+    <Card aria-label={`${COIN}發出`}>
       <CardHeader>
-        <CardTitle>魚幣發出</CardTitle>
+        <CardTitle>{`${COIN}發出`}</CardTitle>
       </CardHeader>
       {mint.warning && (
         <p role="alert" className="text-[13px] text-primary">
@@ -122,7 +125,7 @@ function Mint({ v }: { v: ExchangeAdmin }) {
         ))}
       </ul>
       <p className="text-xs text-muted-foreground">
-        {`流通中的魚幣(所有錢包合計):${mint.circulation === null ? "經濟模組沒有提供" : fmtInt(mint.circulation)}。7 天淨發出超過 ${share(mint.warn_share)} 時這裡提醒(只是提醒)。上限預設不開:每天最多淨發出、一筆最多、一天最多買、持有上限、保證金上限,在 系統 / 交易所 填數字就會生效。`}
+        {`流通中的${COIN}(所有錢包合計):${mint.circulation === null ? "經濟模組沒有提供" : fmtInt(mint.circulation)}。7 天淨發出超過 ${share(mint.warn_share)} 時這裡提醒(只是提醒)。上限預設不開:每天最多淨發出、一筆最多、一天最多買、持有上限、保證金上限,在 系統 / 交易所 填數字就會生效。`}
       </p>
     </Card>
   );
@@ -275,7 +278,7 @@ function Tickers({ v, denied, onDenied }: { v: ExchangeAdmin; denied: boolean; o
             <Input id="exchange-split-ratio" inputMode="decimal" value={ratio} onChange={(e) => setRatio(e.target.value)} />
           </div>
         ) : ask?.kind === "settle" ? (
-          <p>{ask.at === "last" ? "所有持股照最後一筆有效價格賣掉。" : "所有持股以 0 結算,持有的人拿不回魚幣。"}這會寫進稽核紀錄。</p>
+          <p>{ask.at === "last" ? "所有持股照最後一筆有效價格賣掉。" : `所有持股以 0 結算,持有的人拿不回${COIN}。`}這會寫進稽核紀錄。</p>
         ) : ask?.kind === "sell" ? (
           <p>照最新報價賣掉,不收手續費;這會寫進稽核紀錄。</p>
         ) : (

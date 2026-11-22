@@ -70,6 +70,7 @@ import {
   isEdible,
   KIND_WORD,
   REFUSAL_TEXT,
+  refusalText,
   ruleRefusal,
 } from "./gift-words.js";
 import { type CoinEntry, PURSE } from "./records.js";
@@ -268,7 +269,7 @@ export class GiftDesk {
     const itemKey = giftKey(item);
     const base = { who, item, itemKey, key, source };
 
-    const rule = ruleRefusal(item);
+    const rule = ruleRefusal(item, this.e.config.currency);
     if (rule !== null) return this.#reject(tables, base, rule, "rule", false);
     if (!this.e.passes(who, item)) return this.#reject(tables, base, "unfit", "rule", false);
 
@@ -463,7 +464,7 @@ export class GiftDesk {
       case "short":
         return `${this.e.config.currency}不夠:這份要 ${price}`;
       default:
-        return REFUSAL_TEXT[reason];
+        return refusalText(reason, this.e.config.currency);
     }
   }
 
@@ -1019,7 +1020,7 @@ export class GiftDesk {
     const twd = choice?.twd ?? null;
     if (choice !== null) {
       if ((coins === null) === (twd === null)) {
-        throw new EconomyError(400, "要給魚幣價錢或台幣估價其中一個");
+        throw new EconomyError(400, `要給${this.e.config.currency}價錢或台幣估價其中一個`);
       }
       if (
         coins !== null &&

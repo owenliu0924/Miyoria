@@ -44,6 +44,7 @@ import {
   type AccountRef,
   amountExamples,
   DEFAULT_CHARACTER,
+  DEFAULT_CURRENCY,
   exchangeSmallPrint,
   type Pictures,
   type Places,
@@ -67,6 +68,7 @@ import { isTimeframe, TIMEFRAME_WORD, TIMEFRAMES, type Timeframe } from "./real/
 import type { RealLine, RealOrderLine } from "./real/desk.js";
 import { taipeiWhen } from "./real/instruments.js";
 import { LIST_KINDS, LIST_LABEL, type ListKind, pageOf } from "./real/lists.js";
+import { DEFAULT_LOCAL } from "./real/local.js";
 import { isMapKind, MAP_KINDS, MAP_TITLE, type MapKind } from "./real/maps.js";
 import type { ExchangeService } from "./service.js";
 
@@ -113,12 +115,12 @@ const pct = (x: number | null) => {
   return v > 0 ? `▲ +${v.toFixed(1)}%` : v < 0 ? `▼ −${Math.abs(v).toFixed(1)}%` : "0.0%";
 };
 
-/** A price in its own currency: `TWD 2045`, `101.2 魚幣`. */
-const nativeText = (l: RealLine): string =>
+/** A price in its own currency: `TWD 2045`, `101.2 魚幣` (`currency`: the coins' name). */
+const nativeText = (l: RealLine, currency: string = DEFAULT_CURRENCY): string =>
   l.price === null
     ? "還沒有價格"
     : l.currency === "COIN"
-      ? `${coinText(l.price)} 魚幣`
+      ? `${coinText(l.price)} ${currency}`
       : `${l.currency} ${l.price}`;
 
 /**
@@ -126,12 +128,12 @@ const nativeText = (l: RealLine): string =>
  * (a quote's age, a close with its date while the market is closed, a local stock's opening
  * reference before its first tick).
  */
-export function lineText(l: RealLine): string {
+export function lineText(l: RealLine, currency: string = DEFAULT_CURRENCY): string {
   if (l.price === null) return `${l.code} ${l.name}:還沒有價格(第一次查詢後就有)`;
   const native =
     l.currency === "COIN"
-      ? nativeText(l)
-      : `${nativeText(l)}(約 ${l.coin_price === null ? "—" : coinText(l.coin_price)} 魚幣)`;
+      ? nativeText(l, currency)
+      : `${nativeText(l, currency)}(約 ${l.coin_price === null ? "—" : coinText(l.coin_price)} ${currency})`;
   const what =
     l.basis === "quote"
       ? l.age_minutes === null
@@ -144,19 +146,19 @@ export function lineText(l: RealLine): string {
 }
 
 /** A select option's description: the price, its move, what it is, the holders. */
-function optionText(r: RealLine & { holders: number | null }): string {
+function optionText(r: RealLine & { holders: number | null }, currency: string): string {
   const what = r.basis === "close" ? "・收盤價" : r.basis === "reference" ? "・開盤參考價" : "";
-  return `${nativeText(r)} ${pct(r.change)}${what}${r.holders === null ? "" : `・${r.holders} 人持有`}`.slice(
+  return `${nativeText(r, currency)} ${pct(r.change)}${what}${r.holders === null ? "" : `・${r.holders} 人持有`}`.slice(
     0,
     100,
   );
 }
 
-/** A neutral card with the small print under it, always. */
+/** A neutral card with the small print under it, always (`currency`: the coins' name in it). */
 export function card(
   title: string,
   lines: string[],
-  o: { real?: boolean; leverage?: boolean } = {},
+  o: { real?: boolean; leverage?: boolean; currency?: string } = {},
   more: CardBlock[] = [],
 ): CommandReply {
   return cardReply(
@@ -167,6 +169,26 @@ export function card(
     ],
     { accent: "neutral", title },
   );
+}
+
+/** `card` under the exchange's own name, with its coin name. */
+function xcard(
+  x: ExchangeService,
+  lines: string[],
+  o: { real?: boolean; leverage?: boolean } = {},
+  more: CardBlock[] = [],
+): CommandReply {
+  return card(x.name, lines, { ...o, currency: x.currency }, more);
+}
+
+/** What a stranger is told: she does not know them yet (`pronoun`: how texts name her). */
+const strangerLine = (pronoun: string) => `${pronoun}還不認識你,先和${pronoun}說說話吧`;
+
+/** The beginners' local stocks' usual price, about their anchors (to ten coins). */
+function localPriceWord(x: ExchangeService): number {
+  const all = x.real.localCompanies();
+  const mean = all.reduce((t, l) => t + l.anchor, 0) / Math.max(1, all.length);
+  return Math.round(mean / 10) * 10;
 }
 
 // ---- who opened a panel, and until when ------------------------------------------------------
@@ -198,10 +220,10 @@ const cid = (route: string, s: Stamp, ...params: (string | number)[]) =>
 function refusal(x: ExchangeService, inv: ComponentInvocation): ComponentResult | null {
   const [o, e] = inv.params;
   if (o !== ownerTag(inv.invoker))
-    return ComponentResult.reply({ ...card(x.name, [NOT_YOURS]), ephemeral: true });
+    return ComponentResult.reply({ ...xcard(x, [NOT_YOURS]), ephemeral: true });
   const until = Number.parseInt(e ?? "", 36) * 60_000;
   if (!Number.isFinite(until) || until < x.nowMs())
-    return ComponentResult.update(card(x.name, [EXPIRED]));
+    return ComponentResult.update(xcard(x, [EXPIRED]));
   return null;
 }
 
@@ -263,7 +285,7 @@ async function mapCard(
     ...top.map((t) => `${t.code} ${t.name}・${t.sector} ${pct(t.change) || "—"}`),
     map.footnote,
   ];
-  const reply = privately(x, card(x.name, lines, { real: true }, [listSelect(s, { map: kind })]));
+  const reply = privately(x, xcard(x, lines, { real: true }, [listSelect(s, { map: kind })]));
   return withPicture(pictures, "exchange_map", mapPictureData(x, map, x.nowMs()), reply);
 }
 
@@ -286,13 +308,13 @@ async function overview(
   const lines = [
     ...(firstTime && list === "local"
       ? [
-          "第一次來?這裡用魚幣買賣股票,只是遊戲:",
-          "・新手推薦的五檔是這裡獨家,一股約 100 魚幣、單日漲跌最多 ±10%",
+          `第一次來?這裡用${x.currency}買賣股票,只是遊戲:`,
+          `・新手推薦的五檔是這裡獨家,一股約 ${localPriceWord(x)} ${x.currency}、單日漲跌最多 ±10%`,
           "・台股和美股照真實報價,可以買零股;每筆收 1% 手續費",
         ]
       : []),
     `${LIST_LABEL[list]}${rows.length === 0 ? ":這裡還沒有東西" : `(${rows.length} 檔)`}`,
-    ...p.items.slice(0, 5).map(lineText),
+    ...p.items.slice(0, 5).map((l) => lineText(l, x.currency)),
     ...(p.items.length > 5 ? [`……還有 ${rows.length - 5} 檔,在下面選`] : []),
   ];
   const blocks: CardBlock[] = [listSelect(s, { list })];
@@ -309,7 +331,7 @@ async function overview(
         options: p.items.map((r) => ({
           label: `${r.code} ${r.name}`.slice(0, 100),
           value: r.code,
-          description: optionText(r),
+          description: optionText(r, x.currency),
         })),
       },
     });
@@ -333,8 +355,8 @@ async function overview(
     });
   const reply = privately(
     x,
-    card(
-      x.name,
+    xcard(
+      x,
       [...lines, ...(p.pages > 1 ? [`第 ${p.page + 1} / ${p.pages} 頁`] : [])],
       { real: list !== "local" },
       blocks,
@@ -365,14 +387,14 @@ async function quoteCard(
     person === null ? [] : x.real.portfolio(person).holdings.filter((h) => h.code === line.code);
   const lines = [
     ...(note === null ? [] : [note, ""]),
-    lineText(line),
+    lineText(line, x.currency),
     marketLine(line),
     ...(line.local
       ? [line.local.what_moves, ...(line.local.today ? [line.local.today] : [])]
       : [line.source]),
     ...held.map(
       (h) =>
-        `你持有 ${sharesText(h.qty)} 股${h.leverage > 1 ? "(2 倍)" : ""}:市值 ${h.value === null ? "—" : coinText(h.value)} 魚幣`,
+        `你持有 ${sharesText(h.qty)} 股${h.leverage > 1 ? "(2 倍)" : ""}:市值 ${h.value === null ? "—" : coinText(h.value)} ${x.currency}`,
     ),
   ];
   const buttons: CardButton[] = [
@@ -410,10 +432,12 @@ async function quoteCard(
   };
   const text = privately(
     x,
-    card(`${line.code} ${line.name}`, lines, { real: line.local === null, leverage }, [
-      { type: "buttons", buttons },
-      timeframes,
-    ]),
+    card(
+      `${line.code} ${line.name}`,
+      lines,
+      { real: line.local === null, leverage, currency: x.currency },
+      [{ type: "buttons", buttons }, timeframes],
+    ),
   );
   return set ? withPicture(pictures, "exchange_quote", quotePictureData(x, set), text) : text;
 }
@@ -430,8 +454,12 @@ export type Amount = { unit: "c" | "s" | "a"; value: number };
  * What a modal's amount says (owner 2026-11-22, the same rule everywhere): a bare number is shares,
  * `$` and a number is coins, 全部 on a sale is everything; else the one line with both forms.
  */
-export function parseAmount(raw: string, side: "buy" | "sell"): Amount | { error: string } {
-  const r = parseOrderAmount(raw, side);
+export function parseAmount(
+  raw: string,
+  side: "buy" | "sell",
+  currency: string = DEFAULT_CURRENCY,
+): Amount | { error: string } {
+  const r = parseOrderAmount(raw, side, currency);
   if (!r.ok) return { error: r.message };
   const a = r.amount;
   return a.unit === "all"
@@ -449,8 +477,11 @@ function orderModal(
   const fields: Modal["fields"] = [
     {
       id: "amount",
-      label: side === "buy" ? "買多少:數字是股數,$ 開頭是魚幣" : "賣多少:數字是股數,$ 開頭是魚幣",
-      placeholder: amountExamples(line.coin_price, side).slice(0, 100),
+      label:
+        side === "buy"
+          ? `買多少:數字是股數,$ 開頭是${x.currency}`
+          : `賣多少:數字是股數,$ 開頭是${x.currency}`,
+      placeholder: amountExamples(line.coin_price, side, x.currency).slice(0, 100),
       maxLength: 24,
     },
   ];
@@ -530,7 +561,7 @@ async function confirmCard(
   if (!q.ok)
     return privately(
       x,
-      card(x.name, [q.message], { real: true }, [
+      xcard(x, [q.message], { real: true }, [
         {
           type: "buttons",
           buttons: [{ id: cid(R.back, s, back), label: "回清單", style: "secondary" }],
@@ -544,7 +575,7 @@ async function confirmCard(
     card(
       `確認${side === "buy" ? "買進" : "賣出"} ${code}`,
       [q.quote.sentence, ...(leverage ? [LEVERAGE_CONFIRM] : [])],
-      { real: lineOf(x, code)?.local === null, leverage },
+      { real: lineOf(x, code)?.local === null, leverage, currency: x.currency },
       [
         {
           type: "buttons",
@@ -581,7 +612,7 @@ async function placeOrder(
     key,
   );
   const line = lineOf(x, code);
-  if (!line) return privately(x, card(x.name, ["沒有這個標的"]));
+  if (!line) return privately(x, xcard(x, ["沒有這個標的"]));
   const note = r.ok
     ? `委託已送出:${side === "buy" ? "買進" : "賣出"} ${code}${r.order.status === "open" ? `,${orderWhen(r.order)}` : ""}。`
     : r.message;
@@ -609,8 +640,8 @@ const thenParams = (t: Then): string[] => (t.to === "b" ? [t.to, t.code, t.back]
 function accountLines(x: ExchangeService, why: string | null): string[] {
   const c = x.config;
   return [
-    "還沒開戶:開戶不花錢,開了之後才能買賣(只是遊戲,魚幣不能換成錢)。",
-    `條件:她認識你滿 ${c.account_min_days} 天、羈絆到「${c.account_min_tier}」以上。`,
+    `還沒開戶:開戶不花錢,開了之後才能買賣(只是遊戲,${x.currency}不能換成錢)。`,
+    `條件:${x.pronoun}認識你滿 ${c.account_min_days} 天、羈絆到「${c.account_min_tier}」以上。`,
     ...(why === null ? [] : [`現在還不行:${why}`]),
   ];
 }
@@ -633,13 +664,18 @@ async function accountCard(
   const view = await x.accountView(who);
   return privately(
     x,
-    card("開戶", accountLines(x, view?.cannot_open ?? null), { real: false }, [
-      accountButton(s, then),
-      {
-        type: "buttons",
-        buttons: [{ id: cid(R.back, s, back), label: "先逛逛:新手推薦", style: "secondary" }],
-      },
-    ]),
+    card(
+      "開戶",
+      accountLines(x, view?.cannot_open ?? null),
+      { real: false, currency: x.currency },
+      [
+        accountButton(s, then),
+        {
+          type: "buttons",
+          buttons: [{ id: cid(R.back, s, back), label: "先逛逛:新手推薦", style: "secondary" }],
+        },
+      ],
+    ),
   );
 }
 
@@ -658,12 +694,12 @@ async function mineCard(
   note: string | null = null,
 ): Promise<CommandReply> {
   const p = await x.portfolio(who);
-  if (!p) return { ...card(x.name, ["她還不認識你,先和她說說話吧"]), ephemeral: true };
+  if (!p) return { ...xcard(x, [strangerLine(x.pronoun)]), ephemeral: true };
   if (!p.account.opened) return accountCard(x, who, { to: "m" });
   const real = x.real.portfolio((await x.personOf(who)) ?? "");
   const lines = real.holdings.map(
     (h) =>
-      `${h.code} ${h.name} ${sharesText(h.qty)} 股${h.leverage > 1 ? "・2 倍" : ""}:市值 ${h.value === null ? "—" : coinText(h.value)} 魚幣,成本 ${h.cost}`,
+      `${h.code} ${h.name} ${sharesText(h.qty)} 股${h.leverage > 1 ? "・2 倍" : ""}:市值 ${h.value === null ? "—" : coinText(h.value)} ${x.currency},成本 ${h.cost}`,
   );
   if (real.bankrupt) lines.unshift("破產冷靜期中:所有持股已經結清,不會欠錢");
   if (lines.length === 0) lines.push("沒有持股");
@@ -672,7 +708,7 @@ async function mineCard(
     lines.push("", "等待中的委託:");
     for (const o of waiting)
       lines.push(
-        `・${o.side === "buy" ? `買進 ${o.code} ${o.coins} 魚幣` : `賣出 ${o.code} ${sharesText(o.qty)} 股`}:${orderWhen(o)}`,
+        `・${o.side === "buy" ? `買進 ${o.code} ${o.coins} ${x.currency}` : `賣出 ${o.code} ${sharesText(o.qty)} 股`}:${orderWhen(o)}`,
       );
   }
   const leverage = real.holdings.some((h) => h.leverage > 1);
@@ -706,9 +742,9 @@ async function mineCard(
       [
         ...(note === null ? [] : [note, ""]),
         ...lines,
-        "只有你看得到;按「分享」才會用你的名字貼出來。她也看不到任何人的持股。",
+        `只有你看得到;按「分享」才會用你的名字貼出來。${x.pronoun}也看不到任何人的持股。`,
       ],
-      { real: true, leverage },
+      { real: true, leverage, currency: x.currency },
       blocks,
     ),
   );
@@ -737,7 +773,19 @@ export function registerCommands(
   title: () => string = () => DEFAULT_CHARACTER.exchange_name,
   /** Identity's servers and members, for the per-server rich list; none: one list. */
   places: () => Places | undefined = () => undefined,
+  /** The coins' name when no service answers (`CurrencyKey`). */
+  currency: () => string = () => DEFAULT_CURRENCY,
+  /** How texts name her (`[character] pronoun`) when no service answers. */
+  pronoun: () => string = () => DEFAULT_CHARACTER.pronoun,
 ): void {
+  /** A card under the exchange's name, in the coins' name of whatever answers. */
+  const titled = (
+    lines: string[],
+    o: { real?: boolean; leverage?: boolean } = {},
+    more: CardBlock[] = [],
+  ): CommandReply =>
+    card(title(), lines, { ...o, currency: service()?.currency ?? currency() }, more);
+  const her = () => service()?.pronoun ?? pronoun();
   registry.setGroupDescription("me market", `${title()}:新手推薦、台股美股行情、你的持股、富人榜`);
   const open = (): ExchangeService | null => {
     const x = service();
@@ -745,7 +793,7 @@ export function registerCommands(
   };
   const run = async (fn: (x: ExchangeService) => Promise<CommandReply>): Promise<CommandReply> => {
     const x = open();
-    if (x === null) return card(title(), [OFF]);
+    if (x === null) return titled([OFF]);
     return fn(x);
   };
   /** A control's handler: the market must be open, the press the opener's and in time. */
@@ -759,14 +807,14 @@ export function registerCommands(
     ) =>
     async (inv: ComponentInvocation): Promise<ComponentResult> => {
       const x = open();
-      if (x === null) return ComponentResult.update(card(title(), [OFF]));
+      if (x === null) return ComponentResult.update(titled([OFF]));
       const no = refusal(x, inv);
       if (no) return no;
       return fn(x, inv, inv.params.slice(2));
     };
   const listOf = (raw: string | undefined): ListKind =>
     (LIST_KINDS as readonly string[]).includes(raw ?? "") ? (raw as ListKind) : "local";
-  const gone = () => ComponentResult.update(card(title(), ["沒有這個標的"]));
+  const gone = () => ComponentResult.update(titled(["沒有這個標的"]));
 
   const routes = [
     defineRoute({
@@ -833,7 +881,7 @@ export function registerCommands(
         const person = await x.personOf(inv.invoker);
         const line = lineOf(x, code ?? "");
         if (!line) return gone();
-        if (!person) return ComponentResult.update(card(title(), ["她還不認識你,先和她說說話吧"]));
+        if (!person) return ComponentResult.update(titled([strangerLine(her())]));
         const r = x.lists.setWatch(person, line.code, on === "1");
         const note = r.ok ? (r.watching ? `已加入觀察(${r.count} 檔)` : "已取消觀察") : r.message;
         return ComponentResult.update(
@@ -876,7 +924,7 @@ export function registerCommands(
       handle: press(async (x, inv, [side, code, kind]) => {
         const line = lineOf(x, code ?? "");
         if (!line || (side !== "buy" && side !== "sell")) return gone();
-        const amount = parseAmount(inv.field("amount"), side);
+        const amount = parseAmount(inv.field("amount"), side, x.currency);
         if ("error" in amount) {
           return ComponentResult.update(
             await quoteCard(x, pictures(), inv.invoker, line, listOf(kind), amount.error),
@@ -897,7 +945,7 @@ export function registerCommands(
           !amt ||
           (unit !== "c" && unit !== "s" && unit !== "a")
         )
-          return ComponentResult.update(card(title(), [EXPIRED]));
+          return ComponentResult.update(titled([EXPIRED]));
         const amount: Amount = { unit, value: unit === "a" ? 0 : Number(amt) };
         return ComponentResult.update(
           await placeOrder(
@@ -937,14 +985,19 @@ export function registerCommands(
           return ComponentResult.update(
             privately(
               x,
-              card("開戶", [`還不能開戶:${r.message}`, ...accountLines(x, null).slice(1)], {}, [
-                {
-                  type: "buttons",
-                  buttons: [
-                    { id: cid(R.back, s, "local"), label: "先逛逛:新手推薦", style: "secondary" },
-                  ],
-                },
-              ]),
+              card(
+                "開戶",
+                [`還不能開戶:${r.message}`, ...accountLines(x, null).slice(1)],
+                { currency: x.currency },
+                [
+                  {
+                    type: "buttons",
+                    buttons: [
+                      { id: cid(R.back, s, "local"), label: "先逛逛:新手推薦", style: "secondary" },
+                    ],
+                  },
+                ],
+              ),
             ),
           );
         if (to === "b") {
@@ -964,7 +1017,7 @@ export function registerCommands(
         const r = await x.real.cancel(inv.invoker, id ?? "");
         const note = r.ok
           ? r.refunded > 0
-            ? `取消了,退回 ${r.refunded} 魚幣。`
+            ? `取消了,退回 ${r.refunded} ${x.currency}。`
             : "取消了。"
           : r.message;
         return ComponentResult.update(
@@ -979,7 +1032,7 @@ export function registerCommands(
         const person = await x.personOf(inv.invoker);
         if (!person)
           return ComponentResult.reply({
-            ...card(title(), ["她還不認識你,先和她說說話吧"]),
+            ...titled([strangerLine(her())]),
             ephemeral: true,
           });
         const name = inv.invoker_display_name;
@@ -988,7 +1041,7 @@ export function registerCommands(
           const fill = p.fills.find((f) => f.id === ref) ?? p.fills[0];
           if (!fill)
             return ComponentResult.reply({
-              ...card(title(), ["還沒有成交紀錄"]),
+              ...titled(["還沒有成交紀錄"]),
               ephemeral: true,
             });
           const data = receiptPictureData(x, name, fill);
@@ -997,7 +1050,11 @@ export function registerCommands(
             [
               `${fill.side === "sell" ? "賣出" : "買進"} ${fill.code} ${data.shares} 股,成交價 ${data.price}`,
             ],
-            { real: lineOf(x, fill.code)?.local === null, leverage: fill.leverage > 1 },
+            {
+              real: lineOf(x, fill.code)?.local === null,
+              leverage: fill.leverage > 1,
+              currency: x.currency,
+            },
           );
           return ComponentResult.reply({
             ...(await withPicture(pictures(), "exchange_receipt", data, text)),
@@ -1012,7 +1069,7 @@ export function registerCommands(
           p.holdings.map(
             (h) => `${h.code} ${sharesText(h.qty)} 股${h.leverage > 1 ? "(2 倍)" : ""}`,
           ),
-          { real: true, leverage },
+          { real: true, leverage, currency: x.currency },
         );
         return ComponentResult.reply({
           ...(await withPicture(
@@ -1033,7 +1090,7 @@ export function registerCommands(
     }),
     async (inv) => {
       const x = open();
-      if (x === null) return { ...card(title(), [OFF]), ephemeral: true };
+      if (x === null) return { ...titled([OFF]), ephemeral: true };
       return overview(x, pictures(), inv.invoker, null, 0, true);
     },
     { components: routes },
@@ -1041,7 +1098,13 @@ export function registerCommands(
 
   registry.register(
     commandSpec("me market quote", `${title()}:一檔股票的報價和走勢(圖)`, {
-      args: [argSpec("code", "代號或名稱:台股 2330、0050,美股 AAPL,或獨家的 RICE", ArgKind.string)],
+      args: [
+        argSpec(
+          "code",
+          `代號或名稱:台股 2330、0050,美股 AAPL,或獨家的 ${service()?.real.localCompanies()[0]?.code ?? DEFAULT_LOCAL.feeding.code}`,
+          ArgKind.string,
+        ),
+      ],
       permission: NODE,
     }),
     (inv) =>
@@ -1050,8 +1113,7 @@ export function registerCommands(
         let line = lineOf(x, typed);
         if (!line) {
           const found = await x.real.lookup(inv.invoker, typed);
-          if (!found.ok)
-            return { ...card(title(), [found.message], { real: true }), ephemeral: true };
+          if (!found.ok) return { ...titled([found.message], { real: true }), ephemeral: true };
           line = found.instrument;
         }
         return quoteCard(x, pictures(), inv.invoker, line, "recent", null);
@@ -1094,7 +1156,7 @@ export function registerCommands(
             ...(where.label === "" ? [] : [where.label]),
             "預設會上榜;會員頁可以設定不上榜。",
           ],
-          { real: true },
+          { real: true, currency: b.currency },
         );
         // The board is posted where anyone sees it: nobody's own place is on the picture.
         return withPicture(pictures(), "exchange_rich", { ...boardPictureData(b), me: null }, text);

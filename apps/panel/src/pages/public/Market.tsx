@@ -19,6 +19,7 @@ import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { fmtDateTime, fmtInt, fmtPct, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { WORLD } from "@/lib/world";
 import { BID_STATE, LOT_STATE, WEEK_STATE } from "./market-labels";
 import { SpacePicker, useMemberSpace } from "./member-space";
 import { newKey, priceText, useWallet, WALLET } from "./spend";
@@ -491,7 +492,7 @@ export function Market() {
   if (wallet.data && !wallet.data.can_earn) return null;
   if (auction.isError && isNotProvided(auction.error)) return null;
   const off = auction.isError && isApiError(auction.error) && auction.error.kind === "unavailable";
-  const currency = auction.data?.currency ?? wallet.data?.currency ?? "魚幣";
+  const currency = auction.data?.currency ?? wallet.data?.currency ?? WORLD.currency;
   return (
     <Card aria-label="市集">
       <CardHeader>

@@ -9,6 +9,10 @@
 // her comment on that result. Singing counts as `played_together` for the heart. No model is
 // called here, and no coins move. On Discord it registers `/me play karaoke` (`commands.ts`) and
 // posts a room's notice in the comment channel through the platform's `ReplySink`.
+//
+// Rooms are per server (phase 6, docs/design/v5-places.md §10): `RoomPlaces` here answers which
+// Space a room is in, whether it may have rooms, and its settings (`comment_channel` is per Space,
+// read through `placeConfig` where it is used, so setting it for a server needs no restart).
 
 import { resolve } from "node:path";
 import { CommandMount, ReplySinkKey } from "@miyoria/commands";
@@ -19,6 +23,7 @@ import {
   type Module,
   type ModuleCard,
   type ModuleContext,
+  placeConfig,
 } from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
 import {
@@ -30,6 +35,8 @@ import {
   is,
   KaraokeWalletKey,
   KaraokeWorkerKey,
+  type Places,
+  PlacesKey,
   SocialSignalsKey,
   serviceKey,
   VoicePlayerKey,
@@ -38,7 +45,7 @@ import { karaokeCard } from "./card.js";
 import { registerCommands, roomNotice, unregisterCommands } from "./commands.js";
 import { commentContext, type KaraokeConfig, KaraokeConfigSchema } from "./config.js";
 import { VoicePresence } from "./presence.js";
-import { type RoomChannel, RoomDesk, type RoomNotice } from "./rooms.js";
+import { type RoomChannel, RoomDesk, type RoomNotice, type RoomPlaces } from "./rooms.js";
 import { type KaraokeNote, KaraokeService } from "./service.js";
 import { karaokeTables } from "./store.js";
 
@@ -124,14 +131,20 @@ export class KaraokeModule implements Module {
     ctx.provide(KaraokeKey, service);
     this.#running = service;
 
-    // Rooms (step 4): only while she is in a voice channel. Where she is comes from the voice
-    // events, one channel per server (`VoicePresence`); without one, the voice node is asked about
-    // the comment channel's server.
-    const presence = new VoicePresence(() => {
-      const guild = commentContext(config.comment_channel)?.scope ?? null;
+    // Rooms (step 4): only while she is in a voice channel of the room's server. Where she is
+    // comes from the voice events, one channel per server (`VoicePresence`); without one, the
+    // voice node is asked about that server (with no server, the comment channel's).
+    const presence = new VoicePresence((server) => {
+      const guild = server?.guild ?? commentContext(config.comment_channel)?.scope ?? null;
       return guild !== null && (ctx.services.get(VoicePlayerKey)?.channel(guild) ?? null) !== null;
     });
-    const inVoice = () => presence.inVoice();
+    const places = ctx.services.get(PlacesKey);
+    const settings = placeConfig(ctx, KaraokeConfigSchema);
+    const inVoice = (space: string | null): boolean => {
+      if (space === null || places === undefined) return presence.inVoice();
+      const ref = places.space(space);
+      return ref !== null && presence.inVoice({ platform: ref.platform, guild: ref.external_id });
+    };
     const rooms = new RoomDesk({
       config,
       store: store.plugin(karaokeTables),
@@ -139,6 +152,7 @@ export class KaraokeModule implements Module {
       worker: () => ctx.services.get(KaraokeWorkerKey) ?? null,
       wallet: () => ctx.services.get(KaraokeWalletKey) ?? null,
       inVoice,
+      ...(places === undefined ? {} : { places: roomPlaces(places, settings) }),
       who: (account) => {
         const attitude = ctx.services.get(SocialSignalsKey)?.attitude(account) ?? null;
         return { person: attitude?.person ?? null, blocked: attitude?.blocked ?? false };
@@ -264,6 +278,39 @@ export class KaraokeModule implements Module {
     this.#mount?.detach();
     this.#mount = null;
   }
+}
+
+/** What a new server lacks before it may have rooms (its own comment channel). */
+export const NOT_SET_UP = "這個伺服器還沒有設定唱 K 的講評頻道,還不能開房間";
+/** A Space she is not in (any more). */
+export const NOT_THERE = "她不在這個伺服器裡";
+
+/**
+ * The rooms' servers over `Places`: the primary when none is named, a command's server, and the
+ * settings of each. An established server (one she was in before servers were told apart) has
+ * rooms as before; a server first seen later only once its own comment channel is set (a channel
+ * of another server is never its comment channel: the channel-in-space rule of `placeConfig`).
+ */
+export function roomPlaces(
+  places: Places,
+  settings: { base(): KaraokeConfig; for(where: { space_id: string }): KaraokeConfig },
+): RoomPlaces {
+  return {
+    fallback: () => (places.primary() ?? places.spaces()[0])?.id ?? null,
+    at: (context) =>
+      places.at(context)?.space_id ??
+      (context.scope === null
+        ? null
+        : (places.ofGuild(context.platform, context.scope)?.id ?? null)),
+    why: (space) => {
+      const ref = places.space(space);
+      if (ref === null) return NOT_THERE;
+      if (ref.established) return null;
+      const own = settings.for({ space_id: space }).comment_channel;
+      return commentContext(own) === null ? NOT_SET_UP : null;
+    },
+    config: (space) => (space === null ? settings.base() : settings.for({ space_id: space })),
+  };
 }
 
 /** A room's notice in the comment channel: its message id, `null` when there is no Discord. */

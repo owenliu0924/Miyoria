@@ -45,6 +45,8 @@ import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type MemberCardRecord, MemberCardStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
+  CurrencyKey,
+  DEFAULT_CURRENCY,
   HeartKey,
   isJsonObject,
   type JsonValue,
@@ -261,15 +263,18 @@ const REFUSAL_STATUS: Readonly<Record<DailyRefusal["reason"], number>> = {
   refused: 403,
 };
 
+/** The coins' name of this profile (`[modules.economy] currency`). */
+const coinsOf = (state: ApiState): string => state.optional(CurrencyKey) ?? DEFAULT_CURRENCY;
+
 /** A refusal of the cards as the error the routes answer with. */
-function refusedCard(r: DailyRefusal): ApiError {
+function refusedCard(r: DailyRefusal, currency: string): ApiError {
   // A wallet that has no balance for them will not take their coins: for the economy, someone she
   // does not know or has blocked, who are answered alike.
   if (r.reason === "refused" && r.message === CARD_TEXTS.no_wallet) {
     return new ApiError(403, STRANGER);
   }
   const status = REFUSAL_STATUS[r.reason];
-  return new ApiError(status, r.reason === "no_wallet" ? NO_WALLET : refusalText(r));
+  return new ApiError(status, r.reason === "no_wallet" ? NO_WALLET : refusalText(r, currency));
 }
 
 /** A card she gave them is evidence for her nightly reflection on them (`card`). Never throws. */
@@ -340,7 +345,7 @@ export async function issueDaily(
   const payer = { person, account };
   // Nobody pays for a card the day or the wallet would refuse.
   const quote = await cards.quote(payer, order);
-  if (!quote.ok) throw refusedCard(quote);
+  if (!quote.ok) throw refusedCard(quote, coinsOf(state));
   // Her line for them goes on the card as the page shows it (nobody else named, moderation passed),
   // never as it is stored: anyone with the serial can read the card.
   const relationship: CardRelationship = hidden
@@ -370,7 +375,7 @@ export async function issueDaily(
     relationship,
     key: order.key,
   });
-  if (!result.ok) throw refusedCard(result);
+  if (!result.ok) throw refusedCard(result, coinsOf(state));
   const card = dailyCard(result.issued.card);
   if (!result.issued.again) cardEvidence(state, person, card);
   return { card, charged: result.charged };

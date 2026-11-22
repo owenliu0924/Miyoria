@@ -12,7 +12,19 @@ import {
   tablePart,
 } from "@miyoria/store";
 import { type AccountRef, type ContextKey, type Timestamp, toTimestamp } from "@miyoria/types";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  max as maxOf,
+  ne,
+  or,
+} from "drizzle-orm";
 import { initiativeSchema } from "./initiative-migrations.js";
 import {
   initiativeInbox as I,
@@ -215,6 +227,60 @@ export class InitiativeStore {
       .limit(max)
       .all()
       .reverse();
+  }
+
+  /**
+   * What waits in every Space but `except` (her home's; `null`: none), counted by kind: one row
+   * per Space and kind, with its newest item's time. Nothing of the items' words (her home's
+   * merged lines, docs/design/v5-places.md §9). Items of no Space (a DM, her own timers) are not
+   * a Space's.
+   */
+  waitingElsewhere(
+    except: string | null,
+  ): { space_id: string; kind: InboxKind; n: number; latest: string }[] {
+    const where =
+      except === null
+        ? and(isNull(I.seen_at), isNotNull(I.space_id))
+        : and(isNull(I.seen_at), isNotNull(I.space_id), ne(I.space_id, except));
+    return this.#db.orm
+      .select({
+        space_id: I.space_id,
+        kind: I.kind,
+        n: count(),
+        latest: maxOf(I.created_at),
+      })
+      .from(I)
+      .where(where)
+      .groupBy(I.space_id, I.kind)
+      .all()
+      .map((r) => ({
+        space_id: r.space_id as string,
+        kind: r.kind,
+        n: r.n,
+        latest: r.latest ?? "",
+      }));
+  }
+
+  /** The unseen items of one Space (its places and its home items), newest first, at most `max`. */
+  unseenOfSpace(space: string, max: number): InboxRow[] {
+    return this.#db.orm
+      .select()
+      .from(I)
+      .where(and(isNull(I.seen_at), eq(I.space_id, space)))
+      .orderBy(desc(I.id))
+      .limit(max)
+      .all();
+  }
+
+  /** How many unseen items one Space has. */
+  countOfSpace(space: string): number {
+    return (
+      this.#db.orm
+        .select({ n: count() })
+        .from(I)
+        .where(and(isNull(I.seen_at), eq(I.space_id, space)))
+        .get()?.n ?? 0
+    );
   }
 
   /** Every unseen item, oldest first. */

@@ -32,14 +32,12 @@ import {
   LIST_KINDS,
   LIST_LABEL,
   NO_DIVIDENDS,
-  NO_EXCHANGE_RULE,
   type RealOrderRequest,
   type Refusal,
 } from "@miyoria/play/exchange";
 import {
   type AccountRef,
   accountRefString,
-  EXCHANGE_DISCLAIMER,
   EXCHANGE_DISCLAIMER_LEVERAGE,
   EXCHANGE_DISCLAIMER_REAL,
 } from "@miyoria/types";
@@ -81,11 +79,12 @@ function orderOf(body: {
   return out;
 }
 
-const STRANGER = "她還不認識你,先和她說說話吧";
+/** What a stranger is told: she does not know them yet (`pronoun`: how texts name her). */
+const stranger = (pronoun: string) => `${pronoun}還不認識你,先和${pronoun}說說話吧`;
 
 async function personOf(x: ExchangeService, c: ApiContext): Promise<string> {
   const person = await x.personOf(accountOf(c));
-  if (!person) throw new ApiError(403, STRANGER);
+  if (!person) throw new ApiError(403, stranger(x.pronoun));
   return person;
 }
 
@@ -104,13 +103,14 @@ export const exchangeRpc = {
       lists: LIST_KINDS.map((kind) => ({ kind, label: LIST_LABEL[kind] })),
       default_list: x.lists.defaultList(person),
       rules: { ...v.rules, watch_max: x.config.watch_max },
+      // The same wording as every other surface, in this profile's coin name.
       small_print: {
-        base: EXCHANGE_DISCLAIMER,
+        base: v.disclaimer,
         real: EXCHANGE_DISCLAIMER_REAL,
         leverage: EXCHANGE_DISCLAIMER_LEVERAGE,
       },
       no_dividends: NO_DIVIDENDS,
-      no_exchange: NO_EXCHANGE_RULE,
+      no_exchange: v.no_exchange,
     };
   }),
   list: os.exchange.list.handler(
@@ -176,8 +176,9 @@ export const exchangeRpc = {
   }),
   account: os.exchange.account.handler(
     async ({ context: { state, c } }): Promise<ExchangeAccount> => {
-      const view = await service(state).accountView(accountOf(c));
-      if (!view) throw new ApiError(403, STRANGER);
+      const x = service(state);
+      const view = await x.accountView(accountOf(c));
+      if (!view) throw new ApiError(403, stranger(x.pronoun));
       return view;
     },
   ),

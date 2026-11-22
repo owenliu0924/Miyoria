@@ -111,9 +111,15 @@ if (!existsSync(profiles)) {
   console.error(`build: ${profiles} not found`);
   process.exit(1);
 }
+// A profile with its own character (docs/design/v5-profiles.md) also holds that character's
+// config, secrets and database; none of those may ever enter the package.
 const localOnly = (path) => {
   const p = path.replaceAll("\\", "/");
-  return /\/avatar\/model(\/|$)/.test(p) || /\/voice\/[^/]+\.(wav|txt)$/.test(p);
+  return (
+    /\/avatar\/model(\/|$)/.test(p) ||
+    /\/voice\/[^/]+\.(wav|txt)$/.test(p) ||
+    /\/profiles\/[^/]+\/(miyoria\.toml|host\.toml|routes\.toml|data|\.env[^/]*)(\/|$)/.test(p)
+  );
 };
 rmSync(join(root, "assets", "profiles"), { recursive: true, force: true });
 cpSync(profiles, join(root, "assets", "profiles"), {

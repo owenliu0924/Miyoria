@@ -9,7 +9,10 @@
 // once a run that showed it finished. An item of no place (her home) keeps the Space it came from
 // (phase 6, docs/design/v5-places.md): it is shown only in the runs of that Space, and an item of
 // no Space at all (her own timers, her morning) in every run. A voice event of one server never
-// reaches a run in another one.
+// reaches a run in another one. A run at her home place sees the other Spaces merged: one line
+// each, its name and how many items of which kind, never their words (`#elsewhere`, at most
+// `ELSEWHERE_MAX` places, the rest as "and N more"); `look(place)` (`look-tool.ts`) reads one of
+// them as far as memory's place rule allows from there. Transcripts are never merged.
 //
 // Opportunities, looked at every `tick_secs` and when something arrives:
 //
@@ -32,6 +35,7 @@
 
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
+import type { Viewer } from "@miyoria/memory/memory";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { errorMessage, interval } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey, StoreKey } from "@miyoria/store";
@@ -43,6 +47,7 @@ import {
   ArbiterKey,
   type ArbiterReason,
   type ContextKey,
+  contextKeyEquals,
   contextKeyString,
   dataBlock,
   type Envelope,
@@ -57,6 +62,8 @@ import {
   type LedgerEntry,
   newId,
   type PersonId,
+  PlaceAccessKey,
+  PlacesKey,
   type Reminder,
   SocialSignalsKey,
   serviceKey,
@@ -75,13 +82,22 @@ import {
   type OpportunityKind,
 } from "./gates.js";
 import { gateConfig, type InitiativeSettings, initiativeSettings } from "./initiative-config.js";
+import { INBOX_KINDS, type InboxKind } from "./initiative-schema.js";
 import {
   type InboxRow,
   type InitiativeStore,
   initiativeTables,
   type NewInboxItem,
 } from "./initiative-store.js";
-import { INBOX_HOME, INBOX_LABELS, INBOX_TITLE, WAKE_NOTES } from "./initiative-texts.js";
+import {
+  ELSEWHERE,
+  ELSEWHERE_TITLE,
+  INBOX_HOME,
+  INBOX_LABELS,
+  INBOX_TITLE,
+  WAKE_NOTES,
+} from "./initiative-texts.js";
+import { lookTool } from "./look-tool.js";
 import { localWhen, type ParseAt, type ReminderBackend, ScheduleBook } from "./schedule.js";
 import { scheduleTools } from "./schedule-tools.js";
 
@@ -128,6 +144,8 @@ const REASON: Readonly<Record<GateName, ArbiterReason>> = {
 
 /** Inbox kinds that wake her themselves (a result has a wake of its own already). */
 const WAKING: ReadonlySet<string> = new Set(["timer", "commitment", "followup", "world"]);
+/** Other places a run at home lists at most; the rest are one "and N more". */
+export const ELSEWHERE_MAX = 4;
 
 export interface InitiativeHost {
   agent: Agent;
@@ -367,7 +385,112 @@ export class Initiative {
       if (oldest === undefined) break;
       this.#shown.delete(oldest);
     }
-    return lines.length === 0 ? null : dataBlock("inbox", INBOX_TITLE, lines.join("\n"));
+    const blocks = [
+      lines.length === 0 ? null : dataBlock("inbox", INBOX_TITLE, lines.join("\n")),
+      this.#elsewhere(input.session.context),
+    ].filter((b): b is string => b !== null);
+    return blocks.length === 0 ? null : blocks.join("\n\n");
+  }
+
+  /** Whether `place` is her home place (`[modules.agent.initiative] home`). */
+  atHome(place: ContextKey): boolean {
+    const home = this.#home();
+    return home !== null && contextKeyEquals(home, place);
+  }
+
+  /**
+   * In a run at her home: one line for each other Space with something waiting (its name, how
+   * many of which kind), the ones with more that would wake her and the latest first, at most
+   * `ELSEWHERE_MAX`, the rest as one "and N more". Never an item's words. `null` elsewhere, or
+   * when nothing waits.
+   */
+  #elsewhere(place: ContextKey): string | null {
+    if (!this.atHome(place)) return null;
+    const places = this.#services.get(PlacesKey);
+    if (places === undefined) return null;
+    let rows: ReturnType<InitiativeStore["waitingElsewhere"]>;
+    try {
+      rows = this.#h.store.waitingElsewhere(this.#spaceOf(place));
+    } catch (error) {
+      this.#h.agent.log.debug({ err: errorMessage(error) }, "no other places for her home");
+      return null;
+    }
+    const bySpace = new Map<
+      string,
+      { name: string; total: number; waking: number; latest: string; kinds: Map<InboxKind, number> }
+    >();
+    for (const r of rows) {
+      // A Space she left (or never knew) is no place to tell her about.
+      const ref = places.space(r.space_id);
+      if (ref === null) continue;
+      let p = bySpace.get(r.space_id);
+      if (p === undefined) {
+        p = { name: ref.name, total: 0, waking: 0, latest: "", kinds: new Map() };
+        bySpace.set(r.space_id, p);
+      }
+      p.total += r.n;
+      if (WAKING.has(r.kind)) p.waking += r.n;
+      if (r.latest > p.latest) p.latest = r.latest;
+      p.kinds.set(r.kind, (p.kinds.get(r.kind) ?? 0) + r.n);
+    }
+    if (bySpace.size === 0) return null;
+    const ordered = [...bySpace.values()].sort(
+      (a, b) =>
+        b.waking - a.waking ||
+        (b.latest > a.latest ? 1 : b.latest < a.latest ? -1 : 0) ||
+        b.total - a.total,
+    );
+    const lines = ordered.slice(0, ELSEWHERE_MAX).map((p) =>
+      ELSEWHERE.line(
+        p.name,
+        p.total,
+        INBOX_KINDS.filter((k) => p.kinds.has(k)).map((k) => ({ kind: k, n: p.kinds.get(k) ?? 0 })),
+      ),
+    );
+    const more = ordered.length - ELSEWHERE_MAX;
+    if (more > 0) lines.push(ELSEWHERE.more(more));
+    lines.push(ELSEWHERE.hint);
+    return dataBlock("elsewhere", ELSEWHERE_TITLE, lines.join("\n"));
+  }
+
+  /**
+   * The viewer of memory's place rule for a run at `ctx.context` (the `look` tool): the people
+   * the run speaks for, and in a DM the person in it; the platform's access when it has one. The
+   * owner's hidden channels are memory's setting and not known here: `PlaceAccess` stands for them.
+   */
+  viewer(ctx: {
+    context: ContextKey;
+    account: AccountRef;
+    askers?: readonly AccountRef[];
+  }): Viewer {
+    const accounts = [...(ctx.askers ?? [ctx.account])];
+    const social = this.#services.get(SocialSignalsKey);
+    const handles = this.#services.get(HandleDirectoryKey);
+    const talkingWith = new Set<string>();
+    const add = (person: PersonId | null, name: string | null) => {
+      const handle = person === null ? null : (handles?.ofPerson(person) ?? null);
+      if (handle !== null) talkingWith.add(handle);
+      // Inbox items name people as they were shown (a handle, or a display name).
+      if (name !== null && name.trim() !== "") talkingWith.add(name);
+    };
+    for (const a of accounts) {
+      const attitude = social?.attitude(a) ?? null;
+      add(attitude?.person ?? null, attitude?.display_name ?? null);
+    }
+    if (ctx.context.kind === "dm") {
+      const line = this.#h.transcript
+        .tail(this.#h.sessionOf(ctx.context))
+        .entries.findLast((e) => e.kind === "other" && (e.person_id !== null || e.author !== null));
+      if (line !== undefined) add(line.person_id, line.author);
+    }
+    return {
+      context: ctx.context,
+      talkingWith,
+      accounts,
+      hidden: new Set(),
+      access: this.#services.get(PlaceAccessKey) ?? null,
+      partners: new Map(),
+    };
   }
 
   /** A run starts: what it is about, for its decision record. */
@@ -930,12 +1053,21 @@ export function startInitiative(
     ...(wiring.inVoice === undefined ? {} : { inVoice: wiring.inVoice }),
   });
   agent.ctx.provide(ScheduleRemindersKey, initiative.book.reminders);
-  const tools = scheduleTools({
-    book: initiative.book,
-    resolve: wiring.resolve,
-    describe: wiring.describe,
-    spaceOf: (place) => store.spaceOf(place),
-  });
+  const tools = [
+    ...scheduleTools({
+      book: initiative.book,
+      resolve: wiring.resolve,
+      describe: wiring.describe,
+      spaceOf: (place) => store.spaceOf(place),
+    }),
+    // What waits in another place, as far as memory's place rule allows from the run's place.
+    lookTool({
+      store,
+      places: () => agent.ctx.services.get(PlacesKey) ?? null,
+      viewer: (ctx) => initiative.viewer(ctx),
+      offsetMinutes: initiative.book.offsetMinutes,
+    }),
+  ];
   for (const tool of tools) agent.tools.register(tool);
   initiative.start(wiring.signal);
   return {

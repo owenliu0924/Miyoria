@@ -28,7 +28,13 @@ import {
   type PublicGift,
 } from "@miyoria/economy";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import { type AccountRef, PicturesKey, safeName } from "@miyoria/types";
+import {
+  type AccountRef,
+  CurrencyKey,
+  DEFAULT_CURRENCY,
+  PicturesKey,
+  safeName,
+} from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import type { SessionRecord } from "./session.js";
@@ -216,7 +222,9 @@ export const giftsAdminRpc = {
     const gifts = desk(state);
     const { name, coins, twd, kind, block } = input.body;
     if (block !== true && (kind === undefined || (coins === undefined) === (twd === undefined))) {
-      throw ApiError.badRequest("要給種類和魚幣價錢或台幣估價其中一個,或 block: true");
+      throw ApiError.badRequest(
+        `要給種類和${state.optional(CurrencyKey) ?? DEFAULT_CURRENCY}價錢或台幣估價其中一個,或 block: true`,
+      );
     }
     const choice =
       block === true

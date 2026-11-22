@@ -37,8 +37,12 @@ import {
 } from "@miyoria/runtime/kernel";
 import { StoreKey } from "@miyoria/store";
 import {
+  CharacterKey,
   type Clock,
   type ContextKey,
+  CurrencyKey,
+  DEFAULT_CHARACTER,
+  DEFAULT_CURRENCY,
   EventLogKey,
   HandleDirectoryKey,
   MarketWalletKey,
@@ -141,6 +145,7 @@ export class MarketModule implements Module {
         () => ctx.services.get(LlmRouterKey) ?? null,
         config.auction_purpose,
         PICK_TIMEOUT_MS,
+        () => ctx.services.get(CurrencyKey) ?? DEFAULT_CURRENCY,
       ),
       tell: (summary, key, person) => tell(ctx, summary, key, person),
       log: ctx.log,
@@ -160,7 +165,13 @@ export class MarketModule implements Module {
     this.#running = { markets, clock };
     this.#mount = new CommandMount(
       "market",
-      (registry) => registerCommands(registry, (context) => markets.at(context)),
+      (registry) =>
+        registerCommands(
+          registry,
+          (context) => markets.at(context),
+          ctx.services.get(CurrencyKey) ?? DEFAULT_CURRENCY,
+          (ctx.services.get(CharacterKey) ?? DEFAULT_CHARACTER).pronoun,
+        ),
       unregisterCommands,
     );
     this.#mount.attach(ctx);
