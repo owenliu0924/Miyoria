@@ -29,6 +29,12 @@ export interface HandleEntry {
   account: AccountRef | null;
   /** The display name it was made from (the handle does not follow later renames). */
   display_name: string;
+  /**
+   * What the person's accounts are called now (a server nickname they changed since first
+   * sight), when the directory knows. The handle and `display_name` never follow a rename; a
+   * lookup by name should accept these too.
+   */
+  names?: readonly string[];
   created_at: Timestamp;
 }
 

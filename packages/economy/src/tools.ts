@@ -72,9 +72,11 @@ export function personNamed(services: Lookup, to: string): PersonId | null {
   if (want === "") return null;
   const found = new Set<PersonId>();
   for (const e of handles?.list() ?? []) {
-    if (e.person !== null && (squash(e.handle) === want || squash(e.display_name) === want)) {
-      found.add(e.person);
-    }
+    if (e.person === null) continue;
+    // The handle, the name at first sight, and what their accounts are called now (a nickname
+    // changed since): she reads the current one in the chat and may well use it.
+    const names = [e.handle, e.display_name, ...(e.names ?? [])];
+    if (names.some((n) => squash(n) === want)) found.add(e.person);
   }
   // What she calls people (their heart rows).
   for (const { person, call_name } of services.get(HeartKey)?.callNames?.() ?? []) {

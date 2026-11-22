@@ -291,6 +291,19 @@ describe("the old interfaces over identity", () => {
     expect(s.handles.list()).toHaveLength(2);
   });
 
+  it("handles: a changed nickname keeps the handle and is listed as a name they go by now", async () => {
+    const s = await store();
+    const owen = await s.people.upsertAccount(acct("1"), "Owen");
+    // The same account seen again under a new server nickname.
+    await s.people.upsertAccount(acct("1"), "GPT-6.2 Luna");
+    expect((await s.people.personByAccount(acct("1")))?.id).toBe(owen);
+    const entry = s.handles.list().find((e) => e.person === owen);
+    expect(entry?.handle).toBe("Owen");
+    expect(entry?.display_name).toBe("Owen");
+    expect(entry?.names).toEqual(["GPT-6.2 Luna"]);
+    expect(s.handles.resolve("Owen")?.names).toEqual(["GPT-6.2 Luna"]);
+  });
+
   it("keeps a person's choices in persons.prefs, not in the settings table", async () => {
     const s = await store();
     const owen = await s.people.upsertAccount(acct("1"), "Owen");
