@@ -178,6 +178,12 @@ export interface ClusterModuleOptions {
   links?: ClusterLinksSource;
   /** Core's own checkout, for remote updates of the hosts. Without it hosts cannot be updated. */
   checkout?: CheckoutSource | null;
+  /**
+   * The machines' tables (the hosts, their keys' hashes, invites, estimates, routing controls):
+   * Core's wiring gives the install's machine database's (docs/design/v5-profiles.md §7), which
+   * stays open across restarts of the module. Default: the store's (`store.plugin(clusterTables)`).
+   */
+  machines?: ClusterTables;
 }
 
 /** How often the `live` guard state is read for the speech-host rule. */
@@ -354,9 +360,7 @@ export class ClusterModule implements Module {
     const config = ctx.config(ClusterConfigSchema);
     const bind = parseBind(config.bind);
     if (!bind) throw new ClusterError(`cannot bind the cluster link to \`${config.bind}\``);
-    const store = ctx.services.get(StoreKey);
-    if (store === undefined) throw new ClusterError("the cluster module needs the store");
-    const tables = store.plugin(clusterTables).withClock(ctx.clock);
+    const tables = this.#machines(ctx).withClock(ctx.clock);
     this.#services = ctx.services;
 
     const activity = new ActivityTracker();
@@ -494,6 +498,14 @@ export class ClusterModule implements Module {
    */
   refreshLinks(): void {
     this.#link?.refreshLinks();
+  }
+
+  /** The machines' tables: the option's, else the store's. */
+  #machines(ctx: ModuleContext): ClusterTables {
+    if (this.#options.machines !== undefined) return this.#options.machines;
+    const store = ctx.services.get(StoreKey);
+    if (store === undefined) throw new ClusterError("the cluster module needs the store");
+    return store.plugin(clusterTables);
   }
 
   /** What serves `cluster.llm` and `cluster.fetch` for this run of the module. */

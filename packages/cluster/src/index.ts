@@ -143,6 +143,8 @@ export {
   Hosts,
   InviteError,
   Invites,
+  type MachineDatabase,
   type NewHost,
   type NewInvite,
+  openMachineDatabase,
 } from "./tables.js";
