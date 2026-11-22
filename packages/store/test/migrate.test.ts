@@ -514,7 +514,11 @@ describe("identity v2 (places) on a v1 database", () => {
     const before = counts(db);
     const v1 = appliedMigrations(db).find((m) => m.plugin === "identity" && m.version === 1);
     const applied = migrate(db, [identitySchema]);
-    expect(applied.map((m) => [m.plugin, m.version])).toEqual([["identity", 2]]);
+    // v3 runs too: with no events it adds no member, so every count stays.
+    expect(applied.map((m) => [m.plugin, m.version])).toEqual([
+      ["identity", 2],
+      ["identity", 3],
+    ]);
     expect(counts(db)).toEqual(before);
     // The applied migration is the one that ran: its checksum is unchanged.
     expect(appliedMigrations(db).find((m) => m.plugin === "identity" && m.version === 1)).toEqual(
@@ -568,6 +572,217 @@ describe("identity v2 (places) on a v1 database", () => {
     try {
       upgrade(db);
       expect(primaries(db)).toEqual(["s2"]);
+    } finally {
+      db.close();
+    }
+  });
+});
+
+describe("identity v3 (members who acted) on a v2 database", () => {
+  const V2: PluginSchema = { ...identitySchema, migrations: identitySchema.migrations.slice(0, 2) };
+  const OTHER_TABLES = [
+    "persons",
+    "accounts",
+    "link_codes",
+    "spaces",
+    "rooms",
+    "sessions",
+    "events",
+  ];
+
+  let seq = 0;
+  function event(
+    db: Db,
+    fields: {
+      type?: string;
+      at: number;
+      space?: string | null;
+      account?: string | null;
+      person?: string | null;
+      data?: unknown;
+      redacted?: boolean;
+    },
+  ): void {
+    seq++;
+    db.run(
+      `INSERT INTO events (id, at, type, source, space_id, person_id, account_id, scope, tier, data, redacted_at)
+       VALUES ($id, $at, $type, 'test', $space, $person, $account, 'space', 'keep', $data, $redacted)`,
+      {
+        id: `e${seq}`,
+        at: fields.at,
+        type: fields.type ?? "platform.message.created",
+        space: fields.space ?? null,
+        person: fields.person ?? null,
+        account: fields.account ?? null,
+        data: fields.redacted ? '{"redacted":true}' : JSON.stringify(fields.data ?? {}),
+        redacted: fields.redacted ? fields.at : null,
+      },
+    );
+  }
+
+  /** Her voice presence line: who was in a voice channel of `space`, as the facts writer keeps it. */
+  function voiceLine(
+    db: Db,
+    space: string,
+    at: number,
+    people: [string, boolean][],
+    redacted = false,
+  ) {
+    event(db, {
+      type: "facts.observation.ambient",
+      at,
+      space,
+      redacted,
+      data: {
+        observation: { source: "voice.presence", summary: "語音頻道裡有:..." },
+        buckets: [],
+        speech: false,
+        origin: {
+          module: "voice",
+          topic: "voice.participants",
+          event: {
+            type: "voice.participants",
+            v: 1,
+            data: {
+              context: { platform: "discord", scope: "g1", channel: "v1", kind: "voice" },
+              participants: people.map(([id, self]) => ({
+                account: { platform: "discord", id },
+                display_name: id,
+                is_self: self,
+                muted: false,
+                deafened: false,
+              })),
+            },
+          },
+          turn: null,
+        },
+      },
+    });
+  }
+
+  /**
+   * Two servers (s1 primary, s2), and accounts: a1 a member of s1, a2 a member of s1 who left, a3
+   * to a5 no member anywhere, a6 on another platform, a7 marked as hers, a8 her bot account.
+   */
+  function v2Database(): Db {
+    const db = new Db(new DatabaseSync(":memory:", { enableForeignKeyConstraints: true }), {
+      now: () => Date.UTC(2026, 10, 22),
+    });
+    migrate(db, [V2]);
+    const people = ["p1", "p2", "p3", "p4", "p5", "p6", "p7"];
+    for (const [i, p] of people.entries()) {
+      db.run("INSERT INTO persons (id, name, handle, created_at) VALUES ($id, $id, $id, $at)", {
+        id: p,
+        at: i + 1,
+      });
+    }
+    const accounts: [string, string, string, string | null, number][] = [
+      ["a1", "discord", "1", "p1", 0],
+      ["a2", "discord", "2", "p2", 0],
+      ["a3", "discord", "3", "p3", 0],
+      ["a4", "discord", "4", "p4", 0],
+      ["a5", "discord", "5", "p5", 0],
+      ["a6", "twitch", "6", "p6", 0],
+      ["a7", "discord", "7", "p7", 1],
+      ["a8", "discord", "100", null, 0],
+    ];
+    for (const [id, platform, ext, person, self] of accounts) {
+      db.run(
+        `INSERT INTO accounts (id, platform, external_id, person_id, display_name, is_self, first_seen, last_seen)
+         VALUES ($id, $platform, $ext, $person, $ext, $self, 1, 1)`,
+        { id, platform, ext, person, self },
+      );
+    }
+    db.run(
+      `INSERT INTO spaces (id, platform, external_id, name, joined_at, is_primary)
+       VALUES ('s1', 'discord', 'g1', 'One', 1, 1), ('s2', 'discord', 'g2', 'Two', 2, 0)`,
+    );
+    db.run(
+      `INSERT INTO rooms (id, platform, external_id, space_id, kind, created_at)
+       VALUES ('r1', 'discord', 'c1', 's1', 'text', 1), ('r2', 'discord', 'v1', 's1', 'voice', 1)`,
+    );
+    db.run(
+      "INSERT INTO sessions (key, space_id, room_id, created_at, last_at) VALUES ('discord:g1:c1', 's1', 'r1', 1, 1)",
+    );
+    db.run(
+      `INSERT INTO space_members (space_id, account_id, last_seen, left_at)
+       VALUES ('s1', 'a1', 10, NULL), ('s1', 'a2', 10, 50)`,
+    );
+    return db;
+  }
+
+  function counts(db: Db): Record<string, number> {
+    return Object.fromEntries(
+      OTHER_TABLES.map((t) => [t, Number(db.get(`SELECT COUNT(*) AS n FROM ${t}`)?.n)]),
+    );
+  }
+
+  const members = (db: Db) =>
+    db
+      .all("SELECT space_id, account_id, last_seen, left_at FROM space_members ORDER BY 1, 2")
+      .map((r) => [r.space_id, r.account_id, r.last_seen, r.left_at]);
+
+  it("adds a member only where a row names the space, and touches no existing one", () => {
+    const db = v2Database();
+    try {
+      // A member already, and one who left: both stay as they are.
+      event(db, { at: 900, space: "s1", account: "a1" });
+      event(db, { at: 900, space: "s1", account: "a2" });
+      // a3 acted in s2 twice: a member of s2 seen at the later one, not of s1.
+      event(db, { type: "voice.utterance", at: 500, space: "s2", account: "a3" });
+      event(db, { type: "facts.observation.said", at: 700, space: "s2", account: "a3" });
+      // A person without the account does not say which account: nothing.
+      event(db, { type: "heart.changed", at: 800, space: "s1", person: "p3" });
+      // No space, an unknown space, another platform, an account marked hers: nothing.
+      event(db, { at: 800, account: "a5" });
+      event(db, { at: 800, space: "nope", account: "a5" });
+      event(db, { at: 800, space: "s1", account: "a6" });
+      event(db, { at: 800, space: "s1", account: "a7" });
+      // Her voice line in s1: a4 was there; her bot account (is_self) and an account identity
+      // never made are not members.
+      voiceLine(db, "s1", 600, [
+        ["4", false],
+        ["100", true],
+        ["999", false],
+      ]);
+      voiceLine(db, "s1", 650, [["4", false]]);
+      // A forgotten voice line names nobody any more.
+      voiceLine(db, "s2", 600, [["5", false]], true);
+      // Another topic's observation with a participants list is not a voice line.
+      event(db, {
+        type: "facts.observation",
+        at: 600,
+        space: "s2",
+        data: { origin: { topic: "game.x", event: { data: { participants: [] } } } },
+      });
+
+      const before = counts(db);
+      const applied = migrate(db, [identitySchema]);
+      expect(applied.map((m) => [m.plugin, m.name])).toEqual([["identity", "members_who_acted"]]);
+      expect(counts(db)).toEqual(before);
+      expect(members(db)).toEqual([
+        ["s1", "a1", 10, null],
+        ["s1", "a2", 10, 50],
+        ["s1", "a4", 650, null],
+        ["s2", "a3", 700, null],
+      ]);
+      // Once only: a second start applies nothing and changes nothing.
+      expect(migrate(db, [identitySchema])).toEqual([]);
+      const after = members(db);
+      // Its SQL run again adds nothing either.
+      db.exec(identitySchema.migrations.find((m) => m.version === 3)?.sql ?? "");
+      expect(members(db)).toEqual(after);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("is a no-op on a database without events", () => {
+    const db = v2Database();
+    try {
+      const before = members(db);
+      migrate(db, [identitySchema]);
+      expect(members(db)).toEqual(before);
     } finally {
       db.close();
     }
