@@ -364,7 +364,7 @@ Three kinds of caller reach hostd, all with the same method table (the daemon im
 | Caller | Transport | Authenticated by | May call |
 |---|---|---|---|
 | CLI on this machine | HTTP `POST /rpc` on the local API; `GET /logs/<service>` streams log lines | the token in `run/hostd.json` | everything |
-| A service on this machine | HTTP `POST /rpc` on the local API | its `MIYORIA_SERVICE_TOKEN` | the forwarded `cluster.resolve`, `cluster.llm` and `cluster.fetch`. `gpu.*` comes with H7; hostd does not serve it to a service yet |
+| A service on this machine | HTTP `POST /rpc` on the local API | its `MIYORIA_SERVICE_TOKEN` | the forwarded `cluster.resolve`, `cluster.llm` and `cluster.fetch` (Core then checks the `uses` table, below). `gpu.*` comes with H7; hostd does not serve it to a service yet |
 | Core | the control link (hostd dialled it) | the host key, in `hello` | `host.*`, `service.*` |
 
 Methods hostd serves:
@@ -380,7 +380,8 @@ Methods hostd serves:
 
 Methods Core serves on the control link:
 - `cluster.guard` → the active guarded states.
-- `cluster.resolve { capability }` → endpoints with the headers to send.
+- `cluster.resolve { capability }` → endpoints with the headers to send (bearer tokens included),
+  for a service the `uses` table lets resolve that capability; refused otherwise (see below).
 - `cluster.llm { purpose, messages, max_tokens, temperature, json }` → text. One completion
   through Core's own model and key; counted in the daily budget and written to the call log like
   any other call. The key never leaves Core.
@@ -389,14 +390,30 @@ Methods Core serves on the control link:
   (body base64, each body at most `HOST_FETCH_LIMITS.MAX_BODY_BYTES`, 8 MiB; the response head must
   arrive within `HEAD_TIMEOUT_MS`, 60 s). For small calls such as the ASR spot check.
 
-Who may use `cluster.llm` and `cluster.fetch`: Core decides, never the caller
-(`packages/cluster/src/calls.ts`). It checks that the host is approved, that the host's last
-report lists the service that asked, that the service provides a capability the host is approved
-for, and that the `provides` → `uses` table lets that capability use what is asked for (an LLM
-purpose, a capability to fetch from; a purpose must also be on Core's list, default `fast`). The
-table `DEFAULT_CLUSTER_USES` is in code and has no config key yet: `sing` and `lyrics` may use the
-LLM purpose `fast` and fetch from `asr`; nothing else may use anything. `cluster.llm` is rate
-limited per host (30 calls per 60 s by default). The errors are the codes of `HOST_ERROR_CODE`
+Who may use `cluster.llm`, `cluster.fetch` and `cluster.resolve`: Core decides, never the caller
+(`packages/cluster/src/calls.ts`). It checks that the host is approved, that the request names
+the service that asked (hostd adds it), that the host's last report lists that service, that the
+service provides a capability the host is approved for, and that the `provides` → `uses` table
+lets that capability use what is asked for (an LLM purpose, a capability to fetch from, a
+capability to resolve; a purpose must also be on Core's list, default `fast`). The table
+`DEFAULT_CLUSTER_USES` is in code and has no config key yet: `sing` and `lyrics` may use the LLM
+purpose `fast` and fetch from `asr`; nothing may resolve; nothing else may use anything.
+`cluster.llm` is rate limited per host (30 calls per 60 s by default).
+
+`cluster.resolve` has its own list (`resolve`), separate from `fetch`: `fetch` sends one request
+through Core and the token stays in Core, `resolve` hands the endpoint's headers to the service so
+it calls the capability itself, and the token leaves Core. Before 2026-11-22 any approved host
+could resolve any capability and got every endpoint's token; now a request that fails any check
+is refused with `NotAllowed` before the registry is read, so no endpoint, address or token of a
+capability the service was not granted is in the answer or the error. No service resolves today
+(the song worker and the lyrics service go through `cluster.fetch`; `workers/hostd_client.py`
+only passes the call on), so the empty default breaks nothing that runs. The operator's own call
+through hostd names no service and is refused as well; to debug, it names the service it asks
+for, as with `cluster.llm`. A service that needs to call a capability directly (for example a
+large upload past `cluster.fetch`'s 8 MiB) gets an entry in `uses`, such as
+`sing: { resolve: ["asr"] }`, in code for now.
+
+The errors are the codes of `HOST_ERROR_CODE`
 (`packages/contracts/host/src/protocol.ts`): `NotAllowed` (-32014) for any failed check,
 `NotLinked` (-32015) when hostd has no link to Core, `Unavailable` (-32016) when there is no usable
 endpoint or no LLM or the call failed, `TooLarge` (-32017) for a body over the limit,
