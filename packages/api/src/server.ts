@@ -207,7 +207,9 @@ async function memberResponse(run: () => Promise<Response>): Promise<Response> {
     }
   }
   const headers = new Headers(response.headers);
-  headers.set("cache-control", "no-store");
+  // A member's event stream is not kept either, and says `no-cache` like every stream.
+  const stream = headers.get("content-type")?.startsWith("text/event-stream") === true;
+  headers.set("cache-control", stream ? "no-cache, no-store" : "no-store");
   headers.set("x-content-type-options", "nosniff");
   return new Response(response.body, { status: response.status, headers });
 }

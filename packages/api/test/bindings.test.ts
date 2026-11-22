@@ -192,3 +192,71 @@ describe("static files", () => {
     expect((await raw(base, "GET", "/notes.txt")).status).toBe(200);
   });
 });
+
+/** Reads a push stream until its `ready`, or gives up after `ms`. */
+async function untilReady(res: Response, ms = 5_000): Promise<string> {
+  const reader = (res.body as ReadableStream<Uint8Array>).getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  const deadline = Date.now() + ms;
+  while (!text.includes('"kind":"ready"') && Date.now() < deadline) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+  }
+  reader.releaseLock();
+  return text;
+}
+
+describe("push streams over the wire", () => {
+  it("are on both listeners, the admin stream only on bind, and a closed one frees its place", async () => {
+    const { base, publicBase } = await start({ public_bind: "127.0.0.1:0" });
+    const pub = publicBase ?? "";
+    const open: AbortController[] = [];
+    const connect = async () => {
+      const ctl = new AbortController();
+      const res = await fetch(`${pub}/api/public/stream?topics=status`, { signal: ctl.signal });
+      return { ctl, res };
+    };
+    const first = await connect();
+    expect(first.res.status).toBe(200);
+    expect(first.res.headers.get("content-type")).toMatch(/^text\/event-stream/);
+    expect(first.res.headers.get("cache-control")).toBe("no-cache");
+    expect(first.res.headers.get("x-accel-buffering")).toBe("no");
+    const text = await untilReady(first.res);
+    expect(text).toContain('"topic":"status"');
+    expect(text).toMatch(/id: \S+\.\d+\.\S+/);
+    open.push(first.ctl);
+    for (let i = 1; i < 6; i++) {
+      const next = await connect();
+      expect(next.res.status).toBe(200);
+      await untilReady(next.res);
+      open.push(next.ctl);
+    }
+    // One address holds six; the seventh is refused until one goes away.
+    const seventh = await connect();
+    expect(seventh.res.status).toBe(429);
+    open.shift()?.abort();
+    let again = 429;
+    for (let i = 0; i < 50 && again !== 200; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const tryAgain = await connect();
+      again = tryAgain.res.status;
+      if (again === 200) open.push(tryAgain.ctl);
+      else await tryAgain.res.body?.cancel();
+    }
+    expect(again).toBe(200);
+    for (const ctl of open) ctl.abort();
+
+    // The admin stream: on bind only; the public listener has no such route.
+    expect((await raw(pub, "GET", "/api/events", { token: TOKEN })).status).toBe(404);
+    const head = await fetch(`${base}/api/events`, {
+      method: "HEAD",
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
+    expect(head.status).toBe(200);
+    // A member stream needs a session, on either listener.
+    expect((await raw(pub, "GET", "/api/member/stream?topics=danmaku")).status).toBe(401);
+    expect((await raw(base, "GET", "/api/member/stream?topics=danmaku")).status).toBe(401);
+  });
+});

@@ -2279,6 +2279,36 @@
         }
       }
     },
+    "push": {
+      "public": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "public",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/public/stream"
+          }
+        }
+      },
+      "member": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/stream"
+          }
+        }
+      }
+    },
     "member": {
       "session": {
         "~orpc": {

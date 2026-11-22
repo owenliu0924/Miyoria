@@ -43,6 +43,7 @@ import { os, type RpcContext } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { adminSpace } from "./space-param.js";
 import type { ApiContext, ApiState } from "./state.js";
+import type { SyncWatch } from "./watch.js";
 
 const log = getLogger("api.public");
 
@@ -554,6 +555,23 @@ export function publicSongs(state: ApiState, guild: string | null = null): Publi
   };
 }
 
+/** `GET /api/public/status` as a view: one for everyone (also the `status` push topic). */
+export function publicStatusWatch(state: ApiState): SyncWatch<PublicStatus> {
+  return { key: "status", build: () => publicStatus(state) };
+}
+
+/**
+ * `GET /api/public/songs?space=` as a view (also the `songs` push topic): `404` for a server she
+ * is not in, thrown here for both.
+ */
+export function publicSongsWatch(
+  state: ApiState,
+  requested: string | undefined,
+): SyncWatch<PublicSongs> {
+  const guild = publicSongGuild(state, requested);
+  return { key: `songs:${guild ?? ""}`, build: () => publicSongs(state, guild) };
+}
+
 /**
  * The answer of a public view: one value serves everyone for `cache_secs`, shared by every client,
  * after the client's own rate limit (`429`). It carries the cache headers the public views have.
@@ -570,11 +588,12 @@ export function servePublic<T>(context: RpcContext, key: string, build: () => T)
 
 /** `GET /api/public/status`, `GET /api/public/songs`; served only while the public side is on (see `rpc.ts`). */
 export const publicRpc = {
-  status: os.public.status.handler(({ context }) =>
-    servePublic(context, "status", () => publicStatus(context.state)),
-  ),
+  status: os.public.status.handler(({ context }) => {
+    const view = publicStatusWatch(context.state);
+    return servePublic(context, view.key, view.build);
+  }),
   songs: os.public.songs.handler(({ input, context }) => {
-    const guild = publicSongGuild(context.state, input?.query.space);
-    return servePublic(context, `songs:${guild ?? ""}`, () => publicSongs(context.state, guild));
+    const view = publicSongsWatch(context.state, input?.query.space);
+    return servePublic(context, view.key, view.build);
   }),
 };

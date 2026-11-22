@@ -4,14 +4,19 @@
 import { useQuery } from "@tanstack/react-query";
 import type { PublicState, PublicStatus } from "@miyoria/contracts/api";
 import { useApi } from "@/app/connection";
+import { usePushed } from "@/app/push";
 import type { Tone } from "@/components/status";
 import { WORLD } from "@/lib/world";
 
 /** Her pronoun in this profile (`lib/world.ts`). */
 const HER = WORLD.pronoun;
 
-/** The Core rebuilds these every few seconds at most, so polling faster buys nothing. */
+/**
+ * The Core rebuilds these every few seconds at most, so polling faster buys nothing. Under a
+ * `PushProvider` both come by push instead, and are polled only while the stream is not there.
+ */
 const POLL_MS = 15_000;
+export const PUBLIC_SONGS = ["public", "songs"] as const;
 
 export const STATE: Record<PublicState, { label: string; tone: Tone; pulse?: boolean }> = {
   singing: { label: `${HER}在唱歌`, tone: "brand", pulse: true },
@@ -33,14 +38,17 @@ export function stateLabel(status: PublicStatus): string {
 
 export function usePublicStatus() {
   const api = useApi();
-  return useQuery(api.q.public.status.queryOptions({ refetchInterval: POLL_MS }));
+  const options = api.q.public.status.queryOptions();
+  const pushed = usePushed("status", null, options.queryKey);
+  return useQuery({ ...options, refetchInterval: pushed ? false : POLL_MS });
 }
 
 export function usePublicSongs() {
   const api = useApi();
+  const pushed = usePushed("songs", null, PUBLIC_SONGS);
   return useQuery({
-    queryKey: ["public", "songs"],
+    queryKey: PUBLIC_SONGS,
     queryFn: ({ signal }) => api.rpc.public.songs(undefined, { signal }),
-    refetchInterval: POLL_MS,
+    refetchInterval: pushed ? false : POLL_MS,
   });
 }

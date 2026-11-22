@@ -47,6 +47,7 @@ import { ApiError } from "./errors.js";
 import type { SessionRecord } from "./session.js";
 import { type ApiContext, type ApiState, actorOf } from "./state.js";
 import { keyOf } from "./wallet.js";
+import type { Watch } from "./watch.js";
 
 function service(state: ApiState): ExchangeService {
   return state.service(ExchangeKey, "exchange module");
@@ -88,6 +89,50 @@ async function personOf(x: ExchangeService, c: ApiContext): Promise<string> {
   return person;
 }
 
+/**
+ * `GET /api/member/exchange/list/{kind}` as a view (also the `exchange_list` push topic): the
+ * rows as this member sees them (their holdings, their watch list).
+ */
+export async function exchangeListWatch(
+  state: ApiState,
+  c: ApiContext,
+  kind: ExchangeList["kind"],
+): Promise<Watch<ExchangeList>> {
+  const x = service(state);
+  const account = accountOf(c);
+  const person = await x.personOf(account);
+  return {
+    key: `${kind}:${person ?? accountRefString(account)}`,
+    build: () => ({ kind, label: LIST_LABEL[kind], rows: x.lists.rows(kind, person) }),
+  };
+}
+
+/**
+ * `GET /api/member/exchange/ticker/{code}` as a view (also the `exchange_ticker` push topic):
+ * `404` for a ticker nobody looked up; each build counts as a view of it, as each poll did.
+ */
+export async function exchangeTickerWatch(
+  state: ApiState,
+  c: ApiContext,
+  asked: string,
+): Promise<Watch<ExchangeTicker>> {
+  const x = service(state);
+  const code = asked.toUpperCase();
+  const account = accountOf(c);
+  const person = await x.personOf(account);
+  const build = (): ExchangeTicker => {
+    const h = x.real.history(code);
+    if (!h) throw ApiError.notFound("沒有這個標的(先查詢代號)");
+    if (person) x.real.noteView(person, code);
+    return {
+      line: h.line,
+      points: h.points,
+      watching: person ? x.lists.watching(person, code) : false,
+    };
+  };
+  return { key: `${code}:${person ?? accountRefString(account)}`, build };
+}
+
 export const exchangeRpc = {
   market: os.exchange.market.handler(async ({ context: { state, c } }): Promise<ExchangeMarket> => {
     const x = service(state);
@@ -114,12 +159,8 @@ export const exchangeRpc = {
     };
   }),
   list: os.exchange.list.handler(
-    async ({ input, context: { state, c } }): Promise<ExchangeList> => {
-      const x = service(state);
-      const kind = input.params.kind;
-      const person = await x.personOf(accountOf(c));
-      return { kind, label: LIST_LABEL[kind], rows: x.lists.rows(kind, person) };
-    },
+    async ({ input, context: { state, c } }): Promise<ExchangeList> =>
+      (await exchangeListWatch(state, c, input.params.kind)).build(),
   ),
   suggest: os.exchange.suggest.handler(async ({ input, context: { state, c } }) => ({
     items: service(state).lists.suggest(accountRefString(accountOf(c)), input.query.q),
@@ -129,21 +170,10 @@ export const exchangeRpc = {
     if (!r.ok) refused(r);
     return { instrument: r.instrument };
   }),
-  ticker: os.exchange.ticker.handler(
-    async ({ input, context: { state, c } }): Promise<ExchangeTicker> => {
-      const x = service(state);
-      const code = input.params.code.toUpperCase();
-      const h = x.real.history(code);
-      if (!h) throw ApiError.notFound("沒有這個標的(先查詢代號)");
-      const person = await x.personOf(accountOf(c));
-      if (person) x.real.noteView(person, code);
-      return {
-        line: h.line,
-        points: h.points,
-        watching: person ? x.lists.watching(person, code) : false,
-      };
-    },
-  ),
+  ticker: os.exchange.ticker.handler(async ({ input, context: { state, c } }) => {
+    const view = await exchangeTickerWatch(state, c, input.params.code);
+    return view.build();
+  }),
   candles: os.exchange.candles.handler(
     async ({ input, context: { state, c } }): Promise<ExchangeCandles> => {
       const x = service(state);

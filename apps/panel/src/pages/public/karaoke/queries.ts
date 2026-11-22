@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { KaraokeSongView } from "@miyoria/contracts/api";
 import { isApiError, isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
+import { usePushed } from "@/app/push";
 
 export const KARAOKE = ["member", "karaoke"] as const;
 export const OVERVIEW = [...KARAOKE, "overview"] as const;
@@ -63,18 +64,22 @@ export const ROOMS_POLL_MS = 15_000;
 
 /**
  * Whether a room can be opened now, its price, the balance and the room they are in. `space`: the
- * server it is about (phase 6, `useMemberSpace`); `null`: the Core's default (their own).
+ * server it is about (phase 6, `useMemberSpace`); `null`: the Core's default (their own). Under a
+ * `PushProvider` it comes by push (her joining a voice channel shows at once) and is polled only
+ * while the stream is not there.
  */
 export function useRooms(enabled = true, space: string | null = null) {
   const api = useApi();
+  const key = [...ROOMS, space] as const;
+  const pushed = usePushed("rooms", space, key, enabled);
   return useQuery({
-    queryKey: [...ROOMS, space],
+    queryKey: key,
     queryFn: ({ signal }) =>
       api.rpc.karaokeRooms.overview(space ? { query: { space } } : undefined, { signal }),
     retry: retryUnlessOff,
     enabled,
     staleTime: 0,
     refetchInterval: (q) =>
-      q.state.error ? false : q.state.data && !q.state.data.available ? ROOMS_WAIT_POLL_MS : ROOMS_POLL_MS,
+      pushed || q.state.error ? false : q.state.data && !q.state.data.available ? ROOMS_WAIT_POLL_MS : ROOMS_POLL_MS,
   });
 }

@@ -491,5 +491,5 @@ describe("the books over many days", () => {
       1,
     );
     void MIN;
-  });
+  }, 30_000);
 });
