@@ -37,6 +37,7 @@ import { randomInt } from "node:crypto";
 import { errorMessage, type Logger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  DEFAULT_CURRENCY,
   MARKET_REASONS,
   type MarketCharge,
   type MarketWallet,
@@ -317,7 +318,7 @@ export class MarketService {
   }
 
   #currency(): string {
-    return this.#wallet()?.currency ?? "魚幣";
+    return this.#wallet()?.currency ?? DEFAULT_CURRENCY;
   }
 
   #offset(): number {

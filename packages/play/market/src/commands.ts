@@ -24,7 +24,13 @@ import {
   intParam,
   notice,
 } from "@miyoria/commands";
-import { type AccountRef, type ContextKey, newId } from "@miyoria/types";
+import {
+  type AccountRef,
+  type ContextKey,
+  DEFAULT_CHARACTER,
+  DEFAULT_CURRENCY,
+  newId,
+} from "@miyoria/types";
 import { LOT_TITLE } from "./lots.js";
 import { auctionNotice, BUY_COUNTS, lotteryNotice, md, ROUTES } from "./notices.js";
 import { withPicture } from "./pictures.js";
@@ -93,7 +99,12 @@ function lastLotCard(
 /** The market of where a command or a button was used (its Space; a DM's is the primary's). */
 type MarketAt = (context: ContextKey | null) => MarketService | null;
 
-function registerAll(registry: CommandRegistry, service: MarketAt): void {
+function registerAll(
+  registry: CommandRegistry,
+  service: MarketAt,
+  coin: string,
+  her: string,
+): void {
   const run = async (
     inv: { context: ContextKey },
     fn: (market: MarketService) => Promise<CommandReply>,
@@ -191,10 +202,10 @@ function registerAll(registry: CommandRegistry, service: MarketAt): void {
   registry.register(
     commandSpec("me auction", "每週拍賣:看現在拍什麼、出價,或幫得標的稱呼取名", {
       args: [
-        argSpec("bid", "出價(會先押住你的魚幣,被超過就退回)", ArgKind.integer, {
+        argSpec("bid", `出價(會先押住你的${coin},被超過就退回)`, ArgKind.integer, {
           required: false,
         }),
-        argSpec("name", "得標「她怎麼叫你」之後,想讓她怎麼叫你", ArgKind.string, {
+        argSpec("name", `得標「${her}怎麼叫你」之後,想讓${her}怎麼叫你`, ArgKind.string, {
           required: false,
         }),
       ],
@@ -308,8 +319,14 @@ async function lotteryCard(
   return withPicture(lotteryNotice(view, market.config), await market.lotteryPicture(view));
 }
 
-export function registerCommands(registry: CommandRegistry, service: MarketAt): void {
-  registerAll(registry, service);
+/** `coin` and `her`: the profile's coin name and pronoun (the first character's by default). */
+export function registerCommands(
+  registry: CommandRegistry,
+  service: MarketAt,
+  coin: string = DEFAULT_CURRENCY,
+  her: string = DEFAULT_CHARACTER.pronoun,
+): void {
+  registerAll(registry, service, coin, her);
 }
 
 export function unregisterCommands(registry: CommandRegistry): void {
