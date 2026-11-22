@@ -395,11 +395,22 @@ describe("wallet commands", () => {
       ["簽到", "me checkin", undefined],
       ["餵一碗", "me feed", { item: "rice" }],
       ["餵鋼盆", "me feed", { item: "big_bowl" }],
+      ["送她別的", "me feed", undefined],
       ["留言上大螢幕", "me screen", undefined],
       ["發彈幕", "me danmaku", undefined],
       ["轉給別人", "me give", undefined],
       ["排行榜", "me board", undefined],
     ]);
+    // The form's one field is the argument `/me feed` reads a named gift from.
+    const gift = page?.actions.find((a) => a.id === "gift");
+    expect(gift?.ask?.fields.map((f) => f.arg)).toEqual(["thing"]);
+    const f = fake();
+    const registry = new CommandRegistry(Permissions.fromStrings([]));
+    const services = new ServiceRegistry();
+    services.provide("test", EconomyKey, f.economy);
+    new EconomyCommands().install(registry, services);
+    const feed = registry.get(["me", "feed"]);
+    expect(feed?.args.map((a) => a.name)).toContain("thing");
     const screen = page?.actions.find((a) => a.id === "screen");
     expect(screen?.ask?.fields.map((f) => f.arg)).toEqual(["text"]);
     const danmaku = page?.actions.find((a) => a.id === "danmaku");
