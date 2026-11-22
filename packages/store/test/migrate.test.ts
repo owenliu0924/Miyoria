@@ -14,6 +14,7 @@ import {
   checksum,
   coreSchema,
   Db,
+  identitySchema,
   legacySchema,
   lintSchemas,
   migrate,
@@ -438,6 +439,137 @@ describe("naming lint", () => {
       ]);
     } finally {
       t.close();
+    }
+  });
+});
+
+describe("identity v2 (places) on a v1 database", () => {
+  const IDENTITY_TABLES = [
+    "persons",
+    "accounts",
+    "link_codes",
+    "spaces",
+    "rooms",
+    "sessions",
+    "space_members",
+  ];
+  const V1: PluginSchema = { ...identitySchema, migrations: identitySchema.migrations.slice(0, 1) };
+
+  /** A database migrated to identity v1 only, with `spaces` guilds and `members[i]` members in each. */
+  function v1Database(guilds: { left?: boolean; joined: number; members: number }[]): Db {
+    const db = new Db(new DatabaseSync(":memory:", { enableForeignKeyConstraints: true }), {
+      now: () => Date.UTC(2026, 10, 14),
+    });
+    migrate(db, [V1]);
+    db.run(
+      "INSERT INTO persons (id, name, handle, created_at) VALUES ('p1', 'Owen', 'Owen', 1), ('p2', 'Ann', 'Ann', 2), ('p3', 'Bo', 'Bo', 3)",
+    );
+    db.run(
+      `INSERT INTO accounts (id, platform, external_id, person_id, display_name, first_seen, last_seen)
+       VALUES ('a1', 'discord', '1', 'p1', 'Owen', 1, 1), ('a2', 'discord', '2', 'p2', 'Ann', 2, 2),
+              ('a3', 'discord', '3', 'p3', 'Bo', 3, 3)`,
+    );
+    db.run("INSERT INTO link_codes VALUES ('h', 'a1', 9)");
+    guilds.forEach((g, i) => {
+      const id = `s${i + 1}`;
+      db.run(
+        "INSERT INTO spaces (id, platform, external_id, name, joined_at, left_at) VALUES ($id, 'discord', $ext, $name, $joined, $left)",
+        {
+          id,
+          ext: `g${i + 1}`,
+          name: `Guild ${i + 1}`,
+          joined: g.joined,
+          left: g.left ? 50 : null,
+        },
+      );
+      db.run(
+        "INSERT INTO rooms (id, platform, external_id, space_id, kind, created_at) VALUES ($id, 'discord', $ext, $space, 'text', 1)",
+        { id: `r${i + 1}`, ext: `c${i + 1}`, space: id },
+      );
+      db.run(
+        "INSERT INTO sessions (key, space_id, room_id, created_at, last_at) VALUES ($key, $space, $room, 1, 1)",
+        { key: `discord:g${i + 1}:c${i + 1}`, space: id, room: `r${i + 1}` },
+      );
+      for (let m = 1; m <= g.members; m++) {
+        db.run(
+          "INSERT INTO space_members (space_id, account_id, last_seen) VALUES ($space, $account, 1)",
+          { space: id, account: `a${m}` },
+        );
+      }
+    });
+    return db;
+  }
+
+  function counts(db: Db): Record<string, number> {
+    return Object.fromEntries(
+      IDENTITY_TABLES.map((t) => [t, Number(db.get(`SELECT COUNT(*) AS n FROM ${t}`)?.n)]),
+    );
+  }
+
+  function primaries(db: Db): string[] {
+    return db.all("SELECT id FROM spaces WHERE is_primary = 1").map((r) => String(r.id));
+  }
+
+  function upgrade(db: Db): void {
+    const before = counts(db);
+    const v1 = appliedMigrations(db).find((m) => m.plugin === "identity" && m.version === 1);
+    const applied = migrate(db, [identitySchema]);
+    expect(applied.map((m) => [m.plugin, m.version])).toEqual([["identity", 2]]);
+    expect(counts(db)).toEqual(before);
+    // The applied migration is the one that ran: its checksum is unchanged.
+    expect(appliedMigrations(db).find((m) => m.plugin === "identity" && m.version === 1)).toEqual(
+      v1,
+    );
+  }
+
+  it("the one server becomes primary, and no row is lost", () => {
+    const db = v1Database([{ joined: 10, members: 2 }]);
+    try {
+      upgrade(db);
+      expect(primaries(db)).toEqual(["s1"]);
+      expect(db.get("SELECT is_primary FROM spaces WHERE id = 's1'")).toEqual({ is_primary: 1 });
+    } finally {
+      db.close();
+    }
+  });
+
+  it("with no server, none is primary", () => {
+    const db = v1Database([]);
+    try {
+      upgrade(db);
+      expect(primaries(db)).toEqual([]);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("with two servers, the one with the most members she is still in", () => {
+    // s1 is older, s2 has more members, s3 has the most but she left it.
+    const db = v1Database([
+      { joined: 10, members: 1 },
+      { joined: 20, members: 2 },
+      { joined: 5, members: 3, left: true },
+    ]);
+    try {
+      upgrade(db);
+      expect(primaries(db)).toEqual(["s2"]);
+      // At most one primary.
+      expect(() => db.run("UPDATE spaces SET is_primary = 1 WHERE id = 's1'")).toThrow(/UNIQUE/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("with two servers of as many members, the older one", () => {
+    const db = v1Database([
+      { joined: 20, members: 2 },
+      { joined: 10, members: 2 },
+    ]);
+    try {
+      upgrade(db);
+      expect(primaries(db)).toEqual(["s2"]);
+    } finally {
+      db.close();
     }
   });
 });

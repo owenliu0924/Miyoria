@@ -2,7 +2,7 @@
 // from a `ContextKey` (docs/design/v5-data.md §4), and the old store interfaces over it.
 
 import { openTestDb, type TestDb } from "@miyoria/store/testing";
-import type { AccountRef, ContextKey } from "@miyoria/types";
+import type { AccountRef, ContextKey, PersonId } from "@miyoria/types";
 import { eq, sql } from "drizzle-orm";
 import { afterEach, describe, expect, it } from "vitest";
 import { accounts, persons, sessions, spaceMembers } from "../src/identity/schema.js";
@@ -11,6 +11,7 @@ import {
   HOME_SESSION,
   type Identity,
   linkCodeHash,
+  SpacePlaces,
   SqliteStore,
 } from "../src/index.js";
 
@@ -355,5 +356,126 @@ describe("the old interfaces over identity", () => {
       space_members: 1,
     });
     expect(await s.people.all()).toEqual([]);
+  });
+});
+
+describe("places", () => {
+  function places() {
+    const o = open();
+    return { ...o, places: new SpacePlaces(o.t.db, o.id) };
+  }
+  const say = (id: Identity, guild: string, channel: string, account: string, name = account) =>
+    id.resolve(ctx(guild, channel, "channel"), { account: acct(account), display_name: name });
+
+  it("has no primary before she sees a server, and the first one she sees is it", () => {
+    const { places: p, id } = places();
+    expect(p.primary()).toBeNull();
+    expect(p.spaces()).toEqual([]);
+    const a = say(id, "gA", "c1", "1").space_id as string;
+    const b = p.seen("discord", "gB", "Guild B");
+    expect(p.primary()).toMatchObject({ id: a, external_id: "gA", primary: true });
+    expect(p.spaces().map((s) => [s.external_id, s.name, s.primary])).toEqual([
+      ["gA", "gA", true],
+      ["gB", "Guild B", false],
+    ]);
+    expect(p.space(b)).toMatchObject({ external_id: "gB", primary: false });
+    expect(p.ofGuild("discord", "gB")?.id).toBe(b);
+    expect(p.ofGuild("discord", "nope")).toBeNull();
+    expect(p.space("nope")).toBeNull();
+  });
+
+  it("leaving keeps the rows; the primary stays where it was, and coming back clears the mark", () => {
+    const { places: p, id, t } = places();
+    const a = p.seen("discord", "gA", "A");
+    const b = p.seen("discord", "gB", "B");
+    p.left("discord", "gA");
+    expect(p.primary()).toBeNull();
+    expect(p.spaces().map((s) => s.id)).toEqual([b]);
+    expect(p.space(a)).toBeNull();
+    expect(t.db.get("SELECT COUNT(*) AS n FROM spaces")).toEqual({ n: 2 });
+    // A new server while the primary is away does not take its place.
+    p.seen("discord", "gC", "C");
+    expect(t.db.all("SELECT external_id FROM spaces WHERE is_primary = 1")).toEqual([
+      { external_id: "gA" },
+    ]);
+    // A message from it means she is there again.
+    say(id, "gA", "c1", "1");
+    expect(p.primary()?.id).toBe(a);
+    p.left("discord", "unknown");
+  });
+
+  it("knows members by person, their spaces, and a member who left until they speak again", () => {
+    const { places: p, id } = places();
+    const a = say(id, "gA", "c1", "1", "Owen").space_id as string;
+    const b = say(id, "gB", "c2", "1", "Owen").space_id as string;
+    say(id, "gB", "c2", "2", "Ann");
+    const owen = id.personOf(acct("1"))?.id as PersonId;
+    const ann = id.personOf(acct("2"))?.id as PersonId;
+    expect([...p.members(b)].sort()).toEqual([owen, ann].sort());
+    expect([...p.members(a)]).toEqual([owen]);
+    expect(p.spacesOf(owen).map((s) => s.id)).toEqual([a, b]);
+    expect(p.spacesOf(ann).map((s) => s.id)).toEqual([b]);
+    expect(p.isMember(ann, b)).toBe(true);
+    expect(p.isMember(ann, a)).toBe(false);
+    expect(p.isMember(ann, "")).toBe(false);
+
+    p.memberLeft(b, acct("2"));
+    expect(p.isMember(ann, b)).toBe(false);
+    expect(p.spacesOf(ann)).toEqual([]);
+    expect([...p.members(b)]).toEqual([owen]);
+    say(id, "gB", "c2", "2", "Ann");
+    expect(p.isMember(ann, b)).toBe(true);
+    // A space she left is not one of theirs, though they are still its members.
+    p.left("discord", "gB");
+    expect(p.spacesOf(owen).map((s) => s.id)).toEqual([a]);
+    expect(p.isMember(owen, b)).toBe(true);
+  });
+
+  it("finds where a context is without writing, and which space a channel is in", () => {
+    const { places: p, id, t } = places();
+    const author = { account: acct("1"), display_name: "Owen" };
+    expect(p.at(ctx("g", "c", "channel"))).toBeNull();
+    const place = id.resolve(ctx("g", "c", "channel"), author);
+    const thread = id.resolve(ctx("g", "t", "thread"), author, { parent: "c" });
+    const rows = Number(t.db.get("SELECT COUNT(*) AS n FROM rooms")?.n);
+    expect(p.at(ctx("g", "c", "channel"))).toEqual({
+      space_id: place.space_id,
+      room_id: place.room_id,
+      parent_room_id: null,
+      session: "discord:g:c",
+    });
+    expect(p.at(ctx("g", "t", "thread"))).toEqual({
+      space_id: place.space_id,
+      room_id: thread.room_id,
+      parent_room_id: place.room_id,
+      session: "discord:g:c:t",
+    });
+    expect(p.at(ctx("g", "unknown", "channel"))).toBeNull();
+    expect(Number(t.db.get("SELECT COUNT(*) AS n FROM rooms")?.n)).toBe(rows);
+    expect(p.room(thread.room_id)).toEqual({
+      id: thread.room_id,
+      platform: "discord",
+      external_id: "t",
+      space_id: place.space_id,
+      parent_id: place.room_id,
+      kind: "thread",
+      name: null,
+    });
+    expect(p.room("nope")).toBeNull();
+    expect(p.channelSpace("discord", "c")).toBe(place.space_id);
+    expect(p.channelSpace("discord", "unknown")).toBeNull();
+  });
+
+  it("reports new spaces and rooms, not the same ones seen again", () => {
+    const { places: p, id } = places();
+    const seen: string[] = [];
+    const stop = p.onChange((c) => seen.push(`${c.kind}:${c.room_id === null ? "-" : "r"}`));
+    say(id, "gA", "c1", "1");
+    say(id, "gA", "c1", "1");
+    p.seen("discord", "gA", "Renamed");
+    p.left("discord", "gA");
+    stop();
+    p.seen("discord", "gA", "Back");
+    expect(seen).toEqual(["space:-", "room:r", "space:-", "space:-"]);
   });
 });

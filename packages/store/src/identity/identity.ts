@@ -87,6 +87,37 @@ function sessionKey(ctx: ContextKey, dmPerson: PersonId | null, parent: string |
   return `${ctx.platform}:${ctx.scope}:${ctx.channel}`;
 }
 
+/** A Space or a room row that appeared or changed (a Space's name, left, back). */
+export interface PlaceRowChange {
+  kind: "space" | "room";
+  space_id: string | null;
+  room_id: string | null;
+}
+
+// Listeners by database, so every `Identity` on one connection reports to every reader of it.
+const placeListeners = new WeakMap<Db, Set<(change: PlaceRowChange) => void>>();
+
+/** Calls `listener` after a space or room row of `db` is created or changed; returns the unsubscribe. */
+export function onPlaceRows(db: Db, listener: (change: PlaceRowChange) => void): () => void {
+  let set = placeListeners.get(db);
+  if (set === undefined) {
+    set = new Set();
+    placeListeners.set(db, set);
+  }
+  set.add(listener);
+  return () => set.delete(listener);
+}
+
+function placeChanged(db: Db, change: PlaceRowChange): void {
+  for (const listener of placeListeners.get(db) ?? []) {
+    try {
+      listener(change);
+    } catch {
+      // A reader's cache must not break a write.
+    }
+  }
+}
+
 /** sha256 (hex) of a link code: codes are never stored as typed. */
 export function linkCodeHash(code: string): string {
   return createHash("sha256").update(code, "utf8").digest("hex");
@@ -426,23 +457,45 @@ export class Identity {
 
   // ---- places --------------------------------------------------------------------------
 
+  /**
+   * The id of the space `(platform, externalId)`: created on first sight (the first one ever is
+   * primary), renamed when `name` is new, and no longer left (something happened there, so she is
+   * in it).
+   */
   #space(platform: string, externalId: string, name: string | null, at: Timestamp): string {
     const found = this.#db.orm
-      .select({ id: spaces.id, name: spaces.name })
+      .select({ id: spaces.id, name: spaces.name, left_at: spaces.left_at })
       .from(spaces)
       .where(and(eq(spaces.platform, platform), eq(spaces.external_id, externalId)))
       .get();
     if (found) {
-      if (name !== null && name !== found.name) {
-        this.#db.orm.update(spaces).set({ name }).where(eq(spaces.id, found.id)).run();
+      const change: { name?: string; left_at?: null } = {};
+      if (name !== null && name !== found.name) change.name = name;
+      if (found.left_at !== null) change.left_at = null;
+      if (Object.keys(change).length > 0) {
+        this.#db.orm.update(spaces).set(change).where(eq(spaces.id, found.id)).run();
+        placeChanged(this.#db, { kind: "space", space_id: found.id, room_id: null });
       }
       return found.id;
     }
     const id = newId();
+    const primary = this.#db.orm
+      .select({ id: spaces.id })
+      .from(spaces)
+      .where(eq(spaces.is_primary, true))
+      .get();
     this.#db.orm
       .insert(spaces)
-      .values({ id, platform, external_id: externalId, name: name ?? externalId, joined_at: at })
+      .values({
+        id,
+        platform,
+        external_id: externalId,
+        name: name ?? externalId,
+        joined_at: at,
+        is_primary: primary === undefined,
+      })
       .run();
+    placeChanged(this.#db, { kind: "space", space_id: id, room_id: null });
     return id;
   }
 
@@ -464,11 +517,13 @@ export class Identity {
       .where(and(eq(rooms.platform, platform), eq(rooms.external_id, externalId)))
       .get();
     if (!found) {
-      return this.#db.orm
+      const row = this.#db.orm
         .insert(rooms)
         .values({ id: newId(), platform, external_id: externalId, created_at: at, ...fields })
         .returning()
         .get();
+      placeChanged(this.#db, { kind: "room", space_id: row.space_id, room_id: row.id });
+      return row;
     }
     // A voice channel's text chat has the voice channel's id: seeing it as voice once makes it a
     // voice room, and text never turns it back.
@@ -479,12 +534,61 @@ export class Identity {
     if (fields.name !== null && fields.name !== found.name) change.name = fields.name;
     if (Object.keys(change).length === 0) return found;
     this.#db.orm.update(rooms).set(change).where(eq(rooms.id, found.id)).run();
+    if (change.parent_id !== undefined) {
+      placeChanged(this.#db, { kind: "room", space_id: found.space_id, room_id: found.id });
+    }
     return { ...found, ...change };
   }
 
   /** The id of the space `(platform, externalId)`, created on first sight (named by its id). */
   ensureSpace(platform: string, externalId: string): string {
     return this.#db.tx(() => this.#space(platform, externalId, null, this.#now()));
+  }
+
+  /**
+   * She is in the space `(platform, externalId)` (the platform says so: she joined, or it is in
+   * her list on connecting): created on first sight, renamed, no longer left. Returns its id.
+   */
+  seenSpace(platform: string, externalId: string, name: string | null): string {
+    return this.#db.tx(() => this.#space(platform, externalId, name, this.#now()));
+  }
+
+  /** She left the space `(platform, externalId)`: it is marked left; an unknown one is ignored. */
+  leftSpace(platform: string, externalId: string): void {
+    this.#db.tx(() => {
+      const left = this.#db.orm
+        .update(spaces)
+        .set({ left_at: this.#now() })
+        .where(
+          and(
+            eq(spaces.platform, platform),
+            eq(spaces.external_id, externalId),
+            isNull(spaces.left_at),
+          ),
+        )
+        .returning({ id: spaces.id })
+        .get();
+      if (left) placeChanged(this.#db, { kind: "space", space_id: left.id, room_id: null });
+    });
+  }
+
+  /** `account` left the space `spaceId`: its membership is marked left (the next message clears it). */
+  memberLeft(spaceId: string, account: AccountRef): void {
+    this.#db.tx(() => {
+      const row = this.account(account);
+      if (row === null) return;
+      this.#db.orm
+        .update(spaceMembers)
+        .set({ left_at: this.#now() })
+        .where(
+          and(
+            eq(spaceMembers.space_id, spaceId),
+            eq(spaceMembers.account_id, row.id),
+            isNull(spaceMembers.left_at),
+          ),
+        )
+        .run();
+    });
   }
 
   /**
@@ -595,7 +699,8 @@ export class Identity {
             .values({ space_id: spaceId, account_id: account.id, last_seen: at })
             .onConflictDoUpdate({
               target: [spaceMembers.space_id, spaceMembers.account_id],
-              set: { last_seen: at },
+              // Writing there means they are there: a left membership comes back.
+              set: { last_seen: at, left_at: null },
             })
             .run();
         }

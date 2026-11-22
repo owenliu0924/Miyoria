@@ -104,8 +104,29 @@ CREATE UNIQUE INDEX \`persons_handle_idx\` ON \`persons\` ("handle" COLLATE NOCA
 CREATE INDEX \`rooms_space_idx\` ON \`rooms\` (\`space_id\`);
 `;
 
+// v2, phase 6 (docs/design/v5-places.md §5): the primary Space, and a person's Spaces by account.
+// An install that already has servers makes primary the one she is still in with the most
+// members (then the oldest, then the lowest id): for the single-server install, its only server.
+// A database with no Space gets none; the first one `Identity` sees later becomes primary. Columns
+// and indexes as drizzle-kit writes them from `schema.ts`; the UPDATE is by hand.
+const PLACES = `ALTER TABLE \`spaces\` ADD \`is_primary\` integer DEFAULT false NOT NULL;
+
+UPDATE \`spaces\` SET \`is_primary\` = 1 WHERE \`id\` = (
+	SELECT s.\`id\` FROM \`spaces\` s WHERE s.\`left_at\` IS NULL
+	ORDER BY (SELECT COUNT(*) FROM \`space_members\` m WHERE m.\`space_id\` = s.\`id\`) DESC, s.\`joined_at\`, s.\`id\`
+	LIMIT 1
+);
+
+CREATE INDEX \`space_members_account_idx\` ON \`space_members\` (\`account_id\`) WHERE "space_members"."left_at" IS NULL;
+
+CREATE UNIQUE INDEX \`spaces_primary_idx\` ON \`spaces\` (\`is_primary\`) WHERE "spaces"."is_primary" = 1;
+`;
+
 /** Persons, accounts, link codes, spaces, rooms, sessions and space members. */
 export const identitySchema: PluginSchema = {
   plugin: "identity",
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "places", sql: PLACES },
+  ],
 };
