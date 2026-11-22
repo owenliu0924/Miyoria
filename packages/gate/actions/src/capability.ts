@@ -154,6 +154,12 @@ export interface Capability<A = unknown> {
   activity?(args: A, principal: Principal): ActivityRequest[] | null;
   /** Checks against live state after the schema (e.g. the scene exists); returns why not. */
   check?(args: A, principal: Principal): string | null;
+  /**
+   * When the target opted out (`consent`): what whoever asked is told instead, so the opt-out is
+   * not given away (a stream she may not see answers like no stream at all). The answer goes out
+   * as a `check` refusal would (stage `args`); the audit and `gate.decision` keep the real one.
+   */
+  consentRefused?(args: A, principal: Principal): string;
   /** The owners' approval card shows this instead of the raw JSON arguments. */
   describe?(args: A): ApprovalDetail;
   execute(args: A, ctx: ExecContext): Promise<ActionResult | string>;

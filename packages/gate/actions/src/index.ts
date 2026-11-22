@@ -77,6 +77,9 @@ export {
   PRIVACY_PROFILE,
   Privacy,
   type PrivacyChoices,
+  PrivacyChoicesKey,
+  type PrivacyChoicesService,
+  type PrivacyListener,
   privacyKey,
 } from "./privacy.js";
 export { effectiveLimits, type Limits, RateLimiter, tightened } from "./rate.js";

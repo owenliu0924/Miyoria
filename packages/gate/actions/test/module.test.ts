@@ -12,6 +12,7 @@ import {
   PAUSED_KEY,
   PRIVACY_PROFILE,
   PRIVACY_ROUTES,
+  PrivacyChoicesKey,
 } from "../src/index.js";
 
 const GUILD: ContextKey = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" };
@@ -104,6 +105,25 @@ describe("actions module", () => {
     expect(await a.registry.privacy.get(me)).toEqual({ dm: true, approach: true, watch: false });
     expect((await a.run("me privacy", "5", {}, DM)).text).toContain("看你的直播：不可以");
     await a.sup.stopAll();
+  });
+
+  it("provides_the_opt_outs_while_it_runs_and_says_when_they_change", async () => {
+    const a = await boot();
+    const choices = a.sup.services.get(PrivacyChoicesKey);
+    expect(choices).toBe(a.registry.privacy);
+    const seen: [string, boolean][] = [];
+    const off = choices?.onChange((who, now) => seen.push([who.id, now.watch]));
+    await a.click(`mi:${PRIVACY_ROUTES.watchOff}`, "5");
+    await a.run("me privacy", "6", { watch: "off" }, DM);
+    expect(seen).toEqual([
+      ["5", false],
+      ["6", false],
+    ]);
+    off?.();
+    await a.click(`mi:${PRIVACY_ROUTES.watchOn}`, "5");
+    expect(seen).toHaveLength(2);
+    await a.sup.stopAll();
+    expect(a.sup.services.get(PrivacyChoicesKey)).toBeUndefined();
   });
 
   it("the_watch_buttons_set_the_presser's_own_opt_out", async () => {

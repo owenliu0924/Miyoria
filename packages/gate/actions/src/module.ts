@@ -15,7 +15,7 @@ import { PresencePrivacyKey } from "@miyoria/types";
 import { testHigh } from "./builtin.js";
 import { registerCommands, unregisterCommands } from "./commands.js";
 import { ActionsConfigSchema } from "./config.js";
-import { PRIVACY_PROFILE } from "./privacy.js";
+import { PRIVACY_PROFILE, PrivacyChoicesKey } from "./privacy.js";
 import { ActuatorRegistry, ActuatorRegistryKey, PAUSED_KEY } from "./registry.js";
 
 /**
@@ -38,8 +38,8 @@ export function actuatorsFor(ctx: ModuleContext): ActuatorRegistry {
 /**
  * Module `actions`: applies `[modules.actions]` to the `ActuatorRegistry` the app provides
  * (`ActuatorRegistryKey`), restores the pause switch and registers `/admin autonomy ...`,
- * `/me privacy` and the approval buttons. Without this module the gate runs with the default
- * guardrails.
+ * `/me privacy` and the approval buttons, and provides the opt-outs as `PrivacyChoicesKey`.
+ * Without this module the gate runs with the default guardrails.
  */
 export class ActionsModule implements Module {
   static readonly ID = "actions";
@@ -90,6 +90,8 @@ export class ActionsModule implements Module {
     );
     commands.attach(ctx);
     this.#commands = commands;
+    // With `/me privacy` served, people can opt out: features that need that may now act.
+    ctx.provide(PrivacyChoicesKey, registry.privacy);
   }
 
   async stop(): Promise<void> {

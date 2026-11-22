@@ -9,6 +9,7 @@ import {
   type JsonValue,
   mergePrivacy,
   type ProfileId,
+  serviceKey,
 } from "@miyoria/types";
 
 const log = getLogger("actions.privacy");
@@ -42,10 +43,14 @@ function parseChoices(value: JsonValue | null): PrivacyChoices {
   };
 }
 
+/** Someone's choices changed; `choices` is what they are now. */
+export type PrivacyListener = (account: AccountRef, choices: PrivacyChoices) => void;
+
 /** Reads and writes the choices in the `SettingsStore` (memory only without one). */
 export class Privacy {
   readonly #services: ServiceLookup;
   readonly #local = new Map<string, PrivacyChoices>();
+  readonly #listeners = new Set<PrivacyListener>();
 
   constructor(services: ServiceLookup) {
     this.#services = services;
@@ -75,6 +80,28 @@ export class Privacy {
     } else {
       this.#local.set(key, next);
     }
+    for (const listener of this.#listeners) {
+      try {
+        listener(account, { ...next });
+      } catch (error) {
+        log.warn({ err: errorMessage(error) }, "a privacy listener failed");
+      }
+    }
     return next;
   }
+
+  /** Calls `listener` after each `set`, so an opt-out takes effect at once; returns the unsubscribe. */
+  onChange(listener: PrivacyListener): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
 }
+
+/**
+ * The opt-outs as module `actions` serves them (`/me privacy` and its buttons). Provided only
+ * while that module runs, so a feature that must be refusable can tell whether anyone could
+ * refuse it.
+ */
+export type PrivacyChoicesService = Pick<Privacy, "get" | "onChange">;
+
+export const PrivacyChoicesKey = serviceKey<PrivacyChoicesService>("PrivacyChoices");

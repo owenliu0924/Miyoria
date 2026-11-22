@@ -174,6 +174,29 @@ describe("gate order", () => {
       }
     });
 
+    it("an_opt_out_can_be_told_as_something_else_and_the_audit_keeps_the_truth", async () => {
+      const g = await gate();
+      g.registry.register({
+        ...watchCapability(),
+        consentRefused: () => "那個人現在沒有在這裡開播。",
+      });
+      await g.registry.privacy.set(AMY, { watch: false });
+      const out = await g.registry.invoke({ ...request("t.watch", self()), about: AMY });
+      expect(out.decision).toMatchObject({
+        allowed: false,
+        stage: "args",
+        reason: "那個人現在沒有在這裡開播。",
+      });
+      expect(decisions(g.events).at(-1)).toMatchObject({
+        stage: "consent",
+        reason: "the person opted out of being watched",
+      });
+      // Other refusals are not touched.
+      g.registry.configure({ ...g.registry.config, forbidden: ["t.watch"] });
+      const forbidden = await g.registry.invoke({ ...request("t.watch", self()), about: AMY });
+      expect(forbidden.decision.stage).toBe("prohibition");
+    });
+
     it("store_failure_counts_as_opted_out", async () => {
       const g = await gate();
       vi.spyOn(g.store.settings, "get").mockRejectedValue(new Error("down"));
