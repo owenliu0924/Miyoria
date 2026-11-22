@@ -20,6 +20,8 @@
 //
 // Servers she is in are recorded as she sees them (`Places.seen` on connecting and on joining,
 // `Places.left` when she is removed); members who leave reach `Places.memberLeft` through Core.
+// A person who acts in a server without writing (a command, a control, a modal, being in one of
+// its voice channels) becomes a member there through `Places.memberSeen` (`handler.ts`).
 
 import { CommandRegistryKey, CommandsModule } from "@miyoria/commands";
 import { LlmRouterKey, userMessage, withLlmTag } from "@miyoria/llm/llm";

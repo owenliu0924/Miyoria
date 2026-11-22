@@ -61,6 +61,7 @@ import {
   kindOf,
   type MentionsLike,
   type MessageLike,
+  memberNick,
   mentionNames,
   PLATFORM,
   quotedMessage,
@@ -234,8 +235,8 @@ export class GatewayBridge {
     client.on(Events.PresenceUpdate, (_old, presence) =>
       this.guard("presence", () => this.onPresence(presence, false)),
     );
-    client.on(Events.VoiceStateUpdate, (_old, state) =>
-      this.guard("voice state", () => this.onVoiceState(state, false)),
+    client.on(Events.VoiceStateUpdate, (old, state) =>
+      this.guard("voice state", () => this.onVoiceState(state, false, old)),
     );
     client.on(Events.GuildMemberAdd, (member) =>
       this.guard("member", () => this.onMember(member, false)),
@@ -383,8 +384,42 @@ export class GatewayBridge {
     this.ctx.publish(BusEvents.PlatformReaction, event);
   }
 
-  onVoiceState(state: VoiceStateLike, initial: boolean): void {
+  /**
+   * A voice state, published for `world`. Someone who is in one of the server's voice channels on
+   * connecting, or who joins or moves into one, is a member of the server (`memberActed`); a mute,
+   * a deafen or a stream in the same channel writes nothing.
+   */
+  onVoiceState(
+    state: VoiceStateLike,
+    initial: boolean,
+    old: Pick<VoiceStateLike, "channelId"> | null = null,
+  ): void {
+    if (state.channelId !== null && (initial || old?.channelId !== state.channelId)) {
+      const member = state.member ?? null;
+      // Without the member, whether it is a bot is unknown: nobody is made a member blind.
+      if (member?.user) this.memberActed(state.guild.id, member.user, member.nickname ?? null);
+    }
     this.ctx.publish(BusEvents.PlatformVoiceState, voiceStateUpdate(state, initial));
+  }
+
+  /**
+   * Someone acted in `guild` without writing there (a message records itself): a command, a
+   * control or a modal, or being in one of its voice channels. Identity makes them a member of the
+   * server (`Places.memberSeen`), the way a message would, so the server's boards, predictions and
+   * bounties count them. Bots and her own accounts never become members this way. Never throws: a
+   * failed write must not cost the command.
+   */
+  memberActed(guild: string | null, user: UserLike | null | undefined, nick: string | null): void {
+    if (guild === null || !user || user.bot === true || this.shared.selfIds.has(user.id)) return;
+    const places = this.ctx.services.get(PlacesKey);
+    if (places === undefined) return;
+    try {
+      // A server not recorded yet (or marked left) is recorded, as a message there would.
+      const space = places.ofGuild(PLATFORM, guild)?.id ?? places.seen(PLATFORM, guild, null);
+      places.memberSeen(space, account(user.id), displayName(user, nick));
+    } catch (error) {
+      log.warn({ guild, error: errorMessage(error) }, "cannot record a server's member");
+    }
   }
 
   onMember(member: GuildMemberLike, left: boolean): void {
@@ -408,8 +443,15 @@ export class GatewayBridge {
     };
   }
 
-  /** Slash commands, autocomplete, buttons, select menus and modal submissions. */
+  /**
+   * Slash commands, autocomplete, buttons, select menus and modal submissions. Whoever uses one in
+   * a server is a member there from now (`memberActed`), before it is dispatched, so the command's
+   * own handler already sees them as one; typing an option (autocomplete) is not acting.
+   */
   private async onInteraction(client: Client, interaction: Interaction): Promise<void> {
+    if (!interaction.isAutocomplete()) {
+      this.memberActed(interaction.guildId, interaction.user, memberNick(interaction.member));
+    }
     const kindOfInteraction = async (): Promise<ContextKind> => {
       if (interaction.guildId === null) return "dm";
       if (interaction.channel) return kindOf(interaction.channel.type);

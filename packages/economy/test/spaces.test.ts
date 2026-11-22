@@ -4,7 +4,14 @@
 
 import { CommandRegistry, Permissions } from "@miyoria/commands";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
-import { type AccountRef, type ContextKey, newId, PlacesKey, toTimestamp } from "@miyoria/types";
+import {
+  type AccountRef,
+  type ContextKey,
+  newId,
+  type PersonId,
+  PlacesKey,
+  toTimestamp,
+} from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import { EconomyCommands } from "../src/commands.js";
 import { BountyStoreKey, PURSE } from "../src/records.js";
@@ -13,7 +20,7 @@ import { EconomyKey } from "../src/types.js";
 import { v2Capabilities } from "../src/v2-tools.js";
 import { Economy2Key } from "../src/v2-types.js";
 import { economyOf, ledgerOf } from "./ledger.js";
-import { ALICE, BOB, balance, ERIN, fund, rejects, rig, say } from "./rig.js";
+import { ALICE, BOB, balance, DAVE, ERIN, fund, rejects, rig, say } from "./rig.js";
 
 const IN_A: ContextKey = { platform: "discord", scope: "guild-a", channel: "a1", kind: "channel" };
 const IN_B: ContextKey = { platform: "discord", scope: "guild-b", channel: "b1", kind: "channel" };
@@ -91,6 +98,29 @@ describe("predictions per server", () => {
     expect(bet).toMatchObject({ amount: 10, balance: 90 });
     const bets = await economyOf(r.store).docs.list("p", "bet", { limit: 10 });
     expect(bets.map((d) => d.space)).toEqual([inA.space?.id]);
+  });
+
+  it("let someone who only ever used a command in the server bet there and be on its board", async () => {
+    const { r, a, b } = await twoServers();
+    // Dave never wrote anywhere: one command in A (what the Discord module records before the
+    // command runs) makes him a member of A, and of A only.
+    r.store.places.memberSeen(a, DAVE, "Dave");
+    const dave = r.store.persons.personOf(DAVE)?.id as PersonId;
+    expect(r.store.places.isMember(dave, a)).toBe(true);
+    await fund(r, DAVE, 100);
+    const inA = await openIn(r, IN_A);
+    const inB = await openIn(r, IN_B);
+    expect(await r.economy.v2.placeBet(DAVE, inA.id, 1, 10, "dave")).toMatchObject({
+      amount: 10,
+      balance: 90,
+    });
+    await rejects(r.economy.v2.placeBet(DAVE, inB.id, 1, 10, "dave-b"), 403);
+    expect(await balance(r, DAVE)).toBe(90);
+    await r.economy.feed(DAVE, "rice", 1, "feed-dave");
+    const names = (lines: { name: string }[]) => lines.map((l) => l.name);
+    expect(names(await r.economy.board(10, r.store.places.members(a)))).toContain("Dave");
+    expect(names(await r.economy.board(10, r.store.places.members(b)))).not.toContain("Dave");
+    expect(await r.economy.spacesFor(DM, DAVE)).toEqual([a]);
   });
 
   it("count predictions_open per server", async () => {

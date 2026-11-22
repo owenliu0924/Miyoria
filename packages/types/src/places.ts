@@ -150,7 +150,8 @@ export interface Places {
   spacesOf(person: PersonId): SpaceRef[];
   /**
    * Whether `person` is a member of `space` through one of their accounts and has not left it. A
-   * member is an account that wrote there (`space_members`, kept by every message). Whether she
+   * member is an account that acted there (`space_members`): wrote a message, used a command, a
+   * control or a modal, or was seen in one of its voice channels (`memberSeen`). Whether she
    * herself is still in the Space does not matter here. The rule behind a share's `space` audience.
    */
   isMember(person: PersonId, space: string): boolean;
@@ -161,7 +162,16 @@ export interface Places {
   seen(platform: string, externalId: string, name: string | null): string;
   /** She left a server (or was removed): marks it left. Rows stay; an unknown server is ignored. */
   left(platform: string, externalId: string): void;
-  /** An account left a Space: its membership is marked left (the next message there clears it). */
+  /**
+   * An account acted in a Space without writing there (a message records itself): a command, a
+   * button, a select or a modal there, or being seen in one of its voice channels. The account is
+   * recorded (a person on first sight, named `name` when given) and made a member, or a member
+   * again after leaving, as a message would. Idempotent and cheap: a membership seen within the
+   * last minute is not written again. An unknown Space is ignored. The platform module calls it
+   * for people only, never for bots or her own accounts.
+   */
+  memberSeen(space: string, account: AccountRef, name?: string | null): void;
+  /** An account left a Space: its membership is marked left (the next time they act there clears it). */
   memberLeft(space: string, account: AccountRef): void;
   /** Calls `listener` after a change; returns the unsubscribe. */
   onChange(listener: (change: PlacesChange) => void): () => void;

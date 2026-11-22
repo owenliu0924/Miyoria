@@ -479,6 +479,8 @@ describe("GatewayBridge", () => {
     const replies: unknown[] = [];
     r.fake.client.emit(Events.InteractionCreate, {
       isChatInputCommand: () => true,
+      // Every discord.js interaction has it; the bridge asks before dispatching.
+      isAutocomplete: () => false,
       commandName: "ping",
       user: { id: "42", username: "alice_w", globalName: null },
       guildId: "300",

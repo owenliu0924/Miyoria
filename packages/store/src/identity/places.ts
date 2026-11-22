@@ -172,6 +172,10 @@ export class SpacePlaces implements Places {
     this.#identity.leftSpace(platform, externalId);
   }
 
+  memberSeen(space: string, account: AccountRef, name?: string | null): void {
+    this.#identity.memberSeen(space, account, name ?? null);
+  }
+
   memberLeft(space: string, account: AccountRef): void {
     this.#identity.memberLeft(space, account);
   }

@@ -64,6 +64,9 @@ export interface ResolveOptions {
 /** The session key of her own space (§4.1). */
 export const HOME_SESSION = "home";
 
+/** `memberSeen` writes a current membership again only after this long (milliseconds). */
+export const MEMBER_SEEN_MS = 60_000;
+
 const ROOM_KIND: Readonly<Record<ContextKind, RoomKind>> = {
   channel: "text",
   thread: "thread",
@@ -572,6 +575,62 @@ export class Identity {
     });
   }
 
+  /**
+   * `account` is a member of `spaceId` from `at`: the row is made, or its `last_seen` moves and a
+   * `left` mark goes (acting there means they are there). The one write behind every way of
+   * becoming a member: a message (`resolve`) and `memberSeen`.
+   */
+  #member(spaceId: string, accountId: string, at: Timestamp): void {
+    this.#db.orm
+      .insert(spaceMembers)
+      .values({ space_id: spaceId, account_id: accountId, last_seen: at })
+      .onConflictDoUpdate({
+        target: [spaceMembers.space_id, spaceMembers.account_id],
+        set: { last_seen: at, left_at: null },
+      })
+      .run();
+  }
+
+  /**
+   * `ref` acted in the space `spaceId` without writing there (a command, a control, a modal, being
+   * in one of its voice channels): seen like an author (`see`, with `name` when the platform gave
+   * one) and made a member, or a member again, as a message would. Called on every interaction, so
+   * it writes nothing when the membership is current: not left, seen under `MEMBER_SEEN_MS` ago,
+   * the account already a person's and the name unchanged. An unknown space is ignored.
+   */
+  memberSeen(spaceId: string, ref: AccountRef, name: string | null = null): void {
+    if (typeof spaceId !== "string" || spaceId === "") return;
+    this.#db.tx(() => {
+      const at = this.#now();
+      const found = this.account(ref);
+      const nameKnown = name === null || name === "" || name === found?.display_name;
+      if (found?.person_id != null && nameKnown) {
+        const row = this.#db.orm
+          .select({ left_at: spaceMembers.left_at, last_seen: spaceMembers.last_seen })
+          .from(spaceMembers)
+          .where(and(eq(spaceMembers.space_id, spaceId), eq(spaceMembers.account_id, found.id)))
+          .get();
+        if (
+          row !== undefined &&
+          row.left_at === null &&
+          toMicros(at) - toMicros(row.last_seen) < MEMBER_SEEN_MS * 1000
+        ) {
+          return;
+        }
+      }
+      const space = this.#db.orm
+        .select({ id: spaces.id })
+        .from(spaces)
+        .where(eq(spaces.id, spaceId))
+        .get();
+      if (space === undefined) return;
+      const shown = name !== null && name !== "" ? name : (found?.display_name ?? ref.id);
+      this.see(ref, shown);
+      const account = this.account(ref);
+      if (account !== null) this.#member(spaceId, account.id, at);
+    });
+  }
+
   /** `account` left the space `spaceId`: its membership is marked left (the next message clears it). */
   memberLeft(spaceId: string, account: AccountRef): void {
     this.#db.tx(() => {
@@ -692,18 +751,9 @@ export class Identity {
       const place = { space_id: spaceId, room_id: room.id, lane, person_id: personId };
       this.#session(key, place, at);
       if (spaceId !== null && author !== null) {
+        // Writing there means they are there: a left membership comes back.
         const account = this.account(author.account);
-        if (account !== null) {
-          this.#db.orm
-            .insert(spaceMembers)
-            .values({ space_id: spaceId, account_id: account.id, last_seen: at })
-            .onConflictDoUpdate({
-              target: [spaceMembers.space_id, spaceMembers.account_id],
-              // Writing there means they are there: a left membership comes back.
-              set: { last_seen: at, left_at: null },
-            })
-            .run();
-        }
+        if (account !== null) this.#member(spaceId, account.id, at);
       }
       return { ...place, session: key };
     });

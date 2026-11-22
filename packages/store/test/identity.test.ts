@@ -479,3 +479,89 @@ describe("places", () => {
     expect(seen).toEqual(["space:-", "room:r", "space:-", "space:-"]);
   });
 });
+
+describe("memberSeen: acting in a space without writing there", () => {
+  function rig() {
+    const clock = { at: T0 };
+    const t = openTestDb({ identity: true, clock: { now: () => clock.at } });
+    opened.push(t);
+    const id = t.identity as Identity;
+    return { t, id, clock, places: new SpacePlaces(t.db, id) };
+  }
+  const member = (t: TestDb, space: string, account: string) =>
+    t.db.get(
+      "SELECT m.left_at, m.last_seen FROM space_members m JOIN accounts a ON a.id = m.account_id " +
+        "WHERE m.space_id = $space AND a.external_id = $account",
+      { space, account },
+    );
+  const changes = (t: TestDb) => Number(t.db.get("SELECT total_changes() AS n")?.n);
+
+  it("makes someone who never wrote a person and a member, once, as a message would", () => {
+    const { t, id, places: p } = rig();
+    const space = p.seen("discord", "gA", "A");
+    p.memberSeen(space, acct("7"), "Dana");
+    const dana = id.personOf(acct("7"));
+    expect(dana).toMatchObject({ name: "Dana" });
+    expect(p.isMember(dana?.id as PersonId, space)).toBe(true);
+    expect([...p.members(space)]).toEqual([dana?.id]);
+    expect(p.spacesOf(dana?.id as PersonId).map((s) => s.id)).toEqual([space]);
+    expect(member(t, space, "7")).toEqual({ left_at: null, last_seen: T0 * 1000 });
+    // The same again, at once: nothing is written.
+    const before = changes(t);
+    p.memberSeen(space, acct("7"), "Dana");
+    p.memberSeen(space, acct("7"));
+    expect(changes(t)).toBe(before);
+    expect(t.db.get("SELECT COUNT(*) AS n FROM space_members")).toEqual({ n: 1 });
+    expect(t.db.get("SELECT COUNT(*) AS n FROM persons")).toEqual({ n: 1 });
+  });
+
+  it("writes a current membership again only after a minute, or when the name changed", () => {
+    const { t, clock, places: p } = rig();
+    const space = p.seen("discord", "gA", "A");
+    p.memberSeen(space, acct("7"), "Dana");
+    clock.at = T0 + 59_000;
+    p.memberSeen(space, acct("7"), "Dana");
+    expect(member(t, space, "7")).toMatchObject({ last_seen: T0 * 1000 });
+    clock.at = T0 + 60_000;
+    p.memberSeen(space, acct("7"), "Dana");
+    expect(member(t, space, "7")).toMatchObject({ last_seen: (T0 + 60_000) * 1000 });
+    clock.at = T0 + 61_000;
+    p.memberSeen(space, acct("7"), "Dana 2");
+    expect(member(t, space, "7")).toMatchObject({ last_seen: (T0 + 61_000) * 1000 });
+    expect(t.db.get("SELECT display_name FROM accounts WHERE external_id = '7'")).toEqual({
+      display_name: "Dana 2",
+    });
+  });
+
+  it("brings back a member who left, at once, and leaves other spaces alone", () => {
+    const { t, id, clock, places: p } = rig();
+    const a = p.seen("discord", "gA", "A");
+    const b = p.seen("discord", "gB", "B");
+    id.resolve(ctx("gA", "c1", "channel"), { account: acct("7"), display_name: "Dana" });
+    const dana = id.personOf(acct("7"))?.id as PersonId;
+    clock.at = T0 + 1_000;
+    p.memberLeft(a, acct("7"));
+    expect(p.isMember(dana, a)).toBe(false);
+    // Within the minute: a left membership is never "current".
+    clock.at = T0 + 2_000;
+    p.memberSeen(a, acct("7"), "Dana");
+    expect(p.isMember(dana, a)).toBe(true);
+    expect(member(t, a, "7")).toEqual({ left_at: null, last_seen: (T0 + 2_000) * 1000 });
+    expect(p.isMember(dana, b)).toBe(false);
+    expect(member(t, b, "7")).toBeUndefined();
+  });
+
+  it("ignores a space it does not know, and keeps a name the account already has", () => {
+    const { t, id, places: p } = rig();
+    p.memberSeen("nope", acct("7"), "Dana");
+    p.memberSeen("", acct("7"), "Dana");
+    expect(t.db.get("SELECT COUNT(*) AS n FROM accounts")).toEqual({ n: 0 });
+    const space = p.seen("discord", "gA", "A");
+    id.see(acct("8"), "Erin");
+    p.memberSeen(space, acct("8"));
+    expect(id.personOf(acct("8"))).toMatchObject({ name: "Erin" });
+    expect(t.db.get("SELECT display_name FROM accounts WHERE external_id = '8'")).toEqual({
+      display_name: "Erin",
+    });
+  });
+});
