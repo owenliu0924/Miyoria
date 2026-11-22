@@ -17,6 +17,8 @@ import { BoardScopeQuery } from "./wallet.js";
 const NODE_EXCHANGE = "admin.economy.adjust";
 
 const Market = z.enum(["tw", "us", "crypto", "local"]);
+/** The colours of up and down: `tw` red up and green down, `us` green up and red down. */
+const Colors = z.enum(["tw", "us"]);
 const ListKind = z.enum(["local", "popular", "movers", "tw", "us", "mine", "recent", "watch"]);
 const TickerCode = z
   .string()
@@ -67,8 +69,15 @@ export const ExchangeMarketSchema = z
   .object({
     enabled: z.boolean(),
     currency: z.string(),
-    /** `tw`: red up, green down; `us`: green up, red down. */
-    colors: z.enum(["tw", "us"]),
+    /**
+     * The colours this member sees: `tw` red up, green down; `us` green up, red down. Their own
+     * choice (`colors_chosen`), else the install's (`colors_default`).
+     */
+    colors: Colors,
+    /** What they chose themselves (`null`: nothing, the install's default applies). */
+    colors_chosen: Colors.nullable(),
+    /** The install's `[modules.exchange] colors`. */
+    colors_default: Colors,
     rates: z.object({ twd_per_coin: z.number(), twd_per_usd: z.number() }),
     house: z.object({
       buys_halted: z.boolean(),
@@ -477,6 +486,15 @@ export const ExchangeCancelRequestSchema = z
 export const ExchangeLookupRequestSchema = z
   .strictObject({ code: z.string().min(1).max(20) })
   .meta({ id: "ApiExchangeLookupRequest" });
+/** `POST /api/member/exchange/colors`: their own colours (`null`: back to the install's). */
+export const ExchangeColorsRequestSchema = z
+  .strictObject({ colors: Colors.nullable() })
+  .meta({ id: "ApiExchangeColorsRequest" });
+export const ExchangeColorsSchema = z
+  .object({ colors: Colors, chosen: Colors.nullable(), default: Colors })
+  .meta({ id: "ApiExchangeColors" });
+export type ExchangeColors = z.output<typeof ExchangeColorsSchema>;
+
 export const ExchangeWatchRequestSchema = z
   .strictObject({ code: TickerCode, on: z.boolean() })
   .meta({ id: "ApiExchangeWatchRequest" });
@@ -553,6 +571,11 @@ export const exchange = {
     .route({ method: "POST", path: "/api/member/exchange/visibility" })
     .input(z.object({ body: ExchangeVisibilityRequestSchema }))
     .output(ExchangeAccountSchema),
+  /** Their own colours of up and down, kept with the person (every server, every device). */
+  colors: member()
+    .route({ method: "POST", path: "/api/member/exchange/colors" })
+    .input(z.object({ body: ExchangeColorsRequestSchema }))
+    .output(ExchangeColorsSchema),
   /** What an order would do, for the confirmation; a refusal says why it would not go through. */
   quote: member()
     .route({ method: "POST", path: "/api/member/exchange/quote" })

@@ -51,6 +51,8 @@ import {
   CandleCache,
   candlesFromPoints,
   candleTtl,
+  joinPeriods,
+  localStep,
   SPAN_DAYS,
   type Timeframe,
 } from "./candles.js";
@@ -94,7 +96,17 @@ import {
   toCoins,
   tradingDate,
 } from "./instruments.js";
-import { type LocalCompany, LocalProvider, type LocalSignalFeed, lastTick } from "./local.js";
+import {
+  DAILY_LIMIT,
+  HARD_BAND,
+  type LocalCompany,
+  LocalProvider,
+  type LocalSignalFeed,
+  type LocalTick,
+  lastTick,
+  taipeiDay,
+  taipeiDayWindow,
+} from "./local.js";
 import {
   type HeldValue,
   holdingsMap,
@@ -429,8 +441,13 @@ export interface RealReport {
   books: { postings: number; lines: number; pending: number };
 }
 
-/** A local stock's tick stands for an hour, and a few minutes more for the poll. */
-const LOCAL_MAX_AGE_MS = 65 * 60_000;
+/**
+ * A local stock's tick stands until the next, and a few minutes more for the pass: older than this
+ * it is never traded at (65 minutes at the hourly cadence, 6 at a minute).
+ */
+export const localMaxAge = (tickMs: number): number => tickMs + 5 * 60_000;
+/** Days of a local stock's ticks rolled up per pass (an old install's history in a few passes). */
+const ROLLUP_DAYS = 31;
 /** A previous close the provider could not give is asked for again after this long. */
 const CLOSE_RETRY_MS = 30 * 60_000;
 /** The provider is asked for a session's close this long after it, when it has it. */
@@ -465,6 +482,23 @@ interface Shown {
   basis: PriceBasis;
 }
 
+/**
+ * A local tick as the walk makes it: finite, positive, and inside the day's ±10% of its reference
+ * or the hard band around its anchor (a cent of rounding). Anything else is never traded at.
+ */
+function saneLocal(t: LocalTick, anchor: number | null): boolean {
+  if (![t.price, t.close, t.at].every(Number.isFinite) || t.price <= 0 || t.close <= 0)
+    return false;
+  const cent = 0.01;
+  const inDay =
+    t.price >= t.close * (1 - DAILY_LIMIT) - cent && t.price <= t.close * (1 + DAILY_LIMIT) + cent;
+  const inBand =
+    anchor !== null &&
+    t.price >= anchor * HARD_BAND.lo - cent &&
+    t.price <= anchor * HARD_BAND.hi + cent;
+  return inDay || inBand;
+}
+
 const finitePositive = (x: unknown): x is number =>
   typeof x === "number" && Number.isFinite(x) && x > 0 && x < 1e9;
 
@@ -473,7 +507,7 @@ const dateOf = (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10
 export class RealDesk {
   readonly #d: RealDeskDeps;
   readonly #turns = new SerialQueue();
-  readonly #guards: Record<"intraday" | "close" | "hourly", QuoteGuard>;
+  readonly #guards: Record<"intraday" | "close" | "local", QuoteGuard>;
   readonly params: HouseParams;
   readonly sessions: Record<MarketKind, Session>;
   #seeded = false;
@@ -503,9 +537,9 @@ export class RealDesk {
         confirm_within: 0.02,
       }),
       close: new Guard({ max_age_ms: 4 * DAY_MS, jump: JUMP_BY_MARKET, confirm_within: 0.02 }),
-      // The local stocks tick once an hour: their last tick is good until the next.
-      hourly: new Guard({
-        max_age_ms: LOCAL_MAX_AGE_MS,
+      // The local stocks' last tick is good until the next (and the pass after it).
+      local: new Guard({
+        max_age_ms: localMaxAge(c.local_tick_seconds * 1000),
         jump: JUMP_BY_MARKET,
         confirm_within: 0.02,
       }),
@@ -712,15 +746,43 @@ export class RealDesk {
         this.#d.store.state()?.seed ?? "local",
         feed ? (role, day) => feed.signal(role, day) : () => null,
         () => this.localCompanies(),
-        (code) => {
-          const q = this.#d.store.real.quotes().get(code);
-          return q ? { price: q.price, at: q.at, prev_close: q.prev_close } : null;
-        },
+        // A restart (and an install from before the per-minute ticks) goes on from the last tick kept.
+        (code) => this.#d.store.real.localResume(code),
         feed ? (days, now) => feed.prepare(days, now) : undefined,
+        {
+          tickSeconds: this.#d.config.local_tick_seconds,
+          record: (code, ticks) => this.#recordLocal(code, ticks),
+        },
       );
       return this.#local;
     }
     return this.#d.providers.get(id);
+  }
+
+  /**
+   * Keeps a local stock's new ticks before they are used: the current and previous Taipei day as
+   * ticks (the 當日 chart), an older day (a downtime caught up) straight as its day's bar.
+   */
+  #recordLocal(code: string, ticks: readonly LocalTick[]): void {
+    const first = ticks[0];
+    const last = ticks.at(-1);
+    if (!first || !last) return;
+    const day = taipeiDay(first.at);
+    if (day >= taipeiDay(this.#now()) - 1) {
+      this.#d.store.real.recordTicks(code, ticks);
+      return;
+    }
+    this.#d.store.real.recordDay(code, {
+      day,
+      first_at: first.at,
+      last_at: last.at,
+      open: first.price,
+      high: Math.max(...ticks.map((t) => t.price)),
+      low: Math.min(...ticks.map((t) => t.price)),
+      close: last.price,
+      ref: first.close,
+      ticks: ticks.length,
+    });
   }
 
   /** The five local stocks are always listed (unless switched off). */
@@ -793,12 +855,19 @@ export class RealDesk {
   }
 
   #guard(inst: RealInstrument): QuoteGuard {
-    return inst.market === "local" ? this.#guards.hourly : this.#guards[this.#mode(inst.market)];
+    return inst.market === "local" ? this.#guards.local : this.#guards[this.#mode(inst.market)];
   }
 
   /** How old a quote of `market` may be and still be traded at. */
   #maxAge(market: MarketKind): number {
-    return market === "local" ? LOCAL_MAX_AGE_MS : this.#d.config.quote_max_age_seconds * 1000;
+    return market === "local"
+      ? localMaxAge(this.#localTickMs())
+      : this.#d.config.quote_max_age_seconds * 1000;
+  }
+
+  /** The local stocks' tick (`local_tick_seconds`). */
+  #localTickMs(): number {
+    return this.#d.config.local_tick_seconds * 1000;
   }
 
   #seed(): void {
@@ -893,24 +962,46 @@ export class RealDesk {
         return;
       }
       await this.#poll();
+      this.#rollupLocal();
     });
     // Outside the turn: a starter's first quote takes a turn of its own.
     if (this.#d.config.open) await this.#discoverStarters();
     await this.postLosses();
   }
 
+  /**
+   * The local stocks' ticks older than yesterday (Taipei) become one bar a day; today's and
+   * yesterday's stay for the 當日 chart. A few days a pass, so an old install's hourly history
+   * is rolled up over its first passes.
+   */
+  #rollupLocal(): void {
+    const before = taipeiDayWindow(taipeiDay(this.#now()) - 1).start;
+    for (const local of this.localCompanies()) {
+      try {
+        this.#d.store.real.rollupLocal(local.code, before, ROLLUP_DAYS);
+      } catch (error) {
+        this.#d.log.info({ code: local.code, err: String(error) }, "exchange: no rollup");
+      }
+    }
+  }
+
   async #poll(): Promise<void> {
     const now = this.#now();
-    // Stretched past the configured interval only when the day's request budget needs it.
+    // Stretched past the configured interval only when the day's request budget needs it (the
+    // providers' requests only: the local stocks' ticks are worked out at every pass).
     const every = this.effectiveInterval();
+    let asking = true;
     if (every > this.#d.config.quote_poll_seconds) {
-      if (now < this.#nextPoll) return;
-      this.#nextPoll = now + every * 1000 - 5_000;
+      if (now < this.#nextPoll) asking = false;
+      else this.#nextPoll = now + every * 1000 - 5_000;
     }
     const byProvider = new Map<string, RealInstrument[]>();
     for (const inst of this.pollSet()) {
       const s = this.sessions[inst.market];
+      // The local stocks are worked out, not asked for: always due, so a downtime is caught up
+      // also while they do not trade (nothing that old is traded at).
       const due =
+        inst.market === "local" ||
         isOpenAt(s, now) ||
         (this.#mode(inst.market) === "close" &&
           isOpenAt(s, now - this.#d.config.close_grace_minutes * 60_000));
@@ -920,6 +1011,11 @@ export class RealDesk {
     for (const [id, list] of byProvider) {
       const provider = this.#provider(id);
       if (!provider) continue;
+      if (provider instanceof LocalProvider) {
+        await this.#pollLocal(provider, list, now);
+        continue;
+      }
+      if (!asking) continue;
       const quotes = new Map<
         string,
         { symbol: string; price: number; at: number; prev_close?: number }
@@ -970,7 +1066,65 @@ export class RealDesk {
         await this.#onQuote(inst, r.quote);
       }
     }
-    await this.#refreshCloses(now);
+    if (asking) await this.#refreshCloses(now);
+  }
+
+  /**
+   * The local stocks' new ticks (every one since the last kept, kept before they are used), each
+   * through the house in order: an order fills at the first tick after it, every check runs on each
+   * tick. A tick older than the maximum age (a downtime caught up), a stock paused or suspended, or
+   * an absurd price is never traded at; the newest tick is still what is shown and what values a
+   * holding.
+   */
+  async #pollLocal(provider: LocalProvider, list: readonly RealInstrument[], now: number) {
+    let got: Map<string, LocalTick[]>;
+    try {
+      got = await provider.advance(
+        list.map((i) => i.symbol),
+        now,
+      );
+    } catch (error) {
+      this.#d.log.info({ err: String(error) }, "exchange: the local stocks could not tick");
+      return;
+    }
+    const store = this.#d.store.real;
+    const maxAge = this.#maxAge("local");
+    for (const inst of list) {
+      const ticks = got.get(inst.symbol) ?? [];
+      const newest = ticks.at(-1);
+      if (!newest) continue;
+      const anchor = this.localOf(inst.code)?.anchor ?? null;
+      const st = this.#status(inst.code);
+      const halted = st === "paused" || st === "suspended";
+      const guard = this.#guard(inst);
+      for (const t of ticks) {
+        const quote: Quote = { code: inst.code, price: t.price, at: t.at, prev_close: t.close };
+        if (!saneLocal(t, anchor)) {
+          store.refuseQuote(inst.code, "range", now);
+          continue;
+        }
+        if (halted || now - t.at > maxAge) {
+          // Kept and shown, never traded at.
+          guard.seed(quote);
+          continue;
+        }
+        const raw = { symbol: inst.symbol, price: t.price, at: t.at, prev_close: t.close };
+        const r = guard.check(inst, raw, now);
+        if (!r.ok) {
+          store.refuseQuote(inst.code, r.why, now);
+          continue;
+        }
+        store.setInstrument(inst.code, { last_quote_at: r.quote.at, missing_days: 0 }, now);
+        await this.#onQuote(inst, r.quote);
+      }
+      // The newest tick is what the lists show, also while catching up or halted.
+      const kept = store.quotes().get(inst.code);
+      if (saneLocal(newest, anchor) && (!kept || kept.at < newest.at))
+        store.saveQuote(
+          { code: inst.code, price: newest.price, at: newest.at, prev_close: newest.close },
+          now,
+        );
+    }
   }
 
   /**
@@ -1080,7 +1234,8 @@ export class RealDesk {
         : (prevStored?.prev_close ?? null));
     const q: Quote = { ...quote, prev_close: prevClose };
     store.saveQuote(q, this.#now());
-    store.tick(inst.code, q.at, q.price, TICK_EVERY_MS);
+    // A local stock's ticks are all kept already (`#recordLocal`); a real one's a point in five minutes.
+    if (inst.market !== "local") store.tick(inst.code, q.at, q.price, TICK_EVERY_MS);
     const book = this.#book();
     const out = onQuote(book, inst, this.#coins(inst, q), this.#ctx(await this.#balances(book)));
     this.#commit(out, book);
@@ -1236,7 +1391,7 @@ export class RealDesk {
       shown === null || shown.basis === "quote"
         ? null
         : shown.basis === "reference"
-          ? `開盤參考價・第一筆價格在 ${taipeiWhen(open ? (lastTick(now) ?? now) : (next ?? now))}`
+          ? `開盤參考價・第一筆價格在 ${taipeiWhen(open ? (lastTick(now, this.#d.config.local_tick_seconds) ?? now) : (next ?? now))}`
           : `收盤價(${shortDate(date ?? "")})・${open ? "等今天第一筆報價" : "休市中"}`;
     return {
       code: i.code,
@@ -1296,10 +1451,34 @@ export class RealDesk {
     if (!line) return null;
     if (viewed)
       this.#d.store.real.setInstrument(code, { last_viewed_at: this.#now() }, this.#now());
-    const points = this.#d.store.real
-      .ticks(code, this.#now() - days * DAY_MS)
-      .map((t) => ({ at: toTimestamp(t.at), price: t.price }));
+    const since = this.#now() - days * DAY_MS;
+    const points = (
+      line.market === "local"
+        ? this.#localPoints(code, since)
+        : this.#d.store.real.ticks(code, since)
+    ).map((t) => ({ at: toTimestamp(t.at), price: t.price }));
     return { line, points };
+  }
+
+  /**
+   * A local stock's line since `since`, as thin as a real one's (a point in five minutes): each
+   * rolled-up day its close, then the kept ticks, the last of each five minutes.
+   */
+  #localPoints(code: string, since: number): { at: number; price: number }[] {
+    const store = this.#d.store.real;
+    const days = store
+      .localDays(code, taipeiDay(since))
+      .filter((d) => d.last_at >= since)
+      .map((d) => ({ at: d.last_at, price: d.close }));
+    const thin: { at: number; price: number }[] = [];
+    for (const t of store.ticks(code, since)) {
+      const prev = thin.at(-1);
+      if (prev && Math.floor(prev.at / TICK_EVERY_MS) === Math.floor(t.at / TICK_EVERY_MS))
+        thin[thin.length - 1] = t;
+      else thin.push(t);
+    }
+    const lastDay = days.at(-1)?.at ?? -1;
+    return [...days, ...thin.filter((t) => t.at > lastDay)];
   }
 
   // ---- charts and maps ----------------------------------------------------------------------
@@ -1308,7 +1487,7 @@ export class RealDesk {
    * A ticker's candles for `tf`. A real stock's come from its provider's chart endpoint when it has
    * one (on demand, cached per symbol and timeframe, inside the provider's budget); when it cannot
    * answer, the last ones it gave, else bars made from the quotes kept here. The local stocks' are
-   * made from their own hourly ticks, with no volume. Opening a chart counts as a view.
+   * made from their own ticks and rolled-up days, with no volume. Opening a chart counts as a view.
    */
   async candles(code: string, tf: Timeframe, viewed = true): Promise<CandleSet | null> {
     const inst = this.#inst(code);
@@ -1357,13 +1536,50 @@ export class RealDesk {
   }
 
   #tickCandles(inst: RealInstrument, tf: Timeframe, now: number): Candle[] {
+    const zone = this.sessions[inst.market].zone;
+    if (inst.market === "local") return this.#localCandles(inst.code, tf, now, zone);
     const points = this.#d.store.real.ticks(inst.code, now - (SPAN_DAYS[tf] + 2) * DAY_MS);
-    return candlesFromPoints(
-      points,
-      tf,
-      this.sessions[inst.market].zone,
-      inst.market === "local" ? 3_600_000 : TICK_EVERY_MS,
-    );
+    return candlesFromPoints(points, tf, zone, TICK_EVERY_MS);
+  }
+
+  /**
+   * A local stock's candles: 當日 from its kept ticks (ten-minute bars, `localStep`); 日線 from the
+   * rolled-up days and the kept days' ticks, joined into weeks and months for the others. The same
+   * bars as before the rollup: a day's first, highest, lowest and last tick either way.
+   */
+  #localCandles(code: string, tf: Timeframe, now: number, zone: string): Candle[] {
+    const store = this.#d.store.real;
+    const since = now - (SPAN_DAYS[tf] + 2) * DAY_MS;
+    if (tf === "intraday")
+      return candlesFromPoints(
+        store.ticks(code, now - 3 * DAY_MS),
+        tf,
+        zone,
+        localStep(this.#localTickMs()),
+      );
+    const byDate = new Map<string, Candle>();
+    const add = (k: Candle) => {
+      const date = tradingDate(this.sessions.local, k.at);
+      const was = byDate.get(date);
+      if (!was) {
+        byDate.set(date, k);
+        return;
+      }
+      const [early, late] = was.at <= k.at ? [was, k] : [k, was];
+      byDate.set(date, {
+        at: early.at,
+        o: early.o,
+        h: Math.max(was.h, k.h),
+        l: Math.min(was.l, k.l),
+        c: late.c,
+        v: null,
+      });
+    };
+    for (const d of store.localDays(code, taipeiDay(since)))
+      add({ at: d.first_at, o: d.open, h: d.high, l: d.low, c: d.close, v: null });
+    for (const k of candlesFromPoints(store.ticks(code, since), "daily", zone)) add(k);
+    const daily = [...byDate.values()].sort((a, b) => a.at - b.at);
+    return tf === "daily" ? daily : joinPeriods(daily, tf, zone);
   }
 
   /** `person`'s own lines on `code`'s chart: their average cost and each 2× position's line. */

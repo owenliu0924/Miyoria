@@ -1,5 +1,5 @@
 // A ticker's candle chart on the member page (owner 2026-11-21: "a real stock chart"), loaded only
-// when someone opens a ticker: candles in the product's up/down convention, MA5 / MA20 / MA60
+// when someone opens a ticker: candles in the member's up/down colours, MA5 / MA20 / MA60
 // (worked out here from the candles), volume in its own pane under them, the timeframe switch
 // 當日 / 日線 / 週線 / 月線 (a radio group: arrow keys move it), a legend with each average's
 // value and direction at the crosshair, a tooltip with the bar's open, high, low, close and change,

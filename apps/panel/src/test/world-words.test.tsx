@@ -68,6 +68,8 @@ const MARKET: ExchangeMarket = {
   enabled: true,
   currency: "貝殼",
   colors: "tw",
+  colors_chosen: null,
+  colors_default: "tw",
   rates: { twd_per_coin: 1, twd_per_usd: 30 },
   house: { buys_halted: true, net_today: 0, cap_daily: 1500 },
   sessions: [{ market: "tw", open: true, hours: "09:00–13:30", zone: "Asia/Taipei", stale: false, notice: null }],

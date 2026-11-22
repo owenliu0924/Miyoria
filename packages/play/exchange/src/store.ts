@@ -13,7 +13,9 @@ import {
   declined,
   type PersonHookResult,
   type PersonMerge,
+  prefsPart,
   type StorePlugin,
+  settingsPart,
   tablePart,
 } from "@miyoria/store";
 import {
@@ -1303,6 +1305,10 @@ const exchangeData: readonly CategoryData[] = [
   {
     category: "relationships",
     parts: [
+      // Each member's colours of up and down (`persons.prefs`; a settings store without people
+      // keeps them as `exchange_colors:<platform>:<id>` keys).
+      prefsPart("exchange_colors", "exchange_colors"),
+      settingsPart("exchange_colors_keys", "global", [], ["exchange_colors:"]),
       tablePart(
         "exchange_accounts",
         "exchange_accounts",

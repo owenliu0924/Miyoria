@@ -70,6 +70,39 @@ describe("picture renderer", () => {
     );
   });
 
+  test("two_members_with_different_colours_never_share_an_exchange_picture", async () => {
+    // Each member's own colours of up and down are in the picture's data, so in its key: the same
+    // market drawn for a 紅漲綠跌 member and a 綠漲紅跌 one are two pictures, never one from the cache.
+    const kinds = [
+      "exchange_overview",
+      "exchange_quote",
+      "exchange_map",
+      "exchange_portfolio",
+    ] as const;
+    for (const kind of kinds) {
+      const sample = PICTURE_SAMPLES[kind] as { colors: "tw" | "us" };
+      const tw = { ...sample, colors: "tw" };
+      const us = { ...sample, colors: "us" };
+      expect(pictureKey(kind, tw, "dusk"), kind).not.toBe(pictureKey(kind, us, "dusk"));
+    }
+    let drawn = 0;
+    const renderer = new PictureRenderer({
+      background: () => null,
+      store: () => ({
+        ingest: async () => {
+          drawn += 1;
+          return { id: `X${drawn}` } as never;
+        },
+      }),
+    });
+    const quote = PICTURE_SAMPLES.exchange_quote;
+    const red = await renderer.draw("exchange_quote", { ...quote, colors: "tw" });
+    const green = await renderer.draw("exchange_quote", { ...quote, colors: "us" });
+    expect(green).not.toBe(red);
+    expect(await renderer.draw("exchange_quote", { ...quote, colors: "tw" })).toBe(red);
+    expect(drawn).toBe(2);
+  }, 30_000);
+
   test("a_store_that_fails_still_gives_the_picture", async () => {
     const renderer = new PictureRenderer({
       background: () => null,

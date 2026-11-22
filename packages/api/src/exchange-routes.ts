@@ -3,7 +3,8 @@
 // * Member (`exchange` group, a session, limited per account): the market, the browsing lists,
 //   suggestions while typing, a lookup, a ticker's page, its candles in four timeframes (with the
 //   member's own cost and 2× lines), the heat maps, the watch list, their account (open it,
-//   take 2x's risks, hide from the rich list), a quote, a market order (with an
+//   take 2x's risks, hide from the rich list), their colours of up and down (kept with the
+//   person, the install's `colors` until they choose), a quote, a market order (with an
 //   `Idempotency-Key`), a cancel, their own portfolio, the rich list (one server's members or everyone, `BoardScopeQuery`). The person is the
 //   session's; a refusal is its status and sentence, the same as in Discord. Nobody sees anybody
 //   else's holdings or orders here (大家都在買 is counts only).
@@ -18,6 +19,7 @@ import type {
   ExchangeAdmin,
   ExchangeBoards,
   ExchangeCandles,
+  ExchangeColors,
   ExchangeList,
   ExchangeMap,
   ExchangeMarket,
@@ -138,10 +140,14 @@ export const exchangeRpc = {
     const x = service(state);
     const v = x.real.view();
     const person = await x.personOf(accountOf(c));
+    // Their own colours of up and down, else the install's.
+    const colors = await x.colorsView(accountOf(c));
     return {
       enabled: v.enabled,
       currency: v.currency,
-      colors: x.config.colors,
+      colors: colors.colors,
+      colors_chosen: colors.chosen,
+      colors_default: colors.default,
       rates: v.rates,
       house: v.house,
       sessions: v.sessions,
@@ -232,6 +238,13 @@ export const exchangeRpc = {
       const r = await service(state).setVisibility(accountOf(c), patch);
       if (!r.ok) refused(r);
       return r.account;
+    },
+  ),
+  colors: os.exchange.colors.handler(
+    async ({ input, context: { state, c } }): Promise<ExchangeColors> => {
+      const r = await service(state).setColors(accountOf(c), input.body.colors);
+      if (!r.ok) refused(r);
+      return { colors: r.colors, chosen: r.chosen, default: r.default };
     },
   ),
   quote: os.exchange.quote.handler(

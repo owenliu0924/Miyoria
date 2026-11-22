@@ -111,9 +111,11 @@ Two accents, everything else neutral. Coloured controls are always solid.
 and down only, and nowhere else: price moves, candles, volume bars, the moving averages' direction
 arrows and the heat maps' tiles. `#ef5f5f` and `#3fc48a` for lines, text and candles; the tiles mix
 from a neutral `#3b3f4c` towards a deeper `#b8383d` / `#1d8a5a` (full at ±3%) so white text reads on
-them. Which is up follows the exchange's `colors` setting (`tw`: red up, the default; `us`: green
-up), every view states it in a legend, and colour is never the only carrier: a move always has its
-arrow and sign (`▲ +1.2%`, `▼ −0.8%`). The candle chart's averages are MA5 `--chart-3`, MA20
+them. Which is up is each member's own choice (2026-11-22: a `Segmented` above the market's table,
+each option its two colour squares and its words, 紅漲綠跌(台股) / 綠漲紅跌(國際)), else the
+exchange's `colors` setting (`tw`: red up, the default; `us`: green up); every view states it in a
+legend, and colour is never the only carrier: a move always has its arrow and sign (`▲ +1.2%`,
+`▼ −0.8%`); candle bodies are solid both ways, in the member's colours. The candle chart's averages are MA5 `--chart-3`, MA20
 `--chart-2`, MA60 `--chart-1` (the light neutral first, since MA5 lies on the candles). The values
 live once in `packages/card-face/src/market.ts`, shared by the panel and the pictures.
 

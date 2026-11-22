@@ -23,11 +23,13 @@ import { micros } from "../orm.js";
 /**
  * A person's own choices, one entry per feature that owns it, stored as that feature wrote it:
  * `privacy` is the `/me privacy` record (`@miyoria/types` `PersonPrivacy` fields), and
- * `voice_consent` the voice module's flag. A missing entry means the feature's default.
+ * `voice_consent` the voice module's flag, `exchange_colors` the exchange's colours of up and
+ * down (`"tw"` or `"us"`). A missing entry means the feature's default.
  */
 export interface PersonPrefs {
   privacy?: JsonValue;
   voice_consent?: JsonValue;
+  exchange_colors?: JsonValue;
 }
 
 /** What the V4 import keeps for the keepsake card (§4.3, decision D4). */

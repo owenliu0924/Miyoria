@@ -66,6 +66,34 @@ describe("the quote's candle chart", () => {
     expect(us).toContain(`fill="${moveColors("us").down}" fill-opacity="0.55"`);
   });
 
+  it("fills every candle's body, up and down, in the member's chosen colours", () => {
+    const up = { o: 100_000, h: 103_000, l: 99_000, c: 102_000, v: 10, label: "1/1" };
+    const down = { o: 102_000, h: 102_500, l: 98_000, c: 99_000, v: 20, label: "1/2" };
+    for (const colors of ["tw", "us"] as const) {
+      const m = moveColors(colors);
+      const s = svg({ ...q, candles: [up, down, up], colors });
+      // No body is an outline: every one is filled, the up ones in up's colour, the down one in down's.
+      expect(s).not.toMatch(/fill="none" stroke="#(ef5f5f|3fc48a)"/);
+      // A wick and a filled body per bar (and more in these colours: the price tag, the legend).
+      const filled = (color: string) =>
+        (s.match(new RegExp(`<rect [^>]*fill="${color}"(?! fill-opacity)[^>]*/>`, "g")) ?? []).length;
+      expect(filled(m.up)).toBeGreaterThanOrEqual(4);
+      expect(filled(m.down)).toBeGreaterThanOrEqual(2);
+      // The bodies themselves (14 wide with three bars): two up, one down, all filled.
+      const bodies = (color: string) =>
+        (s.match(new RegExp(`<rect [^>]*width="14"[^>]*fill="${color}"(?! fill-opacity)[^>]*/>`, "g")) ?? []).length;
+      expect(bodies(m.up)).toBe(2);
+      expect(bodies(m.down)).toBe(1);
+      expect(s).toContain("▲ 漲");
+      expect(s).toContain("▼ 跌");
+      expect(s).not.toContain("空心");
+      expect(s).toContain(conventionWord(colors));
+    }
+    // The words of the two conventions, the same as every other surface.
+    expect(conventionWord("tw")).toBe("紅漲綠跌(台股習慣)");
+    expect(conventionWord("us")).toBe("綠漲紅跌(國際習慣)");
+  });
+
   it("draws MA5, MA20 and MA60 with their values, the volume, the last price and the timeframe", () => {
     const s = svg(q);
     for (const n of [5, 20, 60]) expect(s).toContain(`MA${n} `);

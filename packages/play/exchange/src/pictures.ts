@@ -1,7 +1,9 @@
 // The exchange's picture messages (v1), as templates of `PicturesKey`: the market overview, a
 // ticker's quote with its line, a member's own holdings (only ever drawn for them, or shared by
 // them), the rich list, a trade receipt and the bankruptcy notice. Each carries the exchange's
-// small print at the bottom and the product's one up/down colour convention (`colors`). A picture
+// small print at the bottom and the up/down colour convention (`colors`): the colours of the
+// member who asked for the picture (their own choice, else the install's `colors`), also when it is
+// posted where others see it; a picture nobody asked for has the install's. A picture
 // goes above the text card with its one-line summary as the alt text; the text card is all there
 // is when the renderer is absent, slow or answers `null`. Drawing never decides anything.
 
@@ -10,6 +12,7 @@ import {
   DEFAULT_CURRENCY,
   type ExchangeBankruptPicture,
   type ExchangeBoardPicture,
+  type ExchangeColors,
   type ExchangeMapPicture,
   type ExchangeOverviewPicture,
   type ExchangePortfolioPicture,
@@ -116,7 +119,11 @@ export function defaultTimeframe(line: RealLine): Timeframe {
   return line.open ? "intraday" : "daily";
 }
 
-export function quotePictureData(service: ExchangeService, set: CandleSet): ExchangeQuotePicture {
+export function quotePictureData(
+  service: ExchangeService,
+  set: CandleSet,
+  colors: ExchangeColors = service.config.colors,
+): ExchangeQuotePicture {
   const l = set.line;
   const offset = service.config.utc_offset_minutes;
   const last = set.candles.at(-1);
@@ -157,7 +164,7 @@ export function quotePictureData(service: ExchangeService, set: CandleSet): Exch
     coin_line:
       coin || l.coin_price === null ? null : `約 ${coinText(l.coin_price)} ${service.currency}一股`,
     market_line: `${marketLine(l)}${set.stale ? "・K 線暫時沒有更新" : ""}`,
-    colors: service.config.colors,
+    colors,
     small_print: exchangeSmallPrint({ real: !isLocal, currency: service.currency }),
   };
 }
@@ -167,6 +174,7 @@ export function mapPictureData(
   service: ExchangeService,
   map: MapData,
   now: number,
+  colors: ExchangeColors = service.config.colors,
 ): ExchangeMapPicture {
   return {
     title: map.title,
@@ -180,7 +188,7 @@ export function mapPictureData(
     footnote: map.footnote,
     max_share: map.max_share,
     as_of: timeText(now, service.config.utc_offset_minutes),
-    colors: service.config.colors,
+    colors,
     small_print: exchangeSmallPrint({ real: true, currency: service.currency }),
   };
 }
@@ -190,6 +198,7 @@ export function portfolioPictureData(
   name: string,
   p: RealPortfolio,
   balance: number | null,
+  colors: ExchangeColors = service.config.colors,
 ): ExchangePortfolioPicture {
   const leverage = p.holdings.some((h) => h.leverage > 1);
   return {
@@ -216,7 +225,7 @@ export function portfolioPictureData(
         line_price: cents(h.line_price ?? 0),
       })),
     as_of: p.bankrupt ? "破產冷靜期中" : "以最新報價計算",
-    colors: service.config.colors,
+    colors,
     small_print: exchangeSmallPrint({ real: true, leverage, currency: service.currency }),
   };
 }
@@ -224,6 +233,7 @@ export function portfolioPictureData(
 export function overviewPictureData(
   service: ExchangeService,
   now: number,
+  colors: ExchangeColors = service.config.colors,
 ): ExchangeOverviewPicture {
   const offset = service.config.utc_offset_minutes;
   const localRows = service.lists.rows("local", null);
@@ -266,7 +276,7 @@ export function overviewPictureData(
       { label: "獨家", open: localRows.some((r) => r.open), hours: hours("local") },
     ],
     as_of: timeText(now, offset),
-    colors: service.config.colors,
+    colors,
     small_print: exchangeSmallPrint({ real: true, currency: service.currency }),
   };
 }

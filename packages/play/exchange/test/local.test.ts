@@ -10,8 +10,12 @@ import { exchangeConfig, localCompaniesOf } from "../src/config.js";
 import { feeOn } from "../src/engine/money.js";
 import { rngFor } from "../src/engine/rng.js";
 import {
+  type Cadence,
+  cadenceOf,
   DAILY_LIMIT,
   HARD_BAND,
+  HOURLY,
+  HOURLY_STEPS,
   type LocalCompany,
   LocalProvider,
   type LocalRole,
@@ -21,6 +25,7 @@ import {
   nextTickAfter,
   SIGNAL_MAX,
   signalMove,
+  TEMPER,
 } from "../src/real/local.js";
 import { mappingOf, readSignal } from "../src/real/signals.js";
 
@@ -38,11 +43,27 @@ const RICE = stock("RICE");
 const DPSK = stock("DPSK");
 
 describe("the local stocks", () => {
-  it("tick hourly from 12:00 to 23:00 Taipei and skip the night", () => {
-    expect(lastTick(NOON + 30 * 60_000)).toBe(NOON);
+  it("tick every minute by default from 12:00 to 23:00 Taipei and skip the night", () => {
+    const MIN = 60_000;
+    expect(cadenceOf(60).perDay).toBe(661);
+    expect(lastTick(NOON + 30 * MIN)).toBe(NOON + 30 * MIN);
+    expect(lastTick(NOON + 30 * MIN + 30_000)).toBe(NOON + 30 * MIN);
     expect(lastTick(NOON - HOUR)).toBeNull();
     expect(lastTick(NOON + 11 * HOUR)).toBe(NOON + 11 * HOUR);
+    expect(lastTick(NOON + 11 * HOUR + 30_000)).toBe(NOON + 11 * HOUR);
+    expect(lastTick(NOON + 11 * HOUR + 2 * MIN)).toBeNull();
+    expect(nextTickAfter(NOON)).toBe(NOON + MIN);
     expect(nextTickAfter(NOON + 11 * HOUR)).toBe(NOON + 24 * HOUR);
+  });
+
+  it("tick hourly from 12:00 to 23:00 Taipei with local_tick_seconds = 3600 (the cadence before)", () => {
+    expect(HOURLY.perDay).toBe(12);
+    expect(HOURLY.temper).toBe(TEMPER);
+    expect(lastTick(NOON + 30 * 60_000, 3600)).toBe(NOON);
+    expect(lastTick(NOON - HOUR, 3600)).toBeNull();
+    expect(lastTick(NOON + 11 * HOUR, 3600)).toBe(NOON + 11 * HOUR);
+    expect(nextTickAfter(NOON, 3600)).toBe(NOON + HOUR);
+    expect(nextTickAfter(NOON + 11 * HOUR, 3600)).toBe(NOON + 24 * HOUR);
   });
 
   it("are the same from the same seed and stay within the daily limit", async () => {
@@ -123,6 +144,123 @@ describe("the local stocks", () => {
     process.stdout.write(`local year range: ${out.join("; ")}\n`);
   }, 60_000);
 
+  // ---- a tick every minute: the same day as the hourly model ------------------------------------
+
+  /**
+   * `seeds` × `days` of `company` from its anchor in cadence `c`, the signal pushing `push` every
+   * day: each day's close-to-close log return, the closes over the anchor, and the worst breach of
+   * the day's ±10% (from the reference) or the hard band seen at any tick (≤ 0: never).
+   */
+  const simulate = (
+    company: LocalCompany,
+    c: Cadence,
+    seeds: number,
+    days: number,
+    push: number,
+  ) => {
+    const a = company.anchor;
+    const returns: number[] = [];
+    const levels: number[] = [];
+    let breach = Number.NEGATIVE_INFINITY;
+    const signals = () => (push === 0 ? null : { signal: push });
+    for (let seed = 0; seed < seeds; seed++) {
+      let st: LocalState = { price: a, at: NOON - 13 * HOUR, close: a };
+      let close = a;
+      for (let d = 0; d < days; d++) {
+        for (let k = 0; k < c.perDay; k++) {
+          st = nextPrice(`eq${seed}`, company, NOON + d * DAY_MS + k * c.tickMs, st, signals, a, c);
+          // Over the band by more than the cent the price is rounded to.
+          breach = Math.max(
+            breach,
+            st.price - st.close * (1 + DAILY_LIMIT) - 0.005,
+            st.close * (1 - DAILY_LIMIT) - st.price - 0.005,
+            st.price - a * HARD_BAND.hi - 0.005,
+            a * HARD_BAND.lo - st.price - 0.005,
+          );
+        }
+        returns.push(Math.log(st.price / close));
+        close = st.price;
+      }
+      levels.push(Math.log(st.price / a));
+    }
+    return { returns, levels, breach };
+  };
+  const mean = (x: readonly number[]) => x.reduce((t, v) => t + v, 0) / x.length;
+  const sd = (x: readonly number[]) => {
+    const m = mean(x);
+    return Math.sqrt(x.reduce((t, v) => t + (v - m) ** 2, 0) / (x.length - 1));
+  };
+  /** The two-sample Kolmogorov–Smirnov distance. */
+  const ks = (x: readonly number[], y: readonly number[]) => {
+    const a = [...x].sort((p, q) => p - q);
+    const b = [...y].sort((p, q) => p - q);
+    let i = 0;
+    let j = 0;
+    let d = 0;
+    while (i < a.length && j < b.length) {
+      const v = Math.min(a[i] as number, b[j] as number);
+      while (i < a.length && (a[i] as number) <= v) i++;
+      while (j < b.length && (b[j] as number) <= v) j++;
+      d = Math.max(d, Math.abs(i / a.length - j / b.length));
+    }
+    return d;
+  };
+
+  it("give a day the same distribution with a tick every minute as with the hourly model, inside the band", () => {
+    // 150 seeds × 20 days per company and push, with seeded generators (the minute series draws
+    // its own numbers: the two are compared as distributions, not tick for tick).
+    const minute = cadenceOf(60);
+    const rows: string[] = [];
+    for (const company of [RICE, DPSK, stock("CUBE")]) {
+      for (const push of [0, 1]) {
+        const h = simulate(company, HOURLY, 150, 20, push);
+        const m = simulate(company, minute, 150, 20, push);
+        // Never past the ±10% of the day nor the hard band, at any tick.
+        expect(h.breach).toBeLessThanOrEqual(0);
+        expect(m.breach).toBeLessThanOrEqual(0);
+        // A day's move: the same spread (within 8%), the same centre, the same shape.
+        const ratio = sd(m.returns) / sd(h.returns);
+        expect(ratio).toBeGreaterThan(0.92);
+        expect(ratio).toBeLessThan(1.08);
+        const se = Math.sqrt(
+          sd(h.returns) ** 2 / h.returns.length + sd(m.returns) ** 2 / m.returns.length,
+        );
+        expect(Math.abs(mean(m.returns) - mean(h.returns))).toBeLessThan(4 * se);
+        const dist = ks(h.returns, m.returns);
+        expect(dist).toBeLessThan(0.06);
+        // Where twenty days take it from the anchor: the same spread too.
+        const level = sd(m.levels) / sd(h.levels);
+        expect(level).toBeGreaterThan(0.8);
+        expect(level).toBeLessThan(1.25);
+        rows.push(
+          `${company.code} push ${push}: day sd hourly ${(sd(h.returns) * 100).toFixed(3)}% minute ${(sd(m.returns) * 100).toFixed(3)}% (×${ratio.toFixed(3)}), mean ${(mean(h.returns) * 100).toFixed(3)}% / ${(mean(m.returns) * 100).toFixed(3)}%, KS ${dist.toFixed(3)}, 20-day level sd ×${level.toFixed(3)}`,
+        );
+      }
+    }
+    process.stdout.write(`minute vs hourly:\n  ${rows.join("\n  ")}\n`);
+  }, 120_000);
+
+  it("scale each step so the day's variance and pull are the hourly model's, and are the hourly numbers at 3600 s", () => {
+    for (const role of ["feeding", "model"] as const) {
+      const h = TEMPER[role];
+      for (const s of [60, 10, 600, 1800]) {
+        const c = cadenceOf(s);
+        const t = c.temper[role];
+        // The pull of a day compounds to the hourly model's.
+        expect((1 - t.reversion) ** c.perDay).toBeCloseTo((1 - h.reversion) ** HOURLY_STEPS, 12);
+        // The walk's variance over a day is the hourly model's.
+        const dayVar = (sig: number, r: number, n: number) =>
+          (sig * sig * (1 - (1 - r) ** (2 * n))) / (1 - (1 - r) ** 2);
+        expect(dayVar(t.sigma, t.reversion, c.perDay)).toBeCloseTo(
+          dayVar(h.sigma, h.reversion, HOURLY_STEPS),
+          12,
+        );
+      }
+    }
+    expect(cadenceOf(3600)).toBe(HOURLY);
+    expect(HOURLY.temper).toBe(TEMPER);
+  });
+
   // ---- anti-gaming, with the real signal ------------------------------------------------------
 
   // The economy's defaults ([modules.economy], packages/economy/src/config.ts and gift-config.ts):
@@ -197,6 +335,9 @@ describe("the local stocks", () => {
     pump: (d: number) => boolean,
     seed: string,
     stake = { coins: config.buy_per_day, orderMax: config.order_max },
+    /** The cadence (the hourly model the table was measured at, unless given). */
+    cad: Cadence = HOURLY,
+    days = 2000,
   ) => {
     const counts: number[] = [];
     let st: LocalState = { price: 100, at: NOON - 13 * HOUR, close: 100 };
@@ -204,18 +345,18 @@ describe("the local stocks", () => {
     let gaps = 0;
     let trades = 0;
     const signals = (c: LocalRole, day: number) => signalOf(c, counts, day);
-    for (let d = 0; d < 2000; d++) {
+    for (let d = 0; d < days; d++) {
       const rng = rngFor("feeds", seed, d);
       const pumped = pump(d);
       counts[d] = Math.max(0, Math.round(12 + rng.normal() * 4)) + (pumped ? extra.feeds : 0);
       let p23 = st.price;
-      for (let h = 0; h < 12; h++) {
-        st = nextPrice(seed, RICE, NOON + d * DAY_MS + h * HOUR, st, signals, 100);
-        if (h === 11) p23 = st.price;
+      for (let h = 0; h < cad.perDay; h++) {
+        st = nextPrice(seed, RICE, NOON + d * DAY_MS + h * cad.tickMs, st, signals, 100, cad);
+        if (h === cad.perDay - 1) p23 = st.price;
       }
       if (!pumped) continue;
       // The next day's first tick carries today's count (priced again in the loop: it is pure).
-      const open = nextPrice(seed, RICE, NOON + (d + 1) * DAY_MS, st, signals, 100);
+      const open = nextPrice(seed, RICE, NOON + (d + 1) * DAY_MS, st, signals, 100, cad);
       total += flip(stake.coins, p23, open.price, stake.orderMax) - extra.coins;
       gaps += signalMove(signals("feeding", day0 + d));
       trades++;
@@ -295,6 +436,46 @@ describe("the local stocks", () => {
     }
     process.stdout.write(`feed-and-flip without caps:\n  ${rows.join("\n  ")}\n`);
   }, 60_000);
+
+  it("with a tick every minute, feed-then-flip earns what it did hourly and the day after the gap has nothing more of it", () => {
+    // The signal is still yesterday's whole count, landing at 12:00 as one gap: the same gap for
+    // the same feedings, whatever the cadence (the same counts give the same gaps here).
+    const minute = cadenceOf(60);
+    const stake = { coins: 10_000, orderMax: 0 };
+    const weekly = (d: number) => d % 7 === 0;
+    const h = feedAndFlip(MOST, weekly, "flip", stake, HOURLY, 700);
+    const m = feedAndFlip(MOST, weekly, "flip", stake, minute, 700);
+    expect(m.gap).toBe(h.gap);
+    const per = (r: { mean: number }) => (r.mean + MOST.coins) / stake.coins;
+    expect(per(m)).toBeLessThan(SIGNAL_MAX - 2 * config.fee + 0.001);
+    expect(Math.abs(per(m) - per(h))).toBeLessThan(0.005);
+    // Bought right after the gap (12:01) and sold at 23:00: no drift from the signal is left in
+    // the day, so knowing it at 12:00 gives no edge the hourly model did not have.
+    const after: { pushed: number[]; plain: number[] } = { pushed: [], plain: [] };
+    let st: LocalState = { price: 100, at: NOON - 13 * HOUR, close: 100 };
+    const signals = (_r: LocalRole, day: number) => ((day - day0) % 2 === 0 ? { signal: 1 } : null);
+    for (let d = 1; d <= 1000; d++) {
+      let first = 0;
+      for (let k = 0; k < minute.perDay; k++) {
+        st = nextPrice(
+          "drift",
+          RICE,
+          NOON + d * DAY_MS + k * minute.tickMs,
+          st,
+          signals,
+          100,
+          minute,
+        );
+        if (k === 1) first = st.price;
+      }
+      ((d - 1) % 2 === 0 ? after.pushed : after.plain).push(Math.log(st.price / first));
+    }
+    const avg = (x: number[]) => x.reduce((t, v) => t + v, 0) / x.length;
+    expect(avg(after.pushed)).toBeLessThan(avg(after.plain) + 0.003);
+    process.stdout.write(
+      `minute feed-and-flip (once a week, most, 10,000): hourly ${(per(h) * 100).toFixed(3)}% a coin, minute ${(per(m) * 100).toFixed(3)}% a coin, mean gap ${(m.gap * 100).toFixed(2)}%; 12:01→23:00 after a +3% gap ${(avg(after.pushed) * 100).toFixed(3)}%, after none ${(avg(after.plain) * 100).toFixed(3)}%\n`,
+    );
+  }, 120_000);
 
   it("never let causing model errors pay: DPSK only falls, by less than a round trip's fees", () => {
     const m = mappingOf(config, "model");

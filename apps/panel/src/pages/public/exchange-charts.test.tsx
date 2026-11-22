@@ -94,6 +94,8 @@ const market = (colors: "tw" | "us"): ExchangeMarket => ({
   enabled: true,
   currency: "魚幣",
   colors,
+  colors_chosen: null,
+  colors_default: colors,
   rates: { twd_per_coin: 1, twd_per_usd: 30 },
   house: { buys_halted: false, net_today: 0, cap_daily: 0 },
   sessions: [{ market: "tw", open: false, hours: "09:00–13:30", zone: "Asia/Taipei", stale: false, notice: null }],
@@ -187,6 +189,9 @@ describe("the candle chart", () => {
     const m = moveColors("tw");
     const bars = chart.series.find((s) => s.kind === "Candlestick");
     expect(bars?.options).toMatchObject({ upColor: m.up, downColor: m.down, wickUpColor: m.up, wickDownColor: m.down });
+    // Both bodies are filled (no see-through body), each in its own colour.
+    expect(bars?.options).toMatchObject({ borderUpColor: m.up, borderDownColor: m.down });
+    expect(screen.queryByText(/空心/)).toBeNull();
     expect(bars?.data).toHaveLength(70);
     // The averages, worked out here from the closes.
     const lines = chart.series.filter((s) => s.kind === "Line");
@@ -220,6 +225,8 @@ describe("the candle chart", () => {
     renderPage(<Exchange />);
     const chart = await openTicker();
     expect(chart.series.find((s) => s.kind === "Candlestick")?.options).toMatchObject({ upColor: moveColors("us").up });
+    // Filled in both directions under this convention too.
+    expect(chart.series.find((s) => s.kind === "Candlestick")?.options).toMatchObject({ downColor: moveColors("us").down });
     expect(moveColors("us").up).toBe(moveColors("tw").down);
   });
 

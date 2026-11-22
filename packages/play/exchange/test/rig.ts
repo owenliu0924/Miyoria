@@ -219,15 +219,22 @@ export const OPEN: Partial<ExchangeConfig> = {
 export async function rig(
   config: Partial<ExchangeConfig> = OPEN,
   providers?: ReadonlyMap<string, QuoteProvider>,
-  /** The profile's words (`[character]`, the coins' name); none: the first character's. */
-  words: Partial<Pick<ExchangeDeps, "name" | "currency" | "pronoun">> = {},
+  /**
+   * The profile's words (`[character]`, the coins' name); none: the first character's. Also where
+   * members' own choices are kept (`settings`); none: the service keeps them in memory.
+   */
+  words: Partial<Pick<ExchangeDeps, "name" | "currency" | "pronoun" | "settings">> = {},
+  /** A database opened already (an older install's), with the clock it was opened with. */
+  existing?: { raw: TestDb; clock: { at: number } },
 ): Promise<Rig> {
-  const clock = { at: T0 };
-  const raw = openTestDb({
-    identity: true,
-    plugins: [exchangeSchema],
-    clock: { now: () => clock.at },
-  });
+  const clock = existing?.clock ?? { at: T0 };
+  const raw =
+    existing?.raw ??
+    openTestDb({
+      identity: true,
+      plugins: [exchangeSchema],
+      clock: { now: () => clock.at },
+    });
   dbs.push(raw);
   const store = new ExchangeStore(raw.db);
   const wallet = new FakeWallet(clock);

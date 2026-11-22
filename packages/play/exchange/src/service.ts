@@ -14,11 +14,17 @@ import { randomBytes } from "node:crypto";
 import { type Logger, SerialQueue } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
+  accountRefString,
   DEFAULT_CHARACTER,
+  EXCHANGE_COLORS_PROFILE,
+  type ExchangeColorChoice,
   type ExchangeEntry,
   type ExchangeWallet,
+  exchangeColorsKey,
+  type JsonValue,
   newId,
   type PersonId,
+  parseExchangeColors,
   type Timestamp,
   toTimestamp,
 } from "@miyoria/types";
@@ -129,6 +135,25 @@ export interface ExchangeDeps {
   currency?: () => string;
   /** How texts name her (`[character] pronoun`); none: 她. */
   pronoun?: () => string;
+  /**
+   * Where a member's own choices are kept (`SettingsStoreKey`: the store routes
+   * `exchange_colors:<platform>:<id>` to `persons.prefs`, one value per person); none: memory only.
+   */
+  settings?: () => ChoiceStore | null;
+}
+
+/** The two calls of a settings store the colours of up and down need. */
+export interface ChoiceStore {
+  get(profile: string, key: string): Promise<JsonValue | null>;
+  set(profile: string, key: string, value: JsonValue | null): Promise<void>;
+}
+
+/** A member's colours of up and down: what applies, and whether they chose it themselves. */
+export interface ColorsView {
+  colors: ExchangeColorChoice;
+  /** `null`: not chosen, the install's default (`[modules.exchange] colors`) applies. */
+  chosen: ExchangeColorChoice | null;
+  default: ExchangeColorChoice;
 }
 
 export type Refusal = { ok: false; status: number; code: string; message: string };
@@ -550,6 +575,9 @@ export class ExchangeService {
    * wallets are paid what they are owed, and the notices go out. Off: the open orders go back.
    */
   async tick(): Promise<void> {
+    // The market's seed exists from the first pass: the local stocks' walk is seeded by it, so a
+    // new instance's prices do not change seed once someone first opens an account.
+    this.#ensure();
     await this.real.tick();
     if (!this.#d.config.local_enabled) {
       await this.flush();
@@ -1206,6 +1234,57 @@ export class ExchangeService {
     if (patch.show_holdings !== undefined) clean.show_holdings = patch.show_holdings;
     this.#d.store.updateAccount(who.person, clean, this.#ts());
     return { ok: true, account: (await this.accountView(account)) as AccountView };
+  }
+
+  // ---- the colours of up and down (each member's own; the install's is the default) --------
+
+  /** Choices kept in memory when there is no settings store (tests, a store without people). */
+  readonly #colorsHere = new Map<string, ExchangeColorChoice>();
+
+  /**
+   * The colours `account` sees (`null`: nobody asked, the install's default): their own choice,
+   * else `[modules.exchange] colors`. A store that cannot answer is the default, never a refusal.
+   */
+  async colorsOf(account: AccountRef | null): Promise<ExchangeColorChoice> {
+    return (await this.colorsView(account)).colors;
+  }
+
+  async colorsView(account: AccountRef | null): Promise<ColorsView> {
+    const fallback = this.#d.config.colors;
+    if (account === null) return { colors: fallback, chosen: null, default: fallback };
+    let chosen: ExchangeColorChoice | null = null;
+    const store = this.#d.settings?.() ?? null;
+    if (store) {
+      try {
+        chosen = parseExchangeColors(
+          await store.get(EXCHANGE_COLORS_PROFILE, exchangeColorsKey(account)),
+        );
+      } catch (error) {
+        this.#d.log.info({ err: String(error) }, "exchange: cannot read a member's colours");
+      }
+    } else {
+      const person = await this.personOf(account);
+      chosen = this.#colorsHere.get(person ?? accountRefString(account)) ?? null;
+    }
+    return { colors: chosen ?? fallback, chosen, default: fallback };
+  }
+
+  /**
+   * `account`'s colours of up and down: `tw` or `us`, or `null` back to the install's default. Kept
+   * with the person (every account and server of theirs reads it); anything else is refused.
+   */
+  async setColors(account: AccountRef, value: unknown): Promise<Ok<ColorsView> | Refusal> {
+    const choice = value === null ? null : parseExchangeColors(value);
+    if (value !== null && choice === null)
+      return refuse(400, "bad_colors", "漲跌顏色只能選紅漲綠跌(tw)或綠漲紅跌(us)");
+    const person = await this.personOf(account);
+    if (!person)
+      return refuse(403, "stranger", `${this.pronoun}還不認識你,先和${this.pronoun}說說話吧`);
+    const store = this.#d.settings?.() ?? null;
+    if (store) await store.set(EXCHANGE_COLORS_PROFILE, exchangeColorsKey(account), choice);
+    else if (choice === null) this.#colorsHere.delete(person);
+    else this.#colorsHere.set(person, choice);
+    return { ok: true, ...(await this.colorsView(account)) };
   }
 
   // ---- facts for the guards ---------------------------------------------------------------

@@ -101,8 +101,9 @@ export const TOPICS: Record<PushTopic, TopicDef> = {
   },
   /**
    * A list of the exchange as this member sees it (`GET /api/member/exchange/list/{kind}`). Quotes
-   * are fetched once a pass (`quote_poll_seconds`, a minute by default) and no event says so: the
-   * tick finds the new prices within 10 s, and only a list whose rows changed goes out.
+   * are fetched, and the local stocks' ticks worked out (a minute apart by default), once a pass
+   * (`quote_poll_seconds`, a minute by default) and no event says so: the tick finds the new
+   * prices within 10 s, and only a list whose rows changed goes out.
    */
   exchange_list: {
     audience: "member",

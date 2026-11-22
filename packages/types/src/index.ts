@@ -677,18 +677,25 @@ export {
   TurnSilencerKey,
 } from "./emergency.js";
 export {
+  EXCHANGE_COLOR_CHOICES,
+  EXCHANGE_COLOR_WORDS,
+  EXCHANGE_COLORS_PREFIX,
+  EXCHANGE_COLORS_PROFILE,
   EXCHANGE_DISCLAIMER,
   EXCHANGE_DISCLAIMER_LEVERAGE,
   EXCHANGE_DISCLAIMER_REAL,
   EXCHANGE_REASONS,
+  type ExchangeColorChoice,
   type ExchangeEntry,
   type ExchangePerson,
   type ExchangePost,
   type ExchangeReason,
   type ExchangeWallet,
   ExchangeWalletKey,
+  exchangeColorsKey,
   exchangeDisclaimer,
   exchangeSmallPrint,
+  parseExchangeColors,
 } from "./exchange.js";
 export {
   AMOUNT_CURRENCY,

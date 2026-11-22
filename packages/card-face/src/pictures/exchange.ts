@@ -4,10 +4,10 @@
 // They read like the panel's exchange page: the frame with `交易所 / 頁面`, a chart block with its
 // 24 px headline, strips of facts, hairline rows.
 //
-// Up and down (owner 2026-11-21): one convention for the whole product, `colors` in the data —
-// `tw` red up and green down (the default), `us` green up and red down — stated in a legend on
-// every chart. A move is never colour alone: every change carries its sign and an arrow (▲ +1.2% /
-// ▼ −0.8%). These two are the only red and green the pictures use. Prices come in cents and are
+// Up and down (owner 2026-11-21; each member's own since 2026-11-22): `colors` in the data — `tw`
+// red up and green down, `us` green up and red down; the member who asked for the picture chose
+// it, else the install's default — stated in a legend on every chart. A move is never colour
+// alone: every change carries its sign and an arrow (▲ +1.2% / ▼ −0.8%). These two are the only red and green the pictures use. Prices come in cents and are
 // drawn with two decimals. Every picture ends with the exchange's small print.
 
 import type {
@@ -22,7 +22,7 @@ import type {
   ExchangeReceiptPicture,
   ExchangeTimeframe,
 } from "@miyoria/types";
-import { DEFAULT_CURRENCY } from "@miyoria/types";
+import { DEFAULT_CURRENCY, EXCHANGE_COLOR_WORDS } from "@miyoria/types";
 import {
   changeText,
   layoutMap,
@@ -63,9 +63,9 @@ export function moveColors(colors: ExchangeColors): { up: string; down: string }
   return marketColors(colors);
 }
 
-/** The legend's words (`紅漲綠跌`). */
+/** The legend's words (`紅漲綠跌(台股習慣)`), the same on every surface. */
 export function conventionWord(colors: ExchangeColors): string {
-  return colors === "us" ? "綠漲紅跌(美股習慣)" : "紅漲綠跌(台股習慣)";
+  return EXCHANGE_COLOR_WORDS[colors];
 }
 
 /** The small print at the bottom of every exchange picture (legible at Discord's preview size). */

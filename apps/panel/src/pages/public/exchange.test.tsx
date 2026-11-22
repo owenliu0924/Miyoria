@@ -18,7 +18,7 @@ import type {
 import { PushProvider } from "@/app/push";
 import { TestStream } from "@/test/push-stream";
 import { mockFetch, renderPage, renderRoute } from "@/test/render";
-import { change, Exchange, upColor } from "./Exchange";
+import { change, downColor, Exchange, upColor } from "./Exchange";
 
 const BASE = "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。";
 
@@ -51,6 +51,8 @@ const MARKET: ExchangeMarket = {
   enabled: true,
   currency: "魚幣",
   colors: "tw",
+  colors_chosen: null,
+  colors_default: "tw",
   rates: { twd_per_coin: 1, twd_per_usd: 30 },
   house: { buys_halted: false, net_today: 0, cap_daily: 1500 },
   sessions: [
@@ -148,15 +150,23 @@ const BOARDS: ExchangeBoards = {
   me: { rich: 2, hidden: false },
 };
 
-function exchange(o: { status?: number; line?: Partial<ExchangeLine> } = {}) {
+function exchange(o: { status?: number; line?: Partial<ExchangeLine>; colors?: "tw" | "us" } = {}) {
   const shown = { ...LOCAL[0], ...o.line } as ExchangeLine;
   const posts: { path: string; body: unknown; key: string | null }[] = [];
+  // The member's own colours: what they chose here, else the install's (`colors`, default tw).
+  let chosen: "tw" | "us" | null = null;
+  const fallback = o.colors ?? "tw";
   mockFetch((method, url, body, headers) => {
     const path = url.pathname;
     if (method === "POST") posts.push({ path, body, key: headers.get("Idempotency-Key") });
     if (!path.startsWith("/api/member/exchange")) return undefined;
     if (o.status) return { status: o.status, body: { error: "exchange module is not available" } };
-    if (path === "/api/member/exchange") return { body: MARKET };
+    if (path === "/api/member/exchange")
+      return { body: { ...MARKET, colors: chosen ?? fallback, colors_chosen: chosen, colors_default: fallback } };
+    if (path === "/api/member/exchange/colors") {
+      chosen = (body as { colors: "tw" | "us" | null }).colors;
+      return { body: { colors: chosen ?? fallback, chosen, default: fallback } };
+    }
     if (path === "/api/member/exchange/account") return { body: ACCOUNT };
     if (path === "/api/member/exchange/portfolio") return { body: PORTFOLIO };
     if (path === "/api/member/exchange/boards") return { body: BOARDS };
@@ -187,6 +197,36 @@ describe("深海交易所 on the member page", () => {
     expect(up).toHaveStyle({ color: upColor("tw") });
     expect(screen.getAllByText(new RegExp(BASE.slice(0, 10))).length).toBeGreaterThan(0);
     expect(change(-0.012)).toBe("▼ −1.2%");
+  });
+
+  it("lets the member choose their own colours of up and down, in words and colours, at once", async () => {
+    const { posts } = exchange();
+    renderPage(<Exchange />);
+    const choice = await screen.findByRole("radiogroup", { name: "漲跌顏色" });
+    const tw = within(choice).getByRole("radio", { name: /紅漲綠跌/ });
+    const us = within(choice).getByRole("radio", { name: /綠漲紅跌/ });
+    // Both options say themselves in words and show their two colours (up first).
+    const swatches = (el: HTMLElement) => [...el.querySelectorAll("span[aria-hidden]")].map((s) => (s as HTMLElement).style.background);
+    expect(swatches(tw)).toEqual(["rgb(239, 95, 95)", "rgb(63, 196, 138)"]);
+    expect(swatches(us)).toEqual(["rgb(63, 196, 138)", "rgb(239, 95, 95)"]);
+    expect(tw).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/漲跌顏色・預設/)).toBeInTheDocument();
+    expect(await screen.findByText("▲ +1.2%")).toHaveStyle({ color: upColor("tw") });
+    await userEvent.click(us);
+    await waitFor(() => expect(posts).toContainEqual(expect.objectContaining({ path: "/api/member/exchange/colors", body: { colors: "us" } })));
+    // The page follows at once: up is green now, and the arrow and sign are still there.
+    await waitFor(() => expect(screen.getByText("▲ +1.2%")).toHaveStyle({ color: upColor("us") }));
+    expect(screen.getByText("▼ −3.0%")).toHaveStyle({ color: downColor("us") });
+    expect(within(choice).getByRole("radio", { name: /綠漲紅跌/ })).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByText(/漲跌顏色・你選的/)).toBeInTheDocument();
+  });
+
+  it("draws an install whose default is green up in green until the member chooses", async () => {
+    exchange({ colors: "us" });
+    renderPage(<Exchange />);
+    expect(await screen.findByText("▲ +1.2%")).toHaveStyle({ color: upColor("us") });
+    expect(screen.getByText("▼ −3.0%")).toHaveStyle({ color: downColor("us") });
+    expect(within(screen.getByRole("radiogroup", { name: "漲跌顏色" })).getByRole("radio", { name: /綠漲紅跌/ })).toHaveAttribute("aria-checked", "true");
   });
 
   it("moves a list's prices as they are pushed, without asking again", async () => {

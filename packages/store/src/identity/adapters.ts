@@ -1,7 +1,7 @@
 // The store's older interfaces over the `identity` tables, so every caller keeps working while
 // it moves (docs/design/v5-data.md §8 step 4): `PeopleStore`, `IdentityStore`, the
 // `HandleDirectory`, and the settings keys of a person's choices (`privacy:*`, `voice_consent:*`,
-// which callers write under `_global`), which now live in `persons.prefs`.
+// `exchange_colors:*`, which callers write under `_global`), which now live in `persons.prefs`.
 
 import {
   type AccountRef,
@@ -168,7 +168,11 @@ export class IdentityHandles implements PersonHandleDirectory {
 }
 
 /** The settings key families that are a person's choices, by `PersonPrefs` entry. */
-const PREF_KEYS = { privacy: "privacy:", voice_consent: "voice_consent:" } as const;
+const PREF_KEYS = {
+  privacy: "privacy:",
+  voice_consent: "voice_consent:",
+  exchange_colors: "exchange_colors:",
+} as const;
 type PrefKey = keyof typeof PREF_KEYS;
 
 function prefKey(key: string): { pref: PrefKey; account: AccountRef } | null {
@@ -183,8 +187,8 @@ function prefKey(key: string): { pref: PrefKey; account: AccountRef } | null {
 }
 
 /**
- * A `SettingsStore` that keeps `privacy:<platform>:<id>` and `voice_consent:<platform>:<id>` in
- * `persons.prefs` and everything else in `inner`. The choice belongs to the person, so every
+ * A `SettingsStore` that keeps `privacy:<platform>:<id>`, `voice_consent:<platform>:<id>` and
+ * `exchange_colors:<platform>:<id>` in `persons.prefs` and everything else in `inner`. The choice belongs to the person, so every
  * account of a person reads the same value. One database is one character, so the profile a
  * caller names does not matter (callers name `_global`).
  */

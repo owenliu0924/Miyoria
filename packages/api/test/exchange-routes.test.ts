@@ -22,7 +22,12 @@ import type { AnyRouter } from "@orpc/server";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 import { ApiError } from "../src/errors.js";
-import { exchangeAdminRpc, exchangeRpc } from "../src/exchange-routes.js";
+import {
+  exchangeAdminRpc,
+  exchangeListWatch,
+  exchangeRpc,
+  exchangeTickerWatch,
+} from "../src/exchange-routes.js";
 import { rpcRoutes, tableRoutes } from "../src/rpc.js";
 import type { ApiEnv } from "../src/state.js";
 
@@ -275,6 +280,58 @@ describe("the exchange's routes", () => {
       max_share: 0.35,
     });
     expect((await hono.request("/api/member/exchange/map/nope")).status).toBe(400);
+  });
+
+  it("keep the member's own colours of up and down: the install's until chosen, then theirs, an unknown one refused", async () => {
+    const { service } = exchange();
+    const hono = app(service);
+    expect(await body(await hono.request("/api/member/exchange"))).toMatchObject({
+      colors: "tw",
+      colors_chosen: null,
+      colors_default: "tw",
+    });
+    const set = await hono.request("/api/member/exchange/colors", json({ colors: "us" }));
+    expect(set.status).toBe(200);
+    expect(await set.json()).toEqual({ colors: "us", chosen: "us", default: "tw" });
+    expect(await body(await hono.request("/api/member/exchange"))).toMatchObject({
+      colors: "us",
+      colors_chosen: "us",
+      colors_default: "tw",
+    });
+    for (const bad of [{ colors: "green" }, { colors: 1 }, {}, { colors: "us", more: true }]) {
+      // Refused by the contract before the exchange sees it (the service refuses them too).
+      const r = await hono.request("/api/member/exchange/colors", json(bad));
+      expect(r.status, JSON.stringify(bad)).toBe(422);
+    }
+    expect((await body(await hono.request("/api/member/exchange"))).colors).toBe("us");
+    const back = await hono.request("/api/member/exchange/colors", json({ colors: null }));
+    expect(await back.json()).toEqual({ colors: "tw", chosen: null, default: "tw" });
+  });
+
+  it("give the push stream a new ticker view and list at each local tick, a minute apart", async () => {
+    const { service, clock } = exchange();
+    clock.at = NOON;
+    await service.tick();
+    const state = { service: (key: unknown) => (key === ExchangeKey ? service : null) };
+    const c = { get: () => ({ account: MEMBER }) };
+    const ticker = await exchangeTickerWatch(state as never, c as never, "RICE");
+    const list = await exchangeListWatch(state as never, c as never, "local");
+    const first = {
+      ticker: JSON.stringify(await ticker.build()),
+      list: JSON.stringify(await list.build()),
+    };
+    // The stream's next look (10 s on) finds the same tick: nothing goes out.
+    clock.at = NOON + 10_000;
+    await service.tick();
+    expect(JSON.stringify(await list.build())).toBe(first.list);
+    // A minute on, the next tick: both views change, under the same keys.
+    clock.at = NOON + 60_000;
+    await service.tick();
+    const t = await ticker.build();
+    expect(JSON.stringify(t)).not.toBe(first.ticker);
+    expect(JSON.stringify(await list.build())).not.toBe(first.list);
+    expect(t.line).toMatchObject({ basis: "quote", at: new Date(NOON + 60_000).toISOString() });
+    expect((await exchangeTickerWatch(state as never, c as never, "RICE")).key).toBe(ticker.key);
   });
 
   it("bring a refusal back as its status and sentence", async () => {
