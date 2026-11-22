@@ -106,6 +106,18 @@ export type StickerConfig = z.output<typeof StickerConfigSchema>;
 /** `command_guilds = ["*"]`: every server she is in. */
 export const ALL_GUILDS = "*";
 
+/**
+ * A guild id, or `"*"`. One schema, not a union with `Snowflake`: a union would answer a bad id
+ * with "Invalid input" instead of the sentence that says what is wrong with it.
+ */
+const GuildOrAll = z.union([z.string(), z.number()]).transform((value, ctx): string => {
+  if (value === ALL_GUILDS) return ALL_GUILDS;
+  const parsed = Snowflake.safeParse(value);
+  if (parsed.success) return parsed.data;
+  for (const issue of parsed.error.issues) ctx.addIssue({ code: "custom", message: issue.message });
+  return z.NEVER;
+});
+
 export const DiscordConfigSchema = z
   .object({
     /** Bot token. Keep it in the environment, not in the file. */
@@ -115,7 +127,7 @@ export const DiscordConfigSchema = z
      * globally, which can take a while to propagate. `["*"]`: every server she is in, and each
      * server she joins as it joins.
      */
-    command_guilds: z.array(z.union([z.literal(ALL_GUILDS), Snowflake])).default([]),
+    command_guilds: z.array(GuildOrAll).default([]),
     /**
      * Her other accounts (e.g. the self account used by the voice node). Mentions of and replies
      * to them count as addressing her.
