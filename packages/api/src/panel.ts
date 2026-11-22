@@ -256,8 +256,8 @@ async function readSlice(path: string, start: number, end: number): Promise<Buff
  * * A few top-level files a site has (`favicon.svg`, `robots.txt`, a manifest).
  * * The built bundle under `assets/`, by extension: scripts, styles, fonts, pictures, sound and
  *   video. Never a source map or an HTML file there.
- * * `*.local.*` pictures at the top (the owner's game art, kept out of git): `private`. Before
- *   this list they went to anyone who asked, the tunnel included (phase 0 left them as they were).
+ * * `*.local.*` pictures at the top (the owner's game art, kept out of git): `public`. The public
+ *   pages draw with them (backdrop, card poses), and the owner kept them readable (2026-11-14).
  * * Anything else, a dot file included: `deny`.
  */
 export type StaticAccess = "public" | "private" | "deny";
@@ -307,7 +307,7 @@ export function staticAccess(pathname: string): StaticAccess {
   if (!last.includes(".")) return "public";
   if (parts.length === 1) {
     if (TOP_FILES.has(last)) return "public";
-    if (LOCAL_ART.test(last)) return "private";
+    if (LOCAL_ART.test(last)) return "public";
     return "deny";
   }
   if (parts[0] === "assets" && ASSET_EXTS.has(extname(last).toLowerCase())) return "public";

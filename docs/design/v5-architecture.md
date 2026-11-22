@@ -527,7 +527,7 @@ miyoria up                     # 啟動這台裝的全部
 - 三組路由:`admin`(只在 `bind`)、`public`(公開頁和會員頁,在 `bind` 和 `public_bind`)、`host`(`/api/cluster/join`,只在 `bind`)。hostd 的控制連線本來就是 `[modules.cluster] bind` 自己的監聽位址,沒動。
 - 預設不變:`public_bind` 留空就是一個 `bind` 全包,和以前一樣。要分開:設 `[modules.api] public_bind = "127.0.0.1:7885"`,tunnel 改指到 7885;`bind` 這時只能是本機、tailnet 或區網的位址(`0.0.0.0` 或公網位址會拒絕啟動)。管理面板和 CLI 從本機或 tailnet 走 `bind`,公開的那個位址找不到任何管理路由(404)。
 - 管理 token 錯 10 次(15 分鐘內)那個位址鎖 15 分鐘,每鎖一次加倍,最長一天;鎖住時對的 token 也是 429。`rate-limiter-flexible` 不在依賴裡(這次不能 install),所以是記憶體裡的小限制器(`packages/api/src/admin-limit.ts`,介面和它同一類),重啟就忘。
-- 靜態檔:從公開那一側來的請求(`public_bind`,或單一 `bind` 時帶著 `client_ip_header` 的,也就是經過 tunnel 的)只送允許清單:頁面、`assets/` 裡的程式樣式字型和圖、幾個頂層檔;source map、其他檔一律 404。`*.local.*` 的圖(owner 的遊戲美術)以前誰都拿得到,現在從公開那一側只給有登入的人;本機或 tailnet 直接開照舊。
+- 靜態檔:從公開那一側來的請求(`public_bind`,或單一 `bind` 時帶著 `client_ip_header` 的,也就是經過 tunnel 的)只送允許清單:頁面、`assets/` 裡的程式樣式字型和圖、幾個頂層檔;source map、其他檔一律 404。`*.local.*` 的圖(owner 的遊戲美術)是公開頁自己在畫的(背景、卡片立繪),照 owner 2026-11-14 的決定照舊公開,只是現在限定在清單裡的檔名樣式。
 - 還沒做:面板的輪詢改 SSE。面板已經有 `/api/events` 的事件流,但大多數頁面(`app/queries.ts` 約 60 個、公開頁十幾個)是各自輪詢;要改成「快照加增量」得每頁定增量的格式和事件來源,這次沒動。
 
 ## 12. 套件整併

@@ -152,8 +152,8 @@ describe("static files", () => {
     expect(staticAccess("/assets/app-1a2b.js")).toBe("public");
     expect(staticAccess("/assets/geist-latin.woff2")).toBe("public");
     expect(staticAccess("/favicon.svg")).toBe("public");
-    expect(staticAccess("/background.local.jpg")).toBe("private");
-    expect(staticAccess("/card-sit.local.webp")).toBe("private");
+    expect(staticAccess("/background.local.jpg")).toBe("public");
+    expect(staticAccess("/card-sit.local.webp")).toBe("public");
     for (const path of [
       "/assets/app-1a2b.js.map",
       "/assets/page.html",
@@ -167,14 +167,14 @@ describe("static files", () => {
     }
   });
 
-  it("keep the owner's pictures and other files off the public listener", async () => {
+  it("keep other files off the public listener, and let the pages' own pictures through", async () => {
     const dir = panelDir();
     const { base, publicBase } = await start({ panel_dir: dir, public_bind: "127.0.0.1:0" });
     const pub = publicBase ?? "";
     expect((await raw(pub, "GET", "/")).status).toBe(200);
     expect((await raw(pub, "GET", "/assets/app-1a2b.js")).status).toBe(200);
     expect((await raw(pub, "GET", "/favicon.svg")).status).toBe(200);
-    expect((await raw(pub, "GET", "/background.local.jpg")).status).toBe(404);
+    expect((await raw(pub, "GET", "/background.local.jpg")).status).toBe(200);
     expect((await raw(pub, "GET", "/notes.txt")).status).toBe(404);
     expect((await raw(pub, "GET", "/assets/app-1a2b.js.map")).status).toBe(404);
     // Directly on this machine, as before.
@@ -185,7 +185,7 @@ describe("static files", () => {
     const dir = panelDir();
     const { base } = await start({ panel_dir: dir });
     const tunnel = { headers: { "cf-connecting-ip": "203.0.113.7" } };
-    expect((await raw(base, "GET", "/background.local.jpg", tunnel)).status).toBe(404);
+    expect((await raw(base, "GET", "/background.local.jpg", tunnel)).status).toBe(200);
     expect((await raw(base, "GET", "/notes.txt", tunnel)).status).toBe(404);
     expect((await raw(base, "GET", "/assets/app-1a2b.js", tunnel)).status).toBe(200);
     expect((await raw(base, "GET", "/", tunnel)).status).toBe(200);
