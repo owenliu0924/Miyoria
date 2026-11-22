@@ -573,6 +573,16 @@ function mePages(policyUrl: string | null, her: Character, coin: string): PanelP
         { id: "rice", label: "餵一碗", path: "me feed", args: { item: "rice" } },
         { id: "big-bowl", label: "餵鋼盆", path: "me feed", args: { item: "big_bowl" } },
         {
+          // Anything they name (`/me feed thing:`): a quote first, charged only on 確認.
+          id: "gift",
+          label: `送${her.pronoun}別的`,
+          path: "me feed",
+          ask: {
+            title: `自己取名送${her.pronoun}一樣東西（先報價，確認才扣）`,
+            fields: [field("thing", "想送什麼，例如「一杯珍奶」", { maxLength: 24 })],
+          },
+        },
+        {
           id: "screen",
           label: "留言上大螢幕",
           path: "me screen",
