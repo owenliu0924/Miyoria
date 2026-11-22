@@ -572,6 +572,135 @@
         "field"
       ]
     },
+    "ApiAdminFile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image",
+            "audio",
+            "video",
+            "document",
+            "text"
+          ]
+        },
+        "mime": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string"
+        },
+        "plugin": {
+          "type": "string"
+        },
+        "derived_from": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "made_for": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "type": "string"
+        },
+        "space_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "review": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kept_by": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "deleted_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "downloadable": {
+          "type": "boolean"
+        },
+        "live_links": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "id",
+        "filename",
+        "kind",
+        "mime",
+        "size",
+        "source",
+        "plugin",
+        "derived_from",
+        "made_for",
+        "scope",
+        "space_id",
+        "review",
+        "created_at",
+        "expires_at",
+        "kept_by",
+        "deleted_at",
+        "downloadable",
+        "live_links"
+      ]
+    },
+    "ApiAdminFiles": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiAdminFile"
+          }
+        }
+      },
+      "required": [
+        "origin",
+        "items"
+      ]
+    },
     "ApiAdminGift": {
       "type": "object",
       "properties": {
@@ -7410,6 +7539,81 @@
         "at"
       ]
     },
+    "ApiFileHistoryEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "person_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "turn": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "data": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "type",
+        "person_id",
+        "turn",
+        "data"
+      ]
+    },
+    "ApiFileReason": {
+      "type": "object",
+      "properties": {
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "reason"
+      ],
+      "additionalProperties": false
+    },
+    "ApiFileShareRevoked": {
+      "type": "object",
+      "properties": {
+        "revoked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "revoked"
+      ]
+    },
+    "ApiFileVisibility": {
+      "type": "string",
+      "enum": [
+        "none",
+        "person",
+        "space",
+        "link"
+      ]
+    },
     "ApiFollowupStopReasons": {
       "type": "object",
       "properties": {
@@ -13921,6 +14125,211 @@
         "date",
         "text",
         "voice"
+      ]
+    },
+    "ApiMemberFile": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "filename": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image",
+            "audio",
+            "video",
+            "document",
+            "text"
+          ]
+        },
+        "mime": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "source": {
+          "type": "string"
+        },
+        "made_at": {
+          "type": "string"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kept": {
+          "type": "boolean"
+        },
+        "made_in": {
+          "type": "string",
+          "enum": [
+            "dm",
+            "server",
+            "elsewhere"
+          ]
+        },
+        "visibility": {
+          "$ref": "#/$defs/ApiFileVisibility"
+        },
+        "link_expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "listen_only": {
+          "type": "boolean"
+        },
+        "allowed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiFileVisibility"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "filename",
+        "kind",
+        "mime",
+        "size",
+        "source",
+        "made_at",
+        "expires_at",
+        "kept",
+        "made_in",
+        "visibility",
+        "link_expires_at",
+        "listen_only",
+        "allowed"
+      ]
+    },
+    "ApiMemberFileDeleted": {
+      "type": "object",
+      "properties": {
+        "deleted": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deleted"
+      ]
+    },
+    "ApiMemberFileDownload": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "url"
+      ]
+    },
+    "ApiMemberFileKeepRequest": {
+      "type": "object",
+      "properties": {
+        "keep": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "keep"
+      ],
+      "additionalProperties": false
+    },
+    "ApiMemberFileVisibilityRequest": {
+      "type": "object",
+      "properties": {
+        "visibility": {
+          "$ref": "#/$defs/ApiFileVisibility"
+        },
+        "days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        }
+      },
+      "required": [
+        "visibility"
+      ],
+      "additionalProperties": false
+    },
+    "ApiMemberFileVisibilityResult": {
+      "type": "object",
+      "properties": {
+        "item": {
+          "$ref": "#/$defs/ApiMemberFile"
+        },
+        "url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "item",
+        "url"
+      ]
+    },
+    "ApiMemberFiles": {
+      "type": "object",
+      "properties": {
+        "links": {
+          "type": "object",
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "scoped": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "available",
+            "scoped"
+          ]
+        },
+        "quota": {
+          "type": "object",
+          "properties": {
+            "used": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "per_day": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "used",
+            "per_day"
+          ]
+        },
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiMemberFile"
+          }
+        }
+      },
+      "required": [
+        "links",
+        "quota",
+        "items"
       ]
     },
     "ApiMemberForgetResult": {
