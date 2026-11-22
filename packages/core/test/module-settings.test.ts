@@ -118,7 +118,7 @@ describe("ModuleSettings", () => {
     const { settings } = await setup("[modules.market]\nauction_hours = 12\n");
     const view = settings.describe("market");
     expect(view.groups.map((g) => g.id)).toEqual(["auction", "lottery", "song"]);
-    expect(view.fields.map((f) => f.path)).not.toContain("utc_offset_minutes");
+    expect(view.fields.map((f) => f.path)).not.toContain("auction_purpose");
     expect(view.fields.map((f) => f.path)).not.toContain("lottery_prize_share");
     expect(view.values.auction_hours).toMatchObject({ value: 12, source: "file", file: 12 });
     expect(view.values.auction_channel).toMatchObject({ value: "", source: "default" });
