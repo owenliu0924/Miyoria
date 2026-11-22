@@ -213,6 +213,7 @@ export {
   karaokeBackingPath,
   karaokeVideoPath,
   OverlayHub,
+  overlayOriginAllowed,
   serveOverlay,
 } from "./overlay.js";
 export {

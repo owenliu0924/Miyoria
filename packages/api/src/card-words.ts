@@ -36,7 +36,14 @@ import {
   RELATIONSHIP_LABELS,
 } from "@miyoria/types";
 import { z } from "zod";
-import { herVoice, WRITTEN_NOT_CHAT, withoutMarkup } from "./her-voice.js";
+import {
+  aboutThem,
+  herVoice,
+  THEIRS_ARE_DATA,
+  theirText,
+  WRITTEN_NOT_CHAT,
+  withoutMarkup,
+} from "./her-voice.js";
 import { type NameHit, type NameScreen, nameScreen, otherNameIn } from "./other-names.js";
 import type { ApiState } from "./state.js";
 
@@ -156,6 +163,8 @@ function rules(poses: readonly string[], her: Character): string {
   const shape = poses.length > 0 ? `"pose": 字串, ` : "";
   return `${WRITTEN_NOT_CHAT}
 
+${THEIRS_ARE_DATA}
+
 你要發一張卡給下面這個人,卡上的字你自己寫,他本人會看到,拿到卡的人掃碼也看得到。
 只回傳 JSON:{"line": 字串, ${shape}"stamp": 字串或 null, "fields": [{"label": 字串, "text": 字串}]}
 - line:這一刻你想對他說的話,${MAX_LINE} 字內,每次發卡都可以不一樣。${pose}
@@ -167,15 +176,16 @@ ${cardVoice(her)}`;
 
 function about(c: CardContext, mood: string | null): string {
   const v = c.view;
-  const lines = [
-    `他:${c.name}${v.call_name ? `(你叫他 ${v.call_name})` : ""}`,
+  const theirs = [
+    `他:${theirText(c.name)}${v.call_name ? `(你叫他 ${theirText(v.call_name)})` : ""}`,
     `你們的關係:${v.relationship ?? "還不認識"}`,
     `羈絆 ${v.affinity ?? "—"}、信任 ${v.trust ?? "—"}、熟悉 ${v.familiarity ?? "—"}`,
   ];
-  if (v.public_feeling) lines.push(`你之前寫給他的話:${v.public_feeling}`);
+  if (v.public_feeling) theirs.push(`你之前寫給他的話:${theirText(v.public_feeling)}`);
   if (c.memories.length > 0) {
-    lines.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${m}`).join("\n")}`);
+    theirs.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${theirText(m)}`).join("\n")}`);
   }
+  const lines = [aboutThem(theirs)];
   if (mood) lines.push(`你現在的心情:${mood}`);
   if (c.occasion) lines.push(occasionLine(c.occasion));
   return lines.join("\n");

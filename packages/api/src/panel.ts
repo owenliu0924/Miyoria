@@ -314,6 +314,44 @@ export function staticAccess(pathname: string): StaticAccess {
   return "deny";
 }
 
+/**
+ * What a panel page may load. Scripts only from the panel itself, so text that slips into the page
+ * cannot run and take the admin token from storage. The rest stays open where the panel needs it:
+ * another API address (`baseUrl`), the overlay preview wherever Stage runs, avatars from Discord,
+ * the live stream's blobs (hls.js) and WebAssembly.
+ */
+export const PANEL_CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' http: https: ws: wss:",
+  "frame-src http: https:",
+  "worker-src 'self' blob:",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "frame-ancestors 'none'",
+].join("; ");
+
+/** Half a year of HTTPS only, for this host alone (others under the same name may not have it). */
+export const PANEL_HSTS = "max-age=15552000";
+
+/** Whether `request` reached the panel over HTTPS, here or at the tunnel / proxy in front. */
+function overHttps(request: Request): boolean {
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  return proto === "https" || new URL(request.url).protocol === "https:";
+}
+
+/** The page's own headers: what it may load, and HTTPS from now on when it came over HTTPS. */
+function guard(headers: Headers, request: Request, html: boolean): Headers {
+  if (html) headers.set("content-security-policy", PANEL_CSP);
+  if (overHttps(request)) headers.set("strict-transport-security", PANEL_HSTS);
+  return headers;
+}
+
 /** Rewrites a page of HTML for the request that asked for it (the tags of a link preview). */
 export type HtmlRewrite = (html: string, request: Request) => Promise<string>;
 
@@ -374,10 +412,13 @@ export async function servePanel(
         "x-content-type-options": "nosniff",
         "x-frame-options": "DENY",
         "content-length": String(bytes.length),
-        vary: "accept-encoding",
+        // The preview tags name the host and scheme the tunnel says (`originOf`): a cache in
+        // front keeps one page per host, or a visitor's own header would reach everyone.
+        vary: "accept-encoding, x-forwarded-host, x-forwarded-proto",
         // Compressed, the same page is a weak match: the tag names the page, not the bytes.
         etag: encoding === null ? tag : `W/${tag}`,
       });
+      guard(headers, request, true);
       const match = request.headers.get("if-none-match");
       if (match === tag || match === `W/${tag}`) {
         headers.delete("content-type");
@@ -406,6 +447,7 @@ export async function servePanel(
       "last-modified": new Date(Math.floor(info.mtimeMs / 1000) * 1000).toUTCString(),
       "accept-ranges": "bytes",
     });
+    guard(headers, request, ext === ".html");
     if (compressible) headers.set("vary", "accept-encoding");
     const since = request.headers.get("if-modified-since");
     if (since !== null) {

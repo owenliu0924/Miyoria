@@ -37,6 +37,11 @@ export function isLoopback(host: string): boolean {
 export interface WsRoute {
   path: string;
   maxPayload?: number;
+  /**
+   * Whether to accept a connection that says it comes from `origin` (the `Origin` header; absent
+   * for clients that are not browsers). Refused: 403 before the upgrade. Default: every origin.
+   */
+  allowOrigin?: (origin: string | undefined, request: IncomingMessage) => boolean;
   onConnection(ws: WebSocket, request: IncomingMessage): void;
 }
 
@@ -86,6 +91,10 @@ export class HttpServer {
       const match = routes.find((r) => r.route.path === path);
       if (!match) {
         socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n");
+        return;
+      }
+      if (match.route.allowOrigin && !match.route.allowOrigin(req.headers.origin, req)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
         return;
       }
       match.wss.handleUpgrade(req, socket, head, (ws) => match.route.onConnection(ws, req));

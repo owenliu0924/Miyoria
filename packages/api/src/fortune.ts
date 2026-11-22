@@ -41,7 +41,14 @@ import {
   toTimestamp,
 } from "@miyoria/types";
 import { z } from "zod";
-import { herVoice, WRITTEN_NOT_CHAT, withoutMarkup } from "./her-voice.js";
+import {
+  aboutThem,
+  herVoice,
+  THEIRS_ARE_DATA,
+  theirText,
+  WRITTEN_NOT_CHAT,
+  withoutMarkup,
+} from "./her-voice.js";
 import { type NameHit, type NameScreen, nameScreen, otherNameIn } from "./other-names.js";
 import { dateOf } from "./public.js";
 import type { ApiState } from "./state.js";
@@ -126,6 +133,8 @@ const FORBIDDEN_FIELD =
 
 const RULES = `${WRITTEN_NOT_CHAT}
 
+${THEIRS_ARE_DATA}
+
 你要為下面這個人抽一支今日籤,籤上的字你自己寫,他本人會看到,可以下載分享。
 只回傳 JSON:{"rank": 字串, "title": 字串, "poem": [四句], "fields": [{"label": 字串, "text": 字串}], "line": 字串}
 - rank:只能是 ${FORTUNE_RANKS.join("、")} 其中一個。多數時候是吉(大吉、吉、中吉、小吉、末吉都算),凶很少見,看你今天對他的感覺和他最近的樣子決定,不要每次都一樣。
@@ -146,16 +155,16 @@ const RULES = `${WRITTEN_NOT_CHAT}
 
 function about(c: FortuneContext, mood: string | null): string {
   const v = c.view;
-  const lines = [
-    `今天:${c.date}`,
-    `他:${c.name}${v.call_name ? `(你叫他 ${v.call_name})` : ""}`,
+  const theirs = [
+    `他:${theirText(c.name)}${v.call_name ? `(你叫他 ${theirText(v.call_name)})` : ""}`,
     `你們的關係:${v.relationship ?? "還不認識"}`,
     `羈絆 ${v.affinity ?? "—"}、信任 ${v.trust ?? "—"}、熟悉 ${v.familiarity ?? "—"}`,
   ];
-  if (v.public_feeling) lines.push(`你之前寫給他的話:${v.public_feeling}`);
+  if (v.public_feeling) theirs.push(`你之前寫給他的話:${theirText(v.public_feeling)}`);
   if (c.memories.length > 0) {
-    lines.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${m}`).join("\n")}`);
+    theirs.push(`你記得和他有關的事:\n${c.memories.map((m) => `- ${theirText(m)}`).join("\n")}`);
   }
+  const lines = [`今天:${c.date}`, aboutThem(theirs)];
   if (mood) lines.push(`你現在的心情:${mood}`);
   return lines.join("\n");
 }

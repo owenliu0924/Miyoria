@@ -43,7 +43,7 @@ OBS:新增「瀏覽器」來源,網址 `http://127.0.0.1:7884/overlay/`,寬 1920
 
 | 參數 | 預設 | 說明 |
 |---|---|---|
-| `ws` | 跟頁面同一個主機的 `…/overlay/ws`(file:// 開啟時 `ws://127.0.0.1:7884/overlay/ws`) | 推送位址,只接受 `ws://` / `wss://`。 |
+| `ws` | 跟頁面同一個主機的 `…/overlay/ws`(file:// 開啟時 `ws://127.0.0.1:7884/overlay/ws`) | 推送位址,只接受 `ws://` / `wss://`。Stage 只讓自己的頁面連上:Stage 本身的位址(用 IP 或 `localhost` 連時)和本機的頁面。其他網頁(例如另一台機器上的開發伺服器)要列在 `[stage] overlay_origins`;用 file:// 開啟時頁面的 origin 是 `"null"`,也要列進去,但任何網站的沙箱 iframe 也能送 `null`,只在 OBS 那台不拿來上網的機器上這樣做。 |
 | `show` | `subtitles,emotion,status,queue,wave,activity,gifts,screen,touches,danmaku,karaoke` | 要顯示哪些部分,逗號分隔。例如 `?show=subtitles,queue`。沒有任何有效名稱時視為預設。沒有 `danmaku` 的頁面不送 `danmaku_ready`、也不回覆任何彈幕(Stage 不等它)。沒有 `karaoke` 的頁面永遠不顯示唱 K。 |
 | `karaoke_ruby` | `off` | 唱 K 歌詞上面的讀音:`off` 不顯示、`reading` 假名(日文)或拼音(中文)、`roman` 羅馬字。歌本身沒有那一種時不顯示。`demo=karaoke` 沒指定時是 `reading`。 |
 | `danmaku_band` | 依版面 | 彈幕跑道的上下緣,畫面高度的比例,`上-下`,例如 `?danmaku_band=0.04-0.30`。畫面不一樣(例如她站的位置不同)時用;左右範圍照版面不變。格式不對、上緣不在下緣之上、或不到 2% 高時不採用。 |

@@ -7,13 +7,14 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { isIP } from "node:net";
 import { extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { type OverlayMessage, OverlayReplySchema } from "@miyoria/contracts/overlay";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { type DanmakuDone, DanmakuRelay } from "./danmaku.js";
 import { type Gift, GiftMerger } from "./gifts.js";
 import { closeOnAbort, type ServeResult } from "./lipsync.js";
-import { formatAddress, HttpServer } from "./net.js";
+import { formatAddress, HttpServer, isLoopback } from "./net.js";
 import type {
   Activity,
   CoreMessage,
@@ -583,6 +584,37 @@ async function serveFile(
   return sendFile(path, req, res);
 }
 
+/** `localhost`, `127.0.0.1`, `[::1]`… as a URL's `hostname` gives it. */
+function bareHost(hostname: string): string {
+  return hostname.startsWith("[") && hostname.endsWith("]") ? hostname.slice(1, -1) : hostname;
+}
+
+/**
+ * Whether a page at `origin` may open `/overlay/ws` on a server reached as `host`. A browser lets
+ * any site open a WebSocket to this machine, and a page here can read the feed and say which paid
+ * danmaku lines it showed, so only the overlay's own pages get in: the server's own origin when it
+ * is reached by address (a name could be a rebinding site's), this machine's pages, and `extra`
+ * (`overlay_origins`). No `Origin` at all: not a browser, so nobody's page.
+ */
+export function overlayOriginAllowed(
+  origin: string | undefined,
+  host: string | undefined,
+  extra: readonly string[] = [],
+): boolean {
+  if (origin === undefined) return true;
+  if (extra.includes(origin)) return true;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  const name = bareHost(url.hostname);
+  if (isLoopback(name)) return true;
+  return isIP(name) !== 0 && host !== undefined && url.host === host.toLowerCase();
+}
+
 /** Serves the overlay on `bind` until `signal` aborts. */
 export async function serveOverlay(
   bind: string,
@@ -590,6 +622,7 @@ export async function serveOverlay(
   hub: OverlayHub,
   signal: AbortSignal,
   backdrop: string | null = null,
+  origins: readonly string[] = [],
 ): Promise<ServeResult> {
   const root = resolve(dir);
   const picture = backdrop === null ? null : resolve(backdrop);
@@ -606,6 +639,11 @@ export async function serveOverlay(
     ws: [
       {
         path: "/overlay/ws",
+        allowOrigin: (origin, req) => {
+          const ok = overlayOriginAllowed(origin, req.headers.host, origins);
+          if (!ok) log.warn({ origin }, "overlay connection from another site refused");
+          return ok;
+        },
         onConnection(ws) {
           for (const text of hub.initial()) ws.send(text);
           const page = hub.join();

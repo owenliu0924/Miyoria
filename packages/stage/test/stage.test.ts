@@ -16,6 +16,7 @@ import {
   formatAddress,
   Levels,
   OverlayHub,
+  overlayOriginAllowed,
   parseStageConfig,
   runStage,
   type StageConfig,
@@ -460,6 +461,44 @@ describe("stage", () => {
     expect(lateQueue.map((m) => m.type)).toStrictEqual(["status", "emotion", "subtitle"]);
     ws.terminate();
     late.terminate();
+  });
+
+  it("lets only the overlay's own pages open the feed", async () => {
+    const d = tempDir();
+    cleanup.push(() => rmSync(d, { recursive: true, force: true }));
+    const controller = new AbortController();
+    cleanup.push(() => controller.abort());
+    const { addr } = await serveOverlay("127.0.0.1:0", d, new OverlayHub(), controller.signal);
+    const url = `ws://${formatAddress(addr)}/overlay/ws`;
+    const opens = (origin: string) =>
+      new Promise<number | "open">((resolve) => {
+        const ws = new WebSocket(url, { origin });
+        ws.on("open", () => {
+          ws.terminate();
+          resolve("open");
+        });
+        ws.on("unexpected-response", (_req, res) => resolve(res.statusCode ?? 0));
+        ws.on("error", () => resolve(0));
+      });
+    expect(await opens(`http://${formatAddress(addr)}`)).toBe("open");
+    expect(await opens("http://localhost:5173")).toBe("open");
+    expect(await opens("https://evil.example")).toBe(403);
+    expect(await opens("null")).toBe(403);
+  });
+
+  it("judges an origin by address, never by a name that could be rebound", () => {
+    expect(overlayOriginAllowed(undefined, "127.0.0.1:7884")).toBe(true);
+    expect(overlayOriginAllowed("http://127.0.0.1:7884", "127.0.0.1:7884")).toBe(true);
+    expect(overlayOriginAllowed("http://[::1]:7884", "[::1]:7884")).toBe(true);
+    expect(overlayOriginAllowed("http://192.168.1.20:7884", "192.168.1.20:7884")).toBe(true);
+    expect(overlayOriginAllowed("http://192.168.1.21:7884", "192.168.1.20:7884")).toBe(false);
+    expect(overlayOriginAllowed("http://evil.example:7884", "evil.example:7884")).toBe(false);
+    expect(overlayOriginAllowed("null", "127.0.0.1:7884")).toBe(false);
+    expect(overlayOriginAllowed("null", "127.0.0.1:7884", ["null"])).toBe(true);
+    expect(overlayOriginAllowed("file://", "127.0.0.1:7884")).toBe(false);
+    expect(
+      overlayOriginAllowed("http://stage.lan:7884", "stage.lan:7884", ["http://stage.lan:7884"]),
+    ).toBe(true);
   });
 });
 
