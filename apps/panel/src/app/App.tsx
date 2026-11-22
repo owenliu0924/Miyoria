@@ -8,6 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { TokenGate } from "@/pages/login/TokenGate";
 import { CardVerify, cardSerialIn } from "@/pages/public/CardVerify";
+import { FrontPage } from "@/pages/public/landing/front";
 import { PublicSite } from "@/pages/public/PublicSite";
 import { isKaraokePath } from "@/pages/public/karaoke/path";
 import { isLivePath, LivePage } from "@/pages/public/live/LivePage";
@@ -25,8 +26,6 @@ import {
   wantsTokenLogin,
 } from "./session";
 
-/** Her tank: the landing for someone not logged in. Split out with its fonts and water. */
-const Landing = lazy(() => import("@/pages/public/landing/Landing"));
 
 /** Singing on the member's own (`/karaoke`): its screens and its audio, loaded when opened. */
 const KaraokePage = lazy(() => import("@/pages/public/karaoke/KaraokePage"));
@@ -215,7 +214,7 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     return (
       <QueryClientProvider client={queryClient}>
         <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
-          <Landing
+          <FrontPage
             discord={(methods?.discord ?? false) && isSameOrigin(config.baseUrl)}
             notice={loginError === null ? null : loginErrorMessage(loginError)}
           />
