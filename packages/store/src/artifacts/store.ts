@@ -40,6 +40,7 @@ import { createReadStream, existsSync, type ReadStream, rmSync, statSync } from 
 import { lstat, mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
+  ARTIFACT_EVENTS,
   ArtifactCreated,
   type ArtifactCreatedData,
   ArtifactDeleted,
@@ -64,7 +65,7 @@ import {
 import { and, desc, eq, gt, gte, isNotNull, isNull, lt, lte, or, type SQL, sql } from "drizzle-orm";
 import { StoreError } from "../common.js";
 import type { Db } from "../db.js";
-import type { EventStore } from "../events/log.js";
+import type { EventStore, LoggedEvent } from "../events/log.js";
 import { HOME_SESSION } from "../identity/identity.js";
 import { rooms, sessions } from "../identity/schema.js";
 import { ArtifactTypeError, decideType, SNIFF_BYTES, sniff, TextCheck } from "./media.js";
@@ -88,6 +89,9 @@ const log = getLogger("store.artifacts");
 export const ARTIFACT_EVENT_SOURCE = "artifact";
 
 const HOUR_MS = 3_600_000;
+
+/** The event types of the audit trail (`history`). */
+const HISTORY_TYPES = ARTIFACT_EVENTS.map((e) => e.type).filter((t) => t !== ArtifactSwept.type);
 const MIB = 1024 * 1024;
 
 /** How long an artifact that is not kept lives (v5-architecture §16 #11). */
@@ -157,6 +161,11 @@ export interface ArtifactInput {
   derived_from?: string | null;
   /** Keep it from the start (an album, the cards): it does not expire. */
   keep?: ArtifactKeptBy | null;
+  /**
+   * When it expires (epoch ms), in place of a lifetime from now: a cleaned copy expires with its
+   * original. Ignored when `keep` is set.
+   */
+  expiresAtMs?: number | null;
   /** The sha256 a remote host announced for these bytes: refused when they differ. */
   sha256?: string | null;
   signal?: AbortSignal;
@@ -204,6 +213,7 @@ interface IngestPlan {
   turn: string | null;
   derivedFrom: string | null;
   keep: ArtifactKeptBy | null;
+  expiresAtMs: number | null;
 }
 
 /** What one sweep did. */
@@ -514,6 +524,8 @@ export class ArtifactStore {
       turn: input.turn ?? null,
       derivedFrom: input.derived_from ?? null,
       keep: input.keep ?? null,
+      expiresAtMs:
+        input.expiresAtMs != null && Number.isFinite(input.expiresAtMs) ? input.expiresAtMs : null,
     };
   }
 
@@ -643,7 +655,10 @@ export class ArtifactStore {
       const at = TIME(nowMs);
       const id = newId();
       const eventId = newId();
-      const expires = plan.keep === null ? TIME(nowMs + this.lifetime(plan.source)) : null;
+      const expires =
+        plan.keep !== null
+          ? null
+          : TIME(Math.max(nowMs + 1, plan.expiresAtMs ?? nowMs + this.lifetime(plan.source)));
       const downloadable = plan.source !== SONG_COVER_SOURCE;
       const orm = this.#db.orm;
       orm
@@ -983,6 +998,19 @@ export class ArtifactStore {
       });
       return true;
     });
+  }
+
+  /**
+   * The audit trail of the artifacts and their shares, newest first: what was made, shared (as an
+   * attachment or a link), opened, revoked, deleted, taken down, expired.
+   */
+  history(options: { limit?: number; before?: string } = {}): LoggedEvent[] {
+    return this.#events.query({
+      types: HISTORY_TYPES,
+      order: "desc",
+      limit: Math.min(Math.max(1, Math.floor(options.limit ?? 100)), 500),
+      ...(options.before === undefined ? {} : { before: options.before }),
+    }) as LoggedEvent[];
   }
 
   // ---- the sweep ------------------------------------------------------------------------------

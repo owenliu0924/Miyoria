@@ -371,6 +371,16 @@ describe("config and helpers", () => {
         client_ip_header: "cf-connecting-ip",
       },
       picture_background: "",
+      public_bind: "",
+      files: {
+        origin: "",
+        bind: "127.0.0.1:7886",
+        site: "",
+        links_per_person_per_day: 20,
+        per_ip_per_minute: 60,
+        per_link_per_minute: 120,
+        public_cache_secs: 300,
+      },
     });
   });
 

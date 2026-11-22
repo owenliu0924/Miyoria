@@ -65,6 +65,7 @@ import { evalRpc } from "./eval/route.js";
 import { exchangeAdminRpc, exchangeRpc } from "./exchange-routes.js";
 import { jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
+import { filesAdminRpc, memberFilesRpc } from "./files/routes.js";
 import { fortuneRpc } from "./fortune-routes.js";
 import { giftsAdminRpc, giftsPublicRpc, giftsRpc } from "./gift-routes.js";
 import { githubLinkRpc } from "./github-link.js";
@@ -92,7 +93,7 @@ import { outcomesRpc, promptsRpc } from "./prompts.js";
 import { limitMember, publicRpc } from "./public.js";
 import { reportsRpc } from "./reports.js";
 import { roleRpc } from "./roles.js";
-import type { Method, Route } from "./route.js";
+import type { Method, Route, RouteGroup } from "./route.js";
 import { sandboxRpc } from "./sandbox.js";
 import { placesRpc, settingsRpc } from "./settings.js";
 import type { ApiContext, ApiState } from "./state.js";
@@ -143,6 +144,8 @@ export const router = os.router({
   karaokeRooms: karaokeRoomsRpc,
   reports: reportsRpc,
   githubLink: githubLinkRpc,
+  memberFiles: memberFilesRpc,
+  filesAdmin: filesAdminRpc,
   people: { ...peopleRpc, ...personWalletRpc, ...personQuestsRpc },
   ...coreRpc,
   // The settings routes before `POST /api/modules/{id}/{action}` (see the contract).
@@ -194,7 +197,20 @@ const PUBLIC_SIDE = new Set([
   "karaoke",
   "karaokeRooms",
   "githubLink",
+  "memberFiles",
 ]);
+
+/**
+ * Routes of the `host` group (a machine joining the cluster): served with the admin routes on
+ * `bind` (this machine or the tailnet), never on the public listener, although they need no session.
+ */
+const HOST_ROUTES = new Set(["cluster.join"]);
+
+/** The route group of the table's route at `path` with `meta`. */
+function tableGroup(path: readonly string[], meta: RouteMeta): RouteGroup {
+  if (HOST_ROUTES.has(path.join("."))) return "host";
+  return meta.audience === "admin" ? "admin" : "public";
+}
 
 /** Whether a route is served at all: the public side's routes go away with its switch. */
 function served(state: ApiState, path: readonly string[]): boolean {
@@ -410,6 +426,7 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
       path: honoPath(def.route.path ?? ""),
       public: meta.audience === "public",
       member: meta.audience === "member",
+      group: tableGroup(path, meta),
       handler: async (c) => {
         if (refused !== null) {
           try {

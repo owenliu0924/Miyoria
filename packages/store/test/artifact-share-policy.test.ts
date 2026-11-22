@@ -100,9 +100,9 @@ describe("share policy", () => {
       plugin: "imagegen",
       place: f.room,
     });
-    expect(
-      refusal(() => f.store.shares.create(nobody.id, { audience: "link", widen: true })),
-    ).toBe("link_not_public");
+    expect(refusal(() => f.store.shares.create(nobody.id, { audience: "link", widen: true }))).toBe(
+      "link_not_public",
+    );
   });
 
   it("is a pure rule over a space id and a membership function", () => {
@@ -114,9 +114,9 @@ describe("share policy", () => {
     expect(
       audienceAllowed(made, { audience: "person", person_id: "p2" as never }, () => false).ok,
     ).toBe(false);
-    expect(audienceAllowed({ ...made, scope: "public" }, { audience: "link" }, () => false)).toEqual(
-      { ok: true },
-    );
+    expect(
+      audienceAllowed({ ...made, scope: "public" }, { audience: "link" }, () => false),
+    ).toEqual({ ok: true });
   });
 
   it("answers membership by space id", () => {
