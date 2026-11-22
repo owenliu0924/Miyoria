@@ -383,6 +383,7 @@ export {
   type PersonRequestResult,
 } from "./person-data.js";
 export type { PluginContext, SettingsFamily, StorePlugin } from "./plugin.js";
+export { openPluginDatabase, type PluginDatabaseOptions } from "./plugin-db.js";
 export {
   type Account,
   type AuditEntry,
