@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, ExternalLink, Share2, Sparkles } from "lucide-react";
 import { useRef, useState } from "react";
-import type { IssuedCard, WalletView } from "@miyoria/contracts/api";
+import type { IssuedCard } from "@miyoria/contracts/api";
 import { describeError } from "@/api/http";
 import { useApi } from "@/app/connection";
 import { EmptyLine, QueryView, SkeletonRows } from "@/components/query-state";
@@ -12,7 +12,7 @@ import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import { cardFileName, cardPng, saveBlob, shareCard, verifyUrl } from "./card";
 import { HoloCard } from "./HoloCard";
-import { newKey } from "./spend";
+import { newKey, useWallet } from "./spend";
 
 const CARDS = ["member", "cards"] as const;
 const WALLET = ["member", "wallet"] as const;
@@ -94,7 +94,8 @@ export function CardSection() {
       void client.invalidateQueries({ queryKey: CARDS });
     },
   });
-  const currency = client.getQueryData<WalletView>(WALLET)?.currency ?? "幣";
+  // Read, not only peeked at: on its own tab the wallet may come after this block.
+  const currency = useWallet().data?.currency ?? "幣";
   const [busy, setBusy] = useState<"download" | "share" | null>(null);
   const run = async (what: "download" | "share", card: IssuedCard) => {
     if (!svg.current) return;

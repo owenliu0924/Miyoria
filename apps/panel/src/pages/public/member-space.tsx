@@ -8,9 +8,15 @@
 //
 // `SpacePicker` draws nothing for someone in one server or none, so a single-server install looks
 // as it did.
+//
+// The member area shares one choice (`MemberSpaceProvider`): every block reads the same server, and
+// the choice is drawn once, at the top of a tab that has something per server (`MemberSpaceBar`).
+// Inside it a block's own `SpacePicker` draws nothing. Elsewhere (the karaoke page) a block keeps
+// its own choice and its own picker, as before.
 
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { Server } from "lucide-react";
+import { createContext, type ReactNode, useContext, useState } from "react";
 import type { Space } from "@miyoria/contracts/api";
 import { isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
@@ -49,7 +55,7 @@ export interface MemberSpaceState {
   loading: boolean;
 }
 
-export function useMemberSpace(): MemberSpaceState {
+function useOwnChoice(): MemberSpaceState {
   const query = useMemberSpaces();
   const [picked, setPicked] = useState<string | null>(() => readStorage(SPACE_KEY));
   const spaces = query.data?.spaces ?? [];
@@ -59,6 +65,33 @@ export function useMemberSpace(): MemberSpaceState {
     writeStorage(SPACE_KEY, id);
   };
   return { space, spaces, setSpace, loading: query.isPending };
+}
+
+const SharedSpace = createContext<MemberSpaceState | null>(null);
+
+/** One server choice for every block inside (the member area). */
+export function MemberSpaceProvider({ children }: { children: ReactNode }) {
+  const state = useOwnChoice();
+  return <SharedSpace.Provider value={state}>{children}</SharedSpace.Provider>;
+}
+
+/** The server a block is about: the member area's shared choice, else the block's own. */
+export function useMemberSpace(): MemberSpaceState {
+  const shared = useContext(SharedSpace);
+  const own = useOwnChoice();
+  return shared ?? own;
+}
+
+/** The shared choice, drawn once at the top of a tab. Nothing with one server or none. */
+export function MemberSpaceBar() {
+  const shared = useContext(SharedSpace);
+  if (!shared || shared.spaces.length <= 1) return null;
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <Server aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+      <SpacePicker value={shared.space} spaces={shared.spaces} onChange={shared.setSpace} shared />
+    </div>
+  );
 }
 
 /**
@@ -71,13 +104,18 @@ export function SpacePicker({
   onChange,
   label = "伺服器",
   className,
+  shared = false,
 }: {
   value: string | null;
   spaces: readonly Space[];
   onChange: (id: string) => void;
   label?: string;
   className?: string;
+  /** The member area's one picker (`MemberSpaceBar`); a block's own draws nothing inside the area. */
+  shared?: boolean;
 }) {
+  const inArea = useContext(SharedSpace) !== null;
+  if (inArea && !shared) return null;
   if (spaces.length <= 1) return null;
   if (spaces.length <= SEGMENTED_MAX) {
     return (

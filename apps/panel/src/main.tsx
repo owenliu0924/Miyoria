@@ -40,6 +40,16 @@ const start = () =>
     </StrictMode>,
   );
 
+/** The member demo was asked for here, or earlier in this browser tab (dev server only). */
+function memberDemoAsked(): boolean {
+  if (new URLSearchParams(window.location.search).has("member-demo")) return true;
+  try {
+    return window.sessionStorage.getItem("miyoria.member-demo") === "1";
+  } catch {
+    return false;
+  }
+}
+
 // The karaoke page without a Core or a microphone (`/karaoke?karaoke-demo`), on the dev server
 // only: a production build drops this branch and the demo with it.
 if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("karaoke-demo")) {
@@ -48,6 +58,13 @@ if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("kara
   // 深海交易所 without a Core (`/?exchange-demo`, `=chart`, `=chart-us`, `=local`, `=map`, `=map-tw`,
   // `=map-us`, `=owner`): made-up data, dev server only.
   void import("./pages/public/exchange/demo").then((m) => m.startExchangeDemo(root));
+} else if (import.meta.env.DEV && memberDemoAsked()) {
+  // The member area without Discord or a Core (`/me?member-demo`, any tab): made-up data, dev server
+  // only; the tab stays in it across its own addresses until `?member-demo=off`.
+  void import("./pages/public/member-demo/demo").then((m) => {
+    if (m.wantsMemberDemo(window.location.search)) m.installMemberDemo();
+    start();
+  });
 } else {
   start();
 }

@@ -415,23 +415,69 @@ function Recent({ w }: { w: WalletView }) {
   );
 }
 
-/** 商店, 籤詩, 排行榜, 目標, 懸賞, 怎麼賺 and 最近. Nothing at all for someone who cannot earn, or on a Core without a wallet. */
-export function WalletMain() {
+/**
+ * A block that is only for someone who can earn: nothing at all for anyone else, or on a Core
+ * without a wallet. While the wallet is on its way it holds the block's place with its title, so
+ * the tab does not jump when it comes. `stranger`: the one line for someone she does not know,
+ * given by the first such block of a tab so the tab says why it is empty.
+ */
+export function WalletGate({
+  label,
+  stranger = false,
+  children,
+}: {
+  label: string;
+  stranger?: boolean;
+  children: (w: WalletView) => React.ReactNode;
+}) {
   const wallet = useWallet();
+  if (wallet.isPending) {
+    // Unnamed on purpose: the named block is the one that comes, not its stand-in.
+    return (
+      <Card aria-busy="true">
+        <CardHeader>
+          <CardTitle>{label}</CardTitle>
+        </CardHeader>
+        <SkeletonRows count={3} />
+      </Card>
+    );
+  }
   const w = wallet.data;
+  if (w && !w.can_earn && stranger) return <EmptyLine>{STRANGER_LINE}</EmptyLine>;
   if (!w?.can_earn) return null;
+  return <>{children(w)}</>;
+}
+
+/** 商店: a line on her screen and the card frames. */
+export function ShopSection() {
+  return <WalletGate label="商店">{(w) => <Shop w={w} />}</WalletGate>;
+}
+
+/** 怎麼賺: today's ways to earn and how far each is. */
+export function EarnSection() {
   return (
-    <>
-      <Shop w={w} />
-      <div className="grid items-start gap-(--stage-gap) lg:grid-cols-2">
-        <Fortune />
-        <Board />
-      </div>
-      <Bounties />
-      <div className="grid gap-(--stage-gap) lg:grid-cols-2">
-        <Earn w={w} />
-        <Recent w={w} />
-      </div>
-    </>
+    <WalletGate label="怎麼賺" stranger>
+      {(w) => <Earn w={w} />}
+    </WalletGate>
   );
+}
+
+/** 最近: what came in and went out. */
+export function RecentSection() {
+  return <WalletGate label="最近">{(w) => <Recent w={w} />}</WalletGate>;
+}
+
+/** 今日籤詩, for someone who can earn. */
+export function FortuneSection() {
+  return <WalletGate label="今日籤詩">{() => <Fortune />}</WalletGate>;
+}
+
+/** 贊助排行榜, for someone who can earn. */
+export function BoardSection() {
+  return <WalletGate label="贊助排行榜">{() => <Board />}</WalletGate>;
+}
+
+/** 她的懸賞, for someone who can earn. */
+export function BountiesSection() {
+  return <WalletGate label="她的懸賞">{() => <Bounties />}</WalletGate>;
 }

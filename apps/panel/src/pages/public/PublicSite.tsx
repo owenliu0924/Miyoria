@@ -1,27 +1,62 @@
 import { ArrowLeft, CircleAlert, LogOut } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { MemberSession, PublicDay, PublicSong } from "@miyoria/contracts/api";
 import { ChartBlock, ChartEmpty, ColumnChart } from "@/components/charts/charts";
 import { Logo } from "@/components/logo";
-import { SITE_NAME } from "@/lib/site-name";
 import { Page } from "@/components/page";
 import { EmptyLine, QueryView, SkeletonRows } from "@/components/query-state";
 import { Dot, type Tone } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Segmented } from "@/components/ui/segmented";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtInt } from "@/lib/format";
+import { SITE_NAME } from "@/lib/site-name";
+import { cn } from "@/lib/utils";
+import { WORLD } from "@/lib/world";
+import { CardSection } from "./CardSection";
 import { CardsArea } from "./cards/CardsArea";
 import { Exchange } from "./Exchange";
-import { GiftsReceived } from "./Gifts";
-import { MadeForMe } from "./MadeForMe";
+import { Transfer } from "./Extras";
+import { GiftsCard, GiftsReceived } from "./Gifts";
+import { GitHubLinkCard } from "./GitHubLink";
 import { KaraokeLink } from "./karaoke/link";
 import { LiveStage } from "./live/LiveStage";
+import { MadeForMe } from "./MadeForMe";
 import { Market } from "./Market";
-import { DAY_MS, localMidnight, MemberActions, MemberActivity, MemberLists, MemberProfile } from "./Member";
-import { Predictions } from "./Play";
+import {
+  DAY_MS,
+  localMidnight,
+  MemberActivity,
+  MemberMemories,
+  MemberProfile,
+  MemberSongs,
+  RequestSongCard,
+  YourData,
+} from "./Member";
+import { MemberSpaceBar, MemberSpaceProvider } from "./member-space";
+import {
+  MEMBER_TABS,
+  type MemberTab,
+  type MemberTabDef,
+  memberTabIn,
+  memberTabPath,
+  OWN_PATH,
+  type Row,
+  colSections,
+  type SectionKey,
+} from "./member-tabs";
+import { Predictions, QuestsCard } from "./Play";
 import { STATE, stateLabel, usePublicSongs, usePublicStatus } from "./status";
-import { WalletMain } from "./Wallet";
+import {
+  BoardSection,
+  BountiesSection,
+  EarnSection,
+  FortuneSection,
+  RecentSection,
+  ShopSection,
+  WalletCard,
+} from "./Wallet";
 
 export { STATE, stateLabel, usePublicSongs, usePublicStatus };
 
@@ -186,7 +221,7 @@ function Header({ member, onLogout, onBack }: { member: MemberSession; onLogout:
   const status = usePublicStatus();
   const now = status.data;
   return (
-    <header className="glass-dock sticky top-0 z-30 flex min-h-13 items-center gap-2.5 border-b px-4 py-2 sm:px-7">
+    <header className="glass-dock z-30 flex min-h-13 items-center gap-2.5 border-b px-4 py-2 sm:px-7 md:sticky md:top-0 md:h-13">
       <Logo className="size-5 shrink-0 text-primary" />
       <h1 className="text-[15px] font-semibold">{SITE_NAME}</h1>
       {now && (
@@ -214,15 +249,128 @@ function Header({ member, onLogout, onBack }: { member: MemberSession; onLogout:
 }
 
 /**
- * The page of someone logged in without panel access: how she sees them, how much they talk, what
- * she has been doing, her songs. Nothing here talks to an admin route, and the admin shell, its
- * navigation and its event stream are not mounted.
+ * Every block of the member area, by its key in `member-tabs.ts`: its region name (what a test
+ * and a screen reader find it by) and what draws it. A key without a block, or a block without a
+ * tab, does not compile or fails `member-tabs.test.tsx`.
+ */
+export const SECTIONS: Record<SectionKey, { label: string; render: (member: MemberSession) => ReactNode }> = {
+  profile: { label: "她眼中的你", render: (m) => <MemberProfile member={m} /> },
+  wallet: { label: "錢包", render: () => <WalletCard /> },
+  quests: { label: "今天的任務", render: () => <QuestsCard /> },
+  now: { label: "現在", render: () => <Now /> },
+  activity: { label: "你和她說的話", render: () => <MemberActivity /> },
+  herDays: { label: "她這兩週", render: () => <HerDays /> },
+  memories: { label: "一起的回憶", render: () => <MemberMemories /> },
+  github: { label: "GitHub", render: () => <GitHubLinkCard /> },
+  yourData: { label: "你的資料", render: () => <YourData /> },
+  live: { label: "現場", render: (m) => <LiveStage member={m} /> },
+  giftForm: { label: "送她禮物", render: () => <GiftsCard /> },
+  requestSong: { label: "點歌", render: () => <RequestSongCard /> },
+  yourSongs: { label: "你點的歌", render: () => <MemberSongs /> },
+  songs: { label: "歌單", render: () => <Songs /> },
+  shop: { label: "商店", render: () => <ShopSection /> },
+  giftsReceived: { label: "她收到的東西", render: () => <GiftsReceived /> },
+  madeForMe: { label: "她做給我的", render: () => <MadeForMe /> },
+  earn: { label: "怎麼賺", render: () => <EarnSection /> },
+  recent: { label: "最近", render: () => <RecentSection /> },
+  transfer: { label: "轉給朋友", render: () => <Transfer /> },
+  board: { label: "贊助排行榜", render: () => <BoardSection /> },
+  card: { label: "她給你的卡", render: () => <CardSection /> },
+  fortune: { label: "今日籤詩", render: () => <FortuneSection /> },
+  album: { label: "卡冊", render: () => <CardsArea /> },
+  predictions: { label: "預測", render: () => <Predictions /> },
+  bounties: { label: "她的懸賞", render: () => <BountiesSection /> },
+  market: { label: "市集", render: () => <Market /> },
+  exchange: { label: WORLD.exchange_name, render: () => <Exchange /> },
+};
+
+function Section({ id, member }: { id: SectionKey; member: MemberSession }) {
+  return <>{SECTIONS[id].render(member)}</>;
+}
+
+function TabRow({ row, member }: { row: Row; member: MemberSession }) {
+  if ("full" in row) return <Section id={row.full} member={member} />;
+  return (
+    <div className={cn("grid items-start gap-(--stage-gap)", row.template ?? "lg:grid-cols-2")}>
+      {row.cols.map((col) => (
+        <div
+          key={colSections(col).join()}
+          className={cn("grid min-w-0 content-start gap-(--stage-gap)", !Array.isArray(col) && col.span && "lg:row-span-2")}
+        >
+          {colSections(col).map((id) => (
+            <Section key={id} id={id} member={member} />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One tab's blocks; only the open tab is mounted, so only its queries and pushed topics run. */
+function TabBody({ tab, member }: { tab: MemberTabDef; member: MemberSession }) {
+  return (
+    <div data-member-tab={tab.id} className="member-tab grid gap-(--stage-gap)">
+      {tab.perServer && <MemberSpaceBar />}
+      {tab.rows.map((row, i) => (
+        <TabRow key={i} row={row} member={member} />
+      ))}
+      {/* Shown by CSS only while no block of the tab has anything to show (`.member-tab-empty`). */}
+      <EmptyLine className="member-tab-empty">{tab.empty}</EmptyLine>
+    </div>
+  );
+}
+
+/** A plain left click follows the tab in the page; any other (a new tab, a copied link) is the browser's. */
+const plainClick = (e: MouseEvent) => e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey;
+
+/**
+ * The tab row under the header: the admin panel's underlined frame row, with each tab a link to
+ * its own address. Arrow keys move between tabs (Radix); the open tab is kept in view when the
+ * row scrolls on a narrow phone.
+ */
+function MemberTabs({ tab, onPick }: { tab: MemberTab; onPick: (t: MemberTab) => void }) {
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = list.current;
+    const on = row?.querySelector<HTMLElement>('[data-state="active"]');
+    if (!row || !on) return;
+    const left = on.offsetLeft - (row.clientWidth - on.offsetWidth) / 2;
+    row.scrollTo?.({ left: Math.max(0, left) });
+  }, [tab]);
+  return (
+    <TabsList ref={list} aria-label="我的頁面" className="z-20 md:top-13">
+      {MEMBER_TABS.map((t) => (
+        <TabsTrigger key={t.id} value={t.id} asChild>
+          <a
+            href={memberTabPath(t.id)}
+            onClick={(e) => {
+              if (!plainClick(e.nativeEvent)) return;
+              e.preventDefault();
+              onPick(t.id);
+            }}
+          >
+            {t.label}
+          </a>
+        </TabsTrigger>
+      ))}
+    </TabsList>
+  );
+}
+
+/**
+ * The page of someone logged in without panel access, in tabs (`member-tabs.ts`): the overview of
+ * her and them, then giving and doing things with her, the coins, the cards, the games and the
+ * exchange. Each tab is its own address under `/me`; only the open one is mounted. Nothing here
+ * talks to an admin route, and the admin shell, its navigation and its event stream are not
+ * mounted.
  */
 export function PublicSite({
   member,
   notice,
   onLogout,
   onBack,
+  path = "/",
+  navigate,
 }: {
   member: MemberSession;
   /** What a failed login came back with. */
@@ -230,36 +378,60 @@ export function PublicSite({
   onLogout: () => void;
   /** An admin looking at their own page: the way back to the admin panel. */
   onBack?: () => void;
+  /** The address (path and query) the page is at. */
+  path?: string;
+  /** Goes to another address in the page; `replace` does not add to the history. */
+  navigate?: (to: string, replace?: boolean) => void;
 }) {
+  const found = memberTabIn(path);
+  const [local, setLocal] = useState<MemberTab>(found ?? "overview");
+  const tabId = navigate ? (found ?? "overview") : local;
+  const tab = MEMBER_TABS.find((t) => t.id === tabId) ?? (MEMBER_TABS[0] as MemberTabDef);
+
+  // An address under `/me/` that is no tab (an old or mistyped link) goes to the overview.
+  useEffect(() => {
+    if (found === null) navigate?.(OWN_PATH, true);
+  }, [found, navigate]);
+
+  useEffect(() => {
+    document.title = `${tab.label} · ${SITE_NAME}`;
+  }, [tab.label]);
+
+  // Radix picks a tab on the press and the link is clicked after it: one address for both.
+  const shown = useRef(tab.id);
+  shown.current = tab.id;
+  const pick = (t: MemberTab) => {
+    if (t === shown.current) return;
+    shown.current = t;
+    if (navigate) navigate(memberTabPath(t));
+    else setLocal(t);
+    // A new tab starts at its top; the row itself stays under the header.
+    if (window.scrollY > 0) window.scrollTo({ top: 0 });
+  };
+
   return (
-    <div className="flex min-h-svh flex-col">
-      <Header member={member} onLogout={onLogout} onBack={onBack} />
-      <main className="flex min-w-0 flex-1 flex-col">
-        <Page rail={<MemberActions />}>
-          {notice && (
-            <p role="alert" className="flex items-center gap-2 text-[13px]">
-              <CircleAlert aria-hidden className="size-4 shrink-0 text-primary" />
-              {notice}
-            </p>
-          )}
-          <LiveStage member={member} />
-          <MemberProfile member={member} />
-          <div className="grid gap-(--stage-gap) lg:grid-cols-2">
-            <MemberActivity />
-            <HerDays />
-          </div>
-          <Now />
-          <MemberLists />
-          <CardsArea />
-          <Market />
-          <Exchange />
-          <Predictions />
-          <WalletMain />
-          <GiftsReceived />
-          <MadeForMe />
-          <Songs />
-        </Page>
-      </main>
-    </div>
+    <MemberSpaceProvider>
+      <div className="flex min-h-svh flex-col">
+        <Header member={member} onLogout={onLogout} onBack={onBack} />
+        <Tabs value={tab.id} onValueChange={(v) => pick(v as MemberTab)}>
+          <MemberTabs tab={tab.id} onPick={pick} />
+          <main className="flex min-w-0 flex-1 flex-col">
+            <Page>
+              {notice && (
+                <p role="alert" className="flex items-center gap-2 text-[13px]">
+                  <CircleAlert aria-hidden className="size-4 shrink-0 text-primary" />
+                  {notice}
+                </p>
+              )}
+              {MEMBER_TABS.map((t) => (
+                <TabsContent key={t.id} value={t.id}>
+                  <TabBody tab={t} member={member} />
+                </TabsContent>
+              ))}
+            </Page>
+          </main>
+        </Tabs>
+      </div>
+    </MemberSpaceProvider>
   );
 }

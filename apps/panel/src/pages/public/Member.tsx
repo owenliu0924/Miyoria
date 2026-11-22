@@ -15,14 +15,8 @@ import { fmtInt } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { cn } from "@/lib/utils";
 import { AFFINITY, FAMILIARITY, TRUST } from "./card";
-import { CardSection } from "./CardSection";
-import { Transfer } from "./Extras";
-import { GiftsCard } from "./Gifts";
-import { GitHubLinkCard } from "./GitHubLink";
 import { useAuction } from "./Market";
 import { SpacePicker, useMemberSpace } from "./member-space";
-import { QuestsCard } from "./Play";
-import { WalletCard } from "./Wallet";
 
 /** Her view of someone changes with a reflection, not by the second. */
 const POLL_MS = 60_000;
@@ -217,48 +211,63 @@ function SongLine({ song }: { song: MemberSong }) {
   );
 }
 
-/** The memories she shares with them and the songs they asked for. */
-export function MemberLists() {
+/** The memories she shares with them. */
+export function MemberMemories() {
   const me = useMe();
   return (
-    <QueryView query={me} skeleton={<SkeletonRows count={4} />}>
-      {(v) => (
-        <div className="grid gap-(--stage-gap) lg:grid-cols-2">
-          <Card aria-label="一起的回憶">
-            <CardHeader>
-              <CardTitle>一起的回憶</CardTitle>
-            </CardHeader>
-            {v.memories.length === 0 ? (
-              <EmptyLine>還沒有一起的回憶</EmptyLine>
-            ) : (
-              <ul className="divide-y divide-line-soft">
-                {v.memories.map((m, i) => (
-                  <li key={i} className="flex items-baseline gap-3 py-(--row-y)">
-                    <p className="min-w-0 flex-1 text-sm">{m.text}</p>
-                    <span className="shrink-0 font-mono text-xs text-muted-foreground">{m.date}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
-          <Card aria-label="你點的歌">
-            <CardHeader>
-              <CardTitle>你點的歌</CardTitle>
-            </CardHeader>
-            {v.songs.length === 0 ? (
-              <EmptyLine>你還沒有點歌</EmptyLine>
-            ) : (
-              <ul className="divide-y divide-line-soft">
-                {v.songs.map((s, i) => (
-                  <SongLine key={i} song={s} />
-                ))}
-              </ul>
-            )}
-          </Card>
-        </div>
-      )}
-    </QueryView>
+    <Card aria-label="一起的回憶">
+      <CardHeader>
+        <CardTitle>一起的回憶</CardTitle>
+      </CardHeader>
+      <QueryView query={me} skeleton={<SkeletonRows count={3} />}>
+        {(v) =>
+          v.memories.length === 0 ? (
+            <EmptyLine>還沒有一起的回憶</EmptyLine>
+          ) : (
+            <ul className="divide-y divide-line-soft">
+              {v.memories.map((m, i) => (
+                <li key={i} className="flex items-baseline gap-3 py-(--row-y)">
+                  <p className="min-w-0 flex-1 text-sm">{m.text}</p>
+                  <span className="shrink-0 font-mono text-xs text-muted-foreground">{m.date}</span>
+                </li>
+              ))}
+            </ul>
+          )
+        }
+      </QueryView>
+    </Card>
   );
+}
+
+/** The songs they asked her for. */
+export function MemberSongs() {
+  const me = useMe();
+  return (
+    <Card aria-label="你點的歌">
+      <CardHeader>
+        <CardTitle>你點的歌</CardTitle>
+      </CardHeader>
+      <QueryView query={me} skeleton={<SkeletonRows count={2} />}>
+        {(v) =>
+          v.songs.length === 0 ? (
+            <EmptyLine>你還沒有點歌</EmptyLine>
+          ) : (
+            <ul className="divide-y divide-line-soft">
+              {v.songs.map((s, i) => (
+                <SongLine key={i} song={s} />
+              ))}
+            </ul>
+          )
+        }
+      </QueryView>
+    </Card>
+  );
+}
+
+/** 點歌, for someone she would sing for. */
+export function RequestSongCard() {
+  const me = useMe();
+  return me.data?.can_request_song ? <RequestSong /> : null;
 }
 
 function RequestSong() {
@@ -341,7 +350,7 @@ function forgotten(r: MemberForgetResult): string {
   return r.unverified > 0 ? `${said}。另有 ${r.unverified} 件來源已不可考,沒有刪除` : said;
 }
 
-function YourData() {
+export function YourData() {
   const api = useApi();
   const client = useQueryClient();
   const me = useMe();
@@ -386,22 +395,5 @@ function YourData() {
         </div>
       </ConfirmDialog>
     </Card>
-  );
-}
-
-/** What someone can do here: the rail. */
-export function MemberActions() {
-  const me = useMe();
-  return (
-    <>
-      <WalletCard />
-      <GiftsCard />
-      <QuestsCard />
-      <CardSection />
-      <Transfer />
-      {me.data?.can_request_song && <RequestSong />}
-      <GitHubLinkCard />
-      <YourData />
-    </>
   );
 }
