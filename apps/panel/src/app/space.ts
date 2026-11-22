@@ -6,7 +6,8 @@
 //     const { space } = useAdminSpace();
 //     useQuery({ queryKey: ["market", "plan", space], queryFn: () => api.rpc.marketAdmin.plan({ query: { space: space ?? undefined } }) });
 //
-// The switcher that sets it lives in the shell (later); `setSpace` is what it calls.
+// The switcher that sets it lives in the shell's header (`Shell.tsx`, drawn only with more than one
+// server); `setSpace` is what it calls.
 
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
