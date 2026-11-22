@@ -8,6 +8,7 @@ import {
   type Clock,
   type ContextKey,
   type JsonValue,
+  type Publish,
   type PublishedEvent,
   publishedInto,
 } from "@miyoria/types";
@@ -108,6 +109,35 @@ describe("a queue per Space", () => {
     q.submit(req("2", "b1", "gB"));
     const last = events.at(-1)?.data as { items: { text: string }[] };
     expect(last.items.map((i) => i.text)).toEqual(["b1"]);
+  });
+
+  it("says on each queue.changed which Space it is (none without places)", () => {
+    const seen: Array<{ type: string; space: string | null }> = [];
+    const publisher: Publish = (definition, _data, ...meta) => {
+      const m = meta[0] as { space_id?: string } | undefined;
+      seen.push({ type: definition.type, space: m?.space_id ?? null });
+    };
+    const q = new RequestQueue(QueueConfigSchema.parse({}), {
+      clock: new TestClock(),
+      spaces: SPACES,
+      publisher,
+    });
+    q.submit(req("1", "a1", "gA"));
+    q.submit(req("2", "b1", "gB"));
+    const changed = seen.filter((e) => e.type === "queue.changed").map((e) => e.space);
+    expect(changed).toEqual(["A", "B"]);
+
+    const plain: Array<string | null> = [];
+    const one = new RequestQueue(QueueConfigSchema.parse({}), {
+      clock: new TestClock(),
+      publisher: (definition, _data, ...meta) => {
+        if (definition.type === "queue.changed") {
+          plain.push((meta[0] as { space_id?: string } | undefined)?.space_id ?? null);
+        }
+      },
+    });
+    one.submit(req("1", "x", null));
+    expect(plain).toEqual([null]);
   });
 });
 

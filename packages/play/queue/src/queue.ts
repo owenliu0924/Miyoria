@@ -45,6 +45,8 @@ export type Publisher = Publish;
 interface QueueEvent {
   definition: AnyEventDefinition;
   data: JsonValue;
+  /** The Space it is about (the envelope's `space_id`): a reader shows one server's queue only. */
+  space?: string;
 }
 
 /** A new item and where it stands. */
@@ -938,7 +940,10 @@ export class RequestQueue {
 
   #emit(events: QueueEvent[]): void {
     if (!this.#publisher) return;
-    for (const event of events) this.#publisher(event.definition, event.data);
+    for (const event of events) {
+      if (event.space === undefined) this.#publisher(event.definition, event.data);
+      else this.#publisher(event.definition, event.data, { space_id: event.space });
+    }
   }
 
   #affinity(account: AccountRef): number {
@@ -1045,7 +1050,12 @@ export class RequestQueue {
         ends_at: part.vote.ends_at,
       };
     }
-    return { definition: Events.QueueChanged, data: payload };
+    // The queue of no Space (`""`, a Core without places) says none.
+    return {
+      definition: Events.QueueChanged,
+      data: payload,
+      ...(key === "" ? {} : { space: key }),
+    };
   }
 }
 
