@@ -9,6 +9,7 @@ import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { filesPassRoute } from "./files/routes.js";
 import { githubLinkRoutes } from "./github-link.js";
 import { karaokeRoutes } from "./karaoke-routes.js";
+import { landingRoutes } from "./landing.js";
 import { liveRoutes } from "./live.js";
 import { memberRoutes } from "./member.js";
 import { metricsRoutes } from "./metrics.js";
@@ -170,6 +171,7 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
   return [
     ...publicRoutes(state),
     ...ogRoutes(state),
+    ...landingRoutes(state),
     ...memberRoutes(state),
     ...karaokeRoutes(state),
     ...dataRoutes(state),
