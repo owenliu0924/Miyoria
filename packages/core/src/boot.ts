@@ -30,6 +30,7 @@ import { marketTables } from "@miyoria/play/market";
 import {
   type Config,
   ConfigError,
+  currencyOf,
   EventBus,
   errorMessage,
   getLogger,
@@ -65,6 +66,7 @@ import {
   ActuatorExecutorKey,
   AttachmentSourceKey,
   CharacterKey,
+  CurrencyKey,
   DirectivesKey,
   Events,
   HandleDirectoryKey,
@@ -399,6 +401,8 @@ export async function buildCoreWith(
   services.provide(k, ProfileIdKey, profileId);
   // Who she is in this profile, for the texts that name her (`[character]`).
   services.provide(k, CharacterKey, profile.character);
+  // The coins' name, for every text that names them (`[modules.economy] currency`).
+  services.provide(k, CurrencyKey, currencyOf(config.section("modules.economy")));
   services.provide(k, RunningProfileKey, {
     id: profileId,
     own: options.ownProfile ?? false,

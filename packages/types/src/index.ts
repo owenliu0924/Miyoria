@@ -630,8 +630,10 @@ export {
 export {
   type Character,
   CharacterKey,
+  CurrencyKey,
   characterNames,
   DEFAULT_CHARACTER,
+  DEFAULT_CURRENCY,
   orList,
   type RunningProfile,
   RunningProfileKey,
@@ -677,11 +679,14 @@ export {
   type ExchangeReason,
   type ExchangeWallet,
   ExchangeWalletKey,
+  exchangeDisclaimer,
   exchangeSmallPrint,
 } from "./exchange.js";
 export {
+  AMOUNT_CURRENCY,
   AMOUNT_HELP,
   amountExamples,
+  amountHelp,
   type OrderAmount,
   type OrderAmountResult,
   parseOrderAmount,

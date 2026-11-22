@@ -14,6 +14,7 @@ log = "info,miyoria=debug"
 # other_names = ["米優", "みよ"]     # 簡稱的其他寫法,叫到也算在叫她
 # pronoun = "她"
 # exchange_name = "深海交易所"       # 交易所的名字(幣名是 [modules.economy] currency)
+# creature = "鯨魚"                 # 她是什麼,一個詞(卡上的字「有…的小毛病」);"" = 不特別寫
 
 # ---- LLM ----------------------------------------------------------------
 # 任何 OpenAI 相容 API 都可以:填 base_url、api_key,模型 id 在 purposes 裡。

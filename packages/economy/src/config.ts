@@ -1,4 +1,4 @@
-import { setting, settingGroups } from "@miyoria/runtime/kernel";
+import { CurrencySchema, setting, settingGroups } from "@miyoria/runtime/kernel";
 import { z } from "zod";
 import { DEFAULT_FREE_GIFTS, FreeGiftConfigSchema } from "./gift-config.js";
 
@@ -53,7 +53,7 @@ export const DEFAULT_ROOM: RoomItem[] = [
 export const EconomyConfigSchema = z
   .object({
     /** Shown everywhere the coins are named. */
-    currency: z.string().trim().min(1).max(16).default("魚幣"),
+    currency: CurrencySchema,
     /** Daily check-in, once per local day (the panel and Discord together). */
     checkin: coins.default(10),
     /** Extra on every 7th consecutive check-in day. */

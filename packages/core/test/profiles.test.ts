@@ -1,8 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { CharacterSectionSchema, Config } from "@miyoria/runtime/kernel";
-import { DEFAULT_CHARACTER } from "@miyoria/types";
+import { CharacterSectionSchema, Config, currencyOf } from "@miyoria/runtime/kernel";
+import { DEFAULT_CHARACTER, DEFAULT_CURRENCY } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   databaseDir,
@@ -138,6 +138,14 @@ describe("resolveProfile", () => {
 describe("[character]", () => {
   it("defaults to Miyoria's values", () => {
     expect(CharacterSectionSchema.parse({})).toEqual(DEFAULT_CHARACTER);
+  });
+
+  it("reads the coins' name from [modules.economy], as the economy does", () => {
+    expect(currencyOf(undefined)).toBe(DEFAULT_CURRENCY);
+    expect(currencyOf({})).toBe("魚幣");
+    expect(currencyOf({ currency: "  貝殼 " })).toBe("貝殼");
+    expect(currencyOf({ currency: "" })).toBe(DEFAULT_CURRENCY);
+    expect(currencyOf({ currency: 3 })).toBe(DEFAULT_CURRENCY);
   });
 
   it("loads with the profile, and a broken section stops the load", async () => {
