@@ -35,12 +35,15 @@ async function tempDir(): Promise<string> {
   return dir;
 }
 
+/** A service key, of any type. */
+type Keyed = Pick<ServiceKey<unknown>, "id">;
+
 /** An API state with just these services. */
-function stateWith(services: [ServiceKey<unknown>, unknown][], publicEnabled = true): ApiState {
+function stateWith(services: [Keyed, unknown][], publicEnabled = true): ApiState {
   const map = new Map<string, unknown>(services.map(([k, v]) => [k.id, v]));
   const ctx = {
     clock: { now: () => 0 },
-    services: { get: (k: ServiceKey<unknown>) => map.get(k.id) },
+    services: { get: (k: Keyed) => map.get(k.id) },
   };
   const side = new PublicSide(PublicConfigSchema.parse({ enabled: publicEnabled }), () => 0);
   return new ApiState(
