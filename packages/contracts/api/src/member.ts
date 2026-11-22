@@ -312,7 +312,7 @@ export const member = {
     .meta({ audience: "member", permission: null })
     .route({ method: "POST", path: "/api/member/songs" })
     // `?space=`: the server it is sung in (a member of several picks; default their own).
-    .input(z.object({ query: SpaceQuery, body: SongRequestSchema }))
+    .input(z.object({ query: SpaceQuery.optional(), body: SongRequestSchema }))
     .output(SongAcceptedSchema),
   cards: route
     .meta({ audience: "member", permission: null, limited: true })

@@ -68,26 +68,26 @@ function refused(r: MarketRefusal): never {
 export const marketRpc = {
   auction: os.market.auction.handler(
     async ({ input, context: { state, c } }): Promise<AuctionView> =>
-      (await memberMarket(state, c, input.query.space)).auctionView(accountOf(c)),
+      (await memberMarket(state, c, input?.query?.space)).auctionView(accountOf(c)),
   ),
   bids: os.market.bids.handler(async ({ input, context: { state, c } }) => ({
-    bids: await (await memberMarket(state, c, input.query.space)).myBids(accountOf(c)),
+    bids: await (await memberMarket(state, c, input?.query?.space)).myBids(accountOf(c)),
   })),
   lottery: os.market.lottery.handler(
     async ({ input, context: { state, c } }): Promise<LotteryView> =>
-      (await memberMarket(state, c, input.query.space)).lotteryView(accountOf(c)),
+      (await memberMarket(state, c, input?.query?.space)).lotteryView(accountOf(c)),
   ),
   tickets: os.market.tickets.handler(async ({ input, context: { state, c } }) => ({
-    weeks: await (await memberMarket(state, c, input.query.space)).myTickets(accountOf(c)),
+    weeks: await (await memberMarket(state, c, input?.query?.space)).myTickets(accountOf(c)),
   })),
   bid: os.market.bid.handler(async ({ input, context: { state, c } }) => {
-    const market = await memberMarket(state, c, input.query.space);
+    const market = await memberMarket(state, c, input?.query?.space);
     const r = await market.bid(accountOf(c), input.body.amount);
     if (!r.ok) refused(r);
     return { amount: r.amount, ends_at: r.ends_at, extended: r.extended, balance: r.balance };
   }),
   name: os.market.name.handler(async ({ input, context: { state, c } }): Promise<NameResult> => {
-    const market = await memberMarket(state, c, input.query.space);
+    const market = await memberMarket(state, c, input?.query?.space);
     const { name, give_up } = input.body;
     if (give_up === true) {
       const r = await market.giveUpName(accountOf(c));
@@ -101,7 +101,7 @@ export const marketRpc = {
     return { call_name: r.call_name, applied_until: r.applied_until, refunded: 0 };
   }),
   buy: os.market.buy.handler(async ({ input, context: { state, c } }): Promise<TicketResult> => {
-    const market = await memberMarket(state, c, input.query.space);
+    const market = await memberMarket(state, c, input?.query?.space);
     const key = `web:${keyOf(input.headers["idempotency-key"])}`;
     const r = await market.buyTickets(accountOf(c), input.body.count, key);
     if (!r.ok) refused(r);
@@ -112,16 +112,16 @@ export const marketRpc = {
 export const marketAdminRpc = {
   history: os.marketAdmin.history.handler(
     async ({ input, context: { state } }): Promise<MarketHistory> =>
-      adminMarket(state, input.query.space).history(),
+      adminMarket(state, input?.query?.space).history(),
   ),
   plan: os.marketAdmin.plan.handler(async ({ input, context: { state } }): Promise<LotPlan> => {
-    const market = adminMarket(state, input.query.space);
+    const market = adminMarket(state, input?.query?.space);
     const r = await market.plan(input.body.lot, input.body.note?.trim() || null);
     if (!r.ok) refused(r);
     return { week: r.week, opens_at: r.opens_at, plan: r.plan };
   }),
   settle: os.marketAdmin.settle.handler(async ({ input, context: { state } }) => {
-    const r = await adminMarket(state, input.query.space).settleNow(input.body.what);
+    const r = await adminMarket(state, input?.query?.space).settleNow(input.body.what);
     if (!r.ok) refused(r);
     return { ok: true as const };
   }),

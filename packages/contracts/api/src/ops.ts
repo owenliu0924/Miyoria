@@ -359,29 +359,35 @@ export const queue = {
   list: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/queue" })
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(QueueStateSchema),
   pause: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "POST", path: "/api/queue/pause" })
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(QueueStateSchema),
   resume: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "POST", path: "/api/queue/resume" })
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(QueueStateSchema),
   /** `404` for an item that is not there (or was skipped already). */
   skip: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "POST", path: "/api/queue/{id}/skip" })
-    .input(z.object({ params: ItemParams, query: SpaceQuery }))
+    .input(z.object({ params: ItemParams, query: SpaceQuery.optional() }))
     .output(QueueStateSchema),
   /** `404` for an item that is not there, `409` for one that is active. */
   move: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "POST", path: "/api/queue/{id}/move" })
-    .input(z.object({ params: ItemParams, query: SpaceQuery, body: MoveQueueItemRequestSchema }))
+    .input(
+      z.object({
+        params: ItemParams,
+        query: SpaceQuery.optional(),
+        body: MoveQueueItemRequestSchema,
+      }),
+    )
     .output(QueueStateSchema),
 };
 

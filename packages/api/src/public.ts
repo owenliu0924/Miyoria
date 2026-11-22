@@ -574,7 +574,7 @@ export const publicRpc = {
     servePublic(context, "status", () => publicStatus(context.state)),
   ),
   songs: os.public.songs.handler(({ input, context }) => {
-    const guild = publicSongGuild(context.state, input.query.space);
+    const guild = publicSongGuild(context.state, input?.query.space);
     return servePublic(context, `songs:${guild ?? ""}`, () => publicSongs(context.state, guild));
   }),
 };

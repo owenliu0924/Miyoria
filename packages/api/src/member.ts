@@ -630,7 +630,7 @@ export const memberRpc = {
       context.c,
       input.body.query,
       input.body.priority === true,
-      input.query.space,
+      input.query?.space,
     ),
   ),
   cards: os.member.cards.handler(({ context }) => cardsMine(context.state, context.c)),

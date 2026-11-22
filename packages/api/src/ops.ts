@@ -524,12 +524,12 @@ export const opsRpc = {
     ),
   },
   queue: {
-    list: os.queue.list.handler(({ input, context }) => queue(context.state, input.query.space)),
+    list: os.queue.list.handler(({ input, context }) => queue(context.state, input?.query?.space)),
     pause: os.queue.pause.handler(({ input, context }) =>
-      setPaused(context.state, context.c, true, input.query.space),
+      setPaused(context.state, context.c, true, input?.query?.space),
     ),
     resume: os.queue.resume.handler(({ input, context }) =>
-      setPaused(context.state, context.c, false, input.query.space),
+      setPaused(context.state, context.c, false, input?.query?.space),
     ),
     skip: os.queue.skip.handler(({ input, context }) =>
       queueItemAction(context.state, context.c, input.params.id, "skip", 0),

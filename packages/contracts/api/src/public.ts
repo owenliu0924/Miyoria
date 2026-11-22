@@ -98,7 +98,7 @@ export const publicView = {
     .meta({ audience: "public", permission: null })
     .route({ method: "GET", path: "/api/public/songs" })
     // `?space=`: that server's songs (`404` for one she is not in); without it, the primary's.
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(PublicSongsSchema),
   /** The sponsor board. Same cache and limits as the status. */
   board: route
