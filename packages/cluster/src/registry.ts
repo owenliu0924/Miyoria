@@ -41,6 +41,8 @@ import {
   type StaticEndpointConfig,
 } from "./config.js";
 import { type EstimateStore, Estimates } from "./estimates.js";
+import { routedRequest } from "./routed.js";
+import { type RoutesConfig, RouteTable, type RouteView, type RouteWork } from "./routes.js";
 import { ClusterError } from "./tables.js";
 
 /** One place a capability can be used (`HostEndpoint` of the host protocol). */
@@ -221,6 +223,8 @@ export interface EndpointRegistryOptions {
   activity?: () => ClusterActivity;
   /** Conflicts and the like; default nothing. */
   log?: { warn(fields: object, message: string): void };
+  /** `[modules.cluster.routes]`: probing and resting of the hosts' routes (§16). */
+  routes?: RoutesConfig;
 }
 
 /** Service states in which a service can answer. */
@@ -253,6 +257,8 @@ interface Ranked {
   endpoint: Endpoint;
   /** Static entries at the same URL it stands for. */
   standsFor: string[];
+  /** Every address Core can call it at (a static entry at one of them is this endpoint). */
+  urls: string[];
   /** The earliest `added` of itself and the entries it stands for; `null`: none was added. */
   added: number | null;
   /** Its `[routing]` as its host reports it; `null` from a static entry or an older hostd. */
@@ -393,6 +399,8 @@ export class EndpointRegistry {
   >();
   /** The last conflicts logged, by capability, so each is logged once. */
   readonly #conflicts = new Map<string, string>();
+  /** Each connected host's routes and what was measured of them (§16). */
+  readonly #routes: RouteTable;
 
   constructor(options: EndpointRegistryOptions = {}) {
     this.#order = options.order ?? {};
@@ -402,6 +410,10 @@ export class EndpointRegistry {
     this.#routing = options.routing ?? RoutingConfigSchema.parse({});
     this.#activity = options.activity ?? (() => QUIET);
     this.#log = options.log;
+    this.#routes = new RouteTable({
+      ...(options.routes !== undefined ? { config: options.routes } : {}),
+      now: () => this.#clock.now(),
+    });
     this.#estimates = new Estimates({
       store: options.estimates ?? null,
       now: () => this.#clock.now(),
@@ -487,7 +499,10 @@ export class EndpointRegistry {
     const entry = this.#hosts.get(name);
     if (entry === undefined) return;
     if (link.local !== undefined) entry.local = link.local;
-    if (link.rttMs !== undefined) entry.rttMs = link.rttMs;
+    if (link.rttMs !== undefined) {
+      entry.rttMs = link.rttMs;
+      this.#routes.linkRtt(name, link.rttMs);
+    }
   }
 
   /** A host's latest report. Ignored for a host that is not connected. */
@@ -496,6 +511,7 @@ export class EndpointRegistry {
     if (entry === undefined) return;
     entry.report = report;
     entry.reportedAt = this.#clock.now();
+    this.#routes.update(name, report);
     const serving = new Set(
       report.services.filter((s) => SERVING.has(s.state)).map((s) => `${name}\u0000${s.name}`),
     );
@@ -511,6 +527,7 @@ export class EndpointRegistry {
   /** A host disconnected or was removed: its endpoints go at once. */
   removeHost(name: string): void {
     if (!this.#hosts.delete(name)) return;
+    this.#routes.remove(name);
     for (const key of [...this.#resting.keys()]) {
       if (key.startsWith(`${name}\u0000`)) this.#resting.delete(key);
     }
@@ -526,6 +543,11 @@ export class EndpointRegistry {
   /** The hosts whose reports are held (connected ones). */
   hosts(): string[] {
     return [...this.#hosts.keys()].sort();
+  }
+
+  /** The hosts' routes, for the prober (§16). */
+  get routes(): RouteTable {
+    return this.#routes;
   }
 
   /** Installs the relay for `link` endpoints (v5-hostd §7.1); `null` takes it away. */
@@ -584,7 +606,32 @@ export class EndpointRegistry {
    */
   async request(endpoint: Endpoint, path: string, init: RequestInit = {}): Promise<Response> {
     let response: Response;
-    if (endpoint.via === "link") {
+    if (this.#hosts.has(endpoint.host) && this.#routes.declared(endpoint.host)) {
+      response = await routedRequest(
+        {
+          table: this.#routes,
+          fetch: this.#fetch,
+          now: () => this.#clock.now(),
+          relay: (e, p, i) =>
+            this.#relay === null
+              ? null
+              : this.#relay.request(
+                  {
+                    ...endpoint,
+                    ...e,
+                    via: "link",
+                    url: `link://${e.host}/${e.service}`,
+                  },
+                  p,
+                  i,
+                ),
+        },
+        endpoint,
+        path,
+        init,
+        this.#workOf(endpoint),
+      );
+    } else if (endpoint.via === "link") {
       const relay = this.#relay;
       if (relay === null) {
         throw new RelayUnavailableError(
@@ -787,13 +834,17 @@ export class EndpointRegistry {
     });
   }
 
-  /** Each connected host: Core's own machine, its round trip, drained (and why), its weight. */
+  /**
+   * Each connected host: Core's own machine, its round trip, drained (and why), its weight, and
+   * its routes with what was measured of them (never a token).
+   */
   hostRouting(): Array<{
     host: string;
     local: boolean | null;
     rtt_ms: number | null;
     drained: string | null;
     weight: number;
+    routes: RouteView[];
   }> {
     return this.hosts().map((host) => {
       const entry = this.#hosts.get(host) as HostEntry;
@@ -803,6 +854,7 @@ export class EndpointRegistry {
         rtt_ms: entry.rttMs,
         drained: this.#drained(host),
         weight: this.#weight(host),
+        routes: this.#routes.view(host),
       };
     });
   }
@@ -819,6 +871,17 @@ export class EndpointRegistry {
   }
 
   // ---- inside --------------------------------------------------------------------------------
+
+  /**
+   * What a request needs of a route: real-time for what a `direct` query returned, bulk for `job`
+   * and `batch` work, else an answer someone waits for.
+   */
+  #workOf(endpoint: Endpoint): RouteWork {
+    if (endpoint.direct_only === true) return "realtime";
+    const info = this.#classOf(endpoint.capability);
+    if (info.class === "job" || info.latency === "batch") return "bulk";
+    return "interactive";
+  }
 
   #isResting(endpoint: Endpoint, now: number): boolean {
     const until = this.#resting.get(restKey(endpoint));
@@ -1081,6 +1144,10 @@ export class EndpointRegistry {
   #rateBps(r: Ranked): number {
     const measured = this.#estimates.get(r.endpoint.host, r.endpoint.capability)?.rate_bps;
     if (measured !== null && measured !== undefined) return measured;
+    if (this.#routes.declared(r.endpoint.host)) {
+      const rate = this.#routes.bulkRate(r.endpoint.host, r.endpoint.service);
+      if (rate !== null) return rate;
+    }
     const t = this.#routing.transfer_mb_s;
     const mbs = r.local === true ? t.local : r.endpoint.via === "link" ? t.link : t.direct;
     return mbs * MB;
@@ -1342,22 +1409,43 @@ export class EndpointRegistry {
       if (!entry.approved.has(capability) || entry.report === null) continue;
       for (const service of entry.report.services) {
         if (!service.provides.includes(capability) || !SERVING.has(service.state)) continue;
-        // Only an address the host says Core can call is direct; `url` alone is the address on
-        // the host itself.
-        const direct = service.advertised !== undefined && service.advertised !== "";
         const load = service.load;
+        let url: string;
+        let via: Endpoint["via"];
+        let urls: string[];
+        let directOnly = false;
+        if (this.#routes.declared(name)) {
+          // A host with routes (§16): the best route for this kind of query; a `direct` query
+          // only gets endpoints with a route fit for real-time work, and keeps to such routes.
+          const work: RouteWork = options.direct === true ? "realtime" : "interactive";
+          const best = this.#routes.plan(name, service.name, work)[0];
+          if (options.direct === true && best === undefined) continue;
+          url = best?.url ?? `link://${name}/${service.name}`;
+          via = best === undefined || best.url === null ? "link" : "direct";
+          urls = Object.values(service.reach ?? {});
+          directOnly = options.direct === true;
+        } else {
+          // Only an address the host says Core can call is direct; `url` alone is the address on
+          // the host itself.
+          const direct = service.advertised !== undefined && service.advertised !== "";
+          url = direct ? (service.advertised as string) : `link://${name}/${service.name}`;
+          via = direct ? "direct" : "link";
+          urls = direct ? [url] : [];
+        }
         out.push({
           endpoint: {
             capability,
             host: name,
             service: service.name,
-            url: direct ? (service.advertised as string) : `link://${name}/${service.name}`,
-            via: direct ? "direct" : "link",
+            url,
+            via,
             headers: bearer(service.token),
             healthy: service.healthy,
             version: service.version ?? null,
+            ...(directOnly ? { direct_only: true } : {}),
           },
           standsFor: [],
+          urls,
           added: null,
           routing: service.routing ?? null,
           load:
@@ -1380,9 +1468,7 @@ export class EndpointRegistry {
       // Entries of `[modules.cluster.static]` before the ones added at run time.
       .sort((a, b) => (a.added ?? -1) - (b.added ?? -1));
     for (const entry of statics) {
-      const twin = out.find(
-        (r) => r.endpoint.via === "direct" && sameUrl(r.endpoint.url) === sameUrl(entry.url),
-      );
+      const twin = out.find((r) => r.urls.some((u) => sameUrl(u) === sameUrl(entry.url)));
       if (twin !== undefined) {
         twin.standsFor.push(entry.name);
         twin.added = minAdded(twin.added, entry.added);
@@ -1400,6 +1486,7 @@ export class EndpointRegistry {
           version: null,
         },
         standsFor: [],
+        urls: [entry.url],
         added: entry.added,
         routing: null,
         load: null,

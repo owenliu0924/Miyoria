@@ -46,6 +46,7 @@ import { GuardRegistry, type GuardSourceFn } from "./guards.js";
 import { ClusterLink, type HostConnection } from "./link.js";
 import { type CapabilityRouting, type ClusterActivity, EndpointRegistry } from "./registry.js";
 import { ClusterRelay, type RelayOptions } from "./relay.js";
+import { RouteProber } from "./route-probe.js";
 import {
   ClusterError,
   type ClusterTables,
@@ -181,6 +182,8 @@ export interface ClusterModuleOptions {
 
 /** How often the `live` guard state is read for the speech-host rule. */
 const LIVE_POLL_MS = 5_000;
+/** How often the route prober looks for probes that are due (each route has its own interval). */
+const ROUTE_TICK_MS = 5_000;
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -366,6 +369,7 @@ export class ClusterModule implements Module {
       estimates: tables.estimates,
       activity: () => activity.snapshot(),
       log: ctx.log,
+      routes: config.routes,
     });
     try {
       registry.setPanelControls(tables.controls.view());
@@ -452,6 +456,17 @@ export class ClusterModule implements Module {
           // Unknown: what was read last stays.
         }
         await sleep(LIVE_POLL_MS, signal);
+      }
+    });
+
+    // The hosts' routes (v5-hostd §16): only hosts with `routes.toml` are probed.
+    const prober = new RouteProber({ table: registry.routes, clock: ctx.clock, log: ctx.log });
+    ctx.spawn("routes", async (signal) => {
+      while (!signal.aborted) {
+        await prober
+          .tick()
+          .catch((error) => ctx.log.warn({ err: errorMessage(error) }, "route probing failed"));
+        await sleep(ROUTE_TICK_MS, signal);
       }
     });
 
