@@ -9,7 +9,9 @@
 // millionths. Without the `exchange` module these are a `503` that names it.
 
 import { z } from "zod";
+import { ListedSpaceSchema } from "./economy.js";
 import { IdempotencyHeaders, route } from "./route.js";
+import { BoardScopeQuery } from "./wallet.js";
 
 /** The node of the owner's hand on the exchange (the same as on someone's coins). */
 const NODE_EXCHANGE = "admin.economy.adjust";
@@ -343,10 +345,15 @@ export const ExchangePortfolioSchema = z
   .meta({ id: "ApiExchangePortfolio" });
 export type ExchangePortfolio = z.output<typeof ExchangePortfolioSchema>;
 
-/** `GET /api/member/exchange/boards`: the rich list (people who hide are left out). */
+/**
+ * `GET /api/member/exchange/boards`: the rich list (people who hide are left out), of one server's
+ * members or of everyone (`BoardScopeQuery`). Prices and holdings are global either way.
+ */
 export const ExchangeBoardsSchema = z
   .object({
     currency: z.string(),
+    /** The server whose members are ranked; `null`: everyone. */
+    space: ListedSpaceSchema.nullable(),
     rich: z.array(
       z.object({
         rank: z.number().int(),
@@ -563,8 +570,10 @@ export const exchange = {
   portfolio: member()
     .route({ method: "GET", path: "/api/member/exchange/portfolio" })
     .output(ExchangePortfolioSchema),
+  /** `404` an unknown server, `403` one they are not in. */
   boards: member()
     .route({ method: "GET", path: "/api/member/exchange/boards" })
+    .input(z.object({ query: BoardScopeQuery }))
     .output(ExchangeBoardsSchema),
 };
 

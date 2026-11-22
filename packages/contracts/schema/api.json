@@ -1597,6 +1597,23 @@
       ],
       "additionalProperties": false
     },
+    "ApiBoardScopeQuery": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "space",
+            "all"
+          ]
+        }
+      }
+    },
     "ApiBondRing": {
       "type": "object",
       "properties": {
@@ -5669,6 +5686,16 @@
         "currency": {
           "type": "string"
         },
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiListedSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "rich": {
           "type": "array",
           "items": {
@@ -5761,6 +5788,7 @@
       },
       "required": [
         "currency",
+        "space",
         "rich",
         "me"
       ]
@@ -12358,6 +12386,24 @@
         "portrait"
       ]
     },
+    "ApiListedSpace": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
     "ApiLlmCallDetail": {
       "type": "object",
       "properties": {
@@ -14011,6 +14057,47 @@
       "required": [
         "name",
         "description"
+      ]
+    },
+    "ApiMemberBoard": {
+      "type": "object",
+      "properties": {
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiListedSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "rank": {
+                "type": "number"
+              },
+              "name": {
+                "type": "string"
+              },
+              "spent": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "rank",
+              "name",
+              "spent"
+            ]
+          }
+        }
+      },
+      "required": [
+        "space",
+        "entries"
       ]
     },
     "ApiMemberBond": {
@@ -17266,6 +17353,16 @@
         "id": {
           "type": "string"
         },
+        "space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiListedSpace"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "question": {
           "type": "string"
         },
@@ -17388,6 +17485,7 @@
       },
       "required": [
         "id",
+        "space",
         "question",
         "options",
         "total",

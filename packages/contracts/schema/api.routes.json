@@ -2671,6 +2671,21 @@
           }
         }
       },
+      "boardView": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/member/board"
+          }
+        }
+      },
       "frame": {
         "~orpc": {
           "errorMap": {},
