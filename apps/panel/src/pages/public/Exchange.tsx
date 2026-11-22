@@ -24,6 +24,7 @@ import type {
 import { amountExamples, parseOrderAmount } from "@miyoria/types/exchange-amount";
 import { isApiError, isNotProvided } from "@/api/http";
 import { useApi } from "@/app/connection";
+import { pushable, usePushed } from "@/app/push";
 import { ChartEmpty } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";
 import { OffLine } from "@/components/module-query";
@@ -289,10 +290,13 @@ function Search({ onPick }: { onPick: (code: string) => void }) {
 function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: () => void }) {
   const api = useApi();
   const refresh = useRefresh();
+  // Its price by push while a stream is there (a minute's quotes show within seconds), else polled.
+  const key = [...ROOT, "ticker", code] as const;
+  const pushed = usePushed("exchange_ticker", code, key, pushable(code));
   const ticker = useQuery({
-    queryKey: [...ROOT, "ticker", code],
+    queryKey: key,
     queryFn: ({ signal }) => api.rpc.exchange.ticker({ params: { code } }, { signal }),
-    refetchInterval: poll,
+    refetchInterval: pushed ? false : poll,
     retry,
   });
   const watch = useMutation({
@@ -348,10 +352,12 @@ function Ticker({ m, code, onBack }: { m: ExchangeMarket; code: string; onBack: 
 function MarketTab({ m, code, setCode }: { m: ExchangeMarket; code: string | null; setCode: (code: string | null) => void }) {
   const api = useApi();
   const [list, setList] = useState<ListKind>(m.default_list);
+  const key = [...ROOT, "list", list] as const;
+  const pushed = usePushed("exchange_list", list, key, code === null);
   const rows = useQuery({
-    queryKey: [...ROOT, "list", list],
+    queryKey: key,
     queryFn: ({ signal }) => api.rpc.exchange.list({ params: { kind: list } }, { signal }),
-    refetchInterval: poll,
+    refetchInterval: pushed ? false : poll,
     retry,
   });
   if (code !== null) return <Ticker m={m} code={code} onBack={() => setCode(null)} />;

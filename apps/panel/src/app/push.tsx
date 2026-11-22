@@ -25,6 +25,12 @@ const OFF_WAIT_MS = 5 * 60_000;
 /** Hooks mounting together settle into one connection. */
 const SETTLE_MS = 50;
 
+/**
+ * Whether a parameter can go in a topic (the server's `PUSH_PARAM`, kept here so the contract's
+ * schemas stay out of the bundle): a hook with another one simply polls.
+ */
+export const pushable = (param: string) => /^[A-Za-z0-9._-]{1,64}$/.test(param);
+
 /** One topic a page wants: `songs`, or `songs~<space>`. */
 export const topicId = (topic: PushTopic, param: string | null) => (param === null ? topic : `${topic}~${param}`);
 

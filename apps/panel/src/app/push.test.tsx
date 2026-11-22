@@ -14,6 +14,7 @@ import { RoomsEntry } from "@/pages/public/karaoke/RoomsEntry";
 import Landing from "@/pages/public/landing/Landing";
 import { QueueCard } from "@/pages/live/QueueCard";
 import { envelope } from "@/test/envelope";
+import { TestStream } from "@/test/push-stream";
 import { renderPage, writer } from "@/test/render";
 import { EventStore, EventStoreContext, EventStreamProvider, LIVE_SAFETY_MS, useLivePoll } from "./events-store";
 import { PushClient, PushProvider } from "./push";
@@ -23,29 +24,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const enc = new TextEncoder();
-
-/** One SSE stream the test writes to. */
-class Stream {
-  #controller!: ReadableStreamDefaultController<Uint8Array>;
-  readonly response: Response;
-  constructor() {
-    const body = new ReadableStream<Uint8Array>({
-      start: (c) => {
-        this.#controller = c;
-      },
-    });
-    this.response = new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
-  }
-  send(event: unknown, id?: string): void {
-    this.#controller.enqueue(enc.encode(`event: message\n${id ? `id: ${id}\n` : ""}data: ${JSON.stringify(event)}\n\n`));
-  }
-  end(): void {
-    this.#controller.close();
-  }
-}
-
-type Answer = Stream | { status: number; body?: unknown };
+const Stream = TestStream;
+type Answer = TestStream | { status: number; body?: unknown };
 
 /**
  * `fetch` for the tests: each call of a stream route takes the next answer of `streams` (a stream,

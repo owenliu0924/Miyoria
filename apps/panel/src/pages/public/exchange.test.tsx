@@ -5,7 +5,7 @@
 
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   ExchangeAccount,
   ExchangeAdmin,
@@ -15,6 +15,8 @@ import type {
   ExchangePortfolio,
   ExchangeQuote,
 } from "@miyoria/contracts/api";
+import { PushProvider } from "@/app/push";
+import { TestStream } from "@/test/push-stream";
 import { mockFetch, renderPage, renderRoute } from "@/test/render";
 import { change, Exchange, upColor } from "./Exchange";
 
@@ -185,6 +187,32 @@ describe("深海交易所 on the member page", () => {
     expect(up).toHaveStyle({ color: upColor("tw") });
     expect(screen.getAllByText(new RegExp(BASE.slice(0, 10))).length).toBeGreaterThan(0);
     expect(change(-0.012)).toBe("▼ −1.2%");
+  });
+
+  it("moves a list's prices as they are pushed, without asking again", async () => {
+    exchange();
+    const stream = new TestStream();
+    const polled = globalThis.fetch;
+    const fetch = vi.fn((input: string | URL | Request, init?: RequestInit) =>
+      String(input).startsWith("/api/member/stream") ? Promise.resolve(stream.response) : polled(input, init),
+    );
+    vi.stubGlobal("fetch", fetch);
+    renderPage(
+      <PushProvider audience="member">
+        <Exchange />
+      </PushProvider>,
+    );
+    expect(await screen.findByText("▲ +1.2%")).toBeInTheDocument();
+    await waitFor(() => expect(fetch.mock.calls.some(([u]) => decodeURIComponent(String(u)).includes("exchange_list~local"))).toBe(true));
+    const list = { kind: "local", label: "新手推薦 · 這裡獨家", rows: LOCAL };
+    stream.send({ kind: "value", topic: "exchange_list", param: "local", data: list });
+    stream.send({ kind: "ready" }, "r.1.h");
+    stream.send(
+      { kind: "value", topic: "exchange_list", param: "local", data: { ...list, rows: [{ ...LOCAL[0], change: 0.05 }, ...LOCAL.slice(1)] } },
+      "r.2.h",
+    );
+    expect(await screen.findByText("▲ +5.0%")).toBeInTheDocument();
+    expect(screen.queryByText("▲ +1.2%")).toBeNull();
   });
 
   it("sorts the columns, and 大家都在買 shows counts only", async () => {
