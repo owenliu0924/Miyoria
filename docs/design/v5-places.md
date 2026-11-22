@@ -8,6 +8,7 @@
 |---|---|---|
 | **Space** | identity 的 `spaces` | 一個 Discord 伺服器。`id` 是 ULID,表和路由都存它;`external_id` 是 guild id。`left_at` 有值表示她已經離開(列都留著) |
 | **主要的 Space** | `spaces.is_primary` | 安裝原本的那個伺服器:沒指定伺服器時的預設(管理頁、階段 6 之前的資料)。最多一個;不會自己移動,她離開了也一樣 |
+| **原有的 Space** | `spaces.established` | 升級時她已經在的伺服器(identity v4 那時候有列的每一個,主要的和其他的都算;以前離開、之後回來的也算,列本來就在),還有新安裝看到的第一個(主要的)。照 cluster 的設定,跟以前一模一樣。之後才第一次看到的伺服器不是原有的,就是「新的伺服器」(§9),先安靜。標了就不會取消;要讓新的伺服器像原有的一樣,替它設就好 |
 | **Room** | `rooms` | 頻道、討論串(`parent_id` 是它的頻道)、語音房、私訊(沒有 Space) |
 | **成員** | `space_members` | 在那裡有動作的帳號:說過話、用過指令、按過按鈕或選單、送過表單,或在它的語音頻道裡被看到。`platform.member` 的離開把 `left_at` 寫上,再有動作就清掉 |
 | **地方的設定** | `place_settings(scope, scope_id, plugin, key)` | `scope` 是 `space` 或 `room`,`plugin` 是模組 id,`key` 是欄位路徑。沒有另外一張每個 Space 的設定表 |
@@ -63,7 +64,7 @@
 
 **兩條規則**:
 
-- **頻道要在那個 Space 裡**:`channel` 種類的欄位,解析給 Space S 的值如果指到不在 S 的頻道,就不算:單一頻道退回 schema 的預設值(通常是空的 = 關),清單拿掉那幾個。不然 cluster 層的拍賣頻道會讓第二個伺服器發到第一個伺服器去。怎麼知道頻道在哪:context key(`discord:<guild>:<channel>`)自己寫著伺服器;裸的頻道 id 先查 identity 的 `rooms`,沒看過的再問 Discord 的即時清單(`PlaceDirectoryKey`)。**都不知道的頻道**:主要的 Space 照用(今天的單一伺服器就是這樣),其他 Space 只有在值是它自己設的(Room 或 Space 那一層)時才用。
+- **頻道要在那個 Space 裡**:`channel` 種類的欄位,解析給 Space S 的值如果指到不在 S 的頻道,就不算:單一頻道退回 schema 的預設值(通常是空的 = 關),清單拿掉那幾個。不然 cluster 層的拍賣頻道會讓第二個伺服器發到第一個伺服器去。怎麼知道頻道在哪:context key(`discord:<guild>:<channel>`)自己寫著伺服器;裸的頻道 id 先查 identity 的 `rooms`,沒看過的再問 Discord 的即時清單(`PlaceDirectoryKey`)。**都不知道的頻道**:主要的 Space 照用(今天的單一伺服器就是這樣),其他 Space 只有在值是它自己設的(Room 或 Space 那一層)時才用。這裡用的是「主要的」不是「原有的」:兩個原有的伺服器都照用同一個不知道在哪的頻道,同一個工作(拍賣、樂透)就會跑兩次。
 - **union 合併**:`merge: "union"` 的清單是 cluster ∪ Space ∪ 上層頻道 ∪ Room(去重,照這個順序),所以禁止清單這種東西,一個頻道沒辦法解開 cluster 禁止的。
 
 **不用重啟**:結果照地方快取;模組的 `place_settings` 一寫(`PlaceSettings.onChange`)或有新的 Space、Room(`Places.onChange`)快取就丟掉,下一次 `for()` 就是新的值,`onChange` 的監聽者會收到是哪裡變了。所以模組要在用到值的地方讀 `cfg.for(...)`,不要在 `start` 讀一次存起來。cluster 層的值(面板的模組設定)照舊是存了就重啟那個模組(v5-settings §5.1)。地方的值不合 schema 時,那一個欄位略過並記一次警告,其他照用。
@@ -104,6 +105,8 @@ CREATE UNIQUE INDEX spaces_primary_idx ON spaces (is_primary) WHERE is_primary =
 - 只補 identity 已經有的帳號,平台要和 Space 一樣,她自己的帳號(`is_self`)不算。已經有列的(包括離開的)一律不動,所以離開的人還是離開。重跑不會多寫。
 - 補不到的:指令和按鈕沒有留下帶著 Space 的記錄(`economy.posted` 沒有地方,稽核記錄沒有地方),所以只用過指令的人要等他下一次在伺服器裡有動作。經濟和市集的表(下注、樂透券、點歌券)也不用:它們的 `space_id` 是之前的 migration 照主要的 Space 填的,不是看到的,而且那些外掛的 migration 在 identity 之後才跑。語音參與者分不出是不是機器人;機器人的帳號通常是它自己發訊息時才建的,那時候本來就已經是成員。
 - 測試:`store/test/migrate.test.ts` 的 identity v3,在 v2 的資料庫上放事件:只有寫著 Space 的列補上成員,別的表列數不變,離開的人不動,重跑不變。
+
+`identity` v4(`established`):`spaces` 多一欄 `established integer DEFAULT false NOT NULL`,升級時已經有的每一列設成 1。之後第一次看到的 Space 是 0,只有新安裝的第一個(主要的)建立時就是 1。`SpaceRef.established` 是這一欄,主要的一定是 true;`GET /api/places/spaces` 和 `/api/member/spaces` 的每個 Space 多一個 `established`。測試:`store/test/migrate.test.ts` 的 identity v4(兩個伺服器加一個離開過的,三個都是原有的、列數不變;之後看到的不是;離開過又回來的還是),`core/test/established-spaces.test.ts`(兩個原有的伺服器、一個 cluster 的拍賣頻道:只有頻道所在的那個跑),`discord/test/gate.test.ts`、`brain/agent/test/place-levels.test.ts`(原有的第二個伺服器和主要的一樣,新的先安靜)。
 
 ## 6. API 和面板
 
@@ -190,7 +193,7 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 
 ## 9. 每個地方的聊天、Discord 的多伺服器、home(P3,做成的樣子)
 
-**聊天等級**(`brain/agent`):`place_settings` 外掛 `agent` 的鍵是 `mode`、`activeness_level`、`voice.mode`、`voice.activeness_level`、`language`(`LEVEL_KEYS`)。主動程度不叫 `activeness`:那個鍵是檔案裡每個 context 的表,型別不同。一個地方的值依序:她自己暫時調的(只有主動程度)→ 這個 Room → 討論串的頻道 → 這個 Space → `[modules.agent] channels` / `activeness` 表 → 後來加入的伺服器是「只回提及」/「低」→ `default_mode` / `default_activeness` → profile。私訊沒有 Space,讀它自己 Room 的列。`language` 有值時她的情境多一行「這裡用某某語言聊天」。
+**聊天等級**(`brain/agent`):`place_settings` 外掛 `agent` 的鍵是 `mode`、`activeness_level`、`voice.mode`、`voice.activeness_level`、`language`(`LEVEL_KEYS`)。主動程度不叫 `activeness`:那個鍵是檔案裡每個 context 的表,型別不同。一個地方的值依序:她自己暫時調的(只有主動程度)→ 這個 Room → 討論串的頻道 → 這個 Space → `[modules.agent] channels` / `activeness` 表 → 新的伺服器(不是原有的)是「只回提及」/「低」→ `default_mode` / `default_activeness` → profile。私訊沒有 Space,讀它自己 Room 的列。`language` 有值時她的情境多一行「這裡用某某語言聊天」。
 
 - `/channel mode`、`/channel activeness` 多一個選項 `範圍: 這個頻道|整個伺服器`;沒選是這個頻道。面板的聊天等級卡片跟著 `?space=`,有好幾個伺服器(或那個伺服器自己設過)時多一列「整個伺服器」;`PUT /api/channels/space-level` 是它的路由。
 - 舊的 `channel_mode:*` / `activeness:*`(`plugin_state`)在 agent 啟動時搬一次到 Room 的列(`updated_by = "migration"`),標記 `agent:places_v1` 記著搬了幾個、哪些還在等。Room 還沒出現的鍵記一筆警告、先從記憶體照用,下次啟動再搬;舊鍵留著,搬過的不再讀。執行時的設定本來就贏過檔案,所以設定匯入(`import`)寫的同一格會被蓋過,面板或指令後來設的不會。
@@ -198,7 +201,7 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 
 **Discord**(`discord`):`ambient_text`、`ambient_channels`、表情和貼圖的 `enabled`、`descriptions` 是每個 Space;新的 `ambient_follow` 是每個 Room(`true` 跟隨、`false` 不跟隨、沒設照清單)。`command_guilds = ["*"]` 註冊到她在的每個伺服器,加入新的伺服器時只同步那一個;伺服器模式不再清別的伺服器的指令(以前第二個伺服器因此沒有斜線指令),只在每次啟動清一次全域的。`GuildCreate` 和連線時的每個伺服器呼叫 `Places.seen`,`GuildDelete` 呼叫 `Places.left`(`available: false` 是 Discord 斷線,不算離開);成員離開由 Core 的 `followMembers` 寫到 `Places.memberLeft`(P1 已接)。
 
-**新的伺服器先安靜**(owner 的預設,Q5):不是主要的 Space、也還沒替它設的時候,閘門是 `allowlist` 而且沒有跟隨的頻道(檔案的頻道本來就被頻道規則擋掉),只有提及她、回覆她的訊息進得來;聊天等級是只回提及、主動程度低;檔案裡表情和貼圖的意思是原本那個伺服器的,不帶過去。替那個伺服器(或它的頻道)設了什麼,就照設的。原本的伺服器(主要的)和以前一模一樣。
+**新的伺服器先安靜**(owner 的預設,Q5):新的伺服器是升級以後才第一次看到的(不是原有的,`SpaceRef.established` 是 false;`discord/src/gate.ts` 的 `newGuild`、`brain/agent/src/handle.ts` 的 `inNewSpace`)。還沒替它設的時候,閘門是 `allowlist` 而且沒有跟隨的頻道(檔案的頻道本來就被頻道規則擋掉),只有提及她、回覆她的訊息進得來;聊天等級是只回提及、主動程度低;檔案裡表情和貼圖的意思是原有的伺服器的,不帶過去。替那個伺服器(或它的頻道)設了什麼,就照設的。原有的伺服器(主要的,和升級時她已經在的其他伺服器)和以前一模一樣:升級演練的資料庫本來就有兩個伺服器(58 個成員的變主要的,另一個 5 個),兩個都是原有的。
 
 **沒有預設平台**:`recipient`(私訊對象)、語音的能力、Go Live 跟著開 OBS、卡片指令的冪等鍵,平台都從 context、請求的人或帳號(語音節點)來,都沒有就拒絕。`actions.forbidden` 可以每個 Space、每個 Room 設,是 union:頻道只能多禁,不能解開上一層禁的。`core/test/no-platform-default.test.ts` 掃網域程式碼裡的 `"discord"` 預設值,允許清單分兩組:Discord 自己的(OAuth、v4 的 fixture),和等 P4、P5 修的(修好就拿掉)。
 
@@ -212,7 +215,7 @@ const { space, spaces, setSpace } = useMemberSpace(); // 會員頁
 
 **市集**(`play/market`):每個 Space 一個 `MarketService`(`markets.ts` 的 `Markets`,`MarketKey.of(space)`),各自的列(`MarketStore.forSpace`)和設定(`placeConfig`,用到時才讀,改了不用重啟);點歌優先券另外一個,大家共用。標成 `scope: "space"` 的是拍賣和樂透的開關、兩個頻道、星期幾、幾點、`utc_offset_minutes`(這個伺服器的日子;優先券的「一天」還是 cluster 的,每個人共用)。價格、上限、拍品是 cluster 的。
 
-- 主要的 Space 照舊:有拍賣頻道就拍,樂透沒有頻道也賣。其他 Space 只有在那個伺服器自己的頻道時才拍、才賣(cluster 的頻道在主要的 Space 裡,頻道規則會把它拿掉),所以沒設過的伺服器什麼都不跑、不寫任何列。
+- 主要的 Space 照舊:有拍賣頻道就拍;cluster 完全沒設頻道時,樂透沒有頻道也賣(以前的單一伺服器)。其他 Space 只有在那個伺服器自己的頻道時才拍、才賣,所以沒設過的伺服器什麼都不跑、不寫任何列。cluster 的頻道在哪個伺服器,拍賣和樂透就只在那裡跑:兩個原有的伺服器、cluster 的拍賣頻道在第二個的時候,第二個照以前那樣拍、賣,主要的不會另外再開一個沒有頻道的樂透(`markets.ts` 的 `secondary`;測試在 `core/test/established-spaces.test.ts`)。這裡的規則看「主要的」,不看「原有的」。
 - 她離開的伺服器:還開著的拍品取消、押著的全退,這週的樂透全額退回,不再發公告;列都留著。
 - 公告用那個 Space 的 context(`{platform, scope: guild, channel}`);沒有 identity 的時候用 sink 的平台。
 - 指令和按鈕用它們所在伺服器的市集,私訊是主要的;會員路由 `?space=`(`memberSpace`),管理路由 `?space=`(`adminSpace`,預設主要的)。
