@@ -5,6 +5,7 @@
 
 import type { PushEvent } from "@miyoria/contracts/api";
 import { EconomyKey } from "@miyoria/economy";
+import { ExchangeKey } from "@miyoria/play/exchange";
 import { KaraokeRoomsKey } from "@miyoria/play/karaoke";
 import { TopicFilter } from "@miyoria/runtime/kernel";
 import { SingerKey } from "@miyoria/sing";
@@ -518,7 +519,34 @@ interface World {
   activity: { live: boolean };
   songs: Record<string, string[]>;
   rooms: Record<string, boolean>;
+  /** The exchange's last price of each code. */
+  prices: Record<string, number>;
+  views: string[];
   stop(): void;
+}
+
+/** One exchange line, every field the schema names. */
+function line(code: string, price: number) {
+  return {
+    code,
+    name: code,
+    market: "tw",
+    price,
+    basis: "quote",
+    price_date: "2026-11-22",
+    price_note: null,
+    next_open: null,
+    currency: "TWD",
+    local: null,
+    coin_price: price,
+    age_minutes: 1,
+    source: "test",
+    change: null,
+    at: "2026-11-22T04:00:00.000Z",
+    open: true,
+    stale: false,
+    quotes: "intraday",
+  };
 }
 
 function world(): World {
@@ -528,6 +556,8 @@ function world(): World {
   const activity = { live: false };
   const songs: Record<string, string[]> = { gA: ["Alpha"], gB: ["Bravo"] };
   const rooms: Record<string, boolean> = { spaceA: false, spaceB: false };
+  const prices: Record<string, number> = { "2330.TW": 1000 };
+  const views: string[] = [];
   const spaces = [
     { id: "spaceA", platform: "discord", external_id: "gA", name: "A", primary: true },
     { id: "spaceB", platform: "discord", external_id: "gB", name: "B", primary: false },
@@ -604,6 +634,25 @@ function world(): World {
     ],
     // Every title passes moderation here.
     [ModerationKey, { screen: () => ({ ok: true }) }],
+    [
+      ExchangeKey,
+      {
+        personOf: async (a: AccountRef) => `p-${a.id}`,
+        lists: {
+          rows: (_kind: string, person: string | null) =>
+            Object.entries(prices).map(([code, price]) => ({
+              ...line(code, price),
+              holders: person === "p-1" ? 1 : null,
+            })),
+          watching: () => false,
+        },
+        real: {
+          history: (code: string) =>
+            prices[code] === undefined ? null : { line: line(code, prices[code] ?? 0), points: [] },
+          noteView: (person: string, code: string) => views.push(`${person}:${code}`),
+        },
+      },
+    ],
   ]);
   const sessions = new Map<string, SessionRecord>([
     ["alice", session(ALICE, "Alice")],
@@ -643,7 +692,18 @@ function world(): World {
     undefined,
     side,
   );
-  return { clock, bus, state, sessions, activity, songs, rooms, stop: () => ctl.abort() };
+  return {
+    clock,
+    bus,
+    state,
+    sessions,
+    activity,
+    songs,
+    rooms,
+    prices,
+    views,
+    stop: () => ctl.abort(),
+  };
 }
 
 interface Sse {
@@ -983,6 +1043,52 @@ describe("push streams through the app", () => {
     });
     expect(events.status).toBe(200);
     await events.body?.cancel();
+  });
+
+  it("finds the exchange's new quotes on its tick, and refuses a ticker nobody looked up", async () => {
+    const w = make();
+    const app = createApp(w.state, { responseCheck: "strict" });
+    const sse = new SseReader(
+      await app.request(
+        "/api/member/stream?topics=exchange_list~tw,exchange_ticker~2330.TW,exchange_ticker~NOPE,exchange_list~bogus",
+        {
+          headers: cookie("alice"),
+        },
+      ),
+    );
+    const first = (await sse.untilReady()).map((m) => m.data as PushEvent);
+    expect(
+      first.map((e) => (e.kind === "ready" ? "ready" : `${e.kind}:${e.topic}~${e.param}`)),
+    ).toEqual([
+      "value:exchange_list~tw",
+      "value:exchange_ticker~2330.TW",
+      "refused:exchange_ticker~NOPE",
+      "refused:exchange_list~bogus",
+      "ready",
+    ]);
+    expect(first[2]).toMatchObject({ status: 404 });
+    expect(first[3]).toMatchObject({ status: 400 });
+    // Building the ticker counts as her viewing it, as each poll did.
+    expect(w.views).toContain("p-1:2330.TW");
+
+    // A pass fetched a new price; no event says so: the tick finds it.
+    w.prices["2330.TW"] = 1010;
+    w.clock.t += 10_000;
+    await hubOf(w.state).sweep();
+    const changes = [await sse.next(), await sse.next()].map((m) => m?.data as PushEvent);
+    expect(changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          topic: "exchange_list",
+          data: expect.objectContaining({ rows: [expect.objectContaining({ price: 1010 })] }),
+        }),
+        expect.objectContaining({
+          topic: "exchange_ticker",
+          data: expect.objectContaining({ line: expect.objectContaining({ price: 1010 }) }),
+        }),
+      ]),
+    );
+    await sse.cancel();
   });
 
   it("ends the admin event stream when the admin session ends", async () => {

@@ -10,11 +10,13 @@ import {
   type PushEvent,
   type PushTopic,
 } from "@miyoria/contracts/api";
+import { LIST_KINDS } from "@miyoria/play/exchange";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { accountRefString } from "@miyoria/types";
 import { withEventMeta } from "@orpc/server";
 import { os } from "../contract.js";
 import { ApiError } from "../errors.js";
+import { exchangeListWatch, exchangeTickerWatch } from "../exchange-routes.js";
 import { roomsWatch } from "../karaoke-routes.js";
 import { publicSongsWatch, publicStatusWatch } from "../public.js";
 import { memberStillIn } from "../recheck.js";
@@ -96,6 +98,32 @@ export const TOPICS: Record<PushTopic, TopicDef> = {
       everyMs: 10_000,
     },
     open: (state, c) => danmakuWatch(state, c),
+  },
+  /**
+   * A list of the exchange as this member sees it (`GET /api/member/exchange/list/{kind}`). Quotes
+   * are fetched once a pass (`quote_poll_seconds`, a minute by default) and no event says so: the
+   * tick finds the new prices within 10 s, and only a list whose rows changed goes out.
+   */
+  exchange_list: {
+    audience: "member",
+    param: true,
+    timing: { triggers: ["economy.posted"], everyMs: 10_000 },
+    open: (state, c, param) => {
+      if (param === undefined || !(LIST_KINDS as readonly string[]).includes(param)) {
+        throw ApiError.badRequest("no such list");
+      }
+      return exchangeListWatch(state, c, param as (typeof LIST_KINDS)[number]);
+    },
+  },
+  /** One ticker's line and chart (`GET /api/member/exchange/ticker/{code}`). */
+  exchange_ticker: {
+    audience: "member",
+    param: true,
+    timing: { triggers: ["economy.posted"], everyMs: 10_000 },
+    open: (state, c, param) => {
+      if (param === undefined) throw ApiError.badRequest("which ticker");
+      return exchangeTickerWatch(state, c, param);
+    },
   },
 };
 
@@ -270,6 +298,10 @@ async function begin(
     throw: async (error) => {
       stop.abort();
       return events.throw(error);
+    },
+    [Symbol.asyncDispose]: async () => {
+      stop.abort();
+      await events.return(undefined);
     },
     [Symbol.asyncIterator]() {
       return this;

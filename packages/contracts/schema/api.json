@@ -18366,6 +18366,62 @@
           "properties": {
             "kind": {
               "type": "string",
+              "const": "value"
+            },
+            "topic": {
+              "type": "string",
+              "const": "exchange_list"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data": {
+              "$ref": "#/$defs/ApiExchangeList"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "value"
+            },
+            "topic": {
+              "type": "string",
+              "const": "exchange_ticker"
+            },
+            "param": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "data": {
+              "$ref": "#/$defs/ApiExchangeTicker"
+            }
+          },
+          "required": [
+            "kind",
+            "topic",
+            "param",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
               "const": "refused"
             },
             "topic": {
@@ -18427,7 +18483,9 @@
         "status",
         "songs",
         "rooms",
-        "danmaku"
+        "danmaku",
+        "exchange_list",
+        "exchange_ticker"
       ]
     },
     "ApiQuestsView": {

@@ -12,6 +12,7 @@
 
 import { eventIterator } from "@orpc/contract";
 import { z } from "zod";
+import { ExchangeListSchema, ExchangeTickerSchema } from "./exchange.js";
 import { KaraokeRoomsSchema } from "./karaoke-rooms.js";
 import { PublicSongsSchema, PublicStatusSchema } from "./public.js";
 import { route } from "./route.js";
@@ -20,7 +21,7 @@ import { DanmakuViewSchema } from "./wallet.js";
 /** The topics a public stream may carry: what anyone may see. */
 export const PUBLIC_PUSH_TOPICS = ["status", "songs"] as const;
 /** The topics only a member stream carries: about the logged-in person. */
-export const MEMBER_PUSH_TOPICS = ["rooms", "danmaku"] as const;
+export const MEMBER_PUSH_TOPICS = ["rooms", "danmaku", "exchange_list", "exchange_ticker"] as const;
 
 export const PushTopicSchema = z
   .enum([...PUBLIC_PUSH_TOPICS, ...MEMBER_PUSH_TOPICS])
@@ -29,12 +30,13 @@ export type PushTopic = z.output<typeof PushTopicSchema>;
 
 /** Most topics one stream may carry. */
 export const PUSH_MAX_TOPICS = 8;
-/** What a topic's parameter may be (a Space id): the characters of an id, nothing else. */
-export const PUSH_PARAM = /^[A-Za-z0-9_-]{1,64}$/;
+/** What a topic's parameter may be (a Space id, a list, a ticker's code): the characters of an id. */
+export const PUSH_PARAM = /^[A-Za-z0-9._-]{1,64}$/;
 
 /**
  * `?topics=`: comma-separated, each a topic name or `name~param` (`songs~<space>`: that server's;
- * the parameter is what the polled route takes as `?space=`). At most `PUSH_MAX_TOPICS`.
+ * the parameter is what the polled route takes as `?space=`, or in its path: `exchange_list~tw`,
+ * `exchange_ticker~2330.TW`). At most `PUSH_MAX_TOPICS`.
  */
 export const PushQuerySchema = z
   .object({ topics: z.string().min(1).max(600) })
@@ -57,6 +59,8 @@ export const PushEventSchema = z
     value("songs", PublicSongsSchema),
     value("rooms", KaraokeRoomsSchema),
     value("danmaku", DanmakuViewSchema),
+    value("exchange_list", ExchangeListSchema),
+    value("exchange_ticker", ExchangeTickerSchema),
     /**
      * The topic cannot be followed now: what its polled route would answer (`status`, the
      * sentence). The client keeps polling that one; a later `value` means it is followed again.
