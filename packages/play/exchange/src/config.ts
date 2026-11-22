@@ -578,16 +578,19 @@ export const ExchangeConfigSchema = z
       })
       .prefault({}),
 
-    /** Which colour means up on every chart (one for the whole product), stated in a legend. */
+    /**
+     * Which colour means up, stated in a legend on every chart: the default for every member who has
+     * not chosen their own (each member may, on the member page or `/me market overview`).
+     */
     colors: z
       .enum(["tw", "us"])
       .default("tw")
       .meta(
         setting({
           kind: "select",
-          label: "漲跌顏色",
+          label: "漲跌顏色(預設)",
           labels: { tw: "紅漲綠跌", us: "綠漲紅跌" },
-          help: "tw:紅漲綠跌(台股習慣,預設);us:綠漲紅跌(美股習慣)。每張圖都會標示",
+          help: "沒有自己選的會員用這個:tw 紅漲綠跌(台股習慣,預設);us 綠漲紅跌(國際習慣)。每個人可以在會員頁或 /me market overview 自己選,每張圖都會標示",
           group: "market",
         }),
       ),

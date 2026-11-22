@@ -5923,6 +5923,67 @@
         "marks"
       ]
     },
+    "ApiExchangeColors": {
+      "type": "object",
+      "properties": {
+        "colors": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us"
+          ]
+        },
+        "chosen": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "tw",
+                "us"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "default": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us"
+          ]
+        }
+      },
+      "required": [
+        "colors",
+        "chosen",
+        "default"
+      ]
+    },
+    "ApiExchangeColorsRequest": {
+      "type": "object",
+      "properties": {
+        "colors": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "tw",
+                "us"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "colors"
+      ],
+      "additionalProperties": false
+    },
     "ApiExchangeLeverageRequest": {
       "type": "object",
       "properties": {
@@ -6425,6 +6486,27 @@
             "us"
           ]
         },
+        "colors_chosen": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "tw",
+                "us"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "colors_default": {
+          "type": "string",
+          "enum": [
+            "tw",
+            "us"
+          ]
+        },
         "rates": {
           "type": "object",
           "properties": {
@@ -6688,6 +6770,8 @@
         "enabled",
         "currency",
         "colors",
+        "colors_chosen",
+        "colors_default",
         "rates",
         "house",
         "sessions",

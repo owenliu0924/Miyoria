@@ -89,6 +89,33 @@ export interface ExchangeWallet {
 
 export const ExchangeWalletKey = serviceKey<ExchangeWallet>("ExchangeWallet");
 
+// ---- the colours of up and down: each member's own choice (owner 2026-11-22) ------------------
+
+/** The two conventions: `tw` red up and green down (Taiwan), `us` green up and red down. */
+export const EXCHANGE_COLOR_CHOICES = ["tw", "us"] as const;
+export type ExchangeColorChoice = (typeof EXCHANGE_COLOR_CHOICES)[number];
+
+/** Settings profile the choice is kept under (it belongs to the person, like privacy). */
+export const EXCHANGE_COLORS_PROFILE = "_global";
+/** Settings key prefix of the choice (`persons.prefs.exchange_colors` in the store). */
+export const EXCHANGE_COLORS_PREFIX = "exchange_colors:";
+
+/** Settings key of one account's choice: `exchange_colors:<platform>:<id>`. */
+export function exchangeColorsKey(account: AccountRef): string {
+  return `${EXCHANGE_COLORS_PREFIX}${account.platform}:${account.id}`;
+}
+
+/** A stored or sent value as a choice (`null`: none, or not one of the two). */
+export function parseExchangeColors(value: unknown): ExchangeColorChoice | null {
+  return value === "tw" || value === "us" ? value : null;
+}
+
+/** The two conventions in words, the same on every surface. */
+export const EXCHANGE_COLOR_WORDS: Readonly<Record<ExchangeColorChoice, string>> = {
+  tw: "紅漲綠跌(台股習慣)",
+  us: "綠漲紅跌(國際習慣)",
+};
+
 // ---- the small print (owner 2026-11-21): one wording, under every exchange surface -------------
 
 /**

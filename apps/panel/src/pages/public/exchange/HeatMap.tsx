@@ -209,7 +209,7 @@ export default function HeatMap({
         <span className="inline-flex items-center gap-1.5">
           <span aria-hidden className="inline-block size-2.5 rounded-[2px]" style={{ background: mv.down }} />▼ 跌
         </span>
-        <span>{`${m.colors === "us" ? "綠漲紅跌(美股習慣)" : "紅漲綠跌(台股習慣)"};顏色是最近一個交易日的漲跌(休市時是上一個交易日),±3% 以上最深`}</span>
+        <span>{`${m.colors === "us" ? "綠漲紅跌(國際習慣)" : "紅漲綠跌(台股習慣)"};顏色是最近一個交易日的漲跌(休市時是上一個交易日),±3% 以上最深`}</span>
       </p>
       {q.data && <p className="text-xs text-muted-foreground">{q.data.footnote}</p>}
       {footer}

@@ -3143,6 +3143,21 @@
           }
         }
       },
+      "colors": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "member",
+            "permission": null,
+            "limited": true
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/member/exchange/colors"
+          }
+        }
+      },
       "quote": {
         "~orpc": {
           "errorMap": {},

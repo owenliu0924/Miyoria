@@ -219,8 +219,11 @@ export const OPEN: Partial<ExchangeConfig> = {
 export async function rig(
   config: Partial<ExchangeConfig> = OPEN,
   providers?: ReadonlyMap<string, QuoteProvider>,
-  /** The profile's words (`[character]`, the coins' name); none: the first character's. */
-  words: Partial<Pick<ExchangeDeps, "name" | "currency" | "pronoun">> = {},
+  /**
+   * The profile's words (`[character]`, the coins' name); none: the first character's. Also where
+   * members' own choices are kept (`settings`); none: the service keeps them in memory.
+   */
+  words: Partial<Pick<ExchangeDeps, "name" | "currency" | "pronoun" | "settings">> = {},
 ): Promise<Rig> {
   const clock = { at: T0 };
   const raw = openTestDb({

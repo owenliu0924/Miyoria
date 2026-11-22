@@ -277,6 +277,32 @@ describe("the exchange's routes", () => {
     expect((await hono.request("/api/member/exchange/map/nope")).status).toBe(400);
   });
 
+  it("keep the member's own colours of up and down: the install's until chosen, then theirs, an unknown one refused", async () => {
+    const { service } = exchange();
+    const hono = app(service);
+    expect(await body(await hono.request("/api/member/exchange"))).toMatchObject({
+      colors: "tw",
+      colors_chosen: null,
+      colors_default: "tw",
+    });
+    const set = await hono.request("/api/member/exchange/colors", json({ colors: "us" }));
+    expect(set.status).toBe(200);
+    expect(await set.json()).toEqual({ colors: "us", chosen: "us", default: "tw" });
+    expect(await body(await hono.request("/api/member/exchange"))).toMatchObject({
+      colors: "us",
+      colors_chosen: "us",
+      colors_default: "tw",
+    });
+    for (const bad of [{ colors: "green" }, { colors: 1 }, {}, { colors: "us", more: true }]) {
+      // Refused by the contract before the exchange sees it (the service refuses them too).
+      const r = await hono.request("/api/member/exchange/colors", json(bad));
+      expect(r.status, JSON.stringify(bad)).toBe(422);
+    }
+    expect((await body(await hono.request("/api/member/exchange"))).colors).toBe("us");
+    const back = await hono.request("/api/member/exchange/colors", json({ colors: null }));
+    expect(await back.json()).toEqual({ colors: "tw", chosen: null, default: "tw" });
+  });
+
   it("bring a refusal back as its status and sentence", async () => {
     const { service, clock } = exchange();
     clock.at = NOON;

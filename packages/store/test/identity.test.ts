@@ -346,6 +346,21 @@ describe("the old interfaces over identity", () => {
     expect(s.persons.account(acct("77"))).toBeNull();
   });
 
+  it("keeps the exchange's colours of up and down with the person, for every account of theirs", async () => {
+    const s = await store();
+    const owen = await s.people.upsertAccount(acct("1"), "Owen");
+    await s.identity.linkAccount(acct("2"), owen);
+    expect(await s.settings.get(GLOBAL_SETTINGS_PROFILE, "exchange_colors:discord:1")).toBeNull();
+    await s.settings.set(GLOBAL_SETTINGS_PROFILE, "exchange_colors:discord:2", "us");
+    expect(await s.settings.get(GLOBAL_SETTINGS_PROFILE, "exchange_colors:discord:1")).toBe("us");
+    expect(s.persons.person(owen)?.prefs).toEqual({ exchange_colors: "us" });
+    expect([
+      ...(await s.settings.list(GLOBAL_SETTINGS_PROFILE, "exchange_colors:")).keys(),
+    ]).toEqual(["exchange_colors:discord:1", "exchange_colors:discord:2"]);
+    await s.settings.set(GLOBAL_SETTINGS_PROFILE, "exchange_colors:discord:1", null);
+    expect(s.persons.person(owen)?.prefs).toEqual({});
+  });
+
   it("wipes and exports people with their places and choices", async () => {
     const s = await store();
     s.persons.resolve(ctx("g", "c", "channel"), { account: acct("1"), display_name: "Owen" });

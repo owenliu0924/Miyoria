@@ -9,7 +9,8 @@
 // or everyone, `board-scope.tsx`; prices and holdings are global either way), and the rules. Every
 // section ends with the exchange's small print. Everything is what `/api/member/exchange/*`
 // answers; a refusal is the Core's own sentence. Moves always carry an arrow and a sign, never
-// colour alone, and the colour follows the product's one convention (stated beside the table).
+// colour alone, and the colours are the member's own choice (紅漲綠跌 or 綠漲紅跌, the switch above
+// the table, kept with the person), else the install's default.
 
 import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, lazy, type ReactNode, Suspense, useId, useMemo, useState } from "react";
@@ -81,7 +82,8 @@ const RED = "#ef5f5f";
 const GREEN = "#3fc48a";
 export const upColor = (c: Colors) => (c === "us" ? GREEN : RED);
 export const downColor = (c: Colors) => (c === "us" ? RED : GREEN);
-const conventionWord = (c: Colors) => (c === "us" ? "綠漲紅跌(美股習慣)" : "紅漲綠跌(台股習慣)");
+/** The two conventions in words, as every surface says them (`@miyoria/types` `EXCHANGE_COLOR_WORDS`). */
+export const conventionWord = (c: Colors) => (c === "us" ? "綠漲紅跌(國際習慣)" : "紅漲綠跌(台股習慣)");
 /** The coins' name and her pronoun in this profile (`lib/world.ts`). */
 const COIN = WORLD.currency;
 const HER = WORLD.pronoun;
@@ -168,6 +170,55 @@ export function SmallPrint({ m, real = true, leverage = false }: { m: ExchangeMa
       {real && m.small_print.real}
       {leverage && m.small_print.leverage}
     </p>
+  );
+}
+
+/** One colour as a small square beside its word (never the only carrier: the word says it too). */
+function Swatch({ color }: { color: string }) {
+  return <span aria-hidden className="inline-block size-2 shrink-0 rounded-[2px]" style={{ background: color }} />;
+}
+
+/** A convention as its option: the two colours, then the words (`紅漲綠跌`) and whose habit it is. */
+function ConventionLabel({ c }: { c: Colors }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="inline-flex items-center gap-0.5">
+        <Swatch color={upColor(c)} />
+        <Swatch color={downColor(c)} />
+      </span>
+      {c === "us" ? "綠漲紅跌(國際)" : "紅漲綠跌(台股)"}
+    </span>
+  );
+}
+
+/**
+ * Their own colours of up and down (owner 2026-11-22): kept with the person, so every server,
+ * device and picture they ask for follows it; until they choose, the install's default.
+ */
+function ColorChoice({ m }: { m: ExchangeMarket }) {
+  const api = useApi();
+  const client = useQueryClient();
+  const set = useMutation({
+    mutationFn: (colors: Colors) => api.rpc.exchange.colors({ body: { colors } }),
+    onSuccess: (r) => {
+      client.setQueryData<ExchangeMarket>(MARKET, (old) => (old ? { ...old, colors: r.colors, colors_chosen: r.chosen } : old));
+      void client.invalidateQueries({ queryKey: MARKET });
+    },
+    onError: (e) => notify.error(e),
+  });
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <Segmented
+        label="漲跌顏色"
+        value={m.colors}
+        disabled={set.isPending}
+        onChange={(v) => set.mutate(v)}
+        options={(["tw", "us"] as const).map((c) => ({ value: c, label: <ConventionLabel c={c} />, title: conventionWord(c) }))}
+      />
+      <span className="text-xs text-muted-foreground">
+        {`漲跌顏色・${m.colors_chosen === null ? "預設" : "你選的"};漲跌也一律標 ▲▼ 和正負號`}
+      </span>
+    </div>
   );
 }
 
@@ -380,7 +431,7 @@ function MarketTab({ m, code, setCode }: { m: ExchangeMarket; code: string | nul
           ))}
         </TabsList>
       </Tabs>
-      <p className="text-xs text-muted-foreground">{`顏色:${conventionWord(m.colors)};漲跌也一律標 ▲▼ 和正負號`}</p>
+      <ColorChoice m={m} />
       <Loaded query={rows} rows={5}>
         {(l) => <ListTable rows={l.rows} colors={m.colors} onPick={setCode} holders={l.kind === "popular"} />}
       </Loaded>

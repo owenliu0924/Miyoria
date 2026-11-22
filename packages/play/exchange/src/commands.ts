@@ -11,6 +11,8 @@
 //   draws the picture again; 買 and 賣 open a modal (coins or shares; 1× or 2× where allowed), then
 //   the confirmation, then the message shows the order and the position. The list select also
 //   carries the three heat maps (伺服器持股圖, 熱門台股圖, 熱門美股圖), each drawn as a picture.
+//   The last select is the member's own colours of up and down (紅漲綠跌 or 綠漲紅跌, kept with the
+//   person); every picture drawn for them follows it, also one they share.
 // - `/me market quote code:` a ticker's quote card (the code has suggestions while typing).
 // - `/me market mine`: their own holdings, only to them, with 分享 buttons that post the holdings
 //   or the latest trade's receipt publicly with their name, only when pressed.
@@ -45,6 +47,8 @@ import {
   amountExamples,
   DEFAULT_CHARACTER,
   DEFAULT_CURRENCY,
+  EXCHANGE_COLOR_CHOICES,
+  EXCHANGE_COLOR_WORDS,
   exchangeSmallPrint,
   type Pictures,
   type Places,
@@ -70,7 +74,7 @@ import { taipeiWhen } from "./real/instruments.js";
 import { LIST_KINDS, LIST_LABEL, type ListKind, pageOf } from "./real/lists.js";
 import { DEFAULT_LOCAL } from "./real/local.js";
 import { isMapKind, MAP_KINDS, MAP_TITLE, type MapKind } from "./real/maps.js";
-import type { ExchangeService } from "./service.js";
+import type { ColorsView, ExchangeService } from "./service.js";
 
 /** A map's option value in the list select (no new subcommand: the overview's list carries them). */
 const MAP_PREFIX = "map:";
@@ -107,6 +111,7 @@ const R = {
   share: "xm:share",
   open: "xm:open",
   cancel: "xm:cancel",
+  colors: "xm:colors",
 } as const;
 
 const pct = (x: number | null) => {
@@ -270,6 +275,26 @@ function listSelect(s: Stamp, current: { list: ListKind } | { map: MapKind }): C
   };
 }
 
+/**
+ * The select of the member's own colours of up and down (owner 2026-11-22): the two conventions in
+ * words, theirs chosen, the install's default marked. On the overview only: no new command.
+ */
+function colorSelect(s: Stamp, list: ListKind, v: ColorsView): CardBlock {
+  return {
+    type: "select",
+    select: {
+      id: cid(R.colors, s, list),
+      placeholder: "漲跌顏色",
+      options: EXCHANGE_COLOR_CHOICES.map((k) => ({
+        label: `漲跌顏色:${EXCHANGE_COLOR_WORDS[k]}`,
+        value: k,
+        ...(k === v.default ? { description: "沒有選的時候用這個" } : {}),
+        default: k === v.colors,
+      })),
+    },
+  };
+}
+
 /** A heat map as a card: its biggest tiles in words, the list select, and the map as a picture. */
 async function mapCard(
   x: ExchangeService,
@@ -286,7 +311,12 @@ async function mapCard(
     map.footnote,
   ];
   const reply = privately(x, xcard(x, lines, { real: true }, [listSelect(s, { map: kind })]));
-  return withPicture(pictures, "exchange_map", mapPictureData(x, map, x.nowMs()), reply);
+  return withPicture(
+    pictures,
+    "exchange_map",
+    mapPictureData(x, map, x.nowMs(), await x.colorsOf(who)),
+    reply,
+  );
 }
 
 async function overview(
@@ -296,6 +326,7 @@ async function overview(
   kind: ListKind | null,
   page: number,
   withOverviewPicture: boolean,
+  note: string | null = null,
 ): Promise<CommandReply> {
   const person = await x.personOf(who);
   const list = kind ?? x.lists.defaultList(person);
@@ -305,7 +336,9 @@ async function overview(
   const firstTime = person === null || x.real.portfolio(person).holdings.length === 0;
   const opened = await hasAccount(x, who);
   const view = opened === false ? await x.accountView(who) : null;
+  const colors = await x.colorsView(who);
   const lines = [
+    ...(note === null ? [] : [note, ""]),
     ...(firstTime && list === "local"
       ? [
           `第一次來?這裡用${x.currency}買賣股票,只是遊戲:`,
@@ -353,6 +386,7 @@ async function overview(
         },
       ],
     });
+  blocks.push(colorSelect(s, list, colors));
   const reply = privately(
     x,
     xcard(
@@ -363,7 +397,12 @@ async function overview(
     ),
   );
   return withOverviewPicture
-    ? withPicture(pictures, "exchange_overview", overviewPictureData(x, x.nowMs()), reply)
+    ? withPicture(
+        pictures,
+        "exchange_overview",
+        overviewPictureData(x, x.nowMs(), colors.colors),
+        reply,
+      )
     : reply;
 }
 
@@ -439,7 +478,9 @@ async function quoteCard(
       [{ type: "buttons", buttons }, timeframes],
     ),
   );
-  return set ? withPicture(pictures, "exchange_quote", quotePictureData(x, set), text) : text;
+  return set
+    ? withPicture(pictures, "exchange_quote", quotePictureData(x, set, await x.colorsOf(who)), text)
+    : text;
 }
 
 function lineOf(x: ExchangeService, code: string): RealLine | null {
@@ -758,7 +799,7 @@ async function mineCard(
   return withPicture(
     pictures,
     "exchange_portfolio",
-    portfolioPictureData(x, displayName, real, p.account.balance),
+    portfolioPictureData(x, displayName, real, p.account.balance, await x.colorsOf(who)),
     text,
   );
 }
@@ -826,6 +867,19 @@ export function registerCommands(
           return ComponentResult.update(await mapCard(x, pictures(), inv.invoker, map));
         return ComponentResult.update(
           await overview(x, pictures(), inv.invoker, listOf(value), 0, false),
+        );
+      }),
+    }),
+    defineRoute({
+      route: R.colors,
+      // Their own colours of up and down, for every picture from now on and their member page.
+      handle: press(async (x, inv, [kind]) => {
+        const r = await x.setColors(inv.invoker, inv.values[0] ?? "");
+        const note = r.ok
+          ? `漲跌顏色改成${EXCHANGE_COLOR_WORDS[r.colors]}:之後的圖和會員頁都照這個,漲跌一樣標 ▲▼ 和正負號。`
+          : r.message;
+        return ComponentResult.update(
+          await overview(x, pictures(), inv.invoker, listOf(kind), 0, true, note),
         );
       }),
     }),
@@ -1071,11 +1125,12 @@ export function registerCommands(
           ),
           { real: true, leverage, currency: x.currency },
         );
+        // Posted where others see it, in the colours of the member who shared it.
         return ComponentResult.reply({
           ...(await withPicture(
             pictures(),
             "exchange_portfolio",
-            portfolioPictureData(x, name, p, balance),
+            portfolioPictureData(x, name, p, balance, await x.colorsOf(inv.invoker)),
             text,
           )),
           ephemeral: false,

@@ -10,6 +10,9 @@ import { changeText, MA_PERIODS, maDirection, moveColors, movingAverage } from "
 export type Timeframe = ExchangeCandles["tf"];
 export type Convention = "tw" | "us";
 
+/** An up candle's body: see-through, so only its border in the up colour is drawn (never colour alone). */
+export const HOLLOW = "rgba(0, 0, 0, 0)";
+
 export const TIMEFRAMES: readonly Timeframe[] = ["intraday", "daily", "weekly", "monthly"];
 export const TIMEFRAME_LABEL: Readonly<Record<Timeframe, string>> = {
   intraday: "當日",

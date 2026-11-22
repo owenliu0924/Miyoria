@@ -29,7 +29,13 @@ import {
   type ModuleCard,
   type ModuleContext,
 } from "@miyoria/runtime/kernel";
-import { AuditLogKey, PeopleStoreKey, type Store, StoreKey } from "@miyoria/store";
+import {
+  AuditLogKey,
+  PeopleStoreKey,
+  SettingsStoreKey,
+  type Store,
+  StoreKey,
+} from "@miyoria/store";
 import {
   AuthorizerKey,
   BOND_LADDER,
@@ -178,6 +184,8 @@ export class ExchangeModule implements Module {
       pronoun: () => pronounOf(ctx),
       store: tables,
       wallet: () => ctx.services.get(ExchangeWalletKey) ?? null,
+      // Each member's colours of up and down, kept with the person (`persons.prefs`).
+      settings: () => ctx.services.get(SettingsStoreKey) ?? null,
       traders,
       now: () => clock.now(),
       log: ctx.log,

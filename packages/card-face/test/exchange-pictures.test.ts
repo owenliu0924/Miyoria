@@ -66,6 +66,24 @@ describe("the quote's candle chart", () => {
     expect(us).toContain(`fill="${moveColors("us").down}" fill-opacity="0.55"`);
   });
 
+  it("never shows a bar's direction by colour alone: an up body is hollow, a down body solid, and the legend says so", () => {
+    const up = { o: 100_000, h: 103_000, l: 99_000, c: 102_000, v: 10, label: "1/1" };
+    const down = { o: 102_000, h: 102_500, l: 98_000, c: 99_000, v: 20, label: "1/2" };
+    for (const colors of ["tw", "us"] as const) {
+      const m = moveColors(colors);
+      const s = svg({ ...q, candles: [up, down, up], colors });
+      // Two up bars drawn as outlines in the up colour, no up body filled.
+      expect(s.match(new RegExp(`fill="none" stroke="${m.up}"`, "g"))?.length).toBe(2);
+      expect(s).not.toMatch(new RegExp(`fill="none" stroke="${m.down}"`));
+      expect(s).toContain("▲ 漲(空心)");
+      expect(s).toContain("▼ 跌(實心)");
+      expect(s).toContain(conventionWord(colors));
+    }
+    // The words of the two conventions, the same as every other surface.
+    expect(conventionWord("tw")).toBe("紅漲綠跌(台股習慣)");
+    expect(conventionWord("us")).toBe("綠漲紅跌(國際習慣)");
+  });
+
   it("draws MA5, MA20 and MA60 with their values, the volume, the last price and the timeframe", () => {
     const s = svg(q);
     for (const n of [5, 20, 60]) expect(s).toContain(`MA${n} `);

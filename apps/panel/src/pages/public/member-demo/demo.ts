@@ -7,7 +7,7 @@
 // It answers every member route from the fixtures and the exchange's from the exchange demo, any
 // other `/api/` route with a 404, and plays her live feed's first event, so nothing reaches a Core.
 
-import { answer as exchangeAnswer } from "../exchange/demo";
+import { bodyOf as exchangeBody, answer as exchangeAnswer } from "../exchange/demo";
 import { DEMO_LIVE_HELLO, memberDemoAnswer } from "./fixtures";
 
 export const MEMBER_DEMO_KEY = "miyoria.member-demo";
@@ -64,7 +64,7 @@ export function installMemberDemo(): void {
     await new Promise((r) => setTimeout(r, 120));
     const path = url.pathname;
     if (path.startsWith("/api/member/exchange") || path === "/api/exchange") {
-      return exchangeAnswer(method, path, url.searchParams) ?? json({ error: "no such endpoint" }, 404);
+      return exchangeAnswer(method, path, url.searchParams, body ?? (await exchangeBody(input, init))) ?? json({ error: "no such endpoint" }, 404);
     }
     const res = member(method, url, body);
     if (res) return json(res.body, res.status ?? 200);

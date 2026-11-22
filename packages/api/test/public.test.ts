@@ -789,6 +789,7 @@ describe("the route table", () => {
       "POST /api/member/danmaku",
       "POST /api/member/exchange/account",
       "POST /api/member/exchange/cancel",
+      "POST /api/member/exchange/colors",
       "POST /api/member/exchange/leverage",
       "POST /api/member/exchange/lookup",
       "POST /api/member/exchange/order",

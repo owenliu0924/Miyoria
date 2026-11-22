@@ -213,10 +213,15 @@ function candlesOf(s: Stock, tf: ExchangeCandles["tf"]): ExchangeCandles {
   };
 }
 
+/** The member's own colours of up and down, as the demo's member chose them (`null`: the default). */
+let chosen: "tw" | "us" | null = null;
+
 const MARKET: ExchangeMarket = {
   enabled: true,
   currency: "魚幣",
   colors,
+  colors_chosen: null,
+  colors_default: colors,
   rates: { twd_per_coin: 1, twd_per_usd: 30 },
   house: { buys_halted: false, net_today: 412, cap_daily: 0 },
   sessions: [
@@ -398,8 +403,14 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** The exchange routes over the made-up market; `null` for any other path. Also the member demo's exchange tab. */
-export function answer(method: string, path: string, query: URLSearchParams): Response | null {
-  if (path === "/api/member/exchange") return json(MARKET);
+export function answer(method: string, path: string, query: URLSearchParams, body?: unknown): Response | null {
+  if (path === "/api/member/exchange") return json({ ...MARKET, colors: chosen ?? colors, colors_chosen: chosen });
+  if (path === "/api/member/exchange/colors" && method === "POST") {
+    const asked = (body as { colors?: unknown } | undefined)?.colors;
+    if (asked !== "tw" && asked !== "us" && asked !== null) return json({ error: "漲跌顏色只能選紅漲綠跌(tw)或綠漲紅跌(us)" }, 400);
+    chosen = asked;
+    return json({ colors: chosen ?? colors, chosen, default: colors });
+  }
   if (path === "/api/member/exchange/account") return json(ACCOUNT);
   if (path === "/api/member/exchange/portfolio") return json(PORTFOLIO);
   if (path === "/api/member/exchange/boards") return json(BOARDS);
@@ -434,13 +445,24 @@ export function answer(method: string, path: string, query: URLSearchParams): Re
   return null;
 }
 
+/** A request's JSON body, from `init` or from the `Request` itself (`undefined`: none). */
+export async function bodyOf(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
+  const raw = typeof init?.body === "string" ? init.body : input instanceof Request ? await input.clone().text() : "";
+  if (raw === "") return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
 function installFetch(): void {
   const real = window.fetch.bind(window);
   window.fetch = async (input, init) => {
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, window.location.href);
     const method = init?.method ?? (input instanceof Request ? input.method : "GET");
     await new Promise((r) => setTimeout(r, 80));
-    return answer(method, url.pathname, url.searchParams) ?? real(input, init);
+    return answer(method, url.pathname, url.searchParams, await bodyOf(input, init)) ?? real(input, init);
   };
 }
 
