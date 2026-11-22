@@ -11,10 +11,16 @@
 // `packages/api/src/karaoke-routes.ts`): its event stream (`GET .../rooms/{code}/events`, Server-Sent
 // Events: `KaraokeRoomEvent`), the clock (`POST .../rooms/{code}/clock`), a singer's microphone
 // (`POST .../rooms/{code}/audio`) and a singer's detected pitch (`POST .../rooms/{code}/pitch`).
+//
+// A room belongs to one server (phase 6, docs/design/v5-places.md §10): `GET` and `POST
+// /api/member/karaoke/rooms` take `?space=` (`SpaceQuery`; default: the person's own server, the
+// primary first). Asking about a server she is not in is a 404, one the person is not a member of
+// a 403. A room is then reached by its code, as before.
 
 import { z } from "zod";
 import { KaraokeSessionSchema, KaraokeSongViewSchema, KaraokeVoiceCheckSchema } from "./karaoke.js";
 import { route } from "./route.js";
+import { SpaceQuery } from "./shared.js";
 
 /** A room's code: six letters and digits people can read out (no 0/O, 1/I/L). */
 export const KARAOKE_ROOM_CODE = /^[2-9A-HJKMNP-Z]{6}$/;
@@ -466,11 +472,12 @@ export const karaokeRooms = {
   overview: route
     .meta({ audience: "member", permission: null })
     .route({ method: "GET", path: "/api/member/karaoke/rooms" })
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(KaraokeRoomsSchema),
-  /** Opens a room (no song yet) and pays for it (402 too few coins, 409 not now). */
+  /** Opens a room (no song yet) in a server and pays for it (402 too few coins, 409 not now). */
   open: member()
     .route({ method: "POST", path: "/api/member/karaoke/rooms" })
-    .input(z.object({ body: KaraokeRoomOpenSchema }))
+    .input(z.object({ query: SpaceQuery.optional(), body: KaraokeRoomOpenSchema }))
     .output(KaraokeRoomViewSchema),
   room: member()
     .route({ method: "GET", path: "/api/member/karaoke/rooms/{code}" })

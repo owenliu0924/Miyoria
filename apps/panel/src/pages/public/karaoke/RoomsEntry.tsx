@@ -1,6 +1,8 @@
 // 一起唱 on the song list (docs/design/karaoke.md 「做了什麼第四步」): open a room (see the price and
 // the balance, then pay; songs are queued inside the room, 「第四步之後的修改:先開房再點歌」), join one
 // by its code or link, or go back to the one they are in. A Core without rooms shows nothing here.
+// A room is opened in one server (phase 6): their own; someone in several picks which
+// (`SpacePicker`, drawn only then), and whether 開一間房 can be pressed is about that server's voice.
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { DoorOpen, LogIn, Users } from "lucide-react";
@@ -14,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardAction, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SpacePicker, useMemberSpace } from "../member-space";
 import { Fact, Refusal } from "./bits";
 import { isOff, ROOMS, useRooms } from "./queries";
 import { canPay, coins, readRoomCode } from "./room-text";
@@ -23,11 +26,14 @@ export function OpenRoomDialog({
   open,
   onClose,
   rooms,
+  space = null,
   onOpened,
 }: {
   open: boolean;
   onClose: () => void;
   rooms: KaraokeRooms;
+  /** The server it opens in; `null`: the Core's default. */
+  space?: string | null;
   onOpened: (room: KaraokeRoomView) => void;
 }) {
   const api = useApi();
@@ -35,7 +41,7 @@ export function OpenRoomDialog({
   const { terms, balance } = rooms;
   const affordable = canPay(balance, terms.price);
   const pay = useMutation({
-    mutationFn: () => api.rpc.karaokeRooms.open({ body: {} }),
+    mutationFn: () => api.rpc.karaokeRooms.open(space ? { query: { space }, body: {} } : { body: {} }),
     onSuccess: (room) => {
       void client.invalidateQueries({ queryKey: ROOMS });
       onOpened(room);
@@ -85,7 +91,8 @@ export function unavailableHint(reason: string | null): string {
 
 /** The block on the song list. */
 export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
-  const rooms = useRooms();
+  const own = useMemberSpace();
+  const rooms = useRooms(true, own.space);
   const [opening, setOpening] = useState(false);
   const [text, setText] = useState("");
   const [bad, setBad] = useState(false);
@@ -146,6 +153,7 @@ export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
             </div>
           ) : (
             <>
+              <SpacePicker value={own.space} spaces={own.spaces} onChange={own.setSpace} label="在哪個伺服器開房" />
               <dl className="flex flex-wrap gap-x-8 gap-y-3">
                 <Fact label="開房">{coins(rooms.data.terms.price, rooms.data.terms.currency)}</Fact>
                 <Fact label="你有">
@@ -190,6 +198,7 @@ export function RoomsEntry({ onEnter }: { onEnter: (code: string) => void }) {
           open
           onClose={() => setOpening(false)}
           rooms={rooms.data}
+          space={own.space}
           onOpened={(room) => {
             setOpening(false);
             onEnter(room.code);

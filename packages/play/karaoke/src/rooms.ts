@@ -45,6 +45,13 @@
 // * Who sees what is decided here, per connection, not in the page: a singer of the running round
 //   only ever gets `trend` about themselves (and the cheers for them); everyone else gets the
 //   `board`.
+// * Servers (phase 6, docs/design/v5-places.md §10): a room belongs to the Space it was opened in
+//   (`RoomPlaces`; the opener's pick on the member page, the server of a command, else the
+//   primary). It may open and start only while she is in a voice channel of that Space, and it
+//   closes when she leaves that Space's voice; its notice and her notes go to that Space's comment
+//   channel (`comment_channel` is per Space). A server first seen after the upgrade has no rooms
+//   until its own comment channel is set. Who may join is the code's business, as before: a room
+//   is joined by its code or link. The stream's scene is one stage for all of them.
 // * Coins (the karaoke wallet): the opening is charged before the room exists (written first as
 //   `charging`, so a crash in between still gives it back); a room ends owing it back unless a round
 //   was sung through; a settled round writes what it pays in the same transaction as its ranking,
@@ -94,6 +101,7 @@ import {
 import {
   type AccountRef,
   accountRefString,
+  type ContextKey,
   type KaraokeWallet,
   type KaraokeWorker,
   newId,
@@ -193,6 +201,7 @@ const SAY = {
   closed: "現在沒有開放唱 K",
   noRooms: "現在沒有開放多人房間",
   noVoice: "她要在語音頻道裡才能開房間",
+  noVoiceHere: "她現在在別的伺服器的語音頻道裡,要在這個伺服器的語音頻道才能開房間",
   full: "現在開著的房間太多了,等一下再開",
   already: "你已經在另一間房間裡了,先離開那一間",
   noRoom: "沒有這間房間",
@@ -246,8 +255,13 @@ export interface RoomDeps {
   service: KaraokeService;
   worker: () => KaraokeWorker | null;
   wallet: () => KaraokeWallet | null;
-  /** She is in a voice channel now. */
-  inVoice: () => boolean;
+  /**
+   * She is in a voice channel now: of the Space `space` (identity's id), or of any server when
+   * `space` is `null` (rooms of no Space: a store without identity).
+   */
+  inVoice: (space: string | null) => boolean;
+  /** Which server a room is in, and that server's settings. Left out: every room is of no Space. */
+  places?: RoomPlaces;
   who: (account: AccountRef) => KaraokeWho;
   tell: (note: KaraokeNote) => void;
   together: (person: PersonId, detail: string, at: number, session: string) => void;
@@ -269,6 +283,21 @@ export interface RoomDeps {
     post(channel: RoomChannel, notice: RoomNotice): Promise<string | null>;
     edit(channel: RoomChannel, message: string, notice: RoomNotice): Promise<void>;
   };
+}
+
+/** Where rooms are (phase 6): the Spaces, and the settings of each. */
+export interface RoomPlaces {
+  /** The Space a room opens in when none is named (the primary); `null`: she is in none. */
+  fallback(): string | null;
+  /** The Space of a context (a command's server); `null`: a DM, or a server she does not know. */
+  at(context: ContextKey): string | null;
+  /**
+   * Why rooms cannot be in `space` (she is not there, or a new server that has no comment
+   * channel of its own yet); `null`: they can.
+   */
+  why(space: string): string | null;
+  /** The settings in `space` (the comment channel is per Space); `null`: the cluster's. */
+  config(space: string | null): KaraokeConfig;
 }
 
 /** The comment channel a room's notice goes to. */
@@ -429,6 +458,8 @@ interface Follower {
 interface Room {
   id: string;
   code: string;
+  /** The Space it was opened in (identity's id); `null`: none (a store without identity). */
+  space: string | null;
   opener: string;
   state: "lobby" | "countdown" | "singing" | "results" | "closed";
   closedReason: string | null;
@@ -515,17 +546,49 @@ export class RoomDesk implements RoomLink {
 
   // ---- what a member asks ---------------------------------------------------------------------
 
-  /** Why a room cannot be opened or joined now (`null`: it can). */
-  #why(admin: boolean): string | null {
+  /**
+   * The Space a call is about: `space` as given (`null`: none), else (left out) the fallback, the
+   * primary. Without `places` every room is of no Space.
+   */
+  #spaceOf(space: string | null | undefined): string | null {
+    const places = this.#d.places;
+    if (places === undefined) return null;
+    return space === undefined ? places.fallback() : space;
+  }
+
+  /** The Space of a command's context: its server, else (a DM) the fallback. */
+  spaceAt(context: ContextKey): string | null {
+    const places = this.#d.places;
+    if (places === undefined) return null;
+    return places.at(context) ?? places.fallback();
+  }
+
+  /** The settings a room of `space` goes by (its comment channel). */
+  #cfgOf(space: string | null): KaraokeConfig {
+    return this.#d.places?.config(space) ?? this.#cfg;
+  }
+
+  /** Why a room cannot be opened in `space` now (`null`: it can). */
+  #why(admin: boolean, space: string | null): string | null {
     if (!this.#cfg.open && !admin) return SAY.closed;
     if (!this.#cfg.rooms) return SAY.noRooms;
-    if (!this.#d.inVoice()) return SAY.noVoice;
+    if (space !== null) {
+      const why = this.#d.places?.why(space) ?? null;
+      if (why !== null) return why;
+    }
+    if (!this.#d.inVoice(space)) {
+      return space !== null && this.#d.inVoice(null) ? SAY.noVoiceHere : SAY.noVoice;
+    }
     return null;
   }
 
-  async overview(account: AccountRef, admin = false): Promise<KaraokeRooms> {
+  /**
+   * Whether a room can be opened in `space` (left out: the primary) and at what price, the
+   * person's coins, and the room they are in (in any server: one room at a time).
+   */
+  async overview(account: AccountRef, admin = false, space?: string | null): Promise<KaraokeRooms> {
     this.#key(account);
-    const reason = this.#why(admin);
+    const reason = this.#why(admin, this.#spaceOf(space));
     const wallet = this.#d.wallet();
     return {
       available: reason === null,
@@ -540,7 +603,8 @@ export class RoomDesk implements RoomLink {
    * Opens a room, with no song, and charges the opener for it. `songId` (and its `shift`): what
    * clients from before the queue send; that song is checked first (a refusal costs nothing) and
    * queued as the first entry. One opening per person at a time: a second press while the first is
-   * on its way is refused (it could otherwise charge twice).
+   * on its way is refused (it could otherwise charge twice). `space`: the server it opens in (left
+   * out: the primary).
    */
   async open(
     account: AccountRef,
@@ -548,12 +612,13 @@ export class RoomDesk implements RoomLink {
     songId: string | null = null,
     shift = 0,
     admin = false,
+    space?: string | null,
   ): Promise<KaraokeRoomView> {
     const { key } = this.#key(account);
     if (this.#opening.has(key)) throw new KaraokeError(409, SAY.opening);
     this.#opening.add(key);
     try {
-      return await this.#open(account, name, songId, shift, admin);
+      return await this.#open(account, name, songId, shift, admin, this.#spaceOf(space));
     } finally {
       this.#opening.delete(key);
     }
@@ -565,9 +630,10 @@ export class RoomDesk implements RoomLink {
     songId: string | null,
     shift: number,
     admin: boolean,
+    space: string | null,
   ): Promise<KaraokeRoomView> {
     const { key, who } = this.#key(account);
-    const why = this.#why(admin);
+    const why = this.#why(admin, space);
     if (why !== null) throw new KaraokeError(409, why);
     if (this.#mine(account) !== null) throw new KaraokeError(409, SAY.already);
     if (this.#rooms.size >= this.#cfg.room_max) throw new KaraokeError(409, SAY.full);
@@ -591,6 +657,7 @@ export class RoomDesk implements RoomLink {
       charge: price > 0 ? "charging" : "free",
       price,
       created_at: toTimestamp(now),
+      space_id: space,
     });
     if (price > 0 && wallet !== null) {
       let paid: Awaited<ReturnType<KaraokeWallet["charge"]>>;
@@ -620,6 +687,7 @@ export class RoomDesk implements RoomLink {
     const room: Room = {
       id,
       code,
+      space,
       opener: key,
       state: "lobby",
       closedReason: null,
@@ -640,16 +708,18 @@ export class RoomDesk implements RoomLink {
     room.queueSeen = this.#queueLook(room);
     this.#rooms.set(code, room);
     this.#d.log.info({ room: id, code, price }, "karaoke: a room opened");
-    this.#note(`karaoke:room:${id}:open`, roomOpenedNote(name, code), true);
+    this.#note(room, `karaoke:room:${id}:open`, roomOpenedNote(name, code), true);
     this.#announce(room, member.name);
     this.#stage();
     return this.#view(room, account);
   }
 
-  /** The room's notice in the comment channel, when `room_announce` is on and one is set. */
+  /**
+   * The room's notice in its server's comment channel, when `room_announce` is on and one is set.
+   */
   #announce(room: Room, opener: string): void {
     const announce = this.#d.announce;
-    const channel = commentContext(this.#cfg.comment_channel);
+    const channel = commentContext(this.#cfgOf(room.space).comment_channel);
     if (announce === undefined || channel === null || !this.#cfg.room_announce) return;
     const message = announce
       .post(channel, { code: room.code, opener, state: "open", reason: null })
@@ -979,7 +1049,7 @@ export class RoomDesk implements RoomLink {
     const between = () => room.state === "lobby" || room.state === "results";
     if (!between()) throw new KaraokeError(409, SAY.notNow);
     if (room.rounds >= this.#cfg.room_rounds) throw new KaraokeError(409, SAY.roundsUsed);
-    if (!this.#d.inVoice()) throw new KaraokeError(409, SAY.noVoice);
+    if (!this.#d.inVoice(room.space)) throw new KaraokeError(409, SAY.noVoice);
     const ready = [...room.members.values()].filter((m) => m.role === "singer" && m.ready);
     if (ready.length === 0) throw new KaraokeError(409, SAY.noSingers);
     // The first ready entry (one still being prepared keeps its place); its files and key now.
@@ -1115,6 +1185,7 @@ export class RoomDesk implements RoomLink {
     }
     this.#changed(room);
     this.#note(
+      room,
       `karaoke:room:${room.id}:round:${n}:start`,
       roundStartNote(
         room.code,
@@ -1902,12 +1973,16 @@ export class RoomDesk implements RoomLink {
   /** One look at every room (about four times a second). */
   async tick(): Promise<void> {
     const now = this.#d.now();
-    if (this.#rooms.size > 0 && (!this.#cfg.rooms || !this.#d.inVoice())) {
-      const reason = this.#cfg.rooms ? CLOSE.voice : CLOSE.off;
-      for (const room of [...this.#rooms.values()]) this.#close(room, reason);
+    if (this.#rooms.size > 0 && !this.#cfg.rooms) {
+      for (const room of [...this.#rooms.values()]) this.#close(room, CLOSE.off);
       return;
     }
     for (const room of [...this.#rooms.values()]) {
+      // She left the voice of the room's server (another server's voice does not keep it open).
+      if (!this.#d.inVoice(room.space)) {
+        this.#close(room, CLOSE.voice);
+        continue;
+      }
       // People with no page open for a while have left (not while they sing a round).
       const running = room.state === "countdown" || room.state === "singing";
       for (const m of [...room.members.values()]) {
@@ -2405,6 +2480,7 @@ export class RoomDesk implements RoomLink {
       };
     });
     this.#note(
+      room,
       `karaoke:room:${room.id}:round:${round.n}:result`,
       roundResultNote(room.code, round.n, round.song.title, lines, roundNote),
       true,
@@ -2526,10 +2602,13 @@ export class RoomDesk implements RoomLink {
     for (const room of [...this.#rooms.values()]) this.#close(room, reason);
   }
 
-  /** The rooms open now (`/me play karaoke`), the most recently active first. */
-  briefs(): RoomBrief[] {
+  /**
+   * The rooms open now (`/me play karaoke`), the most recently active first: those of `space`
+   * (left out: of every server).
+   */
+  briefs(space?: string | null): RoomBrief[] {
     return [...this.#rooms.values()]
-      .filter((r) => r.state !== "closed")
+      .filter((r) => r.state !== "closed" && (space === undefined || r.space === space))
       .sort((a, b) => b.activity - a.activity)
       .map((room) => {
         const running = room.state === "countdown" || room.state === "singing";
@@ -2640,9 +2719,13 @@ export class RoomDesk implements RoomLink {
     };
   }
 
-  /** A note for her; she may speak (in the comment channel) when `speak` and comments are on. */
-  #note(key: string, summary: string, speak: boolean): void {
-    const context = speak && this.#cfg.comment ? commentContext(this.#cfg.comment_channel) : null;
+  /**
+   * A note for her about `room`; she may speak (in its server's comment channel) when `speak` and
+   * comments are on.
+   */
+  #note(room: Room, key: string, summary: string, speak: boolean): void {
+    const cfg = this.#cfgOf(room.space);
+    const context = speak && cfg.comment ? commentContext(cfg.comment_channel) : null;
     try {
       this.#d.tell({ summary, key, person: null, context });
     } catch (error) {

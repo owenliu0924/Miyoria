@@ -1581,9 +1581,16 @@ export class KaraokeService {
 
   // ---- the owner's look -----------------------------------------------------------------------
 
-  adminResults(limit = 50): KaraokeAdminResults {
+  /**
+   * The latest results for the panel. `space`: only the rooms of that server beside the results
+   * sung alone; left out: all.
+   */
+  adminResults(limit = 50, space?: string): KaraokeAdminResults {
+    const rows = this.#d.store
+      .latest(limit)
+      .filter((r) => space === undefined || r.space === null || r.space === space);
     return {
-      results: this.#d.store.latest(limit).map((r) => ({
+      results: rows.map((r) => ({
         session: r.session_id,
         person: r.person_id,
         name: r.name,
@@ -1600,6 +1607,7 @@ export class KaraokeService {
         calibrated: r.track?.calibrated ?? false,
         browser: r.track?.browser ?? "",
         at: r.created_at,
+        space: r.space,
       })),
     };
   }

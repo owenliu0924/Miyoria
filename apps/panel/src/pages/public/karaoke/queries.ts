@@ -61,12 +61,16 @@ export const ROOMS = [...KARAOKE, "rooms"] as const;
 export const ROOMS_WAIT_POLL_MS = 1_500;
 export const ROOMS_POLL_MS = 15_000;
 
-/** Whether a room can be opened now, its price, the balance and the room they are in. */
-export function useRooms(enabled = true) {
+/**
+ * Whether a room can be opened now, its price, the balance and the room they are in. `space`: the
+ * server it is about (phase 6, `useMemberSpace`); `null`: the Core's default (their own).
+ */
+export function useRooms(enabled = true, space: string | null = null) {
   const api = useApi();
   return useQuery({
-    queryKey: ROOMS,
-    queryFn: ({ signal }) => api.rpc.karaokeRooms.overview(undefined, { signal }),
+    queryKey: [...ROOMS, space],
+    queryFn: ({ signal }) =>
+      api.rpc.karaokeRooms.overview(space ? { query: { space } } : undefined, { signal }),
     retry: retryUnlessOff,
     enabled,
     staleTime: 0,

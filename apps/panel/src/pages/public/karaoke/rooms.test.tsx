@@ -1196,3 +1196,76 @@ describe("一起唱: her stream on the stages", () => {
     expect(within(stage).queryByText("播出中")).toBeNull();
   });
 });
+
+describe("一起唱: per server", () => {
+  const space = (id: string, name: string, primary = false) => ({
+    id,
+    platform: "discord",
+    external_id: `g-${id}`,
+    name,
+    primary,
+    established: true,
+  });
+
+  /** Their servers; she is in voice in `voiceIn` only. Records what was asked. */
+  function serverSite(spaces: ReturnType<typeof space>[], voiceIn: string) {
+    const asked: { method: string; space: string | null }[] = [];
+    mockFetch((method, url) => {
+      const path = url.pathname;
+      if (path === "/api/member/spaces") return { body: { spaces, default: spaces[0]?.id ?? null } };
+      if (path === "/api/member/karaoke") return { body: overview() };
+      if (path === "/api/member/karaoke/rooms") {
+        const at = url.searchParams.get("space");
+        asked.push({ method, space: at });
+        if (method === "POST") return { body: room() };
+        const here = (at ?? spaces[0]?.id) === voiceIn;
+        return {
+          body: here
+            ? { available: true, reason: null, terms: TERMS, balance: 50, mine: null }
+            : {
+                available: false,
+                reason: "她現在在別的伺服器的語音頻道裡,要在這個伺服器的語音頻道才能開房間",
+                terms: TERMS,
+                balance: 50,
+                mine: null,
+              },
+        };
+      }
+      if (path === "/api/member/karaoke/rooms/KTV888") return { body: room() };
+      return undefined;
+    });
+    return asked;
+  }
+
+  it("one server: no choice, the rooms of that server", async () => {
+    window.history.replaceState(null, "", "/karaoke");
+    const asked = serverSite([space("a", "伺服器 A", true)], "a");
+    renderPage(<KaraokePage member={MEMBER as never} home="/" />);
+    const block = await screen.findByRole("region", { name: "一起唱" });
+    await waitFor(() => expect(within(block).getByRole("button", { name: "開一間房" })).toBeEnabled());
+    expect(within(block).queryByRole("radiogroup")).toBeNull();
+    expect(asked.every((a) => a.space === null || a.space === "a")).toBe(true);
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("two servers: picks the server, follows its voice, and opens the room there", async () => {
+    window.history.replaceState(null, "", "/karaoke");
+    const asked = serverSite([space("a", "伺服器 A", true), space("b", "伺服器 B")], "b");
+    renderPage(<KaraokePage member={MEMBER as never} home="/" />);
+    const block = await screen.findByRole("region", { name: "一起唱" });
+    const picker = await within(block).findByRole("radiogroup", { name: "在哪個伺服器開房" });
+    // Their own server first: she is in voice in the other one, so it says so.
+    await waitFor(() => expect(within(block).getByRole("button", { name: "開一間房" })).toBeDisabled());
+    expect(block).toHaveTextContent("別的伺服器的語音頻道");
+    await userEvent.click(within(picker).getByRole("radio", { name: "伺服器 B" }));
+    await waitFor(() => expect(within(block).getByRole("button", { name: "開一間房" })).toBeEnabled());
+    expect(asked.some((a) => a.method === "GET" && a.space === "b")).toBe(true);
+    await userEvent.click(within(block).getByRole("button", { name: "開一間房" }));
+    const dialog = await screen.findByRole("dialog", { name: "開一間房" });
+    await userEvent.click(within(dialog).getByRole("button", { name: /開房$/ }));
+    await waitFor(() => expect(asked.filter((a) => a.method === "POST")).toEqual([{ method: "POST", space: "b" }]));
+    await waitFor(() => expect(window.location.pathname).toBe("/karaoke/room/KTV888"));
+    window.localStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+});

@@ -9435,6 +9435,12 @@
               },
               "at": {
                 "type": "string"
+              },
+              "space": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               }
             },
             "required": [
@@ -9453,7 +9459,8 @@
               "latency_ms",
               "calibrated",
               "browser",
-              "at"
+              "at",
+              "space"
             ]
           }
         }
