@@ -200,11 +200,24 @@ export {
   type ThoughtTriggerKind,
 } from "./mind.js";
 export {
+  type PlaceAt,
+  type PlaceConfig,
+  type PlaceConfigChange,
+  PlaceConfigKey,
+  type PlaceConfigRequest,
+  type PlaceConfigService,
   type PlaceDirectory,
   PlaceDirectoryKey,
+  type PlaceField,
   type PlaceRoom,
   type PlaceRoomKind,
   type PlaceSpace,
+  type Places,
+  type PlacesChange,
+  PlacesKey,
+  type PlaceWhere,
+  type RoomRef,
+  type SpaceRef,
 } from "./places.js";
 export {
   type AccountRef,
