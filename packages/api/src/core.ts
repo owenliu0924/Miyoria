@@ -21,7 +21,15 @@ import {
   SupervisorKey,
 } from "@miyoria/runtime/kernel";
 import { DecisionLogKey, PersonaOverrideStoreKey } from "@miyoria/store";
-import type { BusEnvelope, JsonValue, ModuleId } from "@miyoria/types";
+import {
+  type BusEnvelope,
+  CharacterKey,
+  DEFAULT_CHARACTER,
+  type JsonValue,
+  type ModuleId,
+  type RunningProfile,
+  RunningProfileKey,
+} from "@miyoria/types";
 import { withEventMeta } from "@orpc/server";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
@@ -182,8 +190,25 @@ async function personaHistory(state: ApiState, key: string): Promise<PersonaOver
 /** `GET /api/health`. */
 export const healthRpc = os.health.handler(() => ({ status: "ok", version: MIYORIA_VERSION }));
 
-/** `GET /api/persona`, `PUT /api/persona/{key}`, `GET /api/persona/{key}/history`. */
+/** Which profile this Core runs; a Core built without the service reports its profile id alone. */
+function runningProfile(state: ApiState): RunningProfile {
+  const running = state.optional(RunningProfileKey);
+  if (running) return { ...running };
+  const persona = state.optional(PersonaHandleKey);
+  return {
+    id: state.profile(),
+    own: false,
+    character: (state.optional(CharacterKey) ?? DEFAULT_CHARACTER).name,
+    persona: persona?.displayName() ?? "",
+  };
+}
+
+/**
+ * `GET /api/persona`, `PUT /api/persona/{key}`, `GET /api/persona/{key}/history`, and
+ * `GET /api/profile`.
+ */
 export const personaRpc = {
+  profile: os.persona.profile.handler(({ context }) => runningProfile(context.state)),
   list: os.persona.list.handler(({ context }) => personaSections(context.state)),
   set: os.persona.set.handler(({ input, context }) =>
     setPersonaSection(context.state, context.c, input.params.key, input.body),
