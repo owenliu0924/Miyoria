@@ -312,7 +312,7 @@ export const wallet = {
   boardView: route
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/board" })
-    .input(z.object({ query: BoardScopeQuery }))
+    .input(z.object({ query: BoardScopeQuery }).optional())
     .output(MemberBoardSchema),
   frame: spend("/api/member/frame", FrameRequestSchema).output(FramesResultSchema),
   /**
@@ -331,7 +331,7 @@ export const wallet = {
   predictions: route
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/predictions" })
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(z.object({ currency: z.string(), predictions: z.array(PredictionViewSchema) })),
   /**
    * A stake on an option of an open prediction (`409` closed or already staked, `402` short, `429`

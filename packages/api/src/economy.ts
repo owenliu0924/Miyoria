@@ -97,7 +97,7 @@ export const economyRpc = {
   }),
   predictions: os.economy.predictions.handler(async ({ input, context }) => {
     const v2 = economyView(context.state);
-    const asked = input.query.space;
+    const asked = input?.query.space;
     const space = asked ? adminSpace(context.state, asked) : null;
     const spaces = space ? [space.id] : undefined;
     const list = await guard(() => v2.predictions(null, spaces));

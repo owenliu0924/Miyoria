@@ -82,7 +82,7 @@ export const walletPlayRpc = {
   }),
   predictions: os.wallet.predictions.handler(async ({ input, context: { state, c } }) => {
     const v2 = economyView(state);
-    const spaces = await memberSpaces(state, c, input.query.space);
+    const spaces = await memberSpaces(state, c, input?.query.space);
     const list = await guard(() => v2.predictions(accountOf(c), spaces));
     return { currency: v2.currency, predictions: list.map((p) => predictionView(p, false)) };
   }),

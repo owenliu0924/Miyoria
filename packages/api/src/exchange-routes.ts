@@ -234,7 +234,7 @@ export const exchangeRpc = {
   boards: os.exchange.boards.handler(
     async ({ input, context: { state, c } }): Promise<ExchangeBoards> => {
       const x = service(state);
-      const { space, members } = await memberBoardScope(state, c, input.query);
+      const { space, members } = await memberBoardScope(state, c, input?.query ?? {});
       const b = await x.boards(accountOf(c), members);
       return {
         currency: b.currency,

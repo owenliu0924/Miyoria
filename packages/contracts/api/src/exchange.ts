@@ -573,7 +573,7 @@ export const exchange = {
   /** `404` an unknown server, `403` one they are not in. */
   boards: member()
     .route({ method: "GET", path: "/api/member/exchange/boards" })
-    .input(z.object({ query: BoardScopeQuery }))
+    .input(z.object({ query: BoardScopeQuery }).optional())
     .output(ExchangeBoardsSchema),
 };
 

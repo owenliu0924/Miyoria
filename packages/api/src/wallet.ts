@@ -240,7 +240,7 @@ export const walletRpc = {
     return { on_board: on };
   }),
   boardView: os.wallet.boardView.handler(({ input, context: { state, c } }) =>
-    memberBoard(state, c, input.query),
+    memberBoard(state, c, input?.query ?? {}),
   ),
   frame: os.wallet.frame.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);

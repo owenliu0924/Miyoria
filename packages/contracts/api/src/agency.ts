@@ -30,6 +30,6 @@ export const agency = {
   bounties: route
     .meta({ audience: "member", permission: null, limited: true })
     .route({ method: "GET", path: "/api/member/bounties" })
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(BountyListSchema),
 };

@@ -186,7 +186,7 @@ export const economy = {
   predictions: route
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/economy/predictions" })
-    .input(z.object({ query: SpaceQuery }))
+    .input(z.object({ query: SpaceQuery }).optional())
     .output(z.object({ currency: z.string(), predictions: z.array(PredictionViewSchema) })),
   /**
    * Settles an open prediction by hand, the ones that settle by themselves too (`409`: it is not

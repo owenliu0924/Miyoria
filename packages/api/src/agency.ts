@@ -42,7 +42,7 @@ const bountyView = (b: BountyView): BountyView => ({
 /** The bounty route; served only while the public side is on (see `rpc.ts`). */
 export const agencyRpc = {
   bounties: os.agency.bounties.handler(async ({ input, context: { state, c } }) => {
-    const spaces = await memberSpaces(state, c, input.query.space);
+    const spaces = await memberSpaces(state, c, input?.query.space);
     const bounties = await withEconomy(state, (e) => e.bounties(spaces));
     return { bounties: bounties.map(bountyView) };
   }),
