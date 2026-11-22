@@ -92,6 +92,7 @@ import { planRpc } from "./plan.js";
 import { walletPlayRpc } from "./play-routes.js";
 import { outcomesRpc, promptsRpc } from "./prompts.js";
 import { limitMember, publicRpc } from "./public.js";
+import { pushRpc } from "./push/routes.js";
 import { reportsRpc } from "./reports.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route, RouteGroup } from "./route.js";
@@ -127,6 +128,7 @@ export const router = os.router({
   workspace: workspaceRpc,
   skills: skillsRpc,
   public: { ...publicRpc, ...boardRpc, ...cardCheckRpc },
+  push: pushRpc,
   member: { ...memberRpc, ...livePatRpc, ...memberSpacesRpc },
   cards: cardsRpc,
   cardsAdmin: cardsAdminRpc,
@@ -186,6 +188,7 @@ export function defaultResponseCheck(env: NodeJS.ProcessEnv = process.env): Resp
 /** The groups of the public side (`[modules.api.public]`): the public views and the member pages (the cards, the wallet, fortune, the market, karaoke and its rooms are member pages too). */
 const PUBLIC_SIDE = new Set([
   "public",
+  "push",
   "member",
   "cards",
   "wallet",
@@ -387,8 +390,15 @@ async function serve(handler: Handler, state: ApiState, c: ApiContext, body: boo
   return new Response(response.body, { status, headers: response.headers });
 }
 
-/** What an event stream route answers with besides its body. */
-const STREAM_HEADERS = { "content-type": "text/event-stream", "cache-control": "no-cache" };
+/**
+ * What an event stream route answers with besides its body: never cached, and never buffered by a
+ * proxy on the way (nginx and the like hold a response back unless told not to).
+ */
+const STREAM_HEADERS = {
+  "content-type": "text/event-stream",
+  "cache-control": "no-cache",
+  "x-accel-buffering": "no",
+};
 
 /** The `{name}` of an OpenAPI path as Hono's `:name`. */
 const honoPath = (path: string) => path.replace(/\{([^}]+)\}/g, ":$1");
@@ -449,6 +459,7 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
         }
         const response = await serve(handler, state, c, body);
         response.headers.set("cache-control", STREAM_HEADERS["cache-control"]);
+        response.headers.set("x-accel-buffering", STREAM_HEADERS["x-accel-buffering"]);
         return response;
       },
     });

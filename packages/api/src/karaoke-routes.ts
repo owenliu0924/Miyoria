@@ -43,7 +43,12 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { Readable } from "node:stream";
-import { KARAOKE_ROOM_CODE, KaraokeClockSchema, KaraokePitchSchema } from "@miyoria/contracts/api";
+import {
+  KARAOKE_ROOM_CODE,
+  KaraokeClockSchema,
+  KaraokePitchSchema,
+  type KaraokeRooms,
+} from "@miyoria/contracts/api";
 import { KARAOKE_VOICE_MAX_BYTES } from "@miyoria/contracts/workers";
 import {
   KaraokeError,
@@ -61,6 +66,7 @@ import { json, noContent, param, type Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import { adminSpace, memberPerson, memberSpace } from "./space-param.js";
 import type { ApiContext, ApiState } from "./state.js";
+import type { Watch } from "./watch.js";
 
 const log = getLogger("api.karaoke");
 
@@ -241,11 +247,28 @@ async function roomSpace(
   return memberSpace(state, await memberPerson(state, c), requested).id;
 }
 
+/**
+ * `GET /api/member/karaoke/rooms?space=` as a view (also the `rooms` push topic): the server is
+ * checked against the person here (`404`, `403`), for both.
+ */
+export async function roomsWatch(
+  state: ApiState,
+  c: ApiContext,
+  requested: string | undefined,
+): Promise<Watch<KaraokeRooms>> {
+  const space = await roomSpace(state, c, requested);
+  const account = accountOf(c);
+  const admin = adminOf(c);
+  return {
+    key: `rooms:${accountRefString(account)}:${admin ? "admin" : "member"}:${space ?? ""}`,
+    build: () => refusals(() => rooms(state).overview(account, admin, space)),
+  };
+}
+
 export const karaokeRoomsRpc = {
-  overview: os.karaokeRooms.overview.handler(async ({ input, context: { state, c } }) => {
-    const space = await roomSpace(state, c, input?.query.space);
-    return refusals(() => rooms(state).overview(accountOf(c), adminOf(c), space));
-  }),
+  overview: os.karaokeRooms.overview.handler(async ({ input, context: { state, c } }) =>
+    (await roomsWatch(state, c, input?.query.space)).build(),
+  ),
   open: os.karaokeRooms.open.handler(async ({ input, context: { state, c } }) => {
     const space = await roomSpace(state, c, input.query?.space);
     return refusals(() =>

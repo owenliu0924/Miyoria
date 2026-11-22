@@ -40,13 +40,14 @@ import {
   type WalletView,
 } from "@miyoria/economy";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
-import { type AccountRef, newId } from "@miyoria/types";
+import { type AccountRef, accountRefString, newId } from "@miyoria/types";
 import { memberBoard } from "./board.js";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { checkinFortune } from "./fortune-routes.js";
 import type { SessionRecord } from "./session.js";
 import type { ApiContext, ApiState } from "./state.js";
+import type { Watch } from "./watch.js";
 
 const log = getLogger("api.wallet");
 
@@ -144,6 +145,15 @@ const danmakuView = (v: DanmakuView): DanmakuView => ({
   why: v.why,
 });
 
+/** `GET /api/member/danmaku` as a view (also the `danmaku` push topic): the member's own. */
+export function danmakuWatch(state: ApiState, c: ApiContext): Watch<DanmakuView> {
+  const account = accountOf(c);
+  return {
+    key: `danmaku:${accountRefString(account)}`,
+    build: async () => danmakuView(await withWallet(state, (e) => e.danmakuView(account))),
+  };
+}
+
 const feedResult = (r: FeedResult): FeedResult => ({
   accepted: r.accepted,
   eaten: r.eaten,
@@ -218,7 +228,7 @@ export const walletRpc = {
     return spendResult(await withWallet(state, (e) => e.screenMessage(accountOf(c), text, key)));
   }),
   danmakuView: os.wallet.danmakuView.handler(async ({ context: { state, c } }) => {
-    return danmakuView(await withWallet(state, (e) => e.danmakuView(accountOf(c))));
+    return danmakuWatch(state, c).build();
   }),
   danmaku: os.wallet.danmaku.handler(async ({ input, context: { state, c } }) => {
     const key = keyOf(input.headers["idempotency-key"]);
