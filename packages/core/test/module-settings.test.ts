@@ -169,9 +169,9 @@ describe("ModuleSettings", () => {
     expect(bad.problems[0]?.path).toBe("auction_hours");
     expect(bad.problems[0]?.message).toMatch(/^拍多久:.*1/);
 
-    const hidden = await save({ utc_offset_minutes: 0 });
+    const hidden = await save({ lottery_prize_share: 0.5 });
     expect(hidden.kind).toBe("not_editable");
-    expect(hidden.problems.map((p) => p.path)).toEqual(["utc_offset_minutes"]);
+    expect(hidden.problems.map((p) => p.path)).toEqual(["lottery_prize_share"]);
 
     // biome-ignore lint/suspicious/noTemplateCurlyInString: the reference the layer refuses
     expect((await save({ auction_channel: "${CHANNEL}" })).kind).toBe("not_editable");
