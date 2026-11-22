@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ExchangeCandles, ExchangeLine, ExchangeMap, ExchangeMarket } from "@miyoria/contracts/api";
 import { MA_PERIODS, moveColors, movingAverage, tileColor } from "@miyoria/card-face/market";
 import { mockFetch, renderPage } from "@/test/render";
-import { barWords, chartSeries, HOLLOW, wallSeconds } from "./exchange/chart-data";
+import { barWords, chartSeries, wallSeconds } from "./exchange/chart-data";
 import { Exchange } from "./Exchange";
 
 const drawn = vi.hoisted(() => ({
@@ -188,9 +188,10 @@ describe("the candle chart", () => {
     const chart = await openTicker();
     const m = moveColors("tw");
     const bars = chart.series.find((s) => s.kind === "Candlestick");
-    // An up body is hollow (only its border in the up colour), a down body solid: not colour alone.
-    expect(bars?.options).toMatchObject({ upColor: HOLLOW, borderUpColor: m.up, downColor: m.down, borderDownColor: m.down, wickUpColor: m.up, wickDownColor: m.down });
-    expect(screen.getByText(/空心 K 棒是漲、實心是跌/)).toBeInTheDocument();
+    expect(bars?.options).toMatchObject({ upColor: m.up, downColor: m.down, wickUpColor: m.up, wickDownColor: m.down });
+    // Both bodies are filled (no see-through body), each in its own colour.
+    expect(bars?.options).toMatchObject({ borderUpColor: m.up, borderDownColor: m.down });
+    expect(screen.queryByText(/空心/)).toBeNull();
     expect(bars?.data).toHaveLength(70);
     // The averages, worked out here from the closes.
     const lines = chart.series.filter((s) => s.kind === "Line");
@@ -223,12 +224,9 @@ describe("the candle chart", () => {
     serve("us");
     renderPage(<Exchange />);
     const chart = await openTicker();
-    expect(chart.series.find((s) => s.kind === "Candlestick")?.options).toMatchObject({
-      upColor: HOLLOW,
-      borderUpColor: moveColors("us").up,
-      wickUpColor: moveColors("us").up,
-      downColor: moveColors("us").down,
-    });
+    expect(chart.series.find((s) => s.kind === "Candlestick")?.options).toMatchObject({ upColor: moveColors("us").up });
+    // Filled in both directions under this convention too.
+    expect(chart.series.find((s) => s.kind === "Candlestick")?.options).toMatchObject({ downColor: moveColors("us").down });
     expect(moveColors("us").up).toBe(moveColors("tw").down);
   });
 

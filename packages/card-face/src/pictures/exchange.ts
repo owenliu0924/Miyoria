@@ -6,8 +6,8 @@
 //
 // Up and down (owner 2026-11-21; each member's own since 2026-11-22): `colors` in the data — `tw`
 // red up and green down, `us` green up and red down; the member who asked for the picture chose
-// it, else the install's default — stated in a legend on every chart. A move is never colour alone: every change carries its sign and an arrow (▲ +1.2% /
-// ▼ −0.8%). These two are the only red and green the pictures use. Prices come in cents and are
+// it, else the install's default — stated in a legend on every chart. A move is never colour
+// alone: every change carries its sign and an arrow (▲ +1.2% / ▼ −0.8%). These two are the only red and green the pictures use. Prices come in cents and are
 // drawn with two decimals. Every picture ends with the exchange's small print.
 
 import type {
@@ -74,15 +74,12 @@ function smallPrint(c: Canvas, y: number, text: string): number {
   return paragraph(c, y + 20, text, 4, { size: TYPE.label, fill: T.sheetMuted });
 }
 
-/**
- * The convention's legend: ▲ up and ▼ down in their colours; under candles also what their bodies
- * mean (an up body hollow, a down body solid), so the direction never rests on colour alone.
- */
-function moveLegend(c: Canvas, top: number, colors: ExchangeColors, candles = false): number {
+/** The convention's legend: ▲ up and ▼ down in their colours. */
+function moveLegend(c: Canvas, top: number, colors: ExchangeColors): number {
   const m = moveColors(colors);
   return legend(c, top, [
-    { label: candles ? "▲ 漲(空心)" : "▲ 漲", color: m.up },
-    { label: candles ? "▼ 跌(實心)" : "▼ 跌", color: m.down },
+    { label: "▲ 漲", color: m.up },
+    { label: "▼ 跌", color: m.down },
     { label: conventionWord(colors), color: T.chartFaint },
   ]);
 }
@@ -216,26 +213,14 @@ function candleChart(c: Canvas, top: number, d: ExchangeQuotePicture): number {
     const v = hi - ((hi - lo) * g) / 4;
     c.text(X0 + CONTENT, baseline(gy - 6, TYPE.tick), axisPrice(v), { size: TYPE.tick, fill: T.sheetMuted, anchor: "end", max: axisW - 6 });
   }
-  // The candles: a 1 px wick and a body, up in the up colour, down in the down colour. Colour is
-  // never the only carrier (owner 2026-11-22): an up body is hollow (its outline), a down body
-  // solid, so the direction reads in grey too; a body too thin to be hollow is drawn solid.
+  // The candles: a 1 px wick and a body, up in the up colour, down in the down colour.
   shown.forEach((k, i) => {
     const up = k.c >= k.o;
     const color = up ? m.up : m.down;
     const cx = x(i);
+    c.rect(cx - 0.5, y(k.h), 1, Math.max(1, y(k.l) - y(k.h)), color);
     const top2 = y(Math.max(k.o, k.c));
     const h = Math.max(1, Math.abs(y(k.o) - y(k.c)));
-    const hollow = up && bodyW >= 4 && h >= 4;
-    if (hollow) {
-      // The wick above and below the body, not through it.
-      c.rect(cx - 0.5, y(k.h), 1, Math.max(0, top2 - y(k.h)), color);
-      c.rect(cx - 0.5, top2 + h, 1, Math.max(0, y(k.l) - top2 - h), color);
-      c.shape(
-        `<rect x="${r1(cx - bodyW / 2 + 0.6)}" y="${r1(top2 + 0.6)}" width="${r1(bodyW - 1.2)}" height="${r1(h - 1.2)}" fill="none" stroke="${color}" stroke-width="1.2"/>`,
-      );
-      return;
-    }
-    c.rect(cx - 0.5, y(k.h), 1, Math.max(1, y(k.l) - y(k.h)), color);
     c.rect(cx - bodyW / 2, top2, bodyW, h, color);
   });
   // The moving averages over the bars shown.
@@ -363,7 +348,7 @@ export function exchangeQuotePicture(d: ExchangeQuotePicture): Out {
     y += TYPE.label + 4;
   }
   y = candleChart(c, y + 6, d) + 8;
-  y = moveLegend(c, y, d.colors, true) + 8;
+  y = moveLegend(c, y, d.colors) + 8;
   const shown = d.candles.slice(-MAX_BARS[d.timeframe]);
   const hi = shown.length > 0 ? Math.max(...shown.map((k) => k.h)) : d.price;
   const lo = shown.length > 0 ? Math.min(...shown.map((k) => k.l)) : d.price;

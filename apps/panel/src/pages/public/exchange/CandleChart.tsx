@@ -1,6 +1,5 @@
 // A ticker's candle chart on the member page (owner 2026-11-21: "a real stock chart"), loaded only
-// when someone opens a ticker: candles in the member's up/down colours (an up body hollow, a down
-// body solid, so colour is never the only carrier), MA5 / MA20 / MA60
+// when someone opens a ticker: candles in the member's up/down colours, MA5 / MA20 / MA60
 // (worked out here from the candles), volume in its own pane under them, the timeframe switch
 // 當日 / 日線 / 週線 / 月線 (a radio group: arrow keys move it), a legend with each average's
 // value and direction at the crosshair, a tooltip with the bar's open, high, low, close and change,
@@ -38,7 +37,6 @@ import {
   type ChartSeries,
   chartSeries,
   type Convention,
-  HOLLOW,
   priceText,
   TIMEFRAME_LABEL,
   TIMEFRAMES,
@@ -161,10 +159,8 @@ function Plot({
     const near = [marks.avg_cost, ...marks.liquidation].filter(
       (p): p is number => p !== null && p > last * 0.5 && p < last * 1.5,
     );
-    // An up body is hollow (its border), a down body solid: the direction never rests on colour
-    // alone (the same as the pictures).
     const candles = chart.addSeries(CandlestickSeries, {
-      upColor: HOLLOW,
+      upColor: m.up,
       downColor: m.down,
       borderUpColor: m.up,
       borderDownColor: m.down,
@@ -293,7 +289,6 @@ export default function CandleChart({ code, title, colors, open, move }: CandleC
       {q.data && (
         <p className="text-xs text-muted-foreground">
           {[
-            "空心 K 棒是漲、實心是跌",
             q.data.volume ? "下方是成交量" : "這檔沒有成交量",
             q.data.marks.avg_cost !== null ? "虛線是你的平均成本" : null,
             q.data.marks.liquidation.length > 0 ? "點線是 2 倍部位依規則自動賣出的價格" : null,

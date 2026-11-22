@@ -115,7 +115,7 @@ them. Which is up is each member's own choice (2026-11-22: a `Segmented` above t
 each option its two colour squares and its words, 紅漲綠跌(台股) / 綠漲紅跌(國際)), else the
 exchange's `colors` setting (`tw`: red up, the default; `us`: green up); every view states it in a
 legend, and colour is never the only carrier: a move always has its arrow and sign (`▲ +1.2%`,
-`▼ −0.8%`), and an up candle's body is hollow, a down one solid. The candle chart's averages are MA5 `--chart-3`, MA20
+`▼ −0.8%`); candle bodies are solid both ways, in the member's colours. The candle chart's averages are MA5 `--chart-3`, MA20
 `--chart-2`, MA60 `--chart-1` (the light neutral first, since MA5 lies on the candles). The values
 live once in `packages/card-face/src/market.ts`, shared by the panel and the pictures.
 

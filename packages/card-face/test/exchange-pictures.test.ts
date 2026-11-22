@@ -66,17 +66,27 @@ describe("the quote's candle chart", () => {
     expect(us).toContain(`fill="${moveColors("us").down}" fill-opacity="0.55"`);
   });
 
-  it("never shows a bar's direction by colour alone: an up body is hollow, a down body solid, and the legend says so", () => {
+  it("fills every candle's body, up and down, in the member's chosen colours", () => {
     const up = { o: 100_000, h: 103_000, l: 99_000, c: 102_000, v: 10, label: "1/1" };
     const down = { o: 102_000, h: 102_500, l: 98_000, c: 99_000, v: 20, label: "1/2" };
     for (const colors of ["tw", "us"] as const) {
       const m = moveColors(colors);
       const s = svg({ ...q, candles: [up, down, up], colors });
-      // Two up bars drawn as outlines in the up colour, no up body filled.
-      expect(s.match(new RegExp(`fill="none" stroke="${m.up}"`, "g"))?.length).toBe(2);
-      expect(s).not.toMatch(new RegExp(`fill="none" stroke="${m.down}"`));
-      expect(s).toContain("▲ 漲(空心)");
-      expect(s).toContain("▼ 跌(實心)");
+      // No body is an outline: every one is filled, the up ones in up's colour, the down one in down's.
+      expect(s).not.toMatch(/fill="none" stroke="#(ef5f5f|3fc48a)"/);
+      // A wick and a filled body per bar (and more in these colours: the price tag, the legend).
+      const filled = (color: string) =>
+        (s.match(new RegExp(`<rect [^>]*fill="${color}"(?! fill-opacity)[^>]*/>`, "g")) ?? []).length;
+      expect(filled(m.up)).toBeGreaterThanOrEqual(4);
+      expect(filled(m.down)).toBeGreaterThanOrEqual(2);
+      // The bodies themselves (14 wide with three bars): two up, one down, all filled.
+      const bodies = (color: string) =>
+        (s.match(new RegExp(`<rect [^>]*width="14"[^>]*fill="${color}"(?! fill-opacity)[^>]*/>`, "g")) ?? []).length;
+      expect(bodies(m.up)).toBe(2);
+      expect(bodies(m.down)).toBe(1);
+      expect(s).toContain("▲ 漲");
+      expect(s).toContain("▼ 跌");
+      expect(s).not.toContain("空心");
       expect(s).toContain(conventionWord(colors));
     }
     // The words of the two conventions, the same as every other surface.
