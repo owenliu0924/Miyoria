@@ -73,6 +73,7 @@ const CASES: Case[] = [
   post("wallet.danmaku", "/api/member/danmaku", { text: "hi" }),
   post("wallet.transfer", "/api/member/transfer", { to_discord_id: "1", amount: 1 }),
   post("wallet.board", "/api/member/board", { on: true }),
+  { name: "wallet.boardView", method: "GET", path: "/api/member/board", audience: "member" },
   post("wallet.frame", "/api/member/frame", { buy: "sakura" }),
   { name: "wallet.quests", method: "GET", path: "/api/member/quests", audience: "member" },
   {
@@ -261,6 +262,10 @@ const ANSWERS = {
     to: "a",
   } satisfies ApiOutputs["wallet"]["transfer"],
   "wallet.board": { on_board: true } satisfies ApiOutputs["wallet"]["board"],
+  "wallet.boardView": {
+    space: { id: "space-1", name: "a" },
+    entries: [{ rank: 1, name: "a", spent: 1 }],
+  } satisfies ApiOutputs["wallet"]["boardView"],
   "wallet.frame": {
     owned: ["sakura"],
     selected: null,
@@ -280,6 +285,7 @@ const ANSWERS = {
     predictions: [
       {
         id: "abc123",
+        space: { id: "space-1", name: "a" },
         question: "a",
         options: [{ label: "a", staked: 1, backers: 1, multiplier: 1 }],
         total: 1,
@@ -473,6 +479,7 @@ describe("the answers", () => {
       danmaku: os.wallet.danmaku.handler(answer("wallet.danmaku")),
       transfer: os.wallet.transfer.handler(answer("wallet.transfer")),
       board: os.wallet.board.handler(answer("wallet.board")),
+      boardView: os.wallet.boardView.handler(answer("wallet.boardView")),
       frame: os.wallet.frame.handler(answer("wallet.frame")),
       quests: os.wallet.quests.handler(answer("wallet.quests")),
       predictions: os.wallet.predictions.handler(answer("wallet.predictions")),

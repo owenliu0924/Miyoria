@@ -728,6 +728,7 @@ describe("the route table", () => {
     ).toEqual([
       "DELETE /api/member/files/:id",
       "DELETE /api/member/karaoke/rooms/:code/queue/:entry",
+      "GET /api/member/board",
       "GET /api/member/bounties",
       "GET /api/member/card",
       "GET /api/member/card/:serial",
@@ -2953,6 +2954,7 @@ describe("the wallet", () => {
       status: "open",
       created_at: new Date(now).toISOString() as never,
       expires_at: new Date(now + 86_400_000).toISOString() as never,
+      space: null,
       closed_at: null,
       winner: null,
     });

@@ -3,8 +3,8 @@
 //
 // * `GET /api/economy/health`: coins issued against recovered per day. `available: false` until a
 //   store provides the ledger totals; then there are no days, not made-up ones.
-// * `GET /api/economy/predictions`: open predictions and the ones settled lately (without anyone's
-//   stake).
+// * `GET /api/economy/predictions` (`?space=`): open predictions and the ones settled lately
+//   (without anyone's stake), each with its server: of one server, or of every server without it.
 // * `POST /api/economy/predictions/{id}/resolve` `{ option }`, `POST .../cancel`: the owner settles
 //   or calls off any open prediction by hand, the ones that settle by themselves too
 //   (`admin.economy.adjust`); the prediction keeps who did it.
@@ -25,6 +25,7 @@ import { isUlid, type PersonId } from "@miyoria/types";
 import { os } from "./contract.js";
 import { ApiError } from "./errors.js";
 import { questsView } from "./play-routes.js";
+import { adminSpace } from "./space-param.js";
 import { type ApiState, actorOf } from "./state.js";
 
 const NO_ECONOMY = "economy module (economy 2.0) is not available";
@@ -40,6 +41,7 @@ export function economyView(state: ApiState): Economy2 {
 export function predictionView(p: PredictionView, admin: boolean): PredictionView {
   return {
     id: p.id,
+    space: p.space == null ? null : { id: p.space.id, name: p.space.name },
     question: p.question,
     options: p.options.map((o) => ({
       label: o.label,
@@ -93,9 +95,12 @@ export const economyRpc = {
     const v2 = economyView(context.state);
     return { currency: v2.currency, ...(await guard(() => v2.health())) };
   }),
-  predictions: os.economy.predictions.handler(async ({ context }) => {
+  predictions: os.economy.predictions.handler(async ({ input, context }) => {
     const v2 = economyView(context.state);
-    const list = await guard(() => v2.predictions(null));
+    const asked = input.query.space;
+    const space = asked ? adminSpace(context.state, asked) : null;
+    const spaces = space ? [space.id] : undefined;
+    const list = await guard(() => v2.predictions(null, spaces));
     return { currency: v2.currency, predictions: list.map((p) => predictionView(p, true)) };
   }),
   resolvePrediction: os.economy.resolvePrediction.handler(async ({ input, context }) => {
