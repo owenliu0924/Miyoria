@@ -178,8 +178,9 @@ Navigation is four levels, each visible at once:
 - Below `md` the sidebar becomes a row across the top: the mark and a horizontally scrolling list
   of pages. Groups, her state and the search box fold away; search stays as an icon in the header.
 - Header: 60 px, flush. Sidebar toggle, `分類 / 頁面`, the page's own tags and actions (a portal
-  from `PageHeader`), "自主行動已暫停" while her autonomy is stopped, then the appearance button and
-  緊急停止, which is in the header on every page. On 總覽 it has no surface until the page scrolls.
+  from `PageHeader`), "自主行動已暫停" while her autonomy is stopped, the server switch (a small
+  `Select` with a server icon, `?space=` through `useAdminSpace`; nothing at all with one server or
+  none), then the appearance button and 緊急停止, which is in the header on every page. On 總覽 it has no surface until the page scrolls.
 - 總覽 alone opens on the picture: her state in one 24 px line and the now strip over a soft
   scrim. Every other page starts at the content directly.
 - Page: `Page` is the content surface, 28 px padding (16 px on phones), `--stage-gap` (32 px)
@@ -252,6 +253,13 @@ answer is one plain line. Nothing here is invented: a number the Core does not s
   「有 N 項沒存」, 取消 and the one primary button 「儲存並重新啟動 X」, which confirms first when the
   restart will wait for a guard or a field is marked dangerous. Then 變更紀錄: when and who in the
   label column, `label 舊 → 新` per change, 復原這次 / 回到這次之前 behind a confirm.
+- Per server and per channel (docs/design/v5-settings.md §13): when a field may differ per server
+  and there is more than one, or a field may differ per channel, 設定 starts with a `Segmented`
+  範圍 (全部伺服器 / the header's server / 一個頻道, the last with the channel picker for that
+  server's channels). A server's or a channel's form lists only the fields that may differ there,
+  each with one muted line, 「這個伺服器設的 · 拿掉後是 X」 with 拿掉這個伺服器的值, or 「沿用全部的值」, and
+  one more line for how many fields are the same everywhere. Its button is 「儲存到 X」 and asks
+  nothing (nothing restarts); its change log has no revert.
 - Controls per kind (`setting-fields.tsx`): `Switch`; numbers in a 8 rem box with the unit (小時,
   分鐘, the currency, %) beside it; `Segmented` for a select of up to four and for weekdays (日 一 …
   六), `Select` beyond; `type="time"`; the channel picker is a `Popover` + `Command` grouped by server
