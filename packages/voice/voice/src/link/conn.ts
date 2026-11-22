@@ -30,6 +30,8 @@ export interface WatchStatus {
   error: string | null;
   /** Why it ended (`stopped`). */
   reason: string | null;
+  /** The `watchStart` run it is about; `null` from older nodes. */
+  run: number | null;
 }
 
 /** A `watch_snapshot` waiting for its picture. */
@@ -60,6 +62,8 @@ export interface ConnState {
   golive: Map<string, GoLiveStatus>;
   /** Watch state reported by the node, per guild. */
   watch: Map<string, WatchStatus>;
+  /** The run of the latest `watch_start` sent, per guild. */
+  watchRuns: Map<string, number>;
   /** Snapshots asked for and not answered yet, by request id. */
   snapshots: Map<number, PendingSnapshot>;
 }
@@ -72,6 +76,7 @@ export function newConnState(): ConnState {
     streams: new Map(),
     golive: new Map(),
     watch: new Map(),
+    watchRuns: new Map(),
     snapshots: new Map(),
   };
 }

@@ -23,6 +23,12 @@ export class DiscordSource implements WatchSource {
   readonly #ended: Promise<string>;
   #markEnded: (reason: string) => void = noop;
   #target: WatchTarget | null = null;
+  /**
+   * The link's id of this watch: `undefined` until `watchStart` answers, `null` when it gave none.
+   * Statuses that carry a run are held until it is known.
+   */
+  #run: number | null | undefined;
+  #early: WatchStatusData[] = [];
   /** The start waiting for `live`. */
   #waiting: { resolve(): void; reject(error: unknown): void } | null = null;
   /** The node has nothing to stop any more. */
@@ -48,8 +54,14 @@ export class DiscordSource implements WatchSource {
       () => this.#waiting?.reject(new Error("the stream did not go live in time")),
       this.#liveWaitMs,
     );
+    const asked = this.#link.watchStart(target.guild, target.account.id).then((run: unknown) => {
+      this.#run = typeof run === "number" ? run : null;
+      const early = this.#early;
+      this.#early = [];
+      for (const data of early) this.onStatus(data);
+    });
     try {
-      await Promise.all([this.#link.watchStart(target.guild, target.account.id), live]);
+      await Promise.all([asked, live]);
     } finally {
       clearTimeout(timer);
       signal.removeEventListener("abort", onAbort);
@@ -57,7 +69,7 @@ export class DiscordSource implements WatchSource {
     }
   }
 
-  /** The payload of a `voice.watch` event; anything about another stream is ignored. */
+  /** The payload of a `voice.watch` event; anything about another stream, or another run, is ignored. */
   onStatus(data: WatchStatusData): void {
     const target = this.#target;
     if (
@@ -67,6 +79,13 @@ export class DiscordSource implements WatchSource {
       data.user_id !== target.account.id
     ) {
       return;
+    }
+    if (data.run !== undefined) {
+      if (this.#run === undefined) {
+        this.#early.push(data);
+        return;
+      }
+      if (this.#run !== null && data.run !== this.#run) return;
     }
     if (data.state === "live") this.#waiting?.resolve();
     else if (data.state === "failed") this.#end(text(data.error) ?? "the stream failed");

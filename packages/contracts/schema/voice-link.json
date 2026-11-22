@@ -841,6 +841,19 @@
             "string",
             "null"
           ]
+        },
+        "run": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -861,6 +874,18 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 4294967295
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
@@ -906,6 +931,18 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 64
+        },
+        "run": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

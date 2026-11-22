@@ -137,7 +137,16 @@ export const VoiceLinkGoLiveStopSchema = z
  * node answers with `watch` states and sends the stream's sound as `WATCH_AUDIO` frames.
  */
 export const VoiceLinkWatchStartSchema = z
-  .object({ type: z.literal("watch_start"), guild: id(), user_id: id() })
+  .object({
+    type: z.literal("watch_start"),
+    guild: id(),
+    user_id: id(),
+    /**
+     * Core's id for this watch. The node echoes it on every `watch` state of it, so a late
+     * `stopped` of an earlier watch of the same person can be told apart. Older nodes ignore it.
+     */
+    run: u32().nullish(),
+  })
   .meta({ id: "VoiceLinkWatchStart" });
 
 /** Stop watching in `guild`. */
@@ -150,7 +159,12 @@ export const VoiceLinkWatchStopSchema = z
  * frame carrying `id`, or with `watch_snapshot_failed`.
  */
 export const VoiceLinkWatchSnapshotSchema = z
-  .object({ type: z.literal("watch_snapshot"), id: u32() })
+  .object({
+    type: z.literal("watch_snapshot"),
+    id: u32(),
+    /** The `run` of the watch it is for; the node fails it when that watch is not the one going on. */
+    run: u32().nullish(),
+  })
   .meta({ id: "VoiceLinkWatchSnapshot" });
 
 /** A text frame from Core. */

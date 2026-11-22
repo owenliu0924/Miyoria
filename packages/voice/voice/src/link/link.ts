@@ -204,6 +204,8 @@ export class VoiceLink {
   #watchAudioSubs: BoundedQueue<Int16Array>[] = [];
   #watchAudioDropped = 0;
   #nextSnapshot = 1;
+  /** Starts at random so a late message of a watch from before a Core restart matches no new one. */
+  #nextWatchRun = Math.floor(Math.random() * 0x8000_0000);
   #audioDropped = 0;
   readonly #knownSelf = new Map<string, AccountRef>();
   #nextConn = 1;
@@ -431,10 +433,17 @@ export class VoiceLink {
   /**
    * Asks the node to watch `userId`'s Go Live stream in `guild`, while she stays in the voice
    * channel. One stream at a time: it replaces the watch going on. Progress arrives as
-   * `voice.watch` events and in `watchStatus()`.
+   * `voice.watch` events and in `watchStatus()`. Resolves with the run id those carry for this
+   * watch (a node too old to echo it sends none).
    */
-  async watchStart(guild: string, userId: string): Promise<void> {
-    await this.#watcherFor(guild).sendJson({ type: "watch_start", guild, user_id: userId });
+  async watchStart(guild: string, userId: string): Promise<number> {
+    const conn = this.#watcherFor(guild);
+    const run = this.#nextWatchRun;
+    this.#nextWatchRun = (this.#nextWatchRun + 1) >>> 0;
+    // Before the send: from now on, what the node says of an earlier run is stale.
+    conn.state.watchRuns.set(guild, run);
+    await conn.sendJson({ type: "watch_start", guild, user_id: userId, run });
+    return run;
   }
 
   /** Asks the node to stop watching in `guild`. */
@@ -452,9 +461,9 @@ export class VoiceLink {
   }
 
   /**
-   * Asks the node for a JPEG of the stream watched in `guild`. Rejects after `timeoutMs`, when
-   * `signal` aborts, when the node has no picture and when it disconnects; a picture that
-   * arrives after that is dropped.
+   * Asks the node for a JPEG of the stream watched in `guild`, of the run last started there.
+   * Rejects after `timeoutMs`, when `signal` aborts, when the node has no picture (or watches
+   * another run) and when it disconnects; a picture that arrives after that is dropped.
    */
   async snapshot(guild: string, timeoutMs: number, signal: AbortSignal): Promise<Buffer> {
     const conn = this.#watcherFor(guild);
@@ -479,7 +488,10 @@ export class VoiceLink {
     answer.promise.catch(() => undefined);
     interrupted.catch(() => undefined);
     try {
-      await conn.sendJson({ type: "watch_snapshot", id });
+      const run = conn.state.watchRuns.get(guild);
+      await conn.sendJson(
+        run === undefined ? { type: "watch_snapshot", id } : { type: "watch_snapshot", id, run },
+      );
       return await Promise.race([answer.promise, interrupted]);
     } finally {
       clearTimeout(timer);
@@ -519,6 +531,7 @@ export class VoiceLink {
       state: status.state,
       error: status.error,
       reason: status.reason,
+      ...(status.run === null ? {} : { run: status.run }),
     });
   }
 
@@ -819,16 +832,19 @@ export class VoiceLink {
           state: msg.state,
           error: msg.error,
           reason: msg.reason,
+          run: msg.run,
         };
         const current = st.watch.get(msg.guild);
-        // A stop of somebody she no longer watches must not end the watch going on.
+        const wanted = st.watchRuns.get(msg.guild);
+        // A stop of somebody she no longer watches, or of an earlier run, must not end the watch
+        // going on. A node that sends no run is judged by the person alone.
+        const ending = msg.state === "stopped" || msg.state === "failed";
         const stale =
-          current !== undefined &&
-          current.user_id !== msg.user_id &&
-          (msg.state === "stopped" || msg.state === "failed");
+          (msg.run !== null && wanted !== undefined && msg.run !== wanted) ||
+          (current !== undefined && current.user_id !== msg.user_id && ending);
         if (!stale) st.watch.set(msg.guild, status);
         this.#log.info(
-          { guild: msg.guild, state: status.state, error: status.error, stale },
+          { guild: msg.guild, state: status.state, error: status.error, run: msg.run, stale },
           "watch state",
         );
         this.#publishWatch(platform, msg.guild, status);

@@ -86,6 +86,8 @@ export const VoiceWatchSchema = z
     error: z.string().nullable(),
     /** Why it ended (`stopped`), e.g. "stream ended". */
     reason: z.string().nullable(),
+    /** The watch this is about, as `VoiceLink.watchStart` numbered it; absent from older nodes. */
+    run: z.number().int().min(0).optional(),
   })
   .meta({ id: "EventsVoiceWatch" });
 export type VoiceWatchData = z.output<typeof VoiceWatchSchema>;

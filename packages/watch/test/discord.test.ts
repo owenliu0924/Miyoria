@@ -24,7 +24,7 @@ const status = (over: Partial<WatchStatusData> = {}): WatchStatusData => ({
 
 function fakeLink() {
   return {
-    watchStart: vi.fn(async (_guild: string, _user: string) => {}),
+    watchStart: vi.fn(async (_guild: string, _user: string): Promise<number> => 7),
     watchStop: vi.fn(async (_guild: string) => {}),
     snapshot: vi.fn(async () => Buffer.from([1])),
     subscribeWatchAudio: vi.fn((signal?: AbortSignal) => {
@@ -111,6 +111,41 @@ describe("DiscordSource", () => {
     await started;
     s.onStatus(status({ user_id: "u2", state: "stopped", reason: "old" }));
     expect(await settled(s.ended())).toBe(false);
+  });
+
+  it("a_late_stop_of_an_earlier_run_does_not_end_this_watch", async () => {
+    const s = source(fakeLink());
+    const started = s.start(target, new AbortController().signal);
+    s.onStatus(status({ state: "stopped", reason: "stop requested", run: 6 }));
+    s.onStatus(status({ run: 7 }));
+    await expect(started).resolves.toBeUndefined();
+    s.onStatus(status({ state: "stopped", reason: "stop requested", run: 6 }));
+    expect(await settled(s.ended())).toBe(false);
+    s.onStatus(status({ state: "stopped", reason: "stream ended", run: 7 }));
+    await expect(s.ended()).resolves.toBe("stream ended");
+  });
+
+  it("statuses_before_the_run_is_known_wait_for_it", async () => {
+    const link = fakeLink();
+    let answer: (run: number) => void = () => {};
+    link.watchStart.mockImplementationOnce(() => new Promise<number>((r) => (answer = r)));
+    const s = source(link);
+    const started = s.start(target, new AbortController().signal);
+    s.onStatus(status({ state: "stopped", reason: "stop requested", run: 6 }));
+    s.onStatus(status({ run: 7 }));
+    expect(await settled(started)).toBe(false);
+    answer(7);
+    await expect(started).resolves.toBeUndefined();
+    expect(await settled(s.ended())).toBe(false);
+  });
+
+  it("an_older_node_without_runs_is_judged_by_the_person", async () => {
+    const s = source(fakeLink());
+    const started = s.start(target, new AbortController().signal);
+    s.onStatus(status());
+    await started;
+    s.onStatus(status({ state: "stopped", reason: "gone" }));
+    await expect(s.ended()).resolves.toBe("gone");
   });
 
   it("start_honours_its_signal", async () => {

@@ -434,8 +434,8 @@ describe("voice.link", () => {
     const events = h.subscribe([WATCH_TOPIC]);
 
     expect(link.canWatch("g1")).toBe(true);
-    await link.watchStart("g1", "u1");
-    expect(await node.recvJson()).toEqual({ type: "watch_start", guild: "g1", user_id: "u1" });
+    const run = await link.watchStart("g1", "u1");
+    expect(await node.recvJson()).toEqual({ type: "watch_start", guild: "g1", user_id: "u1", run });
     expect(link.watchStatus("g1")).toBeNull();
 
     node.sendJson({ type: "watch", guild: "g1", user_id: "u1", state: "live" });
@@ -454,12 +454,14 @@ describe("voice.link", () => {
       state: "live",
       error: null,
       reason: null,
+      run: null,
     });
 
-    // A snapshot is the frame that carries the request's id.
+    // A snapshot is the frame that carries the request's id, and names the run it is for.
     const picture = link.snapshot("g1", 2_000, new AbortController().signal);
     const asked = await node.recvJson();
     expect(asked.type).toBe("watch_snapshot");
+    expect(asked.run).toBe(run);
     node.ws.send(frame(0x04, asked.id as number, [0xff, 0xd8, 0xff]), { binary: true });
     expect([...(await picture)]).toEqual([0xff, 0xd8, 0xff]);
 
@@ -490,6 +492,39 @@ describe("voice.link", () => {
     });
     await nextEvent(events);
     expect(link.watchStatus("g1")?.state).toBe("stopped");
+  });
+
+  it("a late stop of an earlier run of the same person is stale", async () => {
+    const h = await start();
+    const node = await h.node(SELF_ID, ["watch"]);
+    const link = h.link();
+    const events = h.subscribe([WATCH_TOPIC]);
+    const first = await link.watchStart("g1", "u1");
+    await node.recvJson();
+    await link.watchStop("g1");
+    await node.recvJson();
+    const second = await link.watchStart("g1", "u1");
+    await node.recvJson();
+    expect(second).not.toBe(first);
+
+    node.sendJson({ type: "watch", guild: "g1", user_id: "u1", state: "starting", run: second });
+    await nextEvent(events);
+    node.sendJson({
+      type: "watch",
+      guild: "g1",
+      user_id: "u1",
+      state: "stopped",
+      reason: "stop requested",
+      run: first,
+    });
+    const late = await nextEvent(events);
+    // Still published, with its run, for whoever tells runs apart.
+    expect(late.data).toMatchObject({ state: "stopped", run: first });
+    expect(link.watchStatus("g1")).toMatchObject({ state: "starting", run: second });
+
+    node.sendJson({ type: "watch", guild: "g1", user_id: "u1", state: "live", run: second });
+    await nextEvent(events);
+    expect(link.watchStatus("g1")).toMatchObject({ state: "live", run: second });
   });
 
   it("does not ask a node that cannot watch", async () => {

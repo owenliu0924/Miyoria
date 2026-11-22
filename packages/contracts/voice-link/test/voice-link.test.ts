@@ -51,7 +51,15 @@ const nodeExamples: VoiceLinkNodeMessageIn[] = [
   { type: "stream_close", stream: 5 },
   { type: "playback", play: 7, state: "failed", error: "x" },
   { type: "golive", guild: "1", state: "stopped", error: null, reason: "source ended" },
-  { type: "watch", guild: "1", user_id: "3", state: "failed", error: "no stream", reason: null },
+  {
+    type: "watch",
+    guild: "1",
+    user_id: "3",
+    state: "failed",
+    error: "no stream",
+    reason: null,
+    run: 4,
+  },
   { type: "watch_snapshot_failed", id: 9, error: "no frame yet" },
   { type: "error", message: "m" },
   { type: "ping" },
@@ -83,9 +91,9 @@ const coreExamples: VoiceLinkCoreMessageIn[] = [
     listen: true,
   },
   { type: "golive_stop", guild: "1" },
-  { type: "watch_start", guild: "1", user_id: "3" },
+  { type: "watch_start", guild: "1", user_id: "3", run: 4 },
   { type: "watch_stop", guild: "1" },
-  { type: "watch_snapshot", id: 9 },
+  { type: "watch_snapshot", id: 9, run: 4 },
   { type: "ping" },
   { type: "pong" },
 ];
@@ -135,6 +143,27 @@ describe("older and newer peers", () => {
       node: "",
       self_account: { platform: "discord", id: "42" },
       capabilities: [],
+    });
+  });
+
+  it("watch runs are optional both ways", () => {
+    expect(
+      VoiceLinkNodeMessageSchema.parse({ type: "watch", guild: "1", user_id: "3", state: "live" }),
+    ).toStrictEqual({
+      type: "watch",
+      guild: "1",
+      user_id: "3",
+      state: "live",
+      error: null,
+      reason: null,
+      run: null,
+    });
+    expect(
+      VoiceLinkCoreMessageSchema.parse({ type: "watch_start", guild: "1", user_id: "3" }),
+    ).toStrictEqual({ type: "watch_start", guild: "1", user_id: "3" });
+    expect(VoiceLinkCoreMessageSchema.parse({ type: "watch_snapshot", id: 9 })).toStrictEqual({
+      type: "watch_snapshot",
+      id: 9,
     });
   });
 

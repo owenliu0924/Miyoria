@@ -150,6 +150,8 @@ export const VoiceLinkWatchSchema = z
     error: optionalString(),
     /** Why it ended (`stopped`), e.g. `stream ended`. */
     reason: optionalString(),
+    /** The `run` of the `watch_start` this is about; `null` from older nodes and for a start without one. */
+    run: u32().nullable().default(null),
   })
   .meta({ id: "VoiceLinkWatch" });
 
