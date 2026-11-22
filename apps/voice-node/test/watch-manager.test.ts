@@ -409,15 +409,30 @@ describe("WatchManager snapshots", () => {
 
 const hasFfmpeg = spawnSync("ffmpeg", ["-version"], { windowsHide: true }).status === 0;
 
-describe.skipIf(!hasFfmpeg)("keyframeToJpeg", () => {
+/** A 1080p H.264 keyframe, or null when this ffmpeg cannot make one (no lavfi or libx264). */
+function keyframeFixture(): Buffer | null {
+  if (!hasFfmpeg) return null;
+  const gen = spawnSync(
+    "ffmpeg",
+    ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1920x1080", "-frames:v", "1", "-c:v", "libx264", "-f", "h264", "-"],
+    { windowsHide: true, maxBuffer: 1 << 26 },
+  );
+  return gen.status === 0 && gen.stdout.length > 0 ? gen.stdout : null;
+}
+
+/** Whether this ffmpeg lists `name` among its `-decoders` or `-encoders`. */
+function ffmpegHas(kind: "decoders" | "encoders", name: string): boolean {
+  const list = spawnSync("ffmpeg", ["-hide_banner", `-${kind}`], { windowsHide: true, encoding: "utf8" });
+  return list.status === 0 && new RegExp(String.raw`^\s*\S+\s+${name}\s`, "m").test(list.stdout);
+}
+
+const fixture = keyframeFixture();
+const canConvert = fixture !== null && ffmpegHas("decoders", "h264") && ffmpegHas("encoders", "mjpeg");
+
+describe.skipIf(!canConvert)("keyframeToJpeg", () => {
   it("scales a 1080p keyframe to 1280 wide", async () => {
     vi.useRealTimers();
-    const gen = spawnSync(
-      "ffmpeg",
-      ["-loglevel", "error", "-f", "lavfi", "-i", "testsrc=size=1920x1080", "-frames:v", "1", "-c:v", "libx264", "-f", "h264", "-"],
-      { windowsHide: true, maxBuffer: 1 << 26 },
-    );
-    const jpeg = await keyframeToJpeg(gen.stdout, new AbortController().signal);
+    const jpeg = await keyframeToJpeg(fixture as Buffer, new AbortController().signal);
     expect(jpeg[0]).toBe(0xff);
     expect(jpeg[1]).toBe(0xd8);
     let w = 0;
@@ -436,7 +451,9 @@ describe.skipIf(!hasFfmpeg)("keyframeToJpeg", () => {
     expect(w).toBe(1280);
     expect(jpeg.length).toBeLessThanOrEqual(900_000);
   }, 20_000);
+});
 
+describe.skipIf(!hasFfmpeg)("keyframeToJpeg with any ffmpeg", () => {
   it("rejects garbage", async () => {
     vi.useRealTimers();
     await expect(keyframeToJpeg(Buffer.from("not h264"), new AbortController().signal)).rejects.toThrow();
