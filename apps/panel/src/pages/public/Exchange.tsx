@@ -5,7 +5,8 @@
 // (當日 / 日線 / 週線 / 月線, MA5/20/60, volume, their own cost line) and the order ticket (coins
 // by default, shares for the local stocks; 2× only
 // where allowed, with the honest warning), their own holdings with the line where a 2× position is
-// sold, the bankruptcy status, the rich list with the switch to stay off it, and the rules. Every
+// sold, the bankruptcy status, the rich list with the switch to stay off it (one server's members
+// or everyone, `board-scope.tsx`; prices and holdings are global either way), and the rules. Every
 // section ends with the exchange's small print. Everything is what `/api/member/exchange/*`
 // answers; a refusal is the Core's own sentence. Moves always carry an arrow and a sign, never
 // colour alone, and the colour follows the product's one convention (stated beside the table).
@@ -37,6 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { fmtDateTime, fmtInt, fmtPct } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { readStorage, writeStorage } from "@/lib/storage";
+import { BoardScopePicker, useBoardScope } from "./board-scope";
 import { newKey, WALLET } from "./spend";
 
 // The candle chart (lightweight-charts) and the heat map (d3-hierarchy) load only when someone
@@ -778,11 +780,19 @@ function Visibility({ account }: { account: ExchangeAccount }) {
 
 function BoardsTab({ m }: { m: ExchangeMarket }) {
   const api = useApi();
-  const boards = useQuery({ queryKey: BOARDS, queryFn: ({ signal }) => api.rpc.exchange.boards(undefined, { signal }), refetchInterval: poll, retry });
+  const scope = useBoardScope();
+  const boards = useQuery({
+    queryKey: [...BOARDS, ...scope.key],
+    queryFn: ({ signal }) => api.rpc.exchange.boards({ query: scope.query }, { signal }),
+    enabled: !scope.loading,
+    refetchInterval: poll,
+    retry,
+  });
   const account = useAccount();
   return (
     <div className="grid gap-8">
       {account.data?.opened && <Visibility account={account.data} />}
+      <BoardScopePicker scope={scope} />
       <Loaded query={boards} rows={5}>
         {(b) => (
           <Part title="富人榜" aside="錢包加持股市值">

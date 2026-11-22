@@ -3,7 +3,8 @@ import { useState } from "react";
 import type { PredictionView } from "@miyoria/contracts/api";
 import { isApiError } from "@/api/http";
 import { useApi } from "@/app/connection";
-import { queryKeys, usePredictions, useRoom } from "@/app/queries";
+import { queryKeys, useRoom } from "@/app/queries";
+import { useAdminPredictions } from "@/app/queries-economy";
 import { BarList } from "@/components/charts/charts";
 import { ConfirmDialog } from "@/components/confirm";
 import { ModuleQuery } from "@/components/module-query";
@@ -76,9 +77,11 @@ const STATUS_TONE: Record<string, Tone> = { open: "brand", closed: "warning", re
  * Predictions open now and the ones settled lately, with where the stakes stand, how each settles
  * (or who settled it), and the owner's hand on the ones still waiting. Settling needs
  * `admin.economy.adjust`; the session does not say which nodes it holds, so a `403` is what tells.
+ * With two or more servers: the predictions of the server the page is about (`?space=`), each
+ * opened and bet on there only.
  */
 export function PredictionsTab() {
-  const q = usePredictions();
+  const { query: q, multiple, space } = useAdminPredictions();
   const now = q.dataUpdatedAt > 0 ? q.dataUpdatedAt : Date.now();
   const settle = useSettlePrediction();
   const [asked, setAsked] = useState<Settle | null>(null);
@@ -109,6 +112,7 @@ export function PredictionsTab() {
       <CardHeader>
         <CardTitle>預測</CardTitle>
       </CardHeader>
+      {multiple && space && <p className="text-[13px] text-muted-foreground">{space.name} 的預測:只有那個伺服器的成員看得到、能押。</p>}
       <ModuleQuery query={q} module={MODULE} isEmpty={(d) => d.predictions.length === 0} empty="沒有預測">
         {(d) => (
           <ul aria-label="預測" className="grid">

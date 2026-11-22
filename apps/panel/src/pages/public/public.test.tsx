@@ -145,6 +145,8 @@ interface Options {
   quests?: unknown;
   /** The predictions `GET /api/member/predictions` lists; absent: a Core without the route. */
   predictions?: unknown[];
+  /** Their servers (`GET /api/member/spaces`); absent: a Core without the route (one server). */
+  spaces?: { id: string; name: string }[];
 }
 
 const CARD: IssuedCard = {
@@ -177,11 +179,17 @@ function core(o: Options = {}) {
   let wallet: WalletView = o.wallet ?? WALLET;
   let slip: IssuedFortune | null = o.slip ? SLIP : null;
   const keys: (string | null)[] = [];
+  /** What the GETs asked, with their query (`/api/member/board?scope=all`). */
+  const gets: string[] = [];
   const fn = mockFetch((method, url, body, headers) => {
     const path = url.pathname;
     if (method === "POST") {
       posts.push({ path, body });
       keys.push(headers.get("Idempotency-Key"));
+    } else gets.push(`${path}${url.search}`);
+    if (path === "/api/member/spaces" && o.spaces !== undefined) {
+      const spaces = o.spaces.map((s, i) => ({ ...s, platform: "discord", external_id: s.id, primary: i === 0 }));
+      return { body: { spaces, default: spaces[0]?.id ?? null } };
     }
     if (path.startsWith("/api/member/") && o.wallet === null) {
       if (["wallet", "checkin", "feed", "frame"].includes(path.slice(12))) return undefined;
@@ -231,6 +239,14 @@ function core(o: Options = {}) {
     if (path === "/api/member/transfer") {
       wallet = { ...wallet, balance: wallet.balance - 20 };
       return { body: { sent: 20, fee: 1, balance: wallet.balance, to: "Bob" } };
+    }
+    if (path === "/api/member/board" && method === "GET") {
+      // One server's members (theirs by default, `?space=` another), or everyone (`scope=all`).
+      const all = url.searchParams.get("scope") === "all" || o.spaces === undefined;
+      const id = url.searchParams.get("space") ?? o.spaces?.[0]?.id ?? null;
+      const space = all ? null : (o.spaces?.find((s) => s.id === id) ?? null);
+      const entries = [{ rank: 1, name: space ? `${space.name} 的小明` : "小明", spent: 340 }, { rank: 2, name: "匿名", spent: 120 }];
+      return { body: { space, entries } };
     }
     if (path === "/api/member/board") {
       const on = (body as { on: boolean }).on;
@@ -287,7 +303,7 @@ function core(o: Options = {}) {
     if (path.startsWith("/api/public/card/")) return { status: 404, body: { error: "這張卡不存在或已經作廢" } };
     return undefined;
   });
-  return { fn, posts, keys };
+  return { fn, posts, keys, gets };
 }
 
 const paths = (fn: ReturnType<typeof mockFetch>) =>
@@ -948,6 +964,31 @@ describe("the newer places to spend", () => {
     await waitFor(() => expect(posts.filter((p) => p.path === "/api/member/board")[1]?.body).toEqual({ on: false }));
   });
 
+  it("shows their server's board by default, another of theirs or everyone's when picked", async () => {
+    // The server picked last is remembered by the browser.
+    writeStorage("miyoria.member.space", null);
+    const { gets } = core({
+      member: USER,
+      spaces: [
+        { id: "SA", name: "甲服" },
+        { id: "SB", name: "乙服" },
+      ],
+    });
+    renderApp();
+    const section = await screen.findByRole("region", { name: "贊助排行榜" });
+    expect(await within(section).findByText("甲服 的小明")).toBeInTheDocument();
+    expect(gets).toContain("/api/member/board?space=SA");
+    const scope = within(section).getByRole("radiogroup", { name: "範圍" });
+    expect(within(scope).getByRole("radio", { name: "這個伺服器" })).toBeChecked();
+    await userEvent.click(within(section).getByRole("radio", { name: "乙服" }));
+    expect(await within(section).findByText("乙服 的小明")).toBeInTheDocument();
+    await userEvent.click(within(scope).getByRole("radio", { name: "全部" }));
+    expect(await within(section).findByText("小明")).toBeInTheDocument();
+    expect(gets).toContain("/api/member/board?scope=all");
+    // Everyone's list has no server to pick.
+    expect(within(section).queryByRole("radio", { name: "乙服" })).toBeNull();
+  });
+
   it("lists today's quests in the rail, with the one she thought of", async () => {
     core({
       member: USER,
@@ -1021,6 +1062,37 @@ describe("the newer places to spend", () => {
       expect(posts.find((p) => p.path === "/api/member/bet")?.body).toEqual({ prediction: "abc123", option: "沒猜中", amount: 10 }),
     );
     expect(keys.at(-1)).toBeTruthy();
+  });
+
+  it("asks for the predictions and bounties of the server they picked", async () => {
+    const one = {
+      id: "abc123",
+      space: { id: "SB", name: "乙服" },
+      question: "乙服的題",
+      options: [{ label: "甲", staked: 0, backers: 0, multiplier: null }],
+      total: 0,
+      closes_at: new Date(Date.now() + 120_000).toISOString(),
+      status: "open",
+      winner: null,
+      settles: { kind: "her", label: "她公布結果" },
+      settled_by: null,
+      my_bet: null,
+    };
+    writeStorage("miyoria.member.space", null);
+    const { gets } = core({
+      member: USER,
+      predictions: [one],
+      spaces: [
+        { id: "SA", name: "甲服" },
+        { id: "SB", name: "乙服" },
+      ],
+    });
+    renderApp();
+    const section = await screen.findByRole("region", { name: "預測" });
+    await waitFor(() => expect(gets).toContain("/api/member/predictions?space=SA"));
+    await userEvent.click(within(section).getByRole("radio", { name: "乙服" }));
+    await waitFor(() => expect(gets).toContain("/api/member/predictions?space=SB"));
+    await waitFor(() => expect(gets.some((g) => g.startsWith("/api/member/bounties?space="))).toBe(true));
   });
 
   it("leaves the predictions out when there are none", async () => {

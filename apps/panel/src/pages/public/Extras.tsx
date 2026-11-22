@@ -2,7 +2,8 @@
 // (drawn with the check-in, see Wallet.tsx),
 // sending coins to a friend, the sponsor board and her bounties. A Core
 // without a route leaves its block out; someone she does not know never gets this far (the
-// wallet says so first).
+// wallet says so first). The board is one server's members or everyone (`board-scope.tsx`), the
+// bounties are their server's; the public site's board stays everyone's only.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { type FormEvent, useId, useState } from "react";
@@ -17,12 +18,14 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { fmtInt, fmtRelative } from "@/lib/format";
 import { notify } from "@/lib/notify";
+import { BoardScopePicker, useBoardScope, useOwnSpace } from "./board-scope";
 import { FortuneSlip } from "./FortuneSlip";
+import { SpacePicker } from "./member-space";
 import { newKey, priceText, usePatchWallet, useWallet } from "./spend";
 
 /** The query of today's slip: the check-in puts the slip it drew here. */
 export const FORTUNE = ["member", "fortune"] as const;
-const BOARD = ["public", "board"] as const;
+const BOARD = ["member", "board"] as const;
 const BOUNTIES = ["member", "bounties"] as const;
 const POLL_MS = 60_000;
 /** A transfer is at most this many coins; the Core says no above its own limit. */
@@ -187,9 +190,11 @@ export function Board() {
   const { patch } = usePatchWallet();
   const wallet = useWallet();
   const id = useId();
+  const scope = useBoardScope();
   const board = useQuery({
-    queryKey: BOARD,
-    queryFn: ({ signal }) => api.rpc.public.board(undefined, { signal }),
+    queryKey: [...BOARD, ...scope.key],
+    queryFn: ({ signal }) => api.rpc.wallet.boardView({ query: scope.query }, { signal }),
+    enabled: !scope.loading,
     refetchInterval: POLL_MS,
     retry,
   });
@@ -226,6 +231,7 @@ export function Board() {
           </div>
         </div>
       )}
+      <BoardScopePicker scope={scope} />
       <QueryView
         query={board}
         skeleton={<SkeletonRows count={3} />}
@@ -267,9 +273,11 @@ function BountyRow({ b, currency }: { b: BountyView; currency: string }) {
 export function Bounties() {
   const api = useApi();
   const currency = useWallet().data?.currency ?? "幣";
+  const own = useOwnSpace();
   const bounties = useQuery({
-    queryKey: BOUNTIES,
-    queryFn: ({ signal }) => api.rpc.agency.bounties(undefined, { signal }),
+    queryKey: [...BOUNTIES, ...own.key],
+    queryFn: ({ signal }) => api.rpc.agency.bounties({ query: { space: own.space } }, { signal }),
+    enabled: !own.loading,
     refetchInterval: POLL_MS,
     retry,
   });
@@ -279,6 +287,7 @@ export function Bounties() {
       <CardHeader>
         <CardTitle>她的懸賞</CardTitle>
       </CardHeader>
+      <SpacePicker value={own.space ?? null} spaces={own.spaces} onChange={own.setSpace} />
       <QueryView
         query={bounties}
         skeleton={<SkeletonRows count={2} />}

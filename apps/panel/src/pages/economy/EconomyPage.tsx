@@ -15,7 +15,11 @@ export function EconomyPage() {
   const tab = route.useSearch().tab ?? "health";
   const navigate = useNavigate();
   return (
-    <Tabs value={tab} onValueChange={(t) => void navigate({ to: "/economy", search: { tab: t as EconomyTab }, replace: true })}>
+    <Tabs
+      value={tab}
+      // The rest of the address (the server the page is about) stays when the tab changes.
+      onValueChange={(t) => void navigate({ to: "/economy", search: (prev: Record<string, unknown>) => ({ ...prev, tab: t as EconomyTab }), replace: true })}
+    >
       <TabsList>
         {ECONOMY_TABS.map((t) => (
           <TabsTrigger key={t.tab} value={t.tab}>

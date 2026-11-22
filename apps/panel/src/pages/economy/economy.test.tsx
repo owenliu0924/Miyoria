@@ -90,6 +90,7 @@ describe("經濟 / 預測、房間", () => {
   it("shows where the stakes stand and who was right", async () => {
     const open: PredictionView = {
       id: "P1",
+      space: null,
       question: "她這場 Minecraft 會怎麼死?",
       options: [
         { label: "岩漿", staked: 300, backers: 3, multiplier: 1.7 },
@@ -129,9 +130,40 @@ describe("經濟 / 預測、房間", () => {
     expect(within(second).queryByRole("button", { name: /結算為/ })).toBeNull();
   });
 
+  it("asks for one server's predictions with two or more, every server's with one", async () => {
+    const asked: string[] = [];
+    const spaces = (n: number) =>
+      [
+        { id: "SA", platform: "discord", external_id: "1", name: "甲服", primary: true, members: 3 },
+        { id: "SB", platform: "discord", external_id: "2", name: "乙服", primary: false, members: 2 },
+      ].slice(0, n);
+    for (const n of [1, 2]) {
+      asked.length = 0;
+      mockFetch((_m, u) => {
+        if (u.pathname === "/api/places/spaces") return { body: { spaces: spaces(n), default: "SA" } };
+        if (u.pathname === "/api/economy/predictions") {
+          asked.push(u.search);
+          return { body: { currency: "魚幣", predictions: [] } };
+        }
+        return undefined;
+      });
+      const view = renderRoute("/economy?tab=predictions");
+      expect(await screen.findByText("沒有預測")).toBeInTheDocument();
+      if (n === 1) {
+        expect(asked.every((q) => q === "")).toBe(true);
+        expect(screen.queryByText(/的預測:只有那個伺服器的成員/)).toBeNull();
+      } else {
+        await waitFor(() => expect(asked).toContain("?space=SA"));
+        expect(screen.getByText("甲服 的預測:只有那個伺服器的成員看得到、能押。")).toBeInTheDocument();
+      }
+      view.unmount();
+    }
+  });
+
   it("lets the owner settle or call off one still waiting, and says so when the account may not", async () => {
     const waiting: PredictionView = {
       id: "P1",
+      space: null,
       question: "這碗湯會被猜中嗎",
       options: [
         { label: "猜中", staked: 30, backers: 1, multiplier: 1.6 },
