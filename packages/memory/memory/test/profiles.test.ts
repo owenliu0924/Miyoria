@@ -269,6 +269,38 @@ describe("person profiles", () => {
     expect(p?.last_topic).toBe("和 Sora 聊了期末考的準備");
     expect(p?.questions).toEqual([]);
   });
+
+  it("take no episode about someone else as a bystander's last topic", async () => {
+    const t = await setup();
+    const episode = (content: string, subjects: PersonId[], when: Timestamp) =>
+      t.engine.store(
+        {
+          kind: "episode",
+          scope: { type: "guild", platform: "discord", guild: "g1" },
+          subjects,
+          content,
+          importance: 0.5,
+          confidence: 0.9,
+          source_context: guild("lobby"),
+          origin: "experienced",
+          due: null,
+        },
+        when,
+      );
+    // Sora said one line while Tomo asked for a song: tagged with both, about Tomo.
+    await episode("Tomo 請我幫他點一首歌", [pS, pT], at(-20));
+    t.log.say(S, "嗨", at(10, 0), guild("lobby"));
+    const where = { context: guild("lobby"), present: [pS], now: at(10, 1) };
+    const [none] = await t.profiles.profiles(where);
+    expect(none?.last_topic).toBeNull();
+    // One that names Sora is theirs, and so is one with Sora alone.
+    await episode("Tomo 和 Sora 一起討論畫畫", [pS, pT], at(-30));
+    const [named] = await t.profiles.profiles(where);
+    expect(named?.last_topic).toBe("Tomo 和 Sora 一起討論畫畫");
+    await episode("聊了期末考的準備", [pS], at(-25));
+    const [alone] = await t.profiles.profiles(where);
+    expect(alone?.last_topic).toBe("聊了期末考的準備");
+  });
 });
 
 describe("person profiles from the heart (docs/design/v5-heart.md §2.9)", () => {

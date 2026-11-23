@@ -9,6 +9,7 @@
 // Nothing stored moves or is deleted: this is a reader.
 
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
+import type { MemoryRecord } from "@miyoria/store";
 import {
   AFFINITY_LEVEL_MAX,
   affinityLevel,
@@ -40,7 +41,7 @@ import type { NotesRecall } from "./notes-recall.js";
 import { disclose, PRIVATE_MARK, placeRef, quotable, type Viewer, withheldTalk } from "./places.js";
 import { clockOf, type RecentDeps, viewerFor } from "./recent.js";
 import { parseWindow, type RecentLog, type Said } from "./recent-log.js";
-import { hasScope, visibleScopes } from "./scope.js";
+import { hasScope, namesIn, visibleScopes } from "./scope.js";
 import { questionLine, type Threads } from "./threads.js";
 import { textSimilarity } from "./tokenize.js";
 
@@ -133,10 +134,19 @@ export class Profiles implements PersonProfiles {
     let topicPrivate = false;
     const episodes = await this.#engine.records.list(
       this.#engine.profile,
-      memoryFilter(10, { subject: person, kind: "episode" }),
+      memoryFilter(20, { subject: person, kind: "episode" }),
     );
+    // An episode is tagged with everyone who spoke in the stretch, so a bystander's newest one is
+    // often someone else's talk: it is theirs only when it names them, or they were the only one.
+    const entry = this.#src.handles()?.resolve(handle) ?? null;
+    const known = [
+      handle,
+      ...(entry === null ? [] : [entry.display_name, ...(entry.names ?? [])]),
+      ...(options.shown?.[person] ?? []),
+    ];
     const episode = episodes.find(
       (r) =>
+        aboutThem(r, person, known) &&
         hasScope(scopes, r.scope) &&
         timestampMs(r.created_at) < seen.stretchStart &&
         !repeats(r.content, exclude) &&
@@ -341,6 +351,19 @@ export class Profiles implements PersonProfiles {
     }
     return blocks.join("\n");
   }
+}
+
+/**
+ * Whether an episode tagged with `person` is about them: it names them (`names`), or they were the
+ * only one tagged, so the talk was with them alone.
+ */
+export function aboutThem(
+  episode: Pick<MemoryRecord, "content" | "subjects">,
+  person: PersonId,
+  names: readonly string[],
+): boolean {
+  if (episode.subjects.length === 1 && episode.subjects[0] === person) return true;
+  return namesIn(episode.content, names);
 }
 
 /** When neither the log nor the window knows: what their heart row says. */
