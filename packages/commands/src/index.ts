@@ -90,7 +90,14 @@ export {
   isAdminNode,
   matches,
   SANDBOX_CODE_RUN,
+  SANDBOX_WORKSPACE,
+  SKILLS_MANAGE,
+  SKILLS_USE,
   WEB_TOOL,
+  WORK_BOND,
+  WORK_DELEGATE,
+  WORK_NODES,
+  WORKSPACE_ALL,
 } from "./nodes.js";
 export {
   type FieldAsk,

@@ -20,6 +20,9 @@ function allows(role: RoleDefinition, node: string): boolean {
   return !role.denies.some((p) => matches(p, node)) && role.grants.some((p) => matches(p, node));
 }
 
+const sameNodes = (a: readonly string[], b: readonly string[]) =>
+  a.length === b.length && [...a].sort().every((n, i) => n === [...b].sort()[i]);
+
 describe("built-in roles", () => {
   test("builtins_are_ordered_and_valid", () => {
     const roles = builtinRoles();
@@ -57,13 +60,16 @@ describe("built-in roles", () => {
       expect(legacy.length, name).toBeGreaterThan(0);
       for (const old of legacy) {
         // Only the step just before `tools.remind` already has the file node.
-        if (old.includes("tools.file")) {
-          expect(old, name).toEqual(current.grants.filter((g) => g !== "tools.remind"));
+        if (old.includes("tools.file") && !old.includes("tools.remind")) {
+          expect(old, name).toEqual(
+            current.grants.filter((g) => g !== "tools.remind" && g !== "work.bond"),
+          );
         }
         expect(builtinStatus({ ...current, grants: [...old] }), name).toBe("upgrade");
       }
-      // Before the file node, and before the web node (neither node had `tools.remind` yet).
-      const minus = (...nodes: string[]) => current.grants.filter((g) => !nodes.includes(g));
+      // Before the file node, and before the web node (neither had `tools.remind` or `work.bond`).
+      const minus = (...nodes: string[]) =>
+        current.grants.filter((g) => !nodes.includes(g) && g !== "work.bond");
       expect(legacy, name).toContainEqual(minus("tools.file", "tools.remind"));
       expect(legacy, name).toContainEqual(minus("tools.web", "tools.file", "tools.remind"));
       expect(builtinStatus(current), name).toBe("current");
@@ -80,21 +86,39 @@ describe("built-in roles", () => {
     expect(allows(get(BLOCKED), "tools.remind")).toBe(false);
     for (const name of [ADMIN, MODERATOR, TRUSTED, USER]) {
       const current = get(name);
-      const without = current.grants.filter((g) => g !== "tools.remind");
+      // As stored before `work.bond` (which came later), and before `tools.remind` on top.
+      const beforeWork = current.grants.filter((g) => g !== "work.bond");
+      const without = beforeWork.filter((g) => g !== "tools.remind");
       // A role stored before the node existed is an earlier version of the role (and so is
       // upgraded) exactly when the role carries the node now; a role that never listed it
-      // (trusted and above: `tools.*`) is simply current.
+      // (trusted and above: `tools.*`) is the same as the version just before `work.bond`.
       const listed = current.grants.includes("tools.remind");
-      expect(builtinStatus({ ...current, grants: without }), name).toBe(
-        listed ? "upgrade" : "current",
-      );
+      expect(listed || sameNodes(without, beforeWork), name).toBe(true);
+      expect(builtinStatus({ ...current, grants: without }), name).toBe("upgrade");
       // No stored version lists it: older versions come from before it, and the current one is
       // never in the legacy lists.
+      // Only the version just before `work.bond` lists it.
       for (const old of LEGACY_BUILTIN_GRANTS[name] ?? []) {
-        expect(old, name).not.toContain("tools.remind");
+        if (!sameNodes(old, beforeWork)) expect(old, name).not.toContain("tools.remind");
         expect(builtinStatus({ ...current, grants: [...old] }), name).toBe("upgrade");
       }
     }
+  });
+
+  test("work_bond_for_members_and_a_stored_role_from_before_it_is_upgraded", () => {
+    const roles = builtinRoles();
+    const get = (n: string) => roles.find((r) => r.name === n) as RoleDefinition;
+    for (const name of [ADMIN, MODERATOR, TRUSTED, USER]) {
+      const current = get(name);
+      expect(allows(current, "work.bond"), name).toBe(true);
+      const without = current.grants.filter((g) => g !== "work.bond");
+      expect(builtinStatus({ ...current, grants: without }), name).toBe("upgrade");
+      for (const old of LEGACY_BUILTIN_GRANTS[name] ?? []) {
+        expect(old, name).not.toContain("work.bond");
+      }
+    }
+    expect(allows(get(RESTRICTED), "work.bond")).toBe(false);
+    expect(allows(get(BLOCKED), "work.bond")).toBe(false);
   });
 
   test("members_may_send_files", () => {

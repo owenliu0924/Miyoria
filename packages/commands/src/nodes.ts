@@ -10,7 +10,7 @@
 // | admin | 80 | moderator plus `admin.*`, `module.*`, `memory.*`, `stream.*` |
 // | moderator | 60 | trusted plus `voice.*`, `queue.*`, `game.*`, `stream.scene`, setting changes, time-limited rules, ... |
 // | trusted | 40 | user plus `chat.*`, `tools.*`, `queue.priority`, `game.suggest`, `stream.clip` |
-// | user | 20 | restricted plus joining voice, queue requests and votes, `tools.web`, `tools.file`, views of settings, ... |
+// | user | 20 | restricted plus joining voice, queue requests and votes, `tools.web`, `tools.file`, `work.bond`, views of settings, ... |
 // | restricted | 10 | `help`, `me.*`, `memory.self.*`, `voice.consent` |
 // | blocked | 0 | nothing |
 
@@ -70,6 +70,41 @@ export const FILE_READ = "tools.file";
  */
 export const REMIND_TOOL = "tools.remind";
 
+/** Trusted people may ask her to run code in the sandbox (she can still decline). */
+export const SANDBOX_CODE_RUN = "sandbox.code.run";
+/** Her file tools (list, read, write, delete, export) for the person who asked. */
+export const SANDBOX_WORKSPACE = "sandbox.workspace";
+/** Her skills (how-to documents in her workspace) for the person who asked. */
+export const SKILLS_USE = "skills.use";
+/** Handing a job to a background helper that works for the person who asked. */
+export const WORK_DELEGATE = "work.delegate";
+
+/**
+ * A bond with her at or above `[modules.actions] work_min_bond` counts as these nodes: real work
+ * (files, code, skills, helpers) is for the people she knows well enough.
+ */
+export const WORK_NODES: readonly string[] = [
+  SANDBOX_WORKSPACE,
+  SANDBOX_CODE_RUN,
+  SKILLS_USE,
+  WORK_DELEGATE,
+];
+
+/**
+ * Lets a bond count as `WORK_NODES` (members have it). Deny it to a role or a person to make the
+ * bond no longer enough; nodes they hold themselves still apply.
+ */
+export const WORK_BOND = "work.bond";
+
+/**
+ * Sees her whole workspace. Everyone else who asks gets their own folder (`people/<id>/`). No
+ * role lists it, so only owners (`*`) have it.
+ */
+export const WORKSPACE_ALL = "sandbox.workspace.all";
+
+/** Changes her own skills (they end up in her prompt). No role lists it: owners only. */
+export const SKILLS_MANAGE = "skills.manage";
+
 const EVERYDAY: readonly string[] = [
   "chat.talk",
   "link.*",
@@ -93,10 +128,8 @@ const EVERYDAY: readonly string[] = [
   WEB_TOOL,
   FILE_READ,
   REMIND_TOOL,
+  WORK_BOND,
 ];
-
-/** Trusted people may ask her to run code in the sandbox (she can still decline). */
-export const SANDBOX_CODE_RUN = "sandbox.code.run";
 
 const TRUSTED_EXTRA: readonly string[] = [
   "chat.*",

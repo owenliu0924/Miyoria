@@ -6,6 +6,11 @@ import {
   matches,
   Permissions,
   parseAccount,
+  SKILLS_MANAGE,
+  WORK_BOND,
+  WORK_DELEGATE,
+  WORK_NODES,
+  WORKSPACE_ALL,
 } from "../src/index.js";
 import { guildContext, inv } from "./helpers.js";
 
@@ -89,6 +94,25 @@ describe("permissions", () => {
     }
     expect(matches("queue.*", "queue")).toBe(true);
     expect(matches("queue.*", "queuex")).toBe(false);
+  });
+
+  it("members_have_the_bond_node_and_only_owners_see_her_whole_workspace", () => {
+    const get = (name: string) => builtinRole(name) ?? { grants: [], denies: [] };
+    for (const name of ["admin", "moderator", "trusted", "user"]) {
+      expect(granted(get(name).grants, get(name).denies, WORK_BOND), name).toBe(true);
+      // Her whole workspace and her own skills stay the owner's.
+      expect(granted(get(name).grants, get(name).denies, WORKSPACE_ALL), name).toBe(false);
+      expect(granted(get(name).grants, get(name).denies, SKILLS_MANAGE), name).toBe(false);
+    }
+    for (const name of ["restricted", "blocked"]) {
+      expect(granted(get(name).grants, get(name).denies, WORK_BOND), name).toBe(false);
+    }
+    expect(granted(get("owner").grants, [], WORKSPACE_ALL)).toBe(true);
+    // A plain member holds no work node itself: the bond decides (in the gate).
+    for (const node of WORK_NODES) {
+      expect(granted(get("user").grants, get("user").denies, node), node).toBe(false);
+    }
+    expect(WORK_NODES).toContain(WORK_DELEGATE);
   });
 
   it("authorizer_checks_accounts", () => {

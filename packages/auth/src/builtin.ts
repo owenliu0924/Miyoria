@@ -19,6 +19,7 @@ import {
   FILE_READ,
   SANDBOX_CODE_RUN,
   WEB_TOOL,
+  WORK_BOND,
 } from "@miyoria/commands";
 import type { RoleDefinition } from "@miyoria/store";
 
@@ -96,10 +97,18 @@ const V1_ADMIN = ["admin.*", "module.*", "memory.*", "stream.*"];
  */
 const REMIND_TOOL = "tools.remind";
 
-/** The role's current grants without `removed` (the nodes a later version added). */
+/**
+ * The role's current grants without `removed` (the nodes a later version added). `work.bond` is
+ * the newest node, so no earlier version has it.
+ */
 function without(name: string, removed: readonly string[]): string[] {
   const role = builtinRoleGrants().find((r) => r.name === name);
-  return (role?.grants ?? []).filter((n) => !removed.includes(n));
+  return (role?.grants ?? []).filter((n) => !removed.includes(n) && n !== WORK_BOND);
+}
+
+/** A built-in role's grants before a bond could count as the work nodes. */
+function beforeWork(name: string): string[] {
+  return without(name, []);
 }
 
 /** A built-in role's grants before members could ask her to set timers. */
@@ -148,6 +157,7 @@ const LEGACY: Readonly<Record<string, readonly (readonly string[])[]>> = {
     beforeWeb("admin"),
     beforeFiles("admin"),
     beforeRemind("admin"),
+    beforeWork("admin"),
   ],
   moderator: [
     [...V1_PRIVACY, ...V1_EVERYDAY, ...V1_TRUSTED, ...V1_MODERATOR],
@@ -156,6 +166,7 @@ const LEGACY: Readonly<Record<string, readonly (readonly string[])[]>> = {
     beforeWeb("moderator"),
     beforeFiles("moderator"),
     beforeRemind("moderator"),
+    beforeWork("moderator"),
   ],
   trusted: [
     [...V1_PRIVACY, ...V1_EVERYDAY, ...V1_TRUSTED],
@@ -163,12 +174,14 @@ const LEGACY: Readonly<Record<string, readonly (readonly string[])[]>> = {
     beforeWeb("trusted"),
     beforeFiles("trusted"),
     beforeRemind("trusted"),
+    beforeWork("trusted"),
   ],
   user: [
     [...V1_PRIVACY, ...V1_EVERYDAY],
     beforeWeb("user"),
     beforeFiles("user"),
     beforeRemind("user"),
+    beforeWork("user"),
   ],
   restricted: [V1_PRIVACY],
 };
