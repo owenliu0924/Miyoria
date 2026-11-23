@@ -113,7 +113,8 @@ export const DELEGATE_TOOL = {
 
 export const DELEGATE_LIST_TOOL = {
   description:
-    "看你交給小幫手的工作:哪些在做、哪些在排隊、最近做完什麼(含代號、計畫做到哪、輪數和花了多少)。要取消或讀結果時先看代號。",
+    "看你交給小幫手的工作:哪些在做、哪些在排隊、最近做完什麼(含代號、計畫做到哪、輪數和花了多少)。要取消或讀結果時先看代號。" +
+    "替別人做事時只看得到、取消得了那個人自己要的工作。",
 } as const;
 
 export const DELEGATE_CANCEL_TOOL = {
@@ -149,6 +150,10 @@ export const DELEGATE_REFUSALS = {
   noTools: (kind: string) => `現在沒有 ${kind} 要用的工具(相關的功能沒開),開不了。`,
   full: (running: number, queued: number) =>
     `手上已經有 ${running + queued} 件小幫手的工作了(做 ${running}、排 ${queued}),先等一件做完。`,
+  /** One person's jobs fill their share (`per_person_running` and `per_person_queued`). */
+  personFull: (who: string, running: number, queued: number) =>
+    `${safeName(who, 40)}要的小幫手工作已經有 ${running + queued} 件了(做 ${running}、排 ${queued}),` +
+    "一個人能交代的就這麼多,等其中一件做完再交代新的。用你自己的話跟對方說一聲。",
   closed: "小幫手現在不能開(系統在關閉)。",
   noJob: (ref: string) => `沒有代號 ${safeName(ref, 40)} 的小幫手工作。用 delegate_list 看代號。`,
   ended: (id: string, state: string) => `工作 ${id} 已經結束了(${state}),不用取消。`,
@@ -277,5 +282,6 @@ export const NO_PLAN = "  (還沒有計畫)";
 export const LATEST_STEP = (step: string) => `  最新一步:${oneLine(step, 100)}`;
 export const MORE_HERE = (n: number) => `…這裡還有 ${n} 件,用 delegate_list 看。`;
 export const ELSEWHERE = (n: number) => `別的地方還有 ${n} 件工作在做(內容不在這裡說)。`;
+export const OTHERS_HERE = (n: number) => `這裡還有 ${n} 件別人的工作在跑(內容不在這裡說)。`;
 export const JOBS_FOOT =
   "做完會回來叫你;還沒做完之前,有人問起就照上面說做到哪,不要說做好了。要細節用 delegate_read,不要了用 delegate_cancel。";

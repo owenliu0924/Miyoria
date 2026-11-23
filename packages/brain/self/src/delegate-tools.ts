@@ -12,7 +12,7 @@ import {
 } from "@miyoria/llm/tools";
 import { type AccountRef, isJsonObject, type JsonValue } from "@miyoria/types";
 import { z } from "zod";
-import type { Delegator } from "./delegate.js";
+import type { Delegator, JobViewer } from "./delegate.js";
 import {
   DELEGATE_CANCEL_TOOL,
   DELEGATE_LIST_TOOL,
@@ -39,6 +39,21 @@ export interface DelegateToolDeps {
   delegator: Delegator;
   /** The name shown for an account in a job's wake (`WakeAuthor.name`). Default: its id. */
   nameOf?: (account: AccountRef) => string;
+  /** Whether `account` sees everyone's jobs (an owner). Unset: nobody does. */
+  seesAll?: (account: AccountRef) => boolean;
+}
+
+/**
+ * Whose jobs a call may see and cancel: the asker's own; every job for her own calls (nobody
+ * behind them) and for someone who sees all (an owner).
+ */
+export function jobViewerOf(
+  ctx: ToolContext,
+  seesAll?: (account: AccountRef) => boolean,
+): JobViewer {
+  const account = ctx.principal.requester;
+  if (account === null || seesAll?.(account) === true) return null;
+  return account;
 }
 
 /** Who a tool call acts for: the person who asked, when someone did. */
@@ -140,8 +155,8 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         core: true,
         readOnly: true,
       },
-      async () => {
-        const lines = delegator.lines();
+      async (ctx) => {
+        const lines = delegator.lines(10, jobViewerOf(ctx, deps.seesAll));
         return { ok: true, text: lines.length === 0 ? "沒有交給小幫手的工作。" : lines.join("\n") };
       },
     ),
@@ -154,12 +169,12 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         effect: "act",
         speed: "instant",
       },
-      async (_ctx, raw) => {
+      async (ctx, raw) => {
         const args = CancelArgs.safeParse(raw);
         if (!args.success || args.data.job.trim() === "") {
           return denied("args", DELEGATE_REFUSALS.empty);
         }
-        const out = delegator.cancel(args.data.job);
+        const out = delegator.cancel(args.data.job, jobViewerOf(ctx, deps.seesAll));
         return out.ok ? { ok: true, text: out.text } : denied("job", out.text);
       },
     ),
@@ -175,12 +190,17 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         readOnly: true,
         framed: true,
       },
-      async (_ctx, raw) => {
+      async (ctx, raw) => {
         const args = ReadArgs.safeParse(raw);
         if (!args.success || args.data.job.trim() === "") {
           return denied("args", DELEGATE_REFUSALS.empty);
         }
-        const out = delegator.read(args.data.job, args.data.what ?? "result", args.data.from ?? 0);
+        const out = delegator.read(
+          args.data.job,
+          args.data.what ?? "result",
+          args.data.from ?? 0,
+          jobViewerOf(ctx, deps.seesAll),
+        );
         return out.ok ? { ok: true, text: out.text } : denied("job", out.text);
       },
     ),

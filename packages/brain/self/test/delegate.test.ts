@@ -334,7 +334,8 @@ describe("limits", () => {
     const s = await setup(
       [(request) => (afterTool(request) ? say("好了") : calls([{ name: "web_search" }]))],
       [web],
-      { limits: { maxRunning: 2, maxQueued: 2 } },
+      // One person's share is not what this is about.
+      { limits: { maxRunning: 2, maxQueued: 2, perPersonRunning: 8, perPersonQueued: 8 } },
     );
     const outs = [];
     for (let i = 0; i < 5; i++) outs.push(await s.start({ kind: "research", goal: `查 ${i}` }));
@@ -772,5 +773,89 @@ describe("the nightly reflection", () => {
     expect(none).toMatchObject({ ran: false, job: null });
     expect(s.delegator.jobs().filter((j) => j.kind === "reflect")).toHaveLength(2);
     expect(s.events.map((e) => e.type)).toEqual(["started", "ended", "started", "ended"]);
+  });
+});
+
+describe("whose jobs", () => {
+  const AMY = { platform: "discord", id: "amy" };
+  const amy = (context: ContextKey = CTX): ToolContext => ({
+    ...ctxOf(context),
+    account: AMY,
+    principal: Principals.user(AMY, context),
+  });
+  const hers = (): ToolContext => ({ ...ctxOf(), principal: Principals.self(CTX, null) });
+
+  it("someone sees, reads and cancels only the jobs they asked for", async () => {
+    const g = gate();
+    const web = fakeTool("web_search", "Owen 的祕密", { call: () => g.opened.then(() => "r") });
+    const s = await setup(
+      [(request) => (afterTool(request) ? say("Owen 的結果") : calls([{ name: "web_search" }]))],
+      [web],
+    );
+    const tools = new Map(
+      delegateTools({ delegator: s.delegator, seesAll: (a) => a.id === "owner" }).map((t) => [
+        t.spec.name,
+        t,
+      ]),
+    );
+    const run = (name: string, ctx: ToolContext, args: Record<string, JsonValue> = {}) =>
+      ((tools.get(name) as Tool).result as NonNullable<Tool["result"]>)(ctx, args);
+    expect((await s.start({ kind: "research", goal: "Owen 要查的" })).ok).toBe(true);
+    await sleep(20);
+    const [job] = s.delegator.jobs() as [JobRow];
+    // Amy: nothing of Owen's, not even that it exists.
+    expect((await run("delegate_list", amy())).text).not.toContain("Owen 要查的");
+    for (const what of ["result", "transcript"]) {
+      const read = await run("delegate_read", amy(), { job: job.id, what });
+      expect(read).toMatchObject({ ok: false, text: DELEGATE_REFUSALS.noJob(job.id) });
+    }
+    expect(await run("delegate_cancel", amy(), { job: job.id })).toMatchObject({ ok: false });
+    expect(s.delegator.find(job.id)?.state).toBe("running");
+    // Owen, her own calls and an owner see it.
+    expect((await run("delegate_list", ctxOf())).text).toContain("Owen 要查的");
+    expect((await run("delegate_list", hers())).text).toContain("Owen 要查的");
+    const owner = {
+      ...amy(),
+      principal: Principals.user({ platform: "discord", id: "owner" }, CTX),
+    };
+    expect((await run("delegate_read", owner, { job: job.id })).ok).toBe(true);
+    g.open();
+    await s.delegator.idle();
+    expect((await run("delegate_read", amy(), { job: job.id })).ok).toBe(false);
+    expect((await run("delegate_read", ctxOf(), { job: job.id })).text).toContain("Owen 的結果");
+    expect((await run("delegate_cancel", ctxOf(), { job: "zzzzzzzz" })).ok).toBe(false);
+  });
+
+  it("one person holds at most their share of the slots; others still get theirs", async () => {
+    const g = gate();
+    const web = fakeTool("web_search", "r", { call: () => g.opened.then(() => "r") });
+    const s = await setup(
+      [(request) => (afterTool(request) ? say("好了") : calls([{ name: "web_search" }]))],
+      [web],
+      { limits: { maxRunning: 3, maxQueued: 8, perPersonRunning: 2, perPersonQueued: 2 } },
+    );
+    const outs = [];
+    for (let i = 0; i < 5; i++) outs.push(await s.start({ kind: "research", goal: `Owen ${i}` }));
+    expect(outs.map((o) => o.ok)).toEqual([true, true, true, true, false]);
+    expect(outs[4]?.text).toBe(DELEGATE_REFUSALS.personFull("u1", 2, 2));
+    expect(outs[4]?.text).toContain("用你自己的話跟對方說一聲");
+    await sleep(20);
+    // A free slot is not Owen's third: Amy's job takes it.
+    const start = (s.tools.get(DELEGATE) as Tool).result as NonNullable<Tool["result"]>;
+    expect((await start(amy(), { kind: "research", goal: "Amy 的" })).ok).toBe(true);
+    await sleep(20);
+    const state = (goal: string) => s.delegator.jobs().find((j) => j.goal === goal)?.state;
+    expect(["Owen 0", "Owen 1", "Owen 2", "Owen 3", "Amy 的"].map(state)).toEqual([
+      "running",
+      "running",
+      "queued",
+      "queued",
+      "running",
+    ]);
+    // Her own jobs are nobody's share.
+    expect((await start(hers(), { kind: "research", goal: "我的" })).ok).toBe(true);
+    g.open();
+    await s.delegator.idle();
+    expect(s.woke.filter((j) => j.state === "done")).toHaveLength(6);
   });
 });

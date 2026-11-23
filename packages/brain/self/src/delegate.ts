@@ -3,8 +3,9 @@
 // Each job is one run of `SelfRunner` on the `subagent` profile, with a transcript session of its
 // own (`delegate:<id>`: it can be read afterwards and is never mixed with a conversation), the
 // tools of its kind (`subagents.ts`), the real guard behind the helper's own, and no outlet. At
-// most `maxRunning` run at once and `maxQueued` wait; a start past that is refused with a text she
-// can read.
+// most `maxRunning` run at once and `maxQueued` wait, and of one person's (who asked; not hers, not
+// an owner's) `perPersonRunning` and `perPersonQueued`, so one person cannot hold every slot; a
+// start past that is refused with a text she can read.
 //
 // Money. Every call a job makes is charged in USD (a model with no price at the quota's fallback
 // rate) to the job's own budget (the size of the task, hers to pick within the kind's maximum), to
@@ -24,7 +25,15 @@
 import { withLlmTag } from "@miyoria/llm/llm";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
-import { type AccountRef, type Clock, type ContextKey, dataBlock, newId } from "@miyoria/types";
+import {
+  type AccountRef,
+  accountRefString,
+  type Clock,
+  type ContextKey,
+  dataBlock,
+  newId,
+  sameAccount,
+} from "@miyoria/types";
 import { roughWait } from "../../agent/src/index.js";
 import {
   DELEGATE_BLOCK,
@@ -151,6 +160,17 @@ export interface JobRow {
   resumes: number;
 }
 
+/**
+ * Who looks at the jobs (`find`, `lines`, `read`, `cancel`): someone asking sees and cancels only
+ * the jobs they asked for; `null` (her own calls, an owner, the panel) all of them.
+ */
+export type JobViewer = AccountRef | null;
+
+/** Whether `viewer` may see `row`. */
+export function jobVisibleTo(row: Pick<JobRow, "from">, viewer: JobViewer): boolean {
+  return viewer === null || (row.from !== null && sameAccount(row.from.account, viewer));
+}
+
 /** A row as kept by an older version (no plan, no resumes) made whole. */
 export function normaliseRow(row: JobRow): JobRow {
   const r = row as Partial<JobRow> & JobRow;
@@ -265,6 +285,10 @@ export class DayPool {
 export interface DelegateLimits {
   maxRunning: number;
   maxQueued: number;
+  /** Jobs of one person (who asked) running at once; more of theirs wait. */
+  perPersonRunning: number;
+  /** Jobs of one person waiting at most. */
+  perPersonQueued: number;
   /** What the nightly reflection may spend in a day (USD). */
   reflectDailyUsd: number;
   /** Characters of a summary the place that asked is told. */
@@ -279,6 +303,8 @@ export interface DelegateLimits {
 export const DEFAULT_DELEGATE_LIMITS: DelegateLimits = {
   maxRunning: 3,
   maxQueued: 8,
+  perPersonRunning: 2,
+  perPersonQueued: 2,
   reflectDailyUsd: 0.5,
   resultChars: 1500,
   readChars: 8000,
@@ -449,6 +475,35 @@ export class Delegator {
     return n;
   }
 
+  /**
+   * Whose slots a job takes: the person who asked; `null`: nobody's (one she started herself, or
+   * an owner's, who is never held).
+   */
+  #holder(row: Pick<JobRow, "from">): string | null {
+    if (row.from === null) return null;
+    const payer = this.payerOf(row);
+    if (payer?.exempt === true) return null;
+    return payer?.person ?? accountRefString(row.from.account);
+  }
+
+  /** The jobs of `holder` going on. */
+  #heldBy(holder: string): { running: number; queued: number } {
+    const out = { running: 0, queued: 0 };
+    for (const j of this.#live.values()) {
+      if (this.#holder(j.row) !== holder) continue;
+      if (j.row.state === "running") out.running += 1;
+      else if (j.row.state === "queued") out.queued += 1;
+    }
+    return out;
+  }
+
+  /** Whether a waiting job may start now: a free slot, and its person under their running cap. */
+  #mayStart(row: Pick<JobRow, "from">): boolean {
+    if (this.#running() >= this.#limits.maxRunning) return false;
+    const holder = this.#holder(row);
+    return holder === null || this.#heldBy(holder).running < this.#limits.perPersonRunning;
+  }
+
   /** The limits of one job of `kind` (the reflection's are its profile's). */
   kindLimits(kind: SubagentKind): KindLimits {
     return kind === "reflect" ? KINDS.reflect.limits : this.#limits.kinds[kind];
@@ -492,8 +547,19 @@ export class Delegator {
     const tools = jobTools(kind, (name) => this.#p.tools.entry(name));
     if (tools.length === 0) return no("tools", DELEGATE_REFUSALS.noTools(kind));
     const running = this.#running();
-    if (running >= this.#limits.maxRunning && this.#queue.length >= this.#limits.maxQueued) {
-      return no("full", DELEGATE_REFUSALS.full(running, this.#queue.length));
+    const startsNow = this.#mayStart(spec);
+    if (!startsNow) {
+      const holder = this.#holder(spec);
+      const theirs = holder === null ? null : this.#heldBy(holder);
+      if (theirs !== null && theirs.queued >= this.#limits.perPersonQueued) {
+        return no(
+          "person_full",
+          DELEGATE_REFUSALS.personFull(spec.from?.name ?? "", theirs.running, theirs.queued),
+        );
+      }
+      if (this.#queue.length >= this.#limits.maxQueued) {
+        return no("full", DELEGATE_REFUSALS.full(running, this.#queue.length));
+      }
     }
     let id = this.#newId();
     while (this.#live.has(id) || this.#ended.some((j) => j.id === id)) id = this.#newId();
@@ -522,7 +588,7 @@ export class Delegator {
     const live = this.#liveOf(row, tools, false);
     this.#live.set(id, live);
     this.#p.store.saveJob(row);
-    if (running < this.#limits.maxRunning) {
+    if (startsNow) {
       this.#begin(live);
       return { ok: true, job: row, state: "running", ahead: 0, text: receipt(kind, id, 0) };
     }
@@ -543,9 +609,12 @@ export class Delegator {
     };
   }
 
+  /** Starts waiting jobs while there are slots: the first whose person is under their cap. */
   #pump(): void {
-    while (!this.#closed && this.#queue.length > 0 && this.#running() < this.#limits.maxRunning) {
-      const next = this.#queue.shift();
+    while (!this.#closed && this.#running() < this.#limits.maxRunning) {
+      const at = this.#queue.findIndex((l) => this.#mayStart(l.row));
+      if (at < 0) return;
+      const [next] = this.#queue.splice(at, 1);
       if (next !== undefined) this.#begin(next);
     }
   }
@@ -829,9 +898,12 @@ export class Delegator {
 
   // ---- cancel -----------------------------------------------------------------------------------
 
-  /** Cancels the job `ref` names (she asked): a queued one goes at once, a running one is cut. */
-  cancel(ref: string): { ok: boolean; text: string } {
-    const found = this.find(ref);
+  /**
+   * Cancels the job `ref` names (she asked): a queued one goes at once, a running one is cut.
+   * Someone else's job (`viewer`) is not found.
+   */
+  cancel(ref: string, viewer: JobViewer = null): { ok: boolean; text: string } {
+    const found = this.find(ref, viewer);
     if (found === null) return { ok: false, text: DELEGATE_REFUSALS.noJob(ref) };
     if (isEnded(found.state)) {
       return { ok: false, text: DELEGATE_REFUSALS.ended(found.id, found.state) };
@@ -851,11 +923,13 @@ export class Delegator {
 
   // ---- what is there ----------------------------------------------------------------------------
 
-  /** The job `ref` names: its id, or the start of one when only one has it. */
-  find(ref: string): JobRow | null {
+  /** The job `ref` names, of those `viewer` may see: its id, or the start of one when only one has it. */
+  find(ref: string, viewer: JobViewer = null): JobRow | null {
     const r = ref.trim().toLowerCase();
     if (r === "") return null;
-    const all = [...[...this.#live.values()].map((l) => l.row), ...this.#ended];
+    const all = [...[...this.#live.values()].map((l) => l.row), ...this.#ended].filter((j) =>
+      jobVisibleTo(j, viewer),
+    );
     const exact = all.find((j) => j.id === r);
     if (exact !== undefined) return exact;
     if (r.length < 3) return null;
@@ -880,9 +954,10 @@ export class Delegator {
       : spentText(row.rounds, row.usage.cost_usd, tokens, priced);
   }
 
-  /** Lines for `delegate_list`. */
-  lines(limit = 10): string[] {
+  /** Lines for `delegate_list`: the jobs `viewer` may see. */
+  lines(limit = 10, viewer: JobViewer = null): string[] {
     return this.jobs()
+      .filter((j) => jobVisibleTo(j, viewer))
       .slice(0, limit)
       .map((j) =>
         listLine(
@@ -913,10 +988,16 @@ export class Delegator {
 
   /**
    * A job's whole summary (`result`), or what it did step by step (`transcript`), from `from`
-   * characters on; framed as data. The summary may hold text from web pages.
+   * characters on; framed as data. The summary may hold text from web pages. Only a job `viewer`
+   * may see: its transcript holds what it read for the person who asked.
    */
-  read(ref: string, what: "result" | "transcript", from: number): { ok: boolean; text: string } {
-    const row = this.find(ref);
+  read(
+    ref: string,
+    what: "result" | "transcript",
+    from: number,
+    viewer: JobViewer = null,
+  ): { ok: boolean; text: string } {
+    const row = this.find(ref, viewer);
     if (row === null) return { ok: false, text: DELEGATE_REFUSALS.noJob(ref) };
     const body = what === "transcript" ? this.#steps(row) : (row.summary ?? "");
     const plan =

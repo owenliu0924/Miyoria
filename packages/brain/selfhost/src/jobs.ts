@@ -22,12 +22,14 @@
 // Money. A job is charged to whoever asked (their AI quota, `quota.ts`), never to the owner's cap;
 // one she started herself to nobody.
 
+import { WORKSPACE_ALL } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import type { Tool } from "@miyoria/llm/tools";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { errorMessage, SerialQueue, sleep } from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey, StoreKey } from "@miyoria/store";
 import {
+  AuthorizerKey,
   type ContextKey,
   DirectivesKey,
   isJsonObject,
@@ -273,6 +275,8 @@ export class JobsHost {
       limits: {
         maxRunning: cfg.max_running,
         maxQueued: cfg.max_queued,
+        perPersonRunning: cfg.per_person_running,
+        perPersonQueued: cfg.per_person_queued,
         reflectDailyUsd: cfg.reflect_daily_usd,
         resultChars: cfg.result_chars,
         readChars: cfg.read_chars,
@@ -301,6 +305,8 @@ export class JobsHost {
     this.#tools = delegateTools({
       delegator: this.delegator,
       nameOf: (account) => agent.handleOf(account, account.id),
+      // Owners see everyone's jobs, as they see everyone's folders.
+      seesAll: (account) => services.get(AuthorizerKey)?.allows(account, WORKSPACE_ALL) === true,
     });
     for (const tool of this.#tools) agent.tools.register(tool);
     services.get(PromptContributorsKey)?.register(new JobsPrompt(this.delegator));

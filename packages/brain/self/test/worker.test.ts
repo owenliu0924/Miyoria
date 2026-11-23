@@ -464,7 +464,7 @@ describe("the jobs going on, in her prompt", () => {
     await s.call(DELEGATE, { kind: "research", goal: "私訊裡要的東西" }, OTHER);
     await sleep(40);
     s.r.clock.tick(3 * 60_000);
-    const body = jobsBody(s.delegator, CTX) ?? "";
+    const body = jobsBody(s.delegator, CTX, [OWEN.account]) ?? "";
     expect(body).toContain("worker,進行中,跑了 3 分鐘;Owen 要的");
     expect(body).toContain("做一份報告");
     expect(body).toContain("1. [進行中] 找資料");
@@ -472,7 +472,14 @@ describe("the jobs going on, in her prompt", () => {
     // The other place's job is only a count here.
     expect(body).not.toContain("私訊裡要的東西");
     expect(body).toContain("別的地方還有 1 件");
-    const there = jobsBody(s.delegator, OTHER) ?? "";
+    // Someone else in the same place: Owen's job is only a count.
+    const amy = jobsBody(s.delegator, CTX, [{ platform: "discord", id: "amy" }]) ?? "";
+    expect(amy).not.toContain("做一份報告");
+    expect(amy).not.toContain("找資料");
+    expect(amy).toContain("這裡還有 1 件別人的工作在跑");
+    // So is it for a run nobody asked for.
+    expect(jobsBody(s.delegator, CTX) ?? "").not.toContain("做一份報告");
+    const there = jobsBody(s.delegator, OTHER, [OWEN.account]) ?? "";
     expect(there).toContain("research,排隊中");
     expect(there).toContain("私訊裡要的東西");
     const sections = await new JobsPrompt(s.delegator).contribute({ context: CTX } as never);
