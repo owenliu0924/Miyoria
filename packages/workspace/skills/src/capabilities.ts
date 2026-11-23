@@ -1,12 +1,19 @@
 // Her skills behind the gate: `skill.list`, `skill.read` (low risk), `skill.write` and
-// `skill.delete` (medium: rate limited, no review, because a skill is a note, not code). A
+// `skill.delete` (medium: rate limited, no review, because a skill is a note, not code). Anyone
+// who may ask her for work may have her read her skills (`skills.use`, a work node); changing
+// them changes her prompt, so for someone asking that is the owners' (`skills.manage`). A
 // script that goes with a skill is saved with the sandbox's reviewed `workspace_save_script`
 // at `skills/<name>/<file>` and run with `workspace_run`: only reviewed text ever runs.
 //
 // `skill` (`skillTool`) is the new turn runner's way in: it opens a skill like `skill.read` and
 // loads the tools its `tools:` line names into the session. The current turn is not offered it.
 
-import { type ActionResult, type Capability, defineCapability } from "@miyoria/gate/actions";
+import {
+  type ActionResult,
+  type Capability,
+  defineCapability,
+  SKILLS_MANAGE,
+} from "@miyoria/gate/actions";
 import {
   defineTool,
   type Tool,
@@ -25,6 +32,8 @@ export const SKILL_DELETE = "skill.delete";
 
 /** Permission node a `user` principal needs (she can still act `on_own`). */
 export const NODE_SKILLS = "skills.use";
+/** What someone asking needs to have her write or delete a skill (owners). */
+export const NODE_SKILLS_MANAGE = SKILLS_MANAGE;
 
 const Name = z.string().min(1).max(64);
 const ListArgs = z.object({});
@@ -139,8 +148,9 @@ export function skillCapabilities(store: SkillStore): Capability<never>[] {
     name: SKILL_WRITE,
     summary: "存一個技能(或改寫它)",
     risk: "medium",
+    work: true,
     args: WriteArgs,
-    permission: NODE_SKILLS,
+    permission: NODE_SKILLS_MANAGE,
     tool: {
       name: "skill_write",
       meta: { effect: "act", speed: "instant", group: "skills" },
@@ -182,8 +192,9 @@ export function skillCapabilities(store: SkillStore): Capability<never>[] {
     name: SKILL_DELETE,
     summary: "刪掉她的一個技能(連同它的腳本)",
     risk: "medium",
+    work: true,
     args: DeleteArgs,
-    permission: NODE_SKILLS,
+    permission: NODE_SKILLS_MANAGE,
     tool: {
       name: "skill_delete",
       meta: { effect: "act", speed: "instant", group: "skills" },
