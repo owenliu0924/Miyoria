@@ -1,8 +1,10 @@
 // `miyoria` package: the CLI. The library surface is exported for tests and embedding.
 
 export { ClientError } from "@miyoria/api";
-export { COMMANDS, type CommandSpec, checkArgs, helpText, main, parseArgs } from "./cli.js";
+export { type CommandSpec, checkArgs, commands, helpText, main, parseArgs } from "./cli.js";
 export { EnvFile, isEnvName, quoteEnvValue } from "./env-file.js";
+export { detectLang, langOfLocale, parseLang } from "./i18n/detect.js";
+export { catalogue, LANGS, type Lang, lang, setLang } from "./i18n/index.js";
 export {
   CancelledError,
   ClackPrompter,

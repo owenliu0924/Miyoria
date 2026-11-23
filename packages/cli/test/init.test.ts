@@ -73,9 +73,9 @@ describe("init flow", () => {
     expect(generated).toEqual([]); // tokens must not be regenerated
     expect(ws.changes()).toEqual([]);
     expect(
-      p.asked.some((q) => q.startsWith("LLM API key") && q.includes("已設定(按 Enter 保留)")),
+      p.asked.some((q) => q.startsWith("LLM API key") && q.includes("(set; press Enter to keep)")),
     ).toBe(true);
-    expect(p.asked.some((q) => q.includes("Discord bot token") && q.includes("已設定"))).toBe(true);
+    expect(p.asked.some((q) => q.includes("Discord bot token") && q.includes("(set;"))).toBe(true);
   });
 
   it("changes_only_what_was_typed", async () => {
@@ -151,7 +151,11 @@ describe("init flow", () => {
     expect(read("profiles/deepseek-chan/profile.toml")).toContain(
       'chat       = ["opencode:kimi-k2"]',
     );
-    expect(p.printed.some((l) => l.includes("Redirects 要加上 http://127.0.0.1:7878"))).toBe(true);
+    expect(
+      p.printed.some(
+        (l) => l.includes("Add http://127.0.0.1:7878") && l.includes("under Redirects"),
+      ),
+    ).toBe(true);
 
     // Running again with Enter everywhere keeps the new setup.
     const again = Workspace.open(config, { processEnv: NO_ENV });
@@ -231,11 +235,11 @@ describe("init command", () => {
       "profiles",
     ]);
     expect(read(".gitignore")).toContain(".env\n");
-    const summary = p.printed.find((l) => l.startsWith("box: 將變更")) ?? "";
-    expect(summary).toContain("建立");
+    const summary = p.printed.find((l) => l.startsWith("box: Pending changes")) ?? "";
+    expect(summary).toContain("Create");
     expect(summary).not.toContain("sk-scaffold"); // secrets are masked
     expect(summary).toContain("••••7890");
-    expect(p.printed.at(-1)).toMatch(/下一步[\s\S]*miyoria doctor/);
+    expect(p.printed.at(-1)).toMatch(/Next steps[\s\S]*miyoria doctor/);
 
     // The result loads like the core would load it.
     const env = new Map(
@@ -260,7 +264,7 @@ describe("init command", () => {
     const decline = new Scripted([...enters(9), No, No]);
     await run(config, decline, { bundledProfiles: BUNDLED, processEnv: NO_ENV });
     expect(readdirSync(dir)).toEqual([]);
-    expect(decline.printed).toContain("warn: 沒有寫入任何檔案");
+    expect(decline.printed).toContain("warn: No files were written");
   });
 
   it("yes_without_a_terminal_accepts_every_default", async () => {

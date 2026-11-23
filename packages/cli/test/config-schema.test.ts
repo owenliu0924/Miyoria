@@ -48,20 +48,20 @@ describe("config set with the root schema", () => {
     const check = (k: string, value: string) => v.valueForKey(parseKey(k), parseValue(value), ctx);
     // `[stage.obs] port` is 0–65535 in the stage's schema (the CLI used to say 1–65535).
     expect(check("stage.obs.port", "0")).toBeNull();
-    expect(check("stage.obs.port", "70000")).toBe("不能大於 65535");
-    expect(check("stage.obs.port", '"4455"')).toBe("要是數字");
-    expect(check("modules.agent.enabled", "nope")).toBe("要是 true 或 false");
+    expect(check("stage.obs.port", "70000")).toBe("Must be at most 65535");
+    expect(check("stage.obs.port", '"4455"')).toBe("Must be a number");
+    expect(check("modules.agent.enabled", "nope")).toBe("Must be true or false");
     expect(check("modules.voice.barge_in", '"selective"')).toBeNull();
     expect(check("modules.voice.barge_in", '"nope"')).toBe(
-      '要是 "selective"、"stop"、"ignore" 其中之一',
+      'Must be one of "selective", "stop", "ignore"',
     );
     // The Discord module takes digit strings and safe integers.
     const guilds = 'modules."platform.discord.bot".command_guilds';
     expect(check(guilds, '["123456789012345678"]')).toBeNull();
     expect(check(guilds, "[1]")).toBeNull();
     expect(check(guilds, '["abc"]')).toBe("[0] `abc` is not a Discord id");
-    expect(check("stack.workers.asr.port", "0")).toBe("不能小於 1");
-    expect(check("stack.nope", "1")).toBe("`nope` 不是這個表格認得的鍵");
+    expect(check("stack.workers.asr.port", "0")).toBe("Must be at least 1");
+    expect(check("stack.nope", "1")).toBe("`nope` is not a key this table accepts");
     expect(check("llm.budget.daily_usd", '"${BUDGET}"')).toBeNull();
   });
 
@@ -74,8 +74,8 @@ describe("config set with the root schema", () => {
     expect(check("stage.core_url", "nope")).not.toBeNull();
     expect(check("speech.asr.local.url", "x")).not.toBeNull();
     // Not in any schema: the CLI's own rule.
-    expect(check("stage.vts.port", "0")).toBe("port 要是 1–65535 的整數");
-    expect(check("somewhere.enabled", "1")).toBe("`enabled` 要是 true 或 false");
+    expect(check("stage.vts.port", "0")).toBe("Port must be an integer from 1 to 65535");
+    expect(check("somewhere.enabled", "1")).toBe("`enabled` must be true or false");
   });
 
   it("only blames the value, not what is wrong elsewhere in the file", async () => {
@@ -92,15 +92,15 @@ describe("prompts with the root schema", () => {
     if (port === undefined) throw new Error("no OBS port field");
     const portCheck = settings.checkOf(port, ctx);
     expect(portCheck?.("0")).toBeNull();
-    expect(portCheck?.("x")).toBe("port 要是整數");
-    expect(portCheck?.("70000")).toBe("不能大於 65535");
+    expect(portCheck?.("x")).toBe("Port must be an integer");
+    expect(portCheck?.("70000")).toBe("Must be at most 65535");
     const guilds = settings.checkOf(settings.DISCORD_GUILDS, ctx);
     expect(guilds?.("123, 456")).toBeNull();
     expect(guilds?.("abc")).not.toBeNull();
     const api = settings.checkOf(settings.API_BIND, ctx);
     expect(api?.("nope")).not.toBeNull();
     // Without the schema, the CLI's own rules.
-    expect(settings.checkOf(port, null)?.("0")).toBe("port 要是 1–65535 的整數");
+    expect(settings.checkOf(port, null)?.("0")).toBe("Port must be an integer from 1 to 65535");
   });
 
   it("offer the module's own barge-in modes", () => {

@@ -6,6 +6,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { Config } from "@miyoria/runtime/kernel";
 import { z } from "zod";
+import { t } from "../i18n/index.js";
 import {
   isLoopback,
   type Machine,
@@ -133,7 +134,7 @@ export function stackConfig(config: Config, services?: readonly string[]): Stack
     const w = raw.workers[name];
     const d = WORKER_DEFAULTS[name];
     const port = w?.port ?? (selected === null ? LEGACY_PORT[name] : WORKER_DEFAULT_PORT[name]);
-    if (port === undefined) throw new Error(`[stack.workers.${name}] 要設定 port`);
+    if (port === undefined) throw new Error(t.stack.config.workerNeedsPort(name));
     return {
       name,
       venv: w?.venv ?? (selected === null ? undefined : d?.venv) ?? `workers/.venv-${name}`,

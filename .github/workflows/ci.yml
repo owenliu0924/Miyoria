@@ -76,6 +76,8 @@ jobs:
         timeout-minutes: 4
         run: |
           miyoria() { npx --no-install miyoria "$@"; }
+          # Read from the JSON output, so the check does not depend on the CLI's language.
+          linked() { node -e 'const h=JSON.parse(require("fs").readFileSync("hosts.json","utf8")).hosts||[];process.exit(h.some((x)=>x.status==="approved"&&x.connected)?0:1)' 2>/dev/null; }
           miyoria config set --env LLM_BASE_URL http://127.0.0.1:9
           miyoria up --timeout 90
           for i in $(seq 1 60); do
@@ -86,12 +88,12 @@ jobs:
           cat status.txt
           grep -qE "^core +running +✓" status.txt || { echo "::error::core is not running and healthy"; exit 1; }
           for i in $(seq 1 30); do
-            miyoria host ls > hosts.txt 2>&1 || true
-            grep -E "approved" hosts.txt | grep -q "已連線" && break
+            miyoria host ls --json > hosts.json 2> hosts.err || true
+            linked && break
             sleep 1
           done
-          cat hosts.txt
-          grep -E "approved" hosts.txt | grep -q "已連線" || { echo "::error::this machine did not link itself to Core"; exit 1; }
+          cat hosts.json hosts.err
+          linked || { echo "::error::this machine did not link itself to Core"; exit 1; }
           miyoria logs core -n 20
           miyoria down
           sleep 2

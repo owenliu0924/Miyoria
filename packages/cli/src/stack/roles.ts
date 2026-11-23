@@ -13,31 +13,18 @@
 import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
 import { z } from "zod";
+import { t } from "../i18n/index.js";
 
 export interface RoleInfo {
-  /** Short label for prompts and docs. */
-  label: string;
   /** Services in start order. */
   services: readonly string[];
-  help: string;
 }
 
+/** The roles, by the services each brings up. */
 export const ROLES = {
-  broadcast: {
-    label: "直播機",
-    services: ["voice-node", "stage"],
-    help: "串流用電腦:Discord 語音 + Go Live(voice node)、VTube Studio / OBS / overlay(stage)",
-  },
-  core: {
-    label: "Bot 服務機",
-    services: ["core", "turn"],
-    help: "Discord bot、所有模組、資料庫、管理面板(core),判斷講完的 worker(turn),檔案沙箱用的 Docker",
-  },
-  inference: {
-    label: "GPU 推論機",
-    services: ["asr", "tts", "sing"],
-    help: "全部 AI 模型:語音辨識(asr)、語音合成(tts)、唱歌(sing);三個要在同一台",
-  },
+  broadcast: { services: ["voice-node", "stage"] },
+  core: { services: ["core", "turn"] },
+  inference: { services: ["asr", "tts", "sing"] },
 } as const satisfies Record<string, RoleInfo>;
 
 export type Role = keyof typeof ROLES;
@@ -85,7 +72,7 @@ export function expandTargets(words: readonly string[]): ServiceName[] {
     else if (isService(w)) set.add(w);
     else {
       throw new Error(
-        `不認得 \`${w}\`;角色:${ROLE_NAMES.join("、")}(或 all);服務:${SERVICE_ORDER.join("、")}`,
+        t.stack.roles.unknownTarget(w, t.common.list(ROLE_NAMES), t.common.list(SERVICE_ORDER)),
       );
     }
   }
@@ -149,11 +136,4 @@ export function isLoopback(host: string): boolean {
 /** Roles whose services are all present in `services` (a custom pick can fill several). */
 export function rolesCovered(services: readonly string[]): Role[] {
   return ROLE_NAMES.filter((r) => ROLES[r].services.every((s) => services.includes(s)));
-}
-
-/** Compact description for summaries: `core(Bot 服務機)`, or the service list for a custom pick. */
-export function describeMachine(m: Machine): string {
-  if (m.custom) return `自訂:${m.services.join("、")}`;
-  if (m.roles.length === 0) return "(沒有選角色)";
-  return m.roles.map((r) => `${r}(${ROLES[r].label})`).join(" + ");
 }

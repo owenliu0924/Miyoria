@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { configuredModules } from "@miyoria/core/light";
 import { Config } from "@miyoria/runtime/kernel";
+import { t } from "../i18n/index.js";
 import {
   isCancelled,
   isInteractive,
@@ -40,7 +41,8 @@ export class ConfigCommandError extends Error {
 
 export function changeLines(ws: Workspace, changes: readonly Change[]): string[] {
   const lines: string[] = [];
-  for (const path of ws.missingFiles()) lines.push(`${green("+")} 建立 ${ws.shown(path)}`);
+  for (const path of ws.missingFiles())
+    lines.push(`${green("+")} ${t.config.create(ws.shown(path))}`);
   for (const target of ["toml", "env", "profile"] as Target[]) {
     const group = changes.filter((c) => c.target === target);
     if (group.length === 0) continue;
@@ -77,16 +79,16 @@ export async function commit(
   const changes = ws?.changes() ?? [];
   const extraLines = extra?.lines ?? [];
   if (changes.length === 0 && (ws?.missingFiles().length ?? 0) === 0 && extraLines.length === 0) {
-    p.note("沒有變更");
+    p.note(t.config.noChanges);
     return null;
   }
-  p.box("將變更", [...(ws ? changeLines(ws, changes) : []), ...extraLines]);
-  if (!yes && !(await p.confirm("寫入這些變更?", true))) {
-    p.warn("沒有寫入任何檔案");
+  p.box(t.config.summaryTitle, [...(ws ? changeLines(ws, changes) : []), ...extraLines]);
+  if (!yes && !(await p.confirm(t.config.confirmWrite, true))) {
+    p.warn(t.config.nothingWritten);
     return null;
   }
-  for (const path of ws?.save() ?? []) p.ok(`已寫入 ${ws?.shown(path)}`);
-  for (const path of extra?.save() ?? []) p.ok(`已寫入 ${path}`);
+  for (const path of ws?.save() ?? []) p.ok(t.config.wrote(ws?.shown(path) ?? path));
+  for (const path of extra?.save() ?? []) p.ok(t.config.wrote(path));
   return changes;
 }
 
@@ -95,11 +97,11 @@ function writeNow(r: Reporter, ws: Workspace): Change[] {
   for (const w of ws.warnings.splice(0)) r.warn(w);
   const changes = ws.changes();
   if (changes.length === 0) {
-    r.note("沒有變更");
+    r.note(t.config.noChanges);
     return changes;
   }
   for (const line of changeLines(ws, changes)) println(`  ${line}`);
-  for (const path of ws.save()) r.ok(`已寫入 ${ws.shown(path)}`);
+  for (const path of ws.save()) r.ok(t.config.wrote(ws.shown(path)));
   return changes;
 }
 
@@ -107,7 +109,7 @@ function writeNow(r: Reporter, ws: Workspace): Change[] {
 function areaOf(path: readonly string[]): string {
   const first = path[0];
   if (first === "modules") return path[1] ?? "modules";
-  if (first === "stage") return "stage 節點";
+  if (first === "stage") return t.config.stageArea;
   return first ?? "";
 }
 
@@ -140,7 +142,7 @@ export function classify(
         }
       }
     } else {
-      areas.add("角色(profile)");
+      areas.add(t.config.profileArea);
     }
   }
   const toggled = new Set(toggles.map(([id]) => id));
@@ -170,36 +172,33 @@ export async function afterWrite(
   try {
     client = clientFor(workspaceConfig(ws));
   } catch {
-    r.note("core 沒有在執行;下次啟動時就會套用。");
+    r.note(t.config.notRunning);
     return;
   }
   if (!(await isRunning(client))) {
-    r.note("core 沒有在執行;下次啟動時就會套用。");
+    r.note(t.config.notRunning);
     return;
   }
   if (toggles.length > 0) {
-    const list = toggles.map(([id, on]) => `${on ? "啟用 " : "停用 "}${id}`).join("、");
-    const apply =
-      yes || (p !== null && (await p.confirm(`core 正在執行,要現在套用(${list})嗎?`, true)));
+    const list = t.common.list(
+      toggles.map(([id, on]) => (on ? t.config.enable(id) : t.config.disable(id))),
+    );
+    const apply = yes || (p !== null && (await p.confirm(t.config.applyNow(list), true)));
     if (apply) {
       for (const [id, on] of toggles) {
         try {
           await moduleAction(client, id, on ? "enable" : "disable");
         } catch (error) {
-          r.fail(`${id}:${(error as Error).message}`);
+          r.fail(t.config.actionFailed(id, (error as Error).message));
         }
       }
     } else {
-      r.note("core 正在執行:用 `miyoria module enable|disable <id>` 立即套用");
+      r.note(t.config.applyLater);
     }
   }
   if (areas.length > 0) {
-    r.warn(
-      `core 正在執行。模組設定在 core 啟動時讀取,這些變更要重啟 core 才會生效:${areas.join("、")}`,
-    );
-    r.note(
-      "在執行 core 的視窗按 Ctrl+C,再執行 `miyoria core`(Stage 節點則重新執行 `miyoria stage`)",
-    );
+    r.warn(t.config.restartNeeded(t.common.list(areas)));
+    r.note(t.config.restartHow);
   }
 }
 
@@ -237,60 +236,45 @@ function isSet(ws: Workspace, field: Field): boolean {
 }
 
 function areaLabel(area: Area, ws: Workspace): string {
-  const set = (b: boolean) => (b ? "已設定" : "未設定");
-  let name: string;
+  const set = (b: boolean) => (b ? t.common.set : t.common.notSet);
+  const name = t.config.areas[area];
   let status = "";
   switch (area) {
     case "profile":
-      name = "角色(profile)";
       status = settings.current(ws, settings.PROFILE).value;
       break;
     case "llm":
-      name = "LLM";
       status = settings.llmSummary(ws);
       break;
     case "discord":
-      name = "Discord bot";
-      status = `token ${set(isSet(ws, settings.DISCORD_TOKEN))}`;
+      status = t.config.tokenStatus(set(isSet(ws, settings.DISCORD_TOKEN)));
       break;
     case "oauth":
-      name = "面板登入(Discord OAuth)";
-      status = settings.oauthReady(ws) ? "已開啟" : "未設定";
-      break;
-    case "voice":
-      name = "語音(ASR / TTS worker、voice link)";
-      break;
-    case "stage":
-      name = "Stage(VTube Studio / OBS)";
+      status = settings.oauthReady(ws) ? t.config.oauthOn : t.common.notSet;
       break;
     case "database":
-      name = "資料庫";
       status = maskUrl(settings.current(ws, settings.DATABASE).value);
       break;
     case "owner": {
-      name = "擁有者";
       const v = settings.current(ws, settings.OWNER).value;
-      status = v === "" ? "未設定" : v;
+      status = v === "" ? t.common.notSet : v;
       break;
     }
     case "tokens": {
-      name = "Tokens(重新產生)";
-      const n = settings.TOKENS.filter(([v]) => (ws.lookup(v)?.[0] ?? "") !== "").length;
-      status = `${n}/${settings.TOKENS.length} 已設定`;
+      const n = settings.tokens().filter(([v]) => (ws.lookup(v)?.[0] ?? "") !== "").length;
+      status = t.config.tokensStatus(n, settings.tokens().length);
       break;
     }
     case "modules": {
-      name = "模組開關";
       try {
         const mods = configuredModules(workspaceConfig(ws));
-        status = `${mods.filter(([, on]) => on).length}/${mods.length} 啟用`;
+        status = t.config.modulesStatus(mods.filter(([, on]) => on).length, mods.length);
       } catch {
         status = "";
       }
       break;
     }
-    case "done":
-      name = "完成";
+    default:
       break;
   }
   return status === "" ? name : `${name}  · ${status}`;
@@ -300,7 +284,7 @@ async function modulesArea(p: Prompter, ws: Workspace): Promise<void> {
   const mods = configuredModules(workspaceConfig(ws));
   const labels = mods.map(([id]) => id);
   const defaults = mods.flatMap(([, on], i) => (on ? [i] : []));
-  const picked = await p.multiSelect("啟用哪些模組?(空白鍵切換)", labels, defaults);
+  const picked = await p.multiSelect(t.config.pickModules, labels, defaults);
   mods.forEach(([id, was], i) => {
     const now = picked.includes(i);
     if (now === was) return;
@@ -311,16 +295,16 @@ async function modulesArea(p: Prompter, ws: Workspace): Promise<void> {
 }
 
 async function tokensArea(p: Prompter, ws: Workspace): Promise<void> {
-  const labels = settings.TOKENS.map(([v, , what]) => {
+  const labels = settings.tokens().map(([v, , what]) => {
     const isSetNow = (ws.lookup(v)?.[0] ?? "") !== "";
-    return `${v}  ${what}  [${isSetNow ? "已設定" : "未設定"}]`;
+    return `${v}  ${what}  [${isSetNow ? t.common.set : t.common.notSet}]`;
   });
-  const picked = settings.TOKENS[await p.select("重新產生哪一個 token?", labels, 0)];
+  const picked = settings.tokens()[await p.select(t.config.pickToken, labels, 0)];
   if (!picked) return;
   const [variable] = picked;
-  p.warn(`重新產生 ${variable} 後,用舊 token 的連線會失效`);
+  p.warn(t.config.regenerateWarning(variable));
   ws.setEnv(variable, settings.newToken());
-  p.note(`要給其他節點用時:miyoria config get --env ${variable} --reveal`);
+  p.note(t.config.shareToken(variable));
 }
 
 export async function runArea(area: Area, p: Prompter, ws: Workspace): Promise<void> {
@@ -339,7 +323,7 @@ export async function runArea(area: Area, p: Prompter, ws: Workspace): Promise<v
       return;
     case "voice":
       await settings.editFields(p, ws, settings.VOICE);
-      p.note("voice link token 在「Tokens」項目");
+      p.note(t.config.voiceLinkToken);
       return;
     case "stage":
       await settings.editFields(p, ws, settings.STAGE);
@@ -350,7 +334,7 @@ export async function runArea(area: Area, p: Prompter, ws: Workspace): Promise<v
     case "owner":
       await settings.ask(p, ws, settings.OWNER);
       if (ws.references("MIYORIA_OWNER_ID").length === 0) {
-        p.warn("miyoria.toml 沒有引用 MIYORIA_OWNER_ID([modules.commands] 的 owners)");
+        p.warn(t.config.ownerUnreferenced);
       }
       return;
     case "tokens":
@@ -369,14 +353,14 @@ export async function menu(configPath: string, p: Prompter, yes: boolean): Promi
   if (!isInteractive()) throw new NotTtyError();
   // The answers are checked by the root schema, which loads every module package: start now.
   void validate.configSchema();
-  p.intro("Miyoria 設定");
-  p.note("選一個項目修改,只會動到你選的欄位。Esc 返回,選「完成」離開。");
+  p.intro(t.config.intro);
+  p.note(t.config.menuHelp);
   let cursor = 0;
   for (;;) {
     const labels = AREAS.map((a) => areaLabel(a, ws));
     let pick: number;
     try {
-      pick = await p.select("要設定哪一項?", labels, cursor);
+      pick = await p.select(t.config.menuQuestion, labels, cursor);
     } catch (error) {
       if (isCancelled(error)) break;
       throw error;
@@ -388,7 +372,7 @@ export async function menu(configPath: string, p: Prompter, yes: boolean): Promi
       await runArea(area, p, ws);
     } catch (error) {
       if (isCancelled(error)) {
-        p.warn("已取消這一項,沒有寫入");
+        p.warn(t.config.areaCancelled);
         ws = Workspace.open(configPath);
         continue;
       }
@@ -400,12 +384,12 @@ export async function menu(configPath: string, p: Prompter, yes: boolean): Promi
     } catch (error) {
       if (!isCancelled(error)) throw error;
       changes = null;
-      p.warn("沒有寫入任何檔案");
+      p.warn(t.config.nothingWritten);
     }
     if (changes) await afterWrite(p, yes, ws, changes);
     else ws = Workspace.open(configPath);
   }
-  p.outro("設定完成");
+  p.outro(t.config.outro);
 }
 
 // ---- scripting commands ------------------------------------------------------------------
@@ -414,25 +398,52 @@ function sources(used: ReadonlyArray<[string, Source]>): string {
   return used.map(([v, src]) => `${v}: ${sourceLabel(src)}`).join(", ");
 }
 
-export function list(configPath: string, reveal: boolean): void {
+/** One setting of `config list`; secrets are masked unless `--reveal`. */
+export interface ListedSetting {
+  key: string;
+  /** The value as the file writes it (TOML; a secret written in the file is masked). */
+  raw: string;
+  /** The effective value after `${VAR}` references, when it differs from `raw`; else `null`. */
+  value: string | null;
+  /** The variables it references and where each value came from. */
+  sources: Array<{ variable: string; source: Source }>;
+  /** A secret written into miyoria.toml itself instead of `.env`. */
+  plain_secret: boolean;
+}
+
+/** `config list --json`: schema `miyoria.config-list/1`. */
+export interface ConfigListJson {
+  schema: "miyoria.config-list/1";
+  config: string;
+  settings: ListedSetting[];
+  env_file: string;
+  env: Array<{ name: string; value: string; referenced: boolean }>;
+}
+
+/** What `config list` shows, as data. */
+export function listData(configPath: string, reveal: boolean): ConfigListJson {
   const ws = Workspace.open(configPath);
-  println(bold(ws.shown(configPath)));
   const referenced = new Set<string>();
+  const settings: ListedSetting[] = [];
+  const sourced = (used: ReadonlyArray<[string, Source]>) =>
+    used.map(([variable, source]) => ({ variable, source }));
   for (const leaf of leaves(ws.doc.data)) {
     const key = formatKey(leaf.path);
     const last = leaf.path.at(-1) ?? "";
     const raw = showValue(leaf.value);
     const v = leaf.value;
+    const row: ListedSetting = { key, raw, value: null, sources: [], plain_secret: false };
     if (typeof v === "string" && v.includes("${")) {
       const [value, used] = ws.resolve(v);
       const secret = isSecret(last) || used.some(([name]) => isSecret(name));
       for (const [name] of used) referenced.add(name);
-      const shown = secret && !reveal ? mask(value) : display("", value, reveal);
-      println(`${key} = ${raw}  ${dim("→")} ${shown}  ${dim(`[${sources(used)}]`)}`);
+      row.value = secret && !reveal ? mask(value) : display("", value, reveal);
+      row.sources = sourced(used);
     } else if (typeof v === "string" && isSecret(last) && !reveal) {
-      println(`${key} = "${mask(v)}"  ${yellow("(明文;建議改放 .env)")}`);
+      row.raw = `"${mask(v)}"`;
+      row.plain_secret = true;
     } else if (typeof v === "string" && !reveal && v.includes("@")) {
-      println(`${key} = "${maskUrl(v)}"`);
+      row.raw = `"${maskUrl(v)}"`;
     } else if (Array.isArray(v) && raw.includes("${")) {
       const used: Array<[string, Source]> = [];
       const resolved = v.map((item) => {
@@ -442,19 +453,46 @@ export function list(configPath: string, reveal: boolean): void {
         return value;
       });
       for (const [name] of used) referenced.add(name);
-      println(
-        `${key} = ${raw}  ${dim("→")} [${resolved.join(", ")}]  ${dim(`[${sources(used)}]`)}`,
-      );
+      row.value = `[${resolved.join(", ")}]`;
+      row.sources = sourced(used);
+    }
+    settings.push(row);
+  }
+  return {
+    schema: "miyoria.config-list/1",
+    config: ws.shown(configPath),
+    settings,
+    env_file: ws.shown(ws.envPath),
+    env: ws.env.entries().map(([name, value]) => ({
+      name,
+      value: display(name, value, reveal),
+      referenced: referenced.has(name),
+    })),
+  };
+}
+
+export function list(configPath: string, reveal: boolean, json = false): void {
+  const data = listData(configPath, reveal);
+  if (json) {
+    println(JSON.stringify(data, null, 2));
+    return;
+  }
+  println(bold(data.config));
+  for (const s of data.settings) {
+    const used = s.sources.map((u): [string, Source] => [u.variable, u.source]);
+    if (s.value !== null) {
+      println(`${s.key} = ${s.raw}  ${dim("→")} ${s.value}  ${dim(`[${sources(used)}]`)}`);
+    } else if (s.plain_secret) {
+      println(`${s.key} = ${s.raw}  ${yellow(t.config.plainSecret)}`);
     } else {
-      println(`${key} = ${raw}`);
+      println(`${s.key} = ${s.raw}`);
     }
   }
-  const env = ws.env.entries();
-  if (env.length > 0) {
-    println(`\n${bold(ws.shown(ws.envPath))}`);
-    for (const [name, value] of env) {
-      const note = referenced.has(name) ? "" : `  ${dim("(miyoria.toml 沒有引用)")}`;
-      println(`${name} = ${display(name, value, reveal)}${note}`);
+  if (data.env.length > 0) {
+    println(`\n${bold(data.env_file)}`);
+    for (const e of data.env) {
+      const note = e.referenced ? "" : `  ${dim(t.config.unreferenced)}`;
+      println(`${e.name} = ${e.value}${note}`);
     }
   }
 }
@@ -472,7 +510,7 @@ export async function get(
     const places = await placeLines(ws, configPath, path);
     const showPlaces = () => {
       if (places.length === 0) return;
-      eprintln(dim("每個地方自己的值(蓋過上面的值):"));
+      eprintln(dim(t.config.placesHeader));
       for (const line of places) eprintln(`  ${line}`);
     };
     if (covered !== null && covered.key === formatKey(path)) {
@@ -480,11 +518,7 @@ export async function get(
       if (file !== undefined && layerResolved(ws, covered.value) === layerResolved(ws, file)) {
         // The database holds what the file says (after the import): the file's words apply.
         getFromFile(configPath, key, env, reveal);
-        eprintln(
-          dim(
-            `(來源:資料庫第 ${covered.version} 版(${covered.by},${when(covered.at)}),和 miyoria.toml 一樣)`,
-          ),
-        );
+        eprintln(dim(t.config.sourceSame(covered.version, covered.by, when(covered.at))));
         showPlaces();
         return;
       }
@@ -492,7 +526,7 @@ export async function get(
       println(layerShown(ws, path, covered.value, reveal));
       eprintln(
         yellow(
-          `(來源:資料庫。${layerNote(covered).replace(";檔案的值不會生效", "")};miyoria.toml:${file === undefined ? "沒設" : showValue(file)})`,
+          t.config.sourceDatabase(layerSet(covered), file === undefined ? null : showValue(file)),
         ),
       );
       showPlaces();
@@ -500,7 +534,7 @@ export async function get(
     }
     getFromFile(configPath, key, env, reveal);
     if (covered !== null) eprintln(yellow(`(${covered.key} ${layerNote(covered)})`));
-    else if (isTable(getIn(ws.doc.data, path)) === false) eprintln(dim("(來源:miyoria.toml)"));
+    else if (isTable(getIn(ws.doc.data, path)) === false) eprintln(dim(t.config.sourceFile));
     showPlaces();
     return;
   }
@@ -516,18 +550,18 @@ function getFromFile(
   const ws = Workspace.open(configPath);
   if (env !== undefined) {
     const found = ws.lookup(env);
-    if (!found) throw new ConfigCommandError(`${env} 沒有設定`);
+    if (!found) throw new ConfigCommandError(t.config.envNotSet(env));
     println(display(env, found[0], reveal));
-    eprintln(dim(`(來源:${sourceLabel(found[1])})`));
+    eprintln(dim(t.config.sourceOf(sourceLabel(found[1]))));
     return;
   }
   if (key === undefined) {
-    throw new ConfigCommandError("要指定 key,例如 `miyoria config get core.profile`");
+    throw new ConfigCommandError(t.config.needKey);
   }
   const path = parseKey(key);
   const item = getIn(ws.doc.data, path);
   if (item === undefined) {
-    throw new ConfigCommandError(`miyoria.toml 沒有 \`${key}\`(\`miyoria config list\` 看全部)`);
+    throw new ConfigCommandError(t.config.noKeyInFile(key));
   }
   const last = path.at(-1) ?? "";
   if (isTable(item)) {
@@ -543,7 +577,7 @@ function getFromFile(
   const [resolved, used] = ws.resolve(item);
   const secret = isSecret(last) || used.some(([name]) => isSecret(name));
   println(secret && !reveal ? mask(resolved) : display("", resolved, reveal));
-  if (used.length > 0) eprintln(dim(`(miyoria.toml:${showValue(item)};${sources(used)})`));
+  if (used.length > 0) eprintln(dim(t.config.resolvedFrom(showValue(item), sources(used))));
 }
 
 // ---- the panel's layer -------------------------------------------------------------------
@@ -689,11 +723,17 @@ function when(at: string): string {
 
 /** Who put a layer key there, in words: the panel, or `miyoria config import`. */
 function layerWho(k: LayerKey): string {
-  return k.by === "import" ? "匯入到資料庫" : "面板改過";
+  return k.by === "import" ? t.config.byImport : t.config.byPanel;
 }
 
+/** Who set a layer key, its value and the revision. */
+function layerSet(k: LayerKey): string {
+  return t.config.layerSet(layerWho(k), showValue(k.value), k.version, k.by, when(k.at));
+}
+
+/** `layerSet`, and that the file's value is not used. */
 function layerNote(k: LayerKey): string {
-  return `${layerWho(k)}:${showValue(k.value)}(第 ${k.version} 版,${k.by},${when(k.at)});檔案的值不會生效`;
+  return t.config.fileIgnored(layerSet(k));
 }
 
 /** A value as the module gets it, in words: its `${NAME}` references resolved like the file's. */
@@ -726,13 +766,16 @@ async function placeLines(ws: Workspace, configPath: string, path: readonly stri
         .map((r) => {
           let where: string;
           if (r.scope === "space")
-            where = `伺服器 ${store.places.space(r.scope_id)?.name ?? r.scope_id}`;
+            where = t.config.placeSpace(store.places.space(r.scope_id)?.name ?? r.scope_id);
           else {
             const room = store.places.room(r.scope_id);
             const space = room?.space_id ? store.places.space(room.space_id)?.name : undefined;
-            where = `頻道 ${room?.name ? `#${room.name}` : (room?.external_id ?? r.scope_id)}${space ? `(${space})` : ""}`;
+            where = t.config.placeRoom(
+              room?.name ? `#${room.name}` : (room?.external_id ?? r.scope_id),
+              space ? space : null,
+            );
           }
-          return `${where}:${showValue(tomlOf(r.value))}  ${dim(`${r.updated_by} · ${when(r.updated_at)}`)}`;
+          return `${t.config.placeValue(where, showValue(tomlOf(r.value)))}  ${dim(`${r.updated_by} · ${when(r.updated_at)}`)}`;
         }),
     );
     return lines ?? [];
@@ -747,18 +790,18 @@ export async function overrides(configPath: string): Promise<void> {
   const ws = Workspace.open(configPath);
   const keys = await withRevisions(ws, configPath, layerKeys);
   if (keys === null) {
-    plainReporter.note("找不到資料庫,沒有面板改過的設定");
+    plainReporter.note(t.config.noDatabaseNoOverrides);
     return;
   }
   if (keys.length === 0) {
-    plainReporter.note("沒有面板改過的設定");
+    plainReporter.note(t.config.noOverrides);
     return;
   }
   for (const k of keys) {
     const file = getIn(ws.doc.data, k.path);
-    const fileText = file === undefined ? "沒設" : showValue(file);
+    const fileText = file === undefined ? null : showValue(file);
     println(
-      `${k.key} = ${showValue(k.value)}  ${dim(`檔案:${fileText} · 第 ${k.version} 版 · ${k.by} · ${when(k.at)}`)}`,
+      `${k.key} = ${showValue(k.value)}  ${dim(t.config.overrideDetail(fileText, k.version, k.by, when(k.at)))}`,
     );
   }
 }
@@ -772,7 +815,7 @@ export async function bake(configPath: string, yes: boolean, p: Prompter | null)
   const ws = Workspace.open(configPath);
   const keys = await withRevisions(ws, configPath, layerKeys);
   if (keys === null || keys.length === 0) {
-    plainReporter.note("沒有面板改過的設定,不用寫入");
+    plainReporter.note(t.config.nothingToBake);
     return;
   }
   for (const k of keys) ws.doc.set(k.path, k.value);
@@ -780,12 +823,12 @@ export async function bake(configPath: string, yes: boolean, p: Prompter | null)
   if (changes.length > 0) {
     for (const line of changeLines(ws, changes)) println(`  ${line}`);
   }
-  println(dim(`  然後清掉資料庫裡這 ${keys.length} 個面板的值`));
-  if (!yes && !(p !== null && (await p.confirm("寫入 miyoria.toml 並清掉面板的值?", true)))) {
-    plainReporter.warn("沒有寫入任何檔案(用 --yes 直接寫入)");
+  println(dim(t.config.bakeThenClear(keys.length)));
+  if (!yes && !(p !== null && (await p.confirm(t.config.confirmBake, true)))) {
+    plainReporter.warn(t.config.bakeNotWritten);
     return;
   }
-  for (const path of ws.save()) plainReporter.ok(`已寫入 ${ws.shown(path)}`);
+  for (const path of ws.save()) plainReporter.ok(t.config.wrote(ws.shown(path)));
   await withRevisions(ws, configPath, (revisions) => {
     const current = revisions.current();
     if (current === null) return;
@@ -804,8 +847,8 @@ export async function bake(configPath: string, yes: boolean, p: Prompter | null)
       expected: current.version,
     });
   });
-  plainReporter.ok("已清掉面板的值;現在 miyoria.toml 是唯一的來源");
-  plainReporter.note("core 正在執行的話,模組用的值沒有變(檔案和面板一樣),下次啟動照檔案讀");
+  plainReporter.ok(t.config.baked);
+  plainReporter.note(t.config.bakedNote);
 }
 
 // ---- the import into the database --------------------------------------------------------
@@ -845,7 +888,7 @@ async function spaceChannelFields() {
 
 function sample(lines: readonly string[]): void {
   for (const line of lines.slice(0, IMPORT_SAMPLE)) println(`  ${line}`);
-  if (lines.length > IMPORT_SAMPLE) println(dim(`  …還有 ${lines.length - IMPORT_SAMPLE} 項`));
+  if (lines.length > IMPORT_SAMPLE) println(dim(t.config.more(lines.length - IMPORT_SAMPLE)));
 }
 
 /** `miyoria config import [--replace] [--dry-run]`. */
@@ -858,7 +901,7 @@ export async function importConfig(
   const text = readFileSync(configPath, "utf8");
   const dbPath = await configuredDatabase(workspaceConfig(ws), configPath);
   if (!existsSync(dbPath)) {
-    throw new ConfigCommandError(`找不到資料庫 ${dbPath}:先啟動一次 Core 讓它建立資料庫,再匯入`);
+    throw new ConfigCommandError(t.config.importNoDatabase(dbPath));
   }
   const { ConfigImportError, SqliteStore } = await import("@miyoria/store");
   const spaceChannels = await spaceChannelFields();
@@ -868,12 +911,7 @@ export async function importConfig(
       return store.importConfig(text, { replace: options.replace, dryRun, spaceChannels });
     } catch (error) {
       if (error instanceof ConfigImportError && error.secrets.length > 0) {
-        throw new ConfigCommandError(
-          `miyoria.toml 有密碼類的值直接寫在檔案裡:${error.secrets.join("、")}。` +
-            "資料庫不收密碼:先把它們搬到 .env(`miyoria config set <key> <值>` 會自動搬)," +
-            // biome-ignore lint/suspicious/noTemplateCurlyInString: the message names the ${NAME} syntax
-            "檔案裡改寫成 ${NAME},再匯入。沒有寫入任何東西。",
-        );
+        throw new ConfigCommandError(t.config.importSecrets(t.common.list(error.secrets)));
       }
       throw error;
     } finally {
@@ -885,32 +923,29 @@ export async function importConfig(
   if (plan.plan === undefined) {
     const at = plan.revision;
     plainReporter.note(
-      `已經匯入過(第 ${at?.version ?? "?"} 版,${at ? when(at.created_at) : "?"}),這次沒有寫入。` +
-        "要用 miyoria.toml 蓋掉資料庫裡的設定,加 --replace(面板之後改的值會被拿掉,版本紀錄還留著)",
+      t.config.alreadyImported(at ? String(at.version) : "?", at ? when(at.created_at) : "?"),
     );
     return;
   }
   const report = plan.plan;
   const next = (report.base ?? 0) + 1;
-  println(
-    bold(`匯入 ${ws.shown(configPath)} → ${dbPath}${options.dryRun ? "(試跑,不會寫入)" : ""}`),
-  );
+  println(bold(t.config.importHeader(ws.shown(configPath), dbPath, options.dryRun)));
   println(
     report.changed.length === 0
-      ? "設定:和資料庫目前的一樣,不會多一版"
-      : `設定:寫成第 ${next} 版${options.replace ? "(--replace:檔案原樣蓋過)" : ""};和目前不同的有 ${report.changed.length} 項`,
+      ? t.config.importUnchanged
+      : t.config.importChanged(next, options.replace, report.changed.length),
   );
   sample(report.changed.map((path) => `~ ${path}`));
   if (report.panel.length > 0) {
-    println("面板改過的值,保留(蓋過檔案的值):");
+    println(t.config.importPanelKept);
     sample(report.panel);
   }
   const writes = report.places.filter((x) => x.action === "write");
   const keeps = report.places.filter((x) => x.action === "keep");
   const where = (x: (typeof report.places)[number]) =>
-    `${x.scope === "space" ? "伺服器" : "頻道"} ${x.place}${x.scope_id === null ? dim("(新建)") : ""}`;
+    `${x.scope === "space" ? t.config.importServer : t.config.importChannel} ${x.place}${x.scope_id === null ? dim(t.config.importNewPlace) : ""}`;
   if (writes.length > 0) {
-    println("寫進每個地方自己的設定:");
+    println(t.config.importPlacesWrite);
     sample(
       writes.map(
         (x) =>
@@ -919,17 +954,17 @@ export async function importConfig(
     );
   }
   if (keeps.length > 0) {
-    println("這些地方已經有自己的值,保留(--replace 才會蓋掉):");
+    println(t.config.importPlacesKeep);
     sample(
       keeps.map((x) => `= ${where(x)}  ${x.plugin}.${x.key} = ${showValue(tomlOf(x.current))}`),
     );
   }
   if (report.kept.length > 0 || report.unplaced.length > 0) {
-    println("留在全部伺服器那一層(說不出是哪個伺服器的):");
+    println(t.config.importKeptGlobal);
     sample([...report.kept, ...report.unplaced]);
   }
   if (options.dryRun) {
-    plainReporter.note("試跑:沒有寫入。去掉 --dry-run 才會寫入。");
+    plainReporter.note(t.config.importDryRun);
     return;
   }
 
@@ -940,30 +975,22 @@ export async function importConfig(
     running = false;
   }
   if (running) {
-    plainReporter.warn(
-      "Core 正在執行:建議先停掉 Core、備份資料庫再匯入(正在跑的模組不會變,下次啟動才照資料庫)",
-    );
+    plainReporter.warn(t.config.importCoreRunning);
   }
   if (!options.yes) {
-    if (p === null)
-      throw new ConfigCommandError("確認上面的內容後,加 --yes 寫入(或先用 --dry-run 看)");
-    if (!(await p.confirm("寫入資料庫?", false))) {
-      plainReporter.warn("沒有寫入任何東西");
+    if (p === null) throw new ConfigCommandError(t.config.importNeedYes);
+    if (!(await p.confirm(t.config.importConfirm, false))) {
+      plainReporter.warn(t.config.importNotWritten);
       return;
     }
   }
   const done = await run(false);
   if (!done.imported) {
-    plainReporter.note("沒有寫入(資料庫在這期間已經匯入過)");
+    plainReporter.note(t.config.importRaced);
     return;
   }
-  plainReporter.ok(
-    `已寫入第 ${done.revision?.version ?? next} 版(作者 import),每個地方的設定 ${done.places.length} 項`,
-  );
-  plainReporter.note(
-    "之後模組的設定以資料庫為準:miyoria.toml 再改的值會被資料庫的蓋過(`miyoria config get` 會說)。" +
-      "要讓檔案再成為唯一的來源,用 `miyoria config bake`",
-  );
+  plainReporter.ok(t.config.imported(done.revision?.version ?? next, done.places.length));
+  plainReporter.note(t.config.importedNote);
 }
 
 /** `.env` variable name for a new secret key: `stage.obs.password` → `STAGE_OBS_PASSWORD`. */
@@ -983,44 +1010,44 @@ export async function set(
   const ws = Workspace.open(configPath);
   const r = plainReporter;
   if (env !== undefined) {
-    if (args.length !== 1) throw new ConfigCommandError("用法:miyoria config set --env NAME <值>");
+    if (args.length !== 1) throw new ConfigCommandError(t.config.usageSetEnv);
     const err = validate.envName(env);
     if (err) throw new ConfigCommandError(err);
     ws.setEnv(env, args[0] as string);
-    if (ws.references(env).length === 0) r.warn(`miyoria.toml 沒有引用 \${${env}}`);
+    if (ws.references(env).length === 0) r.warn(t.config.envUnreferenced(env));
   } else {
-    if (args.length !== 2) throw new ConfigCommandError("用法:miyoria config set <key> <值>");
+    if (args.length !== 2) throw new ConfigCommandError(t.config.usageSet);
     const [key, value] = args as [string, string];
     const path = parseKey(key);
     const shown = formatKey(path);
     const existing = getIn(ws.doc.data, path);
     if (isTable(existing)) {
-      throw new ConfigCommandError(`\`${shown}\` 是表格;要指定其中的鍵,例如 \`${shown}.enabled\``);
+      throw new ConfigCommandError(t.config.isTable(shown));
     }
     const reference = typeof existing === "string" ? singleRef(existing)?.name : undefined;
     const last = path.at(-1) ?? "";
     if (reference !== undefined && !value.includes("${")) {
       // Keep `${VAR}` in miyoria.toml; the value goes to .env.
       ws.setEnv(reference, value);
-      r.note(`${shown} 引用 \${${reference}},改寫 .env 的 ${reference}`);
+      r.note(t.config.viaReference(shown, reference));
     } else if (isSecret(last) && !value.includes("${")) {
       const known = settings
         .allFields()
         .find((f) => f.key !== null && formatKey(parseKey(f.key)) === shown);
       const variable = known?.env ?? envNameFor(path);
       settings.apply(ws, tomlField("", shown, { type: "secret" }, { env: variable }), value);
-      r.note(`密碼類的值放在 .env 的 ${variable},miyoria.toml 引用它`);
+      r.note(t.config.secretToEnv(variable));
     } else {
       const parsed = parseValue(value);
       const ctx = await validate.schemaContext(ws.doc.data);
       const err = validate.valueForKey(path, parsed, ctx);
-      if (err) throw new ConfigCommandError(`\`${shown}\`:${err}`);
+      if (err) throw new ConfigCommandError(t.config.invalidValue(shown, err));
       ws.doc.set(path, parsed);
     }
     const covered = await layerKey(ws, configPath, path);
     if (covered !== null) {
       r.warn(`${covered.key} ${layerNote(covered)}`);
-      r.note("在面板的模組設定按「還原」,或執行 `miyoria config bake` 讓檔案成為唯一的來源");
+      r.note(t.config.coveredHint);
     }
   }
   const changes = writeNow(r, ws);
@@ -1035,13 +1062,11 @@ export async function unset(
 ): Promise<void> {
   const ws = Workspace.open(configPath);
   if (key === undefined && env !== undefined) {
-    if (!ws.env.unset(env)) throw new ConfigCommandError(`.env 沒有 ${env}`);
+    if (!ws.env.unset(env)) throw new ConfigCommandError(t.config.envMissing(env));
   } else if (key !== undefined && env === undefined) {
-    if (!ws.unset(key)) throw new ConfigCommandError(`miyoria.toml 沒有 \`${key}\``);
+    if (!ws.unset(key)) throw new ConfigCommandError(t.config.keyMissing(key));
   } else {
-    throw new ConfigCommandError(
-      "用法:miyoria config unset <key>  或  miyoria config unset --env NAME",
-    );
+    throw new ConfigCommandError(t.config.usageUnset);
   }
   const changes = writeNow(plainReporter, ws);
   await afterWrite(null, yes, ws, changes);
@@ -1060,33 +1085,29 @@ export function editorCommand(env: NodeJS.ProcessEnv = process.env): [string, st
 export async function edit(configPath: string, yes: boolean): Promise<void> {
   const before = Workspace.open(configPath);
   const [program, args] = editorCommand();
-  plainReporter.note(`用 ${program} 開啟 ${before.shown(configPath)}(關掉編輯器後繼續)`);
+  plainReporter.note(t.config.opening(program, before.shown(configPath)));
   const result = spawnSync(program, [...args, configPath], {
     stdio: "inherit",
     shell: process.platform === "win32" && !existsSync(program),
   });
   if (result.error) {
-    throw new ConfigCommandError(
-      `無法啟動編輯器 \`${program}\`:${result.error.message}(設定 EDITOR 環境變數)`,
-    );
+    throw new ConfigCommandError(t.config.editorFailed(program, result.error.message));
   }
-  if (result.status !== 0) throw new ConfigCommandError(`編輯器結束時回報錯誤(${result.status})`);
+  if (result.status !== 0) throw new ConfigCommandError(t.config.editorStatus(result.status));
   const text = readFileSync(configPath, "utf8");
   let doc: TomlDocument;
   try {
     doc = TomlDocument.parse(text);
   } catch (error) {
-    throw new ConfigCommandError(
-      `${configPath} 不是合法的 TOML,請再執行 \`miyoria config edit\` 修正:\n${(error as Error).message}`,
-    );
+    throw new ConfigCommandError(t.config.invalidToml(configPath, (error as Error).message));
   }
   const changes = diffToml(before.doc.toString(), doc.data, "toml");
   if (changes.length === 0) {
-    plainReporter.note("沒有變更");
+    plainReporter.note(t.config.noChanges);
     return;
   }
   const after = Workspace.open(configPath);
   for (const line of changeLines(after, changes)) println(`  ${line}`);
-  plainReporter.ok(`${after.shown(configPath)} 格式正確`);
+  plainReporter.ok(t.config.validToml(after.shown(configPath)));
   await afterWrite(null, yes, after, changes);
 }

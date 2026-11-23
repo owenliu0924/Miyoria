@@ -12,6 +12,7 @@ import { join, relative, resolve } from "node:path";
 import { type Catalog, HOST_CONFIG_FILE, loadCatalog } from "@miyoria/hostd";
 import { bundledProfilesDir, exampleConfig, exampleEnv } from "../assets.js";
 import { enabledServices, type HostTomlPlan, planHostToml, writeHostToml } from "../host-toml.js";
+import { t } from "../i18n/index.js";
 import type { Prompter } from "../prompt.js";
 import * as settings from "../settings.js";
 import { configSchema } from "../validate.js";
@@ -23,12 +24,6 @@ import { catalogRoot } from "./host.js";
 export type InitMode = "text" | "voice" | "service";
 
 export const INIT_MODES: readonly InitMode[] = ["text", "voice", "service"];
-
-const MODE_LABELS: Record<InitMode, string> = {
-  text: "文字聊天:只跑她本人,不需要顯卡",
-  voice: "文字加語音:這台也跑語音辨識、語音合成(需要 NVIDIA 顯卡)",
-  service: "這台只提供服務給別台的 Core(例如把顯卡借出來跑翻唱)",
-};
 
 /** The services `voice` adds besides Core (the voice node and singing come later). */
 export const VOICE_SERVICES: readonly string[] = ["asr", "tts", "turn"];
@@ -55,24 +50,70 @@ export interface InitOptions {
   catalogRoot?: string;
 }
 
+/** Where `init --non-interactive` reads the secrets it is given (never from a flag's value). */
+export const SECRET_ENV = {
+  llmKey: "MIYORIA_LLM_API_KEY",
+  discordToken: "MIYORIA_DISCORD_BOT_TOKEN",
+} as const;
+
+export interface SecretSources {
+  /** `--llm-key-stdin`: the LLM API key is on standard input. */
+  llmKeyStdin?: boolean;
+  /** `--discord-token-stdin`: the Discord bot token is on standard input (after the LLM key when both are). */
+  discordTokenStdin?: boolean;
+}
+
+/**
+ * The secrets of a non-interactive run, by the `.env` variable they go to: from standard input
+ * when asked (one per line, the LLM key first), else from `SECRET_ENV`.
+ */
+export async function initSecrets(
+  sources: SecretSources,
+  env: Readonly<Record<string, string | undefined>>,
+  readStdin: () => Promise<string>,
+): Promise<Record<string, string>> {
+  let llm = env[SECRET_ENV.llmKey]?.trim() ?? "";
+  let discord = env[SECRET_ENV.discordToken]?.trim() ?? "";
+  if (sources.llmKeyStdin || sources.discordTokenStdin) {
+    const lines = (await readStdin()).split(/\r?\n/).map((l) => l.trim());
+    let next = 0;
+    if (sources.llmKeyStdin) llm = lines[next++] ?? "";
+    if (sources.discordTokenStdin) discord = lines[next++] ?? "";
+  }
+  const out: Record<string, string> = {};
+  if (llm !== "") {
+    out.LLM_API_KEY = llm;
+    out.OPENCODE_API_KEY = llm;
+  }
+  if (discord !== "") out.DISCORD_BOT_TOKEN = discord;
+  return out;
+}
+
+/** All of standard input, as text. */
+export async function readAllStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /** All questions of a machine that runs Core, editing `ws` in memory. Returns the generated tokens. */
 export async function flow(p: Prompter, ws: Workspace): Promise<string[]> {
   // The answers are checked by the root schema, which loads every module package: start now.
   void configSchema();
-  p.section("角色");
+  p.section(t.init.sections.profile);
   await settings.profileStep(p, ws);
 
-  p.section("LLM");
+  p.section(t.init.sections.llm);
   await settings.llmStep(p, ws, false);
 
-  p.section("Discord");
+  p.section(t.init.sections.discord);
   await settings.ask(p, ws, settings.DISCORD_TOKEN);
   await settings.ask(p, ws, settings.OWNER);
 
-  p.section("資料庫");
+  p.section(t.init.sections.database);
   await settings.databaseStep(p, ws);
 
-  p.section("管理面板");
+  p.section(t.init.sections.panel);
   await settings.oauthStep(p, ws, true);
 
   return settings.ensureTokens(ws);
@@ -105,7 +146,7 @@ function offered(catalog: Catalog): Array<{ name: string; label: string }> {
       const card =
         gpu === undefined || gpu.policy === "reserve"
           ? ""
-          : `  [需要顯卡${mb !== undefined && mb > 0 ? `,約 ${mb} MB` : ""}]`;
+          : t.init.gpuTag(mb !== undefined && mb > 0 ? mb : null);
       return { name: e.name, label: `${e.name}  ${e.descriptor.summary}${card}` };
     });
 }
@@ -122,14 +163,14 @@ async function pickServices(
     const unknown = given.filter((name) => !choices.some((c) => c.name === name));
     if (unknown.length > 0) {
       throw new Error(
-        `沒有可以提供的服務 ${unknown.join("、")}。可選:${choices.map((c) => c.name).join("、")}`,
+        t.init.unknownServices(t.common.list(unknown), t.common.list(choices.map((c) => c.name))),
       );
     }
     return [...given];
   }
   const initial = choices.flatMap((c, i) => (already.includes(c.name) ? [i] : []));
   const picked = await p.multiSelect(
-    "這台要提供哪些服務?(之後用 `miyoria add` 和 `miyoria remove` 增減)",
+    t.init.pickServices,
     choices.map((c) => c.label),
     initial,
   );
@@ -140,7 +181,10 @@ function hostExtra(plan: HostTomlPlan, shown: string): ExtraWrite {
   const lines =
     !plan.exists || plan.added.length > 0
       ? [
-          `${plan.exists ? "更新" : "建立"} ${shown}:${plan.exists ? "加入" : "服務"} ${plan.added.join("、") || "(沒有)"}`,
+          (plan.exists ? t.init.hostUpdate : t.init.hostCreate)(
+            shown,
+            plan.added.length > 0 ? t.common.list(plan.added) : t.common.none,
+          ),
         ]
       : [];
   return {
@@ -174,22 +218,22 @@ export async function run(
     ...(options.processEnv ? { processEnv: options.processEnv } : {}),
   });
   const hostToml = options.hostToml ?? join(ws.dir, HOST_CONFIG_FILE);
-  p.intro("Miyoria 設定精靈");
+  p.intro(t.init.intro);
 
   let mode: InitMode;
   if (options.mode !== undefined) mode = options.mode;
   else {
     const picked = await p.select(
-      "這台電腦要做什麼?(之後可以重新執行 init 改)",
-      INIT_MODES.map((m) => MODE_LABELS[m]),
+      t.init.modeQuestion,
+      INIT_MODES.map((m) => t.init.modes[m]),
       INIT_MODES.indexOf(defaultMode(hostToml)),
     );
     mode = INIT_MODES[picked] ?? "text";
   }
 
   const cmd = options.command ?? commandPrefix();
-  const width = `${cmd} config`.length + 2;
-  const line = (c: string, what: string) => `  ${`${cmd} ${c}`.padEnd(width)} ${what}`;
+  // A step: what it does, ending in a colon, then the literal command to type.
+  const line = (c: string, what: string) => `  ${what}\n    ${cmd} ${c}`;
 
   if (mode === "service") {
     await runService(p, options, { hostToml, cmd, line });
@@ -197,18 +241,17 @@ export async function run(
   }
 
   if (ws.tomlExists) {
-    p.note("已讀取現有設定:每一題直接按 Enter 會保留目前的值;密碼類欄位不輸入就不會改。");
+    p.note(t.init.existing);
   } else {
-    const where = resolve(ws.dir) === resolve(process.cwd()) ? "目前的資料夾" : ws.dir;
-    p.note(`會在${where}建立 miyoria.toml、.env、host.toml、角色和資料庫資料夾(確認後才寫入)。`);
+    p.note(t.init.willCreate(resolve(ws.dir) === resolve(process.cwd()) ? null : ws.dir));
   }
   const fresh = !ws.tomlExists;
   if (fresh) ws.planGitignore();
   const scaffold = ws.planScaffold();
-  if (scaffold.length > 0) p.note(`會複製內建角色:${scaffold.join("、")}`);
+  if (scaffold.length > 0) p.note(t.init.willCopyProfiles(t.common.list(scaffold)));
 
   const generated = await flow(p, ws);
-  if (generated.length > 0) p.note(`會產生新的 token:${generated.join("、")}`);
+  if (generated.length > 0) p.note(t.init.willGenerateTokens(t.common.list(generated)));
 
   const services = ["core", ...(mode === "voice" ? VOICE_SERVICES : [])];
   const plan = planHostToml(hostToml, services);
@@ -217,36 +260,25 @@ export async function run(
   if (changes && !fresh) await afterWrite(p, options.yes ?? false, ws, changes);
   if (changes !== null || ws.tomlExists) {
     const key = settings.current(ws, settings.llmApiKeyField(ws)).value;
-    if (key === "") {
-      p.warn(
-        "還沒有設定 LLM API key:之後用 `miyoria config` → LLM 填入(或重新執行 `miyoria init`)",
-      );
-    }
+    if (key === "") p.warn(t.init.noApiKey);
   }
 
   const panel = `http://${ws.effective("modules.api.bind") ?? "127.0.0.1:7878"}/`;
   const next =
     mode === "voice"
       ? [
-          line(
-            `add ${VOICE_SERVICES.join(" ")}`,
-            "裝語音辨識、語音合成和斷句的環境(要 NVIDIA 顯卡;模型第一次要下載幾 GB)",
-          ),
-          line("up", "啟動 Core 和這些服務"),
+          line(`add ${VOICE_SERVICES.join(" ")}`, t.init.nextAddVoice),
+          line("up", t.init.nextUpVoice),
         ]
-      : [line("up", "啟動她(Core)")];
+      : [line("up", t.init.nextUpText)];
   p.outro(
     [
-      "下一步:",
+      t.init.nextSteps,
       ...next,
-      `  管理面板 ${panel},Discord 裡直接跟她說話`,
-      ...(mode === "voice"
-        ? [
-            "  語音節點(進 Discord 語音頻道的那一個)和翻唱之後再加,做法在 docs/SETUP.md 的「加上語音」「加上翻唱」",
-          ]
-        : []),
-      line("doctor", "檢查缺什麼"),
-      line("config", "之後要改單一項目用這個"),
+      `  ${t.init.nextPanel}\n    ${panel}`,
+      ...(mode === "voice" ? [t.init.nextVoiceLater] : []),
+      line("doctor", t.init.nextDoctor),
+      line("config", t.init.nextConfig),
     ].join("\n"),
   );
 }
@@ -258,27 +290,26 @@ async function runService(
   ui: { hostToml: string; cmd: string; line: (command: string, what: string) => string },
 ): Promise<void> {
   const { hostToml, cmd, line } = ui;
-  p.note(`只會寫 ${hostToml}:這台不跑 Core,所以不問 LLM、Discord 和資料庫。`);
+  p.note(t.init.serviceOnly(hostToml));
   const catalog = loadCatalog(options.catalogRoot ?? catalogRoot(hostToml));
   if (catalog.services.size === 0) {
-    throw new Error("找不到服務目錄(沒有任何 service.toml):套件不完整,或這不是 miyoria 的安裝");
+    throw new Error(t.init.noCatalog);
   }
-  p.section("服務");
+  p.section(t.init.sections.services);
   const services = await pickServices(p, catalog, options.services, enabledServices(hostToml));
   if (services.length === 0) {
-    throw new Error("沒有選任何服務(非互動時用 --services asr,tts,... 指定)");
+    throw new Error(t.init.noServices);
   }
   const plan = planHostToml(hostToml, services);
   const changes = await commit(p, options.yes ?? false, null, hostExtra(plan, shownPath(hostToml)));
   if (changes === null && !plan.exists) return;
   p.outro(
     [
-      "下一步:",
-      line(`add ${services.join(" ")}`, "把這些服務裝進這台(uv 建環境、下載缺的檔案)"),
-      "  請 Core 的主人在 Core 那台執行 `miyoria host invite`,他會拿到一行指令,在這裡執行它:",
-      `    ${cmd} host join <位址> --code <代碼>`,
-      `  Core 的主人再 \`miyoria host approve ${plan.name}\` 核准這台;核准之後它的服務才會被用`,
-      line("up", "啟動這些服務"),
+      t.init.nextSteps,
+      line(`add ${services.join(" ")}`, t.init.nextAddServices),
+      `  ${t.init.nextInvite}\n    ${cmd} host join <core-url> --code <code>`,
+      `  ${t.init.nextApprove}\n    miyoria host approve ${plan.name}`,
+      line("up", t.init.nextUpServices),
     ].join("\n"),
   );
 }

@@ -3,6 +3,7 @@
 // mode runs; `miyoria core` registers the current set again when it starts.
 
 import type { Config } from "@miyoria/runtime/kernel";
+import { t } from "../i18n/index.js";
 import type { Prompter } from "../prompt.js";
 import { bold, dim, fail, ok, println, warn } from "../ui.js";
 import { loadConfig } from "./node.js";
@@ -23,8 +24,7 @@ export function botToken(config: Config): string {
     typeof section.token === "string"
       ? section.token.trim()
       : "";
-  if (token === "")
-    throw new DiscordCommandError("沒有設定 Discord bot token（DISCORD_BOT_TOKEN）");
+  if (token === "") throw new DiscordCommandError(t.discord.noToken);
   return token;
 }
 
@@ -52,7 +52,7 @@ export class DiscordApi {
         continue;
       }
       if (!response.ok) {
-        throw new DiscordCommandError(`Discord API ${method} ${route} 回應 ${response.status}`);
+        throw new DiscordCommandError(t.discord.apiStatus(method, route, response.status));
       }
       return response.status === 204 ? null : response.json();
     }
@@ -64,7 +64,7 @@ export class DiscordApi {
 
   async applicationId(): Promise<string> {
     const app = (await this.request("GET", "/applications/@me")) as { id?: string };
-    if (!app.id) throw new DiscordCommandError("Discord 沒有回傳 application id");
+    if (!app.id) throw new DiscordCommandError(t.discord.noApplicationId);
     return app.id;
   }
 
@@ -95,23 +95,25 @@ export async function commandsReset(
   const api = new DiscordApi(botToken(config), fetchImpl);
   const appId = await api.applicationId();
   const guilds = await api.guildIds();
-  println(
-    `將刪除 bot 的所有斜線指令：全域，以及 ${guilds.length} 個伺服器的伺服器指令。` +
-      dim("（下次啟動 miyoria core 時會重新註冊）"),
-  );
+  println(t.discord.willDelete(guilds.length) + dim(t.discord.reregistered));
   if (!yes) {
-    if (!p) throw new DiscordCommandError("非互動環境請加上 --yes");
-    if (!(await p.confirm("確定要刪除嗎？", false))) {
-      println("已取消。");
+    if (!p) throw new DiscordCommandError(t.discord.needYes);
+    if (!(await p.confirm(t.discord.confirm, false))) {
+      println(t.discord.cancelled);
       return;
     }
   }
   const { resetCommands } = await import("@miyoria/discord");
   const report = await resetCommands(api, appId, guilds);
-  ok(`已清除 ${report.cleared.length} 個範圍的指令`);
+  ok(t.discord.cleared(report.cleared.length));
   for (const f of report.failed) {
-    warn(`${f.scope === "global" ? "全域" : `伺服器 ${f.scope}`}：${f.error}`);
+    warn(
+      t.discord.scopeFailed(
+        f.scope === "global" ? t.discord.scopeGlobal : t.discord.scopeGuild(f.scope),
+        f.error,
+      ),
+    );
   }
-  if (report.failed.length > 0) fail("部分範圍清除失敗（可能是 bot 已被移出該伺服器）");
-  println(bold("重新啟動 miyoria core 就會註冊目前的指令。"));
+  if (report.failed.length > 0) fail(t.discord.someFailed);
+  println(bold(t.discord.restart));
 }

@@ -4,6 +4,7 @@
 
 import { styleText } from "node:util";
 import * as clack from "@clack/prompts";
+import { t } from "./i18n/index.js";
 import type { Check } from "./validate.js";
 
 /** Esc / Ctrl+C on a question: leave the current question / area. */
@@ -11,7 +12,7 @@ export class CancelledError extends Error {
   override readonly name = "CancelledError";
 
   constructor() {
-    super("已取消");
+    super(t.common.cancelled);
   }
 }
 
@@ -23,8 +24,8 @@ export function isCancelled(error: unknown): error is CancelledError {
 export class NotTtyError extends Error {
   override readonly name = "NotTtyError";
 
-  constructor(hint = "在腳本裡請改用 `miyoria config set <key> <value>`") {
-    super(`這個指令需要互動式終端機;${hint}`);
+  constructor(hint: string = t.prompt.notTtyHint) {
+    super(t.prompt.notTty(hint));
   }
 }
 
@@ -48,8 +49,11 @@ export interface Reporter {
 export interface Prompter extends Reporter {
   /** Free text; Enter on an empty line returns `defaultValue`. */
   text(message: string, defaultValue: string, check?: Check): Promise<string>;
-  /** Hidden input; `""` means "nothing typed". */
-  secret(message: string): Promise<string>;
+  /**
+   * Hidden input; `""` means "nothing typed". `variable`: the `.env` variable the answer goes to,
+   * for a prompter that answers from given values (`DefaultsPrompter`).
+   */
+  secret(message: string, variable?: string): Promise<string>;
   select(message: string, options: string[], initial: number): Promise<number>;
   multiSelect(message: string, options: string[], initial: number[]): Promise<number[]>;
   confirm(message: string, initial: boolean): Promise<boolean>;
@@ -100,7 +104,7 @@ export class ClackPrompter implements Prompter {
 
   async text(message: string, defaultValue: string, check?: Check): Promise<string> {
     const answer = await clack.text({
-      message: defaultValue === "" ? message : `${message} ${dim("(Enter 保留目前的值)")}`,
+      message: defaultValue === "" ? message : `${message} ${dim(t.prompt.enterKeeps)}`,
       placeholder: defaultValue === "" ? undefined : defaultValue,
       defaultValue,
       validate: (raw) => {
@@ -118,7 +122,7 @@ export class ClackPrompter implements Prompter {
 
   async select(message: string, options: string[], initial: number): Promise<number> {
     const picked = await clack.select<number>({
-      message: `${message} ${dim("(↑↓ 移動,Enter 選擇,Esc 返回)")}`,
+      message: `${message} ${dim(t.prompt.selectHint)}`,
       options: options.map((label, value) => ({ value, label })),
       initialValue: Math.min(Math.max(initial, 0), Math.max(options.length - 1, 0)),
       maxItems: 12,
@@ -129,7 +133,7 @@ export class ClackPrompter implements Prompter {
 
   async multiSelect(message: string, options: string[], initial: number[]): Promise<number[]> {
     const picked = await clack.multiselect<number>({
-      message: `${message} ${dim("(↑↓ 移動,空白鍵勾選,Enter 確認,Esc 返回)")}`,
+      message: `${message} ${dim(t.prompt.multiSelectHint)}`,
       options: options.map((label, value) => ({ value, label })),
       initialValues: initial,
       required: false,
@@ -141,17 +145,26 @@ export class ClackPrompter implements Prompter {
 
   async confirm(message: string, initial: boolean): Promise<boolean> {
     return unwrap(
-      await clack.confirm({ message, initialValue: initial, active: "是", inactive: "否" }),
+      await clack.confirm({
+        message,
+        initialValue: initial,
+        active: t.common.yes,
+        inactive: t.common.no,
+      }),
     );
   }
 }
 
 /**
- * Answers every question with its default (secrets: nothing typed). Used by `init --yes` when
- * there is no terminal; output goes to `reporter`.
+ * Answers every question with its default. A secret is answered from `secrets` by the `.env`
+ * variable it goes to, else left as it is. Used by `init --non-interactive`; output goes to
+ * `reporter`. Secrets are never printed.
  */
 export class DefaultsPrompter implements Prompter {
-  constructor(readonly reporter: Reporter) {}
+  constructor(
+    readonly reporter: Reporter,
+    readonly secrets: Readonly<Record<string, string>> = {},
+  ) {}
 
   intro(title: string): void {
     this.reporter.intro(title);
@@ -179,8 +192,8 @@ export class DefaultsPrompter implements Prompter {
   async text(_message: string, defaultValue: string): Promise<string> {
     return defaultValue;
   }
-  async secret(): Promise<string> {
-    return "";
+  async secret(_message: string, variable?: string): Promise<string> {
+    return variable === undefined ? "" : (this.secrets[variable] ?? "");
   }
   async select(_message: string, _options: string[], initial: number): Promise<number> {
     return initial;

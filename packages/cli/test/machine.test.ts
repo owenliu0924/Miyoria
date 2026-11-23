@@ -82,7 +82,7 @@ describe("roles", () => {
     expect(expandTargets(["inference"])).toEqual(["asr", "tts", "sing"]);
     expect(expandTargets(["core,stage"])).toEqual(["turn", "core", "stage"]);
     expect(expandTargets(["all"])).toHaveLength(7);
-    expect(() => expandTargets(["nope"])).toThrow(/不認得/);
+    expect(() => expandTargets(["nope"])).toThrow(/Unknown target/);
   });
 
   it("reads_machine_roles_hosts_and_custom_services", () => {
@@ -227,7 +227,7 @@ describe("doctor: Discord intents", () => {
     const { checkDiscord } = await import("../src/commands/doctor.js");
     await expect(checkDiscord("t", reply(MESSAGE_CONTENT), false)).resolves.toContain("bot");
     await expect(checkDiscord("t", reply(MESSAGE_CONTENT), true)).rejects.toThrow(
-      /Presence Intent、Server Members Intent/,
+      /Presence Intent, Server Members Intent/,
     );
     await expect(
       checkDiscord("t", reply(MESSAGE_CONTENT | PRESENCE | MEMBERS), true),

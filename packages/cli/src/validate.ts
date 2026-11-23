@@ -1,5 +1,5 @@
-// Input validation for config values. Errors are user-facing (zh-TW). Strings holding `${VAR}`
-// references are not checked; their value is.
+// Input validation for config values. Errors are user-facing (`t.validate`). Strings holding
+// `${VAR}` references are not checked; their value is.
 //
 // What a value may be is the root schema's to say (`rootConfigSchema` of `@miyoria/core`, with the
 // CLI's own `[stack]` and `[machine]`): a key it describes is checked by it, worded here. The rules
@@ -13,6 +13,7 @@ import {
   schemaAt,
 } from "@miyoria/runtime/kernel";
 import { isEnvName } from "./env-file.js";
+import { t } from "./i18n/index.js";
 import { StackSchema } from "./stack/config.js";
 import { MachineSchema } from "./stack/roles.js";
 import { isTable, type TomlTable, type TomlValue } from "./toml-patch.js";
@@ -21,10 +22,10 @@ import { isTable, type TomlTable, type TomlValue } from "./toml-patch.js";
 export type Check = (s: string) => string | null;
 
 function urlWith(s: string, schemes: readonly string[], hint: string): string | null {
-  const t = s.trim();
-  if (t.includes("${")) return null;
+  const v = s.trim();
+  if (v.includes("${")) return null;
   try {
-    const u = new URL(t);
+    const u = new URL(v);
     const scheme = u.protocol.replace(/:$/, "");
     return schemes.includes(scheme) && u.hostname !== "" ? null : hint;
   } catch {
@@ -32,49 +33,39 @@ function urlWith(s: string, schemes: readonly string[], hint: string): string | 
   }
 }
 
-export const httpUrl: Check = (s) =>
-  urlWith(s, ["http", "https"], "要是 http:// 或 https:// 開頭的網址,例如 http://127.0.0.1:8001");
+export const httpUrl: Check = (s) => urlWith(s, ["http", "https"], t.validate.httpUrl);
 
-export const wsUrl: Check = (s) =>
-  urlWith(
-    s,
-    ["ws", "wss", "http", "https"],
-    "要是 ws:// 或 wss:// 開頭的網址,例如 ws://127.0.0.1:7882/stage-link",
-  );
+export const wsUrl: Check = (s) => urlWith(s, ["ws", "wss", "http", "https"], t.validate.wsUrl);
 
 export const databaseUrl: Check = (s) => {
-  const t = s.trim();
-  if (t === "memory://" || t.includes("${")) return null;
-  if (t.startsWith("sqlite:")) {
-    return t.replace(/^sqlite:(\/\/)?/, "") === ""
-      ? "SQLite 要有檔案路徑,例如 sqlite:data/miyoria.db"
-      : null;
+  const v = s.trim();
+  if (v === "memory://" || v.includes("${")) return null;
+  if (v.startsWith("sqlite:")) {
+    return v.replace(/^sqlite:(\/\/)?/, "") === "" ? t.validate.sqlitePath : null;
   }
-  if (/^postgres(ql)?:/i.test(t))
-    return "已經不支援 PostgreSQL:要是 sqlite:data/miyoria.db 或 memory://";
-  return "要是 sqlite:data/miyoria.db 或 memory://";
+  if (/^postgres(ql)?:/i.test(v)) return t.validate.noPostgres;
+  return t.validate.databaseUrl;
 };
 
 export const port: Check = (s) => {
-  const t = s.trim();
-  const n = /^\d+$/.test(t) ? Number(t) : Number.NaN;
-  return n >= 1 && n <= 65535 ? null : "port 要是 1–65535 的整數";
+  const v = s.trim();
+  const n = /^\d+$/.test(v) ? Number(v) : Number.NaN;
+  return n >= 1 && n <= 65535 ? null : t.validate.port;
 };
 
 export const bind: Check = (s) => {
-  const t = s.trim();
-  if (t.includes("${")) return null;
-  const hint = "格式是 主機:port,例如 127.0.0.1:7878";
-  const colon = t.lastIndexOf(":");
+  const v = s.trim();
+  if (v.includes("${")) return null;
+  const hint = t.validate.bind;
+  const colon = v.lastIndexOf(":");
   if (colon <= 0) return hint;
-  const host = t.slice(0, colon);
+  const host = v.slice(0, colon);
   if (/\s/.test(host)) return hint;
-  return port(t.slice(colon + 1)) === null ? null : hint;
+  return port(v.slice(colon + 1)) === null ? null : hint;
 };
 
 export const discordId: Check = (s) => {
-  const t = s.trim();
-  return /^\d{17,20}$/.test(t) ? null : "Discord id 是 17–20 位數字(開發者模式 → 右鍵 → 複製 ID)";
+  return /^\d{17,20}$/.test(s.trim()) ? null : t.validate.discordId;
 };
 
 export const optionalDiscordId: Check = (s) => (s.trim() === "" ? null : discordId(s));
@@ -90,14 +81,13 @@ export const discordIds: Check = (s) => {
 };
 
 export const modelId: Check = (s) => {
-  const t = s.trim();
-  if (t === "") return "模型 id 不能是空的";
-  if (/\s/.test(t)) return "模型 id 不能有空白";
+  const v = s.trim();
+  if (v === "") return t.validate.modelEmpty;
+  if (/\s/.test(v)) return t.validate.modelSpace;
   return null;
 };
 
-export const envName: Check = (s) =>
-  isEnvName(s) ? null : `\`${s}\` 不是合法的環境變數名稱(英數字和底線,例如 LLM_API_KEY)`;
+export const envName: Check = (s) => (isEnvName(s) ? null : t.validate.envName(s));
 
 // ---- the root schema ---------------------------------------------------------------------
 
@@ -146,36 +136,25 @@ export function described(ctx: SchemaContext | null, path: readonly string[]): b
   return ctx !== null && schemaAt(ctx.schema, path) !== null;
 }
 
-const TYPE_NAMES: Record<string, string> = {
-  string: "字串",
-  number: "數字",
-  int: "整數",
-  boolean: "true 或 false",
-  array: "陣列",
-  object: "表格",
-  record: "表格",
-};
-
-/** A problem in the CLI's words. */
+/** A problem in the CLI's words (a fragment: `must be a number`). */
 function wording(problem: ConfigProblem): string {
   const issue = problem.issue;
   switch (issue.code) {
     case "invalid_type": {
-      const name = TYPE_NAMES[issue.expected] ?? issue.expected;
-      return /^[A-Za-z]/.test(name) ? `要是 ${name}` : `要是${name}`;
+      return t.validate.mustBe(t.validate.types[issue.expected] ?? issue.expected);
     }
     case "too_big":
       if (issue.origin === "number" || issue.origin === "int") {
-        return `不能${issue.inclusive === false ? "大於或等於" : "大於"} ${issue.maximum}`;
+        return t.validate.tooBig(String(issue.maximum), issue.inclusive === false);
       }
       return problem.expected;
     case "too_small":
       if (issue.origin === "number" || issue.origin === "int") {
-        return `不能${issue.inclusive === false ? "小於或等於" : "小於"} ${issue.minimum}`;
+        return t.validate.tooSmall(String(issue.minimum), issue.inclusive === false);
       }
       return problem.expected;
     case "invalid_value":
-      return `要是 ${issue.values.map((v) => JSON.stringify(v)).join("、")} 其中之一`;
+      return t.validate.oneOf(t.common.list(issue.values.map((v) => JSON.stringify(v))));
     default:
       return problem.expected;
   }
@@ -209,12 +188,12 @@ export function schemaCheck(
       p.keys.every((key, i) => path[i] === key) &&
       p.issue.keys.includes(path.at(-1) ?? ""),
   );
-  if (unknown !== undefined) return `\`${path.at(-1)}\` 不是這個表格認得的鍵`;
+  if (unknown !== undefined) return t.validate.unknownKey(path.at(-1) ?? "");
   const problem = problems.find((p) => path.every((key, i) => p.keys[i] === key));
   if (problem === undefined) return null;
   const inside = problem.keys.slice(path.length);
   return inside.length === 0
-    ? wording(problem)
+    ? t.validate.sentence(wording(problem))
     : `${inside.map((k) => (typeof k === "number" ? `[${k}]` : k)).join(".")} ${wording(problem)}`;
 }
 
@@ -233,22 +212,20 @@ export function valueForKey(
   if (fromSchema !== null) return fromSchema;
   const own = !described(ctx, path);
   const string = (check: Check) =>
-    typeof value === "string" ? check(value) : `\`${last}\` 要是字串`;
+    typeof value === "string" ? check(value) : t.validate.keyString(last);
   if (own && (last === "enabled" || last === "dev") && typeof value !== "boolean") {
-    return `\`${last}\` 要是 true 或 false`;
+    return t.validate.keyBoolean(last);
   }
   if (own && last === "port") {
-    return typeof value === "bigint" && value >= 1n && value <= 65535n
-      ? null
-      : "port 要是 1–65535 的整數";
+    return typeof value === "bigint" && value >= 1n && value <= 65535n ? null : t.validate.port;
   }
   if (last === "bind") return string(bind);
   if (last === "database_url") return string(databaseUrl);
   if (last === "core_url") return string(wsUrl);
   if (own && last === "command_guilds") {
-    if (!Array.isArray(value) || isTable(value)) return '要是陣列,例如 ["123456789012345678"]';
+    if (!Array.isArray(value) || isTable(value)) return t.validate.idsArray;
     for (const v of value) {
-      if (typeof v !== "string") return '伺服器 id 要用字串,例如 ["123456789012345678"]';
+      if (typeof v !== "string") return t.validate.idsString;
       const err = discordId(v);
       if (err) return err;
     }

@@ -37,6 +37,7 @@ import {
 } from "@miyoria/llm/llm";
 import { type Config, configureLogging, parseSection } from "@miyoria/runtime/kernel";
 import { type ReasoningLevel, toTimestamp } from "@miyoria/types";
+import { t } from "../i18n/index.js";
 import { bold, dim, note, ok, println, section, warn } from "../ui.js";
 import { configuredDatabase } from "./db.js";
 import { loadConfig } from "./node.js";
@@ -130,7 +131,7 @@ export async function modelOfConfig(
     const factory = new OpenAiFactory();
     for (const [name, cfg] of Object.entries(llm.providers)) {
       if (!factory.kinds.includes(cfg.kind)) {
-        throw new MemoryCommandError(`provider \`${name}\`: unknown kind \`${cfg.kind}\``);
+        throw new MemoryCommandError(t.memory.unknownKind(name, cfg.kind));
       }
       providers.set(name, factory.build(name, cfg));
     }
@@ -164,8 +165,7 @@ export async function modelOfConfig(
 function parseSince(text: string | undefined, fallback: ReturnType<typeof toTimestamp>) {
   if (text === undefined) return fallback;
   const at = Date.parse(text);
-  if (Number.isNaN(at))
-    throw new MemoryCommandError(`--since 要是 ISO 日期,例如 2026-11-15:${text}`);
+  if (Number.isNaN(at)) throw new MemoryCommandError(t.memory.badSince(text));
   return toTimestamp(at);
 }
 
@@ -173,13 +173,13 @@ function parseMaxUsd(text: string | undefined): number {
   if (text === undefined) return DEFAULT_MAX_USD;
   const n = Number(text);
   if (!Number.isFinite(n) || n <= 0) {
-    throw new MemoryCommandError(`--max-usd 要是大於 0 的數字(美元):${text}`);
+    throw new MemoryCommandError(t.memory.badMaxUsd(text));
   }
   return n;
 }
 
 const usd = (n: number) => `$${n.toFixed(n < 0.1 ? 4 : 2)}`;
-const count = (n: number) => n.toLocaleString("en-US");
+const count = (n: number) => t.common.int(n);
 
 /** `miyoria memory rebuild [file]`. */
 export async function rebuildCommand(
@@ -193,7 +193,7 @@ export async function rebuildCommand(
     options.file !== undefined
       ? resolve(options.file)
       : await configuredDatabase(config, configPath);
-  if (!existsSync(path)) throw new MemoryCommandError(`找不到資料庫:${path}`);
+  if (!existsSync(path)) throw new MemoryCommandError(t.memory.noDatabase(path));
   const maxUsd = parseMaxUsd(options.maxUsd);
   const profile = profileId(config);
   const notes = await loadNotes();
@@ -203,9 +203,7 @@ export async function rebuildCommand(
     const held = seams.held ?? (await import("@miyoria/store")).heldFiles;
     const open = held([path, `${path}-wal`, `${path}-shm`]);
     if (open.length > 0) {
-      throw new MemoryCommandError(
-        "資料庫還開著(Core 或別的程式正在用它):先停掉 core,或確定沒問題時加 --force",
-      );
+      throw new MemoryCommandError(t.memory.held);
     }
   }
 
@@ -223,47 +221,50 @@ export async function rebuildCommand(
     /** How many lines wait for a vector, as one line of the report. */
     const waitingLine = () => {
       if (vectorModel === null) {
-        return "  向量:沒開([memory.embedding] provider = none),筆記只用關鍵字找";
+        return t.memory.vectorsOff;
       }
       const c = store_.vectorCounts(vectorModel);
-      return `  向量:${count(c.waiting)} 行還沒有(共 ${count(c.lines)} 行)${dim(`(${vectorModel})`)}`;
+      return (
+        t.memory.vectorsWaiting(count(c.waiting), count(c.lines)) + dim(t.memory.aside(vectorModel))
+      );
     };
     const cursors = store_.cursors();
-    if (cursors === null) throw new MemoryCommandError("這個資料庫沒有事件紀錄,沒有東西可以重建");
+    if (cursors === null) throw new MemoryCommandError(t.memory.noEvents);
     const plan = await notes.planRebuild(store.events, cursors, { since });
     const reasoning = model.reasoning ?? "off";
     const estimate = notes.estimateRebuild(plan, model.price, reasoning);
 
-    section(`重建記憶:${path}`);
-    note(`從 ${plan.since} 起的聊天事件;${options.apply ? "會呼叫模型" : "預覽,沒有呼叫模型"}`);
-    println(`  對話(session):${plan.sessions.length}`);
-    println(`  聊天行數:${count(plan.lines)}`);
+    section(t.memory.section(path));
+    note(t.memory.scope(plan.since, options.apply));
+    println(t.memory.sessions(count(plan.sessions.length)));
+    println(t.memory.lines(count(plan.lines)));
     println(
-      `  段落:${count(estimate.segments)}(還沒做的;已做的 ${count(plan.sessions.reduce((n, s) => n + s.done, 0))} 段會跳過)`,
+      t.memory.segments(
+        count(estimate.segments),
+        count(plan.sessions.reduce((n, s) => n + s.done, 0)),
+      ),
     );
     const skipped = plan.sessions.filter((s) => s.unplaced);
-    if (skipped.length > 0) println(dim(`  不知道在哪裡的對話 ${skipped.length} 個,略過`));
+    if (skipped.length > 0) println(dim(t.memory.unplaced(skipped.length)));
     println(
-      `  預估:輸入 ${count(estimate.prompt_tokens)} tokens、輸出 ${count(estimate.completion_tokens)} tokens${reasoning === "off" ? "" : dim(`(含思考,推理 ${reasoning})`)}`,
+      t.memory.estimate(count(estimate.prompt_tokens), count(estimate.completion_tokens)) +
+        (reasoning === "off" ? "" : dim(t.memory.withReasoning(reasoning))),
     );
     println(
-      `  預估費用:${estimate.usd === null ? "價格未知" : usd(estimate.usd)}${model.label === "" ? "" : dim(`(${model.label})`)}`,
+      t.memory.cost(estimate.usd === null ? null : usd(estimate.usd)) +
+        (model.label === "" ? "" : dim(t.memory.aside(model.label))),
     );
     println(waitingLine());
     if (!options.apply) {
       println();
-      println(
-        dim("加 --apply 才會開始(--max-usd 設上限,預設 2 美元);中斷後再跑會從上次停的地方繼續。"),
-      );
+      println(dim(t.memory.applyHint(usd(DEFAULT_MAX_USD))));
       return;
     }
     if (model.price === null) {
-      throw new MemoryCommandError(
-        `config 裡沒有 ${model.label === "" ? "這個用途" : model.label} 的價格([llm.pricing]):沒有價格就無法用 --max-usd 擋住花費`,
-      );
+      throw new MemoryCommandError(t.memory.noPrice(model.label === "" ? null : model.label));
     }
     if (estimate.usd !== null && estimate.usd > maxUsd) {
-      warn(`預估 ${usd(estimate.usd)} 超過上限 ${usd(maxUsd)};會跑到花滿為止,之後可以再跑繼續`);
+      warn(t.memory.overBudget(usd(estimate.usd), usd(maxUsd)));
     }
     const controller = new AbortController();
     const stop = () => controller.abort();
@@ -295,40 +296,48 @@ export async function rebuildCommand(
       });
       println();
       println(
-        `${bold("結果")}:${report.status};做了 ${report.segments} / ${report.total} 段(空的 ${report.empty}、放棄 ${report.abandoned})`,
+        t.memory.result(
+          bold(t.memory.resultLabel),
+          report.status,
+          report.segments,
+          report.total,
+          report.empty,
+          report.abandoned,
+        ),
       );
-      println(`  寫入 ${report.written} 行(丟掉 ${report.dropped} 行)、${report.episodes} 則情節`);
+      println(t.memory.written(report.written, report.dropped, report.episodes));
       println(
-        `  模型 ${report.usage.calls} 次、輸入 ${count(report.usage.prompt_tokens)}、輸出 ${count(report.usage.completion_tokens)} tokens、花費 ${usd(report.usd)}`,
+        t.memory.usage(
+          report.usage.calls,
+          count(report.usage.prompt_tokens),
+          count(report.usage.completion_tokens),
+          usd(report.usd),
+        ),
       );
       if (index !== null && (report.status === "done" || report.status === "budget")) {
         const v = await notes.rebuildVectors(index, {
           signal: controller.signal,
-          onBatch: (done, waiting) => println(dim(`  向量 ${done} 行,還有 ${waiting} 行`)),
+          onBatch: (done, waiting) => println(dim(t.memory.vectorBatch(done, waiting))),
         });
         const why =
           v.status === "off"
-            ? "embedding 沒辦法載入(原因在上面的 log)"
+            ? t.memory.whyOff
             : v.status === "stalled"
-              ? "embedding 出錯(原因在上面的 log)"
+              ? t.memory.whyStalled
               : v.status === "aborted"
-                ? "中斷"
-                : "";
-        println(
-          `  向量:補上 ${count(v.done)} 行${v.waiting > 0 ? `,還有 ${count(v.waiting)} 行沒有${why === "" ? "" : `(${why};Core 開著時背景會再補)`}` : ""}`,
-        );
+                ? t.memory.whyAborted
+                : null;
+        println(t.memory.vectorsAdded(count(v.done), v.waiting > 0 ? count(v.waiting) : null, why));
       } else {
         println(waitingLine());
       }
       if (report.status === "done") {
-        ok("完成");
-        note("從下次啟動起,她的記憶以筆記為主:段落整理即時跑,舊的整理停掉,回想讀筆記");
-      } else if (report.status === "budget") warn("到上限停下來;再跑一次會從這裡繼續");
-      else if (report.status === "aborted") warn("中斷;再跑一次會從這裡繼續");
+        ok(t.memory.done);
+        note(t.memory.doneNote);
+      } else if (report.status === "budget") warn(t.memory.budgetStop);
+      else if (report.status === "aborted") warn(t.memory.aborted);
       else {
-        throw new MemoryCommandError(
-          `模型出錯,停下來:${report.error ?? "unknown"}(再跑一次會繼續)`,
-        );
+        throw new MemoryCommandError(t.memory.modelError(report.error ?? null));
       }
     } finally {
       process.off("SIGINT", stop);

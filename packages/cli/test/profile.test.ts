@@ -152,8 +152,8 @@ describe("miyoria profile new / use", () => {
     write("miyoria.toml", "");
     await expect(create(install, "deepseek-chan")).rejects.toThrow(ProfileCommandError);
     expect(existsSync(join(root, "profiles", "deepseek-chan", "miyoria.toml"))).toBe(false);
-    await expect(create(install, "../x")).rejects.toThrow(/不能當 profile 名稱/);
-    await expect(use(install, "nope")).rejects.toThrow(/不是 profile/);
+    await expect(create(install, "../x")).rejects.toThrow(/cannot be used as a profile name/);
+    await expect(use(install, "nope")).rejects.toThrow(/is not a profile/);
   });
 
   it("back to the first character: a persona without its own config runs the install's", async () => {

@@ -74,7 +74,7 @@ describe("references and masking", () => {
     expect(isSecret("api_key")).toBe(true);
     expect(isSecret("client_secret")).toBe(true);
     expect(isSecret("bind")).toBe(false);
-    expect(mask("")).toBe("(空)");
+    expect(mask("")).toBe("(empty)");
     expect(mask("short")).toBe("••••");
     expect(mask("sk-1234567890abcd")).toBe("••••abcd");
     expect(maskUrl("postgres://miyoria:hunter2@127.0.0.1:5432/miyoria")).toBe(
@@ -99,7 +99,9 @@ describe("validation", () => {
     expect(v.databaseUrl("memory://")).toBeNull();
     expect(v.databaseUrl("sqlite:data/miyoria.db")).toBeNull();
     expect(v.databaseUrl("sqlite:")).not.toBeNull();
-    expect(v.databaseUrl("postgres://u:p@127.0.0.1:5432/db")).toMatch(/不支援 PostgreSQL/);
+    expect(v.databaseUrl("postgres://u:p@127.0.0.1:5432/db")).toMatch(
+      /PostgreSQL is no longer supported/,
+    );
     expect(v.databaseUrl("mysql://x")).not.toBeNull();
   });
 

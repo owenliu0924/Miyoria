@@ -7,6 +7,7 @@ import { dirname, join, resolve } from "node:path";
 import { workerBaseEnv } from "@miyoria/hostd";
 import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
+import { t } from "../i18n/index.js";
 import { offloadUrls, parseBind, pythonPath, type Stack, startOrder, workerUrl } from "./config.js";
 import { isLoopback } from "./roles.js";
 
@@ -92,9 +93,7 @@ export function buildPlan(input: PlanInput): ServiceSpec[] {
   const specs: ServiceSpec[] = [];
 
   if (stack.workers.length > 0 && root === null) {
-    throw new PlanError(
-      "[stack.workers] 要在 Miyoria 的原始碼資料夾裡用(找不到 workers/ 和 pnpm-workspace.yaml)",
-    );
+    throw new PlanError(t.stack.plan.workersNeedRepository);
   }
   for (const w of startOrder(stack.workers)) {
     const workerEnv: Record<string, string> = {
@@ -156,7 +155,7 @@ export function buildPlan(input: PlanInput): ServiceSpec[] {
     });
   }
   if (stack.voiceNode) {
-    if (root === null) throw new PlanError("voice node 要在原始碼資料夾裡用(apps/voice-node)");
+    if (root === null) throw new PlanError(t.stack.plan.voiceNodeNeedsRepository);
     // The node reads VOICE_LINK_URL from its own environment; when core is on another computer
     // the address comes from `[machine.hosts]` (the node's .env still holds the token).
     const link = voiceLinkUrl(config, stack);

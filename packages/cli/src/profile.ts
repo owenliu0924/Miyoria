@@ -16,6 +16,7 @@ import {
 } from "@miyoria/core/light";
 import { HOST_CONFIG_FILE } from "@miyoria/hostd";
 import { loadDotenv } from "@miyoria/runtime/kernel";
+import { t } from "./i18n/index.js";
 
 /** The profile `installPath` runs (see `resolveProfile`); `MIYORIA_PROFILE` from `env` only. */
 export function selectProfile(
@@ -61,6 +62,6 @@ export function loadProfileEnv(
 
 /** One line naming the profile, for `miyoria core` and `miyoria profile show`. */
 export function profileLine(profile: ResolvedProfile, character: string): string {
-  const where = profile.own ? "自己的設定和資料" : "安裝資料夾的設定和資料";
-  return `${character}(profile ${profile.id},${where})`;
+  const where = profile.own ? t.workspace.profileOwn : t.workspace.profileShared;
+  return t.workspace.profileLine(character, profile.id, where);
 }

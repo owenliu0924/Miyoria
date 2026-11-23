@@ -143,11 +143,11 @@ describe("add", () => {
       deps({ confirm: ask.confirm, interactive: true }, net.fetchImpl),
     );
     expect(ask.questions).toHaveLength(1);
-    expect(ask.questions[0]).toMatch(/下載這 1 個檔案/);
-    expect(text()).toContain("要下載的模型檔");
-    expect(text()).toMatch(/m\/model\.bin\s+4\.1 KB\s+授權 Apache-2\.0\s+來自 huggingface\.co/);
+    expect(ask.questions[0]).toMatch(/Download 1 file/);
+    expect(text()).toContain("Model files to download");
+    expect(text()).toMatch(/m\/model\.bin\s+4\.1 KB\s+license Apache-2\.0\s+from huggingface\.co/);
     expect(text()).toContain("測試模型");
-    expect(text()).toContain("已下載並驗證 m/model.bin");
+    expect(text()).toContain("downloaded and verified m/model.bin");
     expect(readFileSync(dest())).toEqual(BODY);
     expect(net.asked).toEqual([URL_]);
 
@@ -160,7 +160,7 @@ describe("add", () => {
     );
     expect(ask.questions).toHaveLength(1);
     expect(net.asked).toHaveLength(1);
-    expect(text()).not.toContain("要下載的模型檔");
+    expect(text()).not.toContain("Model files to download");
   });
 
   it("downloads without asking with --yes", async () => {
@@ -197,8 +197,8 @@ describe("add", () => {
       deps({ confirm: asker(false).confirm }, net.fetchImpl),
     );
     expect(net.asked).toEqual([]);
-    expect(text()).toContain("不下載模型檔");
-    expect(text()).toContain("還沒有 m/model.bin");
+    expect(text()).toContain("Model files not downloaded");
+    expect(text()).toContain("m/model.bin is missing");
     expect(readFileSync(join(dir, "host.toml"), "utf8")).toContain("[services.m]");
   });
 });
@@ -227,8 +227,8 @@ describe("a file the machine already keeps in the old place (adopt_from)", () =>
     );
     expect(ask.questions).toHaveLength(0);
     expect(net.asked).toEqual([]);
-    expect(text()).toContain(`沿用 ${join(dir, OLD)}`);
-    expect(text()).toContain("不用下載");
+    expect(text()).toContain(`reuses ${join(dir, OLD)}`);
+    expect(text()).toContain("no download");
     expect(readFileSync(dest())).toEqual(BODY);
     expect(readFileSync(join(dir, OLD))).toEqual(BODY);
   });
@@ -250,7 +250,7 @@ describe("a file the machine already keeps in the old place (adopt_from)", () =>
       },
       null,
     );
-    expect(text()).toContain("不用下載");
+    expect(text()).toContain("no download");
     expect(existsSync(dest())).toBe(false);
     expect(net.asked).toEqual([]);
   });
@@ -278,7 +278,7 @@ describe("update", () => {
       updateDeps(deps({ confirm: ask.confirm }, net.fetchImpl)),
       null,
     );
-    expect(text()).toContain("要下載的模型檔");
+    expect(text()).toContain("Model files to download");
     expect(ask.questions).toHaveLength(0);
     expect(net.asked).toEqual([]);
 
@@ -316,23 +316,23 @@ describe("doctor", () => {
   it("fails for a missing required file, fixes it with --fix after asking, then verifies it", async () => {
     await servicesCmd.add(target(), { services: ["m"] }, deps({ confirm: asker(false).confirm }));
     out.length = 0;
-    await expect(run({})).rejects.toThrow(/項檢查失敗/);
-    expect(text()).toMatch(/✗ m\s+檔案 m\/model\.bin\s+缺 測試模型/);
-    expect(text()).toContain("hostd 不會啟動");
+    await expect(run({})).rejects.toThrow(/checks? failed/);
+    expect(text()).toMatch(/✗ m\s+File m\/model\.bin\s+Missing 測試模型/);
+    expect(text()).toContain("hostd does not start");
 
     out.length = 0;
     const ask = asker(true);
     await run({ fix: true, services: deps({ confirm: ask.confirm }) });
     expect(ask.questions).toHaveLength(1);
-    expect(text()).toContain("已下載並驗證 m/model.bin");
-    expect(text()).toMatch(/✓ m\s+檔案 m\/model\.bin\s+已驗證/);
+    expect(text()).toContain("downloaded and verified m/model.bin");
+    expect(text()).toMatch(/✓ m\s+File m\/model\.bin\s+Verified/);
   });
 
   it("finds a wrong file with --deep after its hash was remembered", async () => {
     await servicesCmd.add(target(), { services: ["m"] }, deps({ yes: true }));
     out.length = 0;
     await run({});
-    expect(text()).toMatch(/✓ m\s+檔案 m\/model\.bin\s+已驗證/);
+    expect(text()).toMatch(/✓ m\s+File m\/model\.bin\s+Verified/);
     // Other bytes, same size and time: the remembered hash still says it is fine...
     const when = 1_700_000_000;
     utimesSync(dest(), when, when);
@@ -342,13 +342,13 @@ describe("doctor", () => {
     utimesSync(dest(), when, when);
     out.length = 0;
     await run({});
-    expect(text()).toMatch(/✓ m\s+檔案 m\/model\.bin/);
+    expect(text()).toMatch(/✓ m\s+File m\/model\.bin/);
     // ...until --deep reads it.
     out.length = 0;
     await doctor
       .run(join(dir, "miyoria.toml"), { deps: deepDeps(), deep: true })
       .catch(() => undefined);
-    expect(text()).toMatch(/✗ m\s+檔案 m\/model\.bin\s+不對:SHA-256/);
+    expect(text()).toMatch(/✗ m\s+File m\/model\.bin\s+Invalid: SHA-256/);
   });
 
   it("--print-hashes prints the files of a service in service.toml syntax", async () => {

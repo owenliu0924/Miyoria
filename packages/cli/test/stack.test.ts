@@ -203,7 +203,7 @@ describe("doctor --deep: ports", () => {
     expect(found?.level).toBe("fail");
     expect(found?.detail).toContain("7870-7890");
     expect(found?.fix?.join("\n")).toContain("winnat");
-    expect(f.find((x) => x.what === "動態埠範圍")?.level).toBe("warn");
+    expect(f.find((x) => x.what === "Dynamic port range")?.level).toBe("warn");
     // 7882 is inside the reserved range in the netsh text, and nothing listens on it.
     expect(f.find((x) => x.what.includes("7882"))?.level).toBe("fail");
   });
@@ -214,7 +214,7 @@ describe("doctor --deep: ports", () => {
       input("", fakeDeps({ probe: async () => "in-use", fetchImpl, platform: "linux" })),
       [{ ...api, health: "http://127.0.0.1:7878/api/health" }],
     );
-    expect(f[0]).toMatchObject({ level: "ok", detail: "已有 Miyoria 服務在聽" });
+    expect(f[0]).toMatchObject({ level: "ok", detail: "A Miyoria service is listening" });
   });
 
   it("calls_a_busy_port_ours_when_hostd_runs_it_and_foreign_when_hostd_does_not", async () => {
@@ -243,7 +243,7 @@ describe("doctor --deep: builds", () => {
     write("packages/contracts/events/src/index.ts", "x", 10);
     write("packages/contracts/dist/events/src/index.js", "x", 300);
     const f = await buildChecks(input("", fakeDeps()));
-    const contracts = f.findIndex((x) => x.what.includes("契約"));
+    const contracts = f.findIndex((x) => x.what.includes("Contracts"));
     const sdk = f.findIndex((x) => x.what.includes("SDK"));
     expect(f[contracts]?.level).toBe("fail");
     // The SDK's own sources are older than its output; the contracts it compiles against are not.
@@ -278,11 +278,11 @@ describe("doctor --deep: builds", () => {
     const ext = f.find((x) => x.what.includes("miyoria.minecraft"));
     expect(ext?.level).toBe("fail");
     expect(ext?.fix?.[0]).toContain("miyoria update");
-    expect(f.find((x) => x.what === "mod jar(建置)")?.level).toBe("fail");
+    expect(f.find((x) => x.what === "Mod jar (build)")?.level).toBe("fail");
     const jdk = f.find((x) => x.what === "JDK 21");
     expect(jdk?.level).toBe("fail");
     expect(jdk?.detail).toContain("8");
-    expect(f.find((x) => x.what === "遊戲裡的 mod")?.level).toBe("fail");
+    expect(f.find((x) => x.what === "Installed mod")?.level).toBe("fail");
     expect(existsSync(mods)).toBe(true);
   });
 });
@@ -401,7 +401,7 @@ describe("update", () => {
     const { d, calls } = deps(() => undefined);
     await update.run(config, { noPull: true }, d);
     expect(calls).toEqual([]);
-    expect(out.join("")).toContain("與原始碼一致");
+    expect(out.join("")).toContain("Up to date with the sources");
   });
 
   it("rebuilds_only_the_stale_panel_with_a_plain_vite_build_and_swaps_dist", async () => {
@@ -447,7 +447,9 @@ describe("update", () => {
       write("apps/panel/dist.next/partial.js", "half");
       return { ...NONE, code: 1, stderr: "esbuild: Access is denied" };
     });
-    await expect(update.run(config, { noPull: true }, d)).rejects.toThrow(/1 項沒有完成/);
+    await expect(update.run(config, { noPull: true }, d)).rejects.toThrow(
+      /1 step did not complete/,
+    );
     expect(readFileSync(join(dir, "apps/panel/dist/index.html"), "utf8")).toBe("OLD");
     expect(existsSync(join(dir, "apps/panel/dist.next"))).toBe(false);
     expect(out.join("")).toContain("Access is denied");
@@ -474,7 +476,7 @@ describe("update", () => {
     const { d, calls } = deps(() => undefined);
     await update.run(config, { dryRun: true, noPull: true }, d);
     expect(calls).toEqual([]);
-    expect(out.join("")).toContain("會建置 管理面板");
+    expect(out.join("")).toContain("Would build Admin panel");
   });
 
   function modRepo() {
@@ -500,7 +502,7 @@ describe("update", () => {
     );
     await update.run(config, { noPull: true }, d);
     expect(asked).toHaveLength(1);
-    expect(asked[0]).toContain("備份");
+    expect(asked[0]).toContain("backed up");
     const mods = join(dir, "mc", "mods");
     expect(readdirSync(mods).sort()).toEqual(["miyoria-bridge-0.1.0.jar", "other-mod.jar"]);
     expect(readFileSync(join(mods, "miyoria-bridge-0.1.0.jar"), "utf8")).toBe("NEWJAR");
@@ -546,7 +548,7 @@ describe("update", () => {
     const { d, calls } = deps((c) =>
       c.command === "java" ? { ...NONE, stderr: 'java version "1.8.0_422"' } : undefined,
     );
-    await expect(update.run(config, { noPull: true }, d)).rejects.toThrow(/沒有完成/);
+    await expect(update.run(config, { noPull: true }, d)).rejects.toThrow(/did not complete/);
     expect(calls.some((c) => c.command === "gradlew.bat")).toBe(false);
     expect(out.join("")).toContain("JDK 21");
   });

@@ -57,7 +57,7 @@ describe("config", () => {
       ["agent", false],
       ["memory", true],
     ]);
-    expect(areas).toEqual(["commands", "speech", "stage 節點", "stage.link"]);
+    expect(areas).toEqual(["commands", "speech", "stage node", "stage.link"]);
   });
 
   it("menu_areas_edit_only_picked_fields", async () => {
@@ -90,7 +90,7 @@ describe("config", () => {
       false,
     );
     expect(read(".env")).toBe("LLM_API_KEY=sk-new-1234567890\n");
-    expect(text()).toContain("引用 ${LLM_API_KEY},改寫 .env 的 LLM_API_KEY");
+    expect(text()).toContain("references ${LLM_API_KEY}; updated LLM_API_KEY in .env");
     expect(text()).not.toContain("sk-new-1234567890");
 
     await config.set(path, ["core.log", "debug"], undefined, false);
@@ -109,9 +109,11 @@ describe("config", () => {
       /port/,
     );
     await expect(config.set(path, ["llm.providers", "x"], undefined, false)).rejects.toThrow(
-      /是表格/,
+      /is a table/,
     );
-    await expect(config.set(path, ["x"], "1BAD", false)).rejects.toThrow(/不是合法的環境變數名稱/);
+    await expect(config.set(path, ["x"], "1BAD", false)).rejects.toThrow(
+      /is not a valid environment variable name/,
+    );
   });
 
   it("unset_get_and_list", async () => {
@@ -122,14 +124,14 @@ describe("config", () => {
     out.length = 0;
     config.list(path, false);
     expect(text()).toContain('core.profile = "deepseek-chan"');
-    expect(text()).toContain("UNUSED = 1  (miyoria.toml 沒有引用)");
+    expect(text()).toContain("UNUSED = 1  (not referenced by miyoria.toml)");
     expect(text()).not.toContain("sk-1234567890abcd");
     await config.unset(path, "core.log", undefined, false);
     expect(read("miyoria.toml")).not.toContain("log = ");
     await config.unset(path, undefined, "UNUSED", false);
     expect(read(".env")).toBe("LLM_API_KEY=sk-1234567890abcd\n");
     await expect(config.unset(path, "core.nope", undefined, false)).rejects.toThrow(
-      /沒有 `core.nope`/,
+      /no `core.nope`/,
     );
     await expect(config.get(path, "nope", undefined, false)).rejects.toThrow(/miyoria config list/);
   });
@@ -149,19 +151,19 @@ describe("config", () => {
 
     await config.get(path, "modules.market.auction_hours", undefined, false);
     expect(text()).toContain("48\n");
-    expect(text()).toContain("面板改過:48(第 1 版,panel:discord:1");
-    expect(text()).toContain("miyoria.toml:12");
+    expect(text()).toContain("changed in the admin panel: 48 (revision 1, panel:discord:1");
+    expect(text()).toContain("miyoria.toml: 12");
     out.length = 0;
 
     await config.overrides(path);
     expect(text()).toContain("modules.market.auction_hours = 48");
-    expect(text()).toContain("檔案:12");
+    expect(text()).toContain("file: 12");
     expect(text()).toContain("modules.market.auction_step = 7");
     expect(text()).not.toContain("enabled");
     out.length = 0;
 
     await config.set(path, ["modules.market.auction_hours", "24"], undefined, false);
-    expect(text()).toContain("檔案的值不會生效");
+    expect(text()).toContain("the value in the file is not used");
     out.length = 0;
 
     await config.bake(path, true, null);
@@ -198,10 +200,10 @@ describe("config", () => {
     await store.close();
 
     await config.importConfig(path, { replace: false, dryRun: true, yes: false }, null);
-    expect(text()).toContain("試跑");
-    expect(text()).toContain("寫成第 2 版");
+    expect(text()).toContain("dry run");
+    expect(text()).toContain("Settings: revision 2");
     expect(text()).toContain("modules.market.auction_step");
-    expect(text()).toContain('伺服器 discord:111  market.auction_channel = "5001"');
+    expect(text()).toContain('server discord:111  market.auction_channel = "5001"');
     const before = await SqliteStore.open(join(dir, "data", "test.db"));
     expect(before.config.revisions.current()?.version).toBe(1);
     await before.close();
@@ -212,7 +214,7 @@ describe("config", () => {
       config.importConfig(path, { replace: false, dryRun: false, yes: false }, null),
     ).rejects.toThrow(/--yes/);
     await config.importConfig(path, { replace: false, dryRun: false, yes: true }, null);
-    expect(text()).toContain("已寫入第 2 版");
+    expect(text()).toContain("Wrote revision 2");
     const after = await SqliteStore.open(join(dir, "data", "test.db"));
     expect(after.config.revisions.current()).toMatchObject({ version: 2, created_by: "import" });
     expect(after.config.revisions.current()?.doc).toMatchObject({
@@ -227,16 +229,16 @@ describe("config", () => {
     // `get` says where a value comes from, and each server's own value.
     await config.get(path, "modules.market.auction_hours", undefined, false);
     expect(text()).toContain("12\n");
-    expect(text()).toContain("來源:資料庫第 2 版(import");
-    expect(text()).toContain("和 miyoria.toml 一樣");
+    expect(text()).toContain("source: database revision 2 (import");
+    expect(text()).toContain("same as miyoria.toml");
     out.length = 0;
     await config.get(path, "modules.market.auction_channel", undefined, false);
-    expect(text()).toContain('伺服器 一號:"5001"');
+    expect(text()).toContain('server 一號: "5001"');
     out.length = 0;
 
     // Once imported, again only with --replace.
     await config.importConfig(path, { replace: false, dryRun: true, yes: false }, null);
-    expect(text()).toContain("已經匯入過");
+    expect(text()).toContain("Already imported");
   });
 
   it("refuses_to_import_a_file_with_a_secret_as_text", async () => {

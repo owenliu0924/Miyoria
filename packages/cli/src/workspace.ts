@@ -9,6 +9,7 @@ import { cpSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { profileIds } from "./assets.js";
 import { EnvFile } from "./env-file.js";
+import { t } from "./i18n/index.js";
 import { capturedProcessEnv } from "./process-env.js";
 import {
   display,
@@ -59,7 +60,7 @@ export interface Change {
 export function renderChange(c: Change): string {
   if (c.old === null && c.new !== null) return `+ ${c.key} = ${c.new}`;
   if (c.old !== null && c.new !== null) return `~ ${c.key}: ${c.old} → ${c.new}`;
-  if (c.old !== null) return `- ${c.key}(原本 ${c.old})`;
+  if (c.old !== null) return t.workspace.removed(c.key, c.old);
   return `  ${c.key}`;
 }
 
@@ -137,7 +138,9 @@ function readOr(path: string, template: string): [string, boolean] {
     return [readFileSync(path, "utf8"), true];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [template, false];
-    throw new WorkspaceError(`讀取 ${path} 失敗:${(error as Error).message}`, { cause: error });
+    throw new WorkspaceError(t.workspace.readFailed(path, (error as Error).message), {
+      cause: error,
+    });
   }
 }
 
@@ -145,7 +148,7 @@ function parseDoc(text: string, path: string): TomlDocument {
   try {
     return TomlDocument.parse(text);
   } catch (error) {
-    throw new WorkspaceError(`${path} 不是合法的 TOML:${(error as Error).message}`, {
+    throw new WorkspaceError(t.workspace.invalidToml(path, (error as Error).message), {
       cause: error,
     });
   }
@@ -193,7 +196,7 @@ export class Workspace {
   /** Opens existing files; a missing `miyoria.toml` is an error. */
   static open(configPath: string, options: WorkspaceOptions = {}): Workspace {
     if (!existsSync(configPath)) {
-      throw new WorkspaceError(`找不到 ${configPath}:先執行 \`miyoria init\` 建立設定`);
+      throw new WorkspaceError(t.workspace.notFound(configPath));
     }
     return Workspace.openOrCreate(configPath, "", "", options);
   }
@@ -258,7 +261,7 @@ export class Workspace {
   setEnv(name: string, value: string): void {
     const proc = this.#processEnv.get(name);
     if (proc !== undefined && proc !== "") {
-      this.warnings.push(`${name} 也設在系統環境變數裡,執行時會蓋過 .env 的值`);
+      this.warnings.push(t.workspace.envOverride(name));
     }
     this.env.set(name, value);
   }
@@ -374,10 +377,10 @@ export class Workspace {
     if (!this.#tomlExists) out.push(this.configPath);
     if (!this.#envExists) out.push(this.envPath);
     for (const p of this.plannedProfiles) {
-      if (!existsSync(p.to)) out.push(`${p.to}(內建角色 ${p.id})`);
+      if (!existsSync(p.to)) out.push(t.workspace.scaffoldProfile(p.to, p.id));
     }
     const data = this.dataDirToCreate();
-    if (data !== undefined) out.push(`${data}(資料庫資料夾)`);
+    if (data !== undefined) out.push(t.workspace.scaffoldData(data));
     if (this.plannedGitignore !== null && !existsSync(this.plannedGitignore)) {
       out.push(this.plannedGitignore);
     }
@@ -463,6 +466,8 @@ function write(path: string, text: string): void {
   try {
     writeFileSync(path, text);
   } catch (error) {
-    throw new WorkspaceError(`寫入 ${path} 失敗:${(error as Error).message}`, { cause: error });
+    throw new WorkspaceError(t.workspace.writeFailed(path, (error as Error).message), {
+      cause: error,
+    });
   }
 }

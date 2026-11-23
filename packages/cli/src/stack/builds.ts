@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
+import { t } from "../i18n/index.js";
 import type { Runner } from "./system.js";
 
 const SKIP_DIRS = new Set(["node_modules", "dist", "dist.next", "build", ".gradle", ".git", "out"]);
@@ -66,14 +67,14 @@ export function freshness(
 ): Freshness {
   const out = newestOutput(outputs);
   if (out === 0 || (marker !== undefined && !existsSync(marker))) {
-    return { state: "missing", detail: "沒有建置輸出" };
+    return { state: "missing", detail: t.stack.builds.noOutput };
   }
   const src = newestMtime(sources);
   if (src > out + SLACK_MS) {
     const hours = Math.max(1, Math.round((src - out) / 3_600_000));
-    return { state: "stale", detail: `原始碼比輸出新(約 ${hours} 小時)` };
+    return { state: "stale", detail: t.stack.builds.stale(t.common.duration(hours * 3600)) };
   }
-  return { state: "fresh", detail: "與原始碼一致" };
+  return { state: "fresh", detail: t.stack.builds.upToDate };
 }
 
 // ---- targets -----------------------------------------------------------------------------
@@ -192,7 +193,7 @@ export function buildTargets(root: string, configDir: string, config: Config): B
     );
     targets.push({
       id: "contracts",
-      label: "契約(@miyoria/contracts)",
+      label: t.stack.builds.contracts,
       cwd: root,
       sources: contractSources,
       outputs: [join(contracts, "dist")],
@@ -203,7 +204,7 @@ export function buildTargets(root: string, configDir: string, config: Config): B
   const sdk = join(root, "packages", "sdk");
   targets.push({
     id: "sdk",
-    label: "SDK(@miyoria/sdk)",
+    label: t.stack.builds.sdk,
     cwd: root,
     sources: [
       join(sdk, "src"),
@@ -219,7 +220,7 @@ export function buildTargets(root: string, configDir: string, config: Config): B
     if (!ext.hasBuild || ext.packageName === null) continue;
     targets.push({
       id: `ext:${ext.id}`,
-      label: `擴充 ${ext.id}`,
+      label: t.stack.builds.extension(ext.id),
       cwd: root,
       sources: [
         join(ext.dir, "src"),
@@ -239,7 +240,7 @@ export function buildTargets(root: string, configDir: string, config: Config): B
     if (!existsSync(join(dir, "package.json"))) continue;
     targets.push({
       id: app,
-      label: app === "panel" ? "管理面板(apps/panel)" : "Overlay(apps/overlay)",
+      label: app === "panel" ? t.stack.builds.panel : t.stack.builds.overlay,
       cwd: root,
       sources: [
         join(dir, "src"),

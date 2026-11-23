@@ -15,6 +15,7 @@ import {
 import { Config, configureLogging, getLogger } from "@miyoria/runtime/kernel";
 import { isJsonObject, RunningProfileKey } from "@miyoria/types";
 import { PACKAGE_ROOT } from "../assets.js";
+import { t } from "../i18n/index.js";
 import { profileLine } from "../profile.js";
 import { fail, ok, println, warn } from "../ui.js";
 
@@ -25,7 +26,7 @@ export class NodeCommandError extends Error {
 /** Loads `miyoria.toml` (after `.env` was loaded by `main`). */
 export async function loadConfig(configPath: string): Promise<Config> {
   if (!existsSync(configPath)) {
-    throw new NodeCommandError(`找不到 ${configPath}:先執行 \`miyoria init\` 建立設定`);
+    throw new NodeCommandError(t.node.noConfig(configPath));
   }
   return Config.load(configPath);
 }
@@ -98,7 +99,7 @@ export async function chat(
     discord: withDiscord,
     api: false,
   });
-  println(`和 ${node.profileDisplayName} 聊天中(Ctrl+C 結束)。`);
+  println(t.node.chatting(node.profileDisplayName));
   await runUntilSignal(node);
 }
 
@@ -135,10 +136,10 @@ export interface StageObsSetupFlags {
 
 export async function stageObsSetup(configPath: string, flags: StageObsSetupFlags): Promise<void> {
   if (flags.here && flags.collection !== null) {
-    throw new NodeCommandError("--here 和 --collection 只能選一個");
+    throw new NodeCommandError(t.node.hereOrCollection);
   }
   if (flags.noProfile && (flags.profile !== null || flags.profileSettings)) {
-    throw new NodeCommandError("--no-profile 不能和 --profile、--profile-settings 一起用");
+    throw new NodeCommandError(t.node.noProfileConflict);
   }
   const config = await loadConfig(configPath);
   configureLogging({ level: "warn" });
@@ -151,37 +152,30 @@ export async function stageObsSetup(configPath: string, flags: StageObsSetupFlag
     collection: flags.here ? null : (flags.collection ?? undefined),
     profile: flags.noProfile ? null : (flags.profile ?? undefined),
     profileSettings: flags.profileSettings,
-    onStep: (step) => println(`${dryRun ? "  會" : "  "}${describeStep(step)}`),
+    onStep: (step) => println(t.node.obsStep(describeStep(step), dryRun)),
   });
   const { steps, place } = result;
   const changes = steps.filter((s) => s.op !== "write_mask" && s.op !== "filter");
-  const where = `場景集合「${result.collection}」、設定檔「${result.profile}」`;
+  const where = t.node.obsWhere(result.collection, result.profile);
   if (result.layoutUnknown) {
-    println(
-      `  (場景集合「${result.collection}」已經有了,切過去才讀得到裡面有什麼;實際執行時只會補上缺的)`,
-    );
+    println(t.node.layoutUnknown(result.collection));
   }
   if (dryRun) {
     const same = place.length === 0 && changes.length === 0 && !result.layoutUnknown;
-    ok(
-      `預覽完成:${same ? "OBS 已經是這個版面" : `${place.length + steps.length} 個步驟`},在${where}(沒有改 OBS)`,
-    );
+    ok(t.node.obsPreview(same ? null : place.length + steps.length, where));
   } else {
     ok(
       place.length === 0 && changes.length === 0
-        ? `OBS 已經是這個版面(${where}),只更新了遮罩`
-        : `OBS 版面建好了,在${where}(${place.length + steps.length} 個步驟)`,
+        ? t.node.obsUnchanged(where)
+        : t.node.obsBuilt(where, place.length + steps.length),
     );
   }
   for (const note of result.notes) warn(note);
   if (result.createdProfile) {
-    warn(
-      `新的設定檔「${result.profile}」是空白的:要從 OBS 推流的話,串流金鑰(設定 → 直播)和編碼器(設定 → 輸出)要在這個設定檔裡重新設一次`,
-    );
+    warn(t.node.newProfileEmpty(result.profile));
   }
-  warn(
-    "VTube Studio 要用透明背景:背景選純色並勾「透明」,OBS 的「VTube Studio 透明」才會只看到她本人",
-  );
+  // The name of the source `stage` makes for the model (packages/stage/src/obs-setup.ts).
+  warn(t.node.vtubeTransparent("VTube Studio 透明"));
   // The Stage checks OBS's collection with this: suggest it, the config file is the owner's.
   const lines: string[] = [];
   if (!flags.here && result.configured.collection !== result.collection) {
@@ -192,9 +186,7 @@ export async function stageObsSetup(configPath: string, flags: StageObsSetupFlag
   }
   if (lines.length > 0) {
     println();
-    println(
-      "在 miyoria.toml 的 [stage.obs] 加上這幾行,Stage 才會確認 OBS 在她的場景集合上(不在就不建任何東西,並在面板提醒):",
-    );
+    println(t.node.addToStageObs);
     println("  [stage.obs]");
     for (const line of lines) println(`  ${line}`);
   }
@@ -203,9 +195,7 @@ export async function stageObsSetup(configPath: string, flags: StageObsSetupFlag
     result.configured.collection !== null &&
     result.configured.collection !== result.collection
   ) {
-    warn(
-      `[stage.obs] collection 是「${result.configured.collection}」,但這次建在「${result.collection}」:OBS 停在這份集合時 Stage 不會建任何東西`,
-    );
+    warn(t.node.collectionMismatch(result.configured.collection, result.collection));
   }
 }
 
@@ -216,7 +206,14 @@ export async function profileValidate(
   const config = await loadConfig(configPath);
   const profile = await loadProfile(config, profileOptions(configPath, running).baseDir);
   ok(
-    `${profile.character.name} · ${profile.displayName}(${profile.id}):${profile.sections.length} 個人格段落、${profile.examples.length} 個範例對話,聲音設定 ${profile.voice ? "有" : "無"},模型設定 ${profile.avatar ? "有" : "無"}`,
+    t.node.profileSummary(
+      `${profile.character.name} · ${profile.displayName}`,
+      profile.id,
+      profile.sections.length,
+      profile.examples.length,
+      Boolean(profile.voice),
+      Boolean(profile.avatar),
+    ),
   );
 }
 
@@ -229,7 +226,7 @@ export async function extNew(name: string, dir: string): Promise<void> {
     ? "workspace:*"
     : "^0.2.0";
   const path = await extensionsCli.newExtension(dir, name, { sdk, id: null });
-  ok(`已建立 ${path}`);
+  ok(t.node.created(path));
 }
 
 export async function extList(configPath: string): Promise<void> {
@@ -248,7 +245,7 @@ export async function extInstall(configPath: string, source: string): Promise<vo
   const config = await loadConfig(configPath);
   const { extensionsCli } = await import("@miyoria/core");
   const installed = await extensionsCli.install(config, process.cwd(), source);
-  ok(`已安裝 ${installed.id} 到 ${installed.dir}`);
+  ok(t.node.installed(installed.id, installed.dir));
   for (const w of installed.warnings) warn(w);
 }
 
@@ -257,8 +254,8 @@ export async function extValidate(dir: string): Promise<void> {
   const v = await extensionsCli.validate(dir);
   for (const w of v.warnings) warn(w);
   for (const e of v.errors) fail(e);
-  if (v.errors.length > 0) throw new NodeCommandError(`${v.errors.length} 個錯誤`);
-  ok("manifest 正常");
+  if (v.errors.length > 0) throw new NodeCommandError(t.node.errors(v.errors.length));
+  ok(t.node.manifestValid);
 }
 
 export async function extDev(configPath: string): Promise<void> {

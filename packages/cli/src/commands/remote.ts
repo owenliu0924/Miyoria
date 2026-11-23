@@ -5,6 +5,7 @@ import type { Config } from "@miyoria/runtime/kernel";
 import type { ModuleStateKind } from "@miyoria/types";
 import { createORPCClient } from "@orpc/client";
 import { OpenAPILink } from "@orpc/openapi-client/fetch";
+import { t } from "../i18n/index.js";
 import { cyan, dim, green, println, red, yellow } from "../ui.js";
 
 export const DEFAULT_API_BIND = "127.0.0.1:7878";
@@ -64,7 +65,7 @@ export function apiEndpoint(config: Config): ApiEndpoint {
 /** Client for the core described by `config` (`[modules.api]`). */
 export function clientFor(config: Config): Remote {
   const { token, local } = apiEndpoint(config);
-  if (token === "") throw new RemoteError("沒有設定 MIYORIA_API_TOKEN(執行 `miyoria init` 產生)");
+  if (token === "") throw new RemoteError(t.remote.noToken);
   return { rpc: rpcClient(local, token) };
 }
 
@@ -78,18 +79,21 @@ export async function isRunning(client: Remote, timeoutMs = 2000): Promise<boole
   }
 }
 
+/** A module's state in the active language, colored; an unknown state prints as it is. */
 export function stateLabel(state: ModuleStateKind): string {
+  const words: Record<string, string> = t.remote.moduleStates;
+  const word = words[state] ?? state;
   switch (state) {
     case "running":
-      return green("running");
+      return green(word);
     case "degraded":
-      return yellow("degraded");
+      return yellow(word);
     case "failed":
-      return red("failed");
+      return red(word);
     case "disabled":
-      return dim("disabled");
+      return dim(word);
     default:
-      return state;
+      return word;
   }
 }
 
@@ -113,10 +117,16 @@ export async function status(client: Remote): Promise<void> {
     a < b ? -1 : a > b ? 1 : 0,
   );
   if (usage.length > 0) {
-    println("\nLLM 用量(啟動以來)");
+    println(`\n${t.remote.usageTitle}`);
     for (const [model, u] of usage) {
       println(
-        `  ${model}: ${u.calls} 次,輸入 ${u.prompt_tokens}(快取 ${u.cached_prompt_tokens}),輸出 ${u.completion_tokens}`,
+        t.remote.usage(
+          model,
+          u.calls,
+          t.common.int(u.prompt_tokens),
+          t.common.int(u.cached_prompt_tokens),
+          t.common.int(u.completion_tokens),
+        ),
       );
     }
   }
@@ -133,18 +143,31 @@ function localStamp(ts: string, withDate: boolean): string {
   return withDate ? `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${time}` : time;
 }
 
+/** Terminal columns of a text: CJK and full-width characters take two. */
+function columns(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    width += code >= 0x2e80 && code <= 0xffdc ? 2 : 1;
+  }
+  return width;
+}
+
 export async function decisions(client: Remote, limit: number): Promise<void> {
+  const { replied, skipped } = t.remote;
+  const width = Math.max(columns(replied), columns(skipped));
   for (const d of await client.rpc.decisions({ query: { limit } })) {
-    const t = d.trace;
+    const trace = d.trace;
+    const mark = trace.respond ? replied : skipped;
     println(
-      `${localStamp(d.ts, true)} ${t.respond ? "回" : "略"} ${t.context.channel.padEnd(5)} ${t.score.toFixed(2)}  ${t.context.platform}  ${t.reasons.join(";")}`,
+      `${localStamp(d.ts, true)} ${mark}${" ".repeat(width - columns(mark))} ${trace.context.channel.padEnd(5)} ${trace.score.toFixed(2)}  ${trace.context.platform}  ${trace.reasons.join(";")}`,
     );
   }
 }
 
 export async function personaShow(client: Remote): Promise<void> {
   for (const s of await client.rpc.persona.list()) {
-    println(`${cyan(`## ${s.key}`)}(${[...s.body].length} 字)\n${s.body}\n`);
+    println(`${cyan(`## ${s.key}`)}${t.remote.characters([...s.body].length)}\n${s.body}\n`);
   }
 }
 
@@ -153,7 +176,7 @@ export async function personaSet(client: Remote, key: string, body: string): Pro
     params: { key },
     body: { body, edited_by: "cli" },
   });
-  println(`${green("✓")} \`${key}\` 已更新為第 ${version} 版,下一輪對話生效`);
+  println(`${green("✓")} ${t.remote.personaUpdated(key, version)}`);
 }
 
 /** `miyoria tail`: one line per bus event (time, type, payload) until `signal` aborts. */
