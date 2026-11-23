@@ -65,6 +65,12 @@ export type Wake =
        * line that called her; `from` is the first. Unset: only `from`.
        */
       callers?: readonly { from: WakeAuthor; message: MessageRef }[];
+      /**
+       * The lines the run answers, in order, as their authors wrote them: block 7 quotes them, so
+       * she answers these and not whatever is newest in the transcript (other people's lines
+       * that came in meanwhile). Unset: block 7 names only `from`.
+       */
+      said?: readonly { from: WakeAuthor; text: string }[];
     }
   /** Something she started came back. */
   | {

@@ -1,6 +1,6 @@
 // What the text path on the new runner keeps of the old one (docs/design/v5-brain.md B4).
 
-import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
+import { ActuatorRegistry, ActuatorRegistryKey, ReplyReferencesKey } from "@miyoria/gate/actions";
 import { type ChatRequest, contentText } from "@miyoria/llm/llm";
 import { defineTool } from "@miyoria/llm/tools";
 import { type LogEntry, type MessageLog, MessageLogKey } from "@miyoria/store";
@@ -349,6 +349,108 @@ describe("her lines", () => {
     rig.say(mention(C1, "amy", "@她 嗨"));
     await until(() => outcomes(rig).length === 1, 3_000, "the run");
     expect(replies(rig)).toEqual([["好", null]]);
+  });
+
+  it("each caller's run quotes their line and names it, though others spoke after it", async () => {
+    const rig = await Rig.create();
+    rig.model.push(says("咖哩"), says("不會"));
+    const amy = mention(C1, "amy", "@她 晚餐吃什麼");
+    const bob = mention(C1, "bob", "@她 明天會下雨嗎");
+    rig.say(amy);
+    rig.say(bob);
+    rig.say(line(C1, "carol", "我剛到"));
+    await until(() => outcomes(rig).length === 2, 3_000, "a run each");
+    expect(replies(rig)).toEqual([
+      ["咖哩", amy.id.id],
+      ["不會", bob.id.id],
+    ]);
+    const texts = (i: number) =>
+      (rig.model.requests[i]?.messages ?? []).map((m) => contentText(m.content));
+    // amy's run reads bob's and carol's lines after hers: hers is not the newest.
+    const history = texts(0).slice(0, -1).join("\n");
+    expect(history.indexOf("carol: 我剛到")).toBeGreaterThan(history.indexOf("晚餐吃什麼"));
+    expect(history.indexOf("bob: @她 明天會下雨嗎")).toBeGreaterThan(history.indexOf("晚餐吃什麼"));
+    const turn = (i: number) => texts(i).at(-1) ?? "";
+    expect(turn(0)).toContain(
+      "amy 在叫你:要回的是他這句「@她 晚餐吃什麼」。其他人的話是背景;有叫你的人之後會輪到。",
+    );
+    expect(turn(1)).toContain("bob 在叫你:要回的是他這句「@她 明天會下雨嗎」。");
+    for (const i of [0, 1]) expect(turn(i)).not.toContain("最後那句");
+  });
+
+  it("quotes nothing when a held follow-up and another caller share a run", async () => {
+    const jot = defineTool({
+      name: "jot",
+      description: "記下來。",
+      parameters: z.object({}),
+      effect: "act",
+      speed: "instant",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      async call() {
+        return "記好了";
+      },
+    });
+    const rig = await Rig.create({
+      config: { one_caller_per_turn: false },
+      provide: (_sup, tools) => tools.register(jot),
+    });
+    rig.model.push(calls("jot", {}, "c1"), { events: says("記了"), delay: 300 }, says("好"));
+    const asked = mention(C1, "amy", "@她 幫我記買蛋");
+    rig.say(asked);
+    await until(() => rig.model.requests.length === 2, 3_000, "her tool worked");
+    // Her tool did work: amy's follow-up waits for the next run, where bob called her too.
+    rig.say(line(C1, "amy", "還有牛奶跟吐司也要記"));
+    rig.say(mention(C1, "bob", "@她 我也要記東西"));
+    await until(() => outcomes(rig).length === 2, 3_000, "both runs");
+    expect(replies(rig)).toEqual([
+      ["記了", asked.id.id],
+      ["好", null],
+    ]);
+    const turn = contentText(rig.model.requests[2]?.messages.at(-1)?.content ?? "");
+    expect(turn).toContain(
+      "好幾個人在叫你:amy 的這句「還有牛奶跟吐司也要記」、bob 的這句「@她 我也要記東西」。",
+    );
+  });
+
+  it("a file handed over takes the run's one quote by the same rule, never outside an answer", async () => {
+    const taken: (string | null)[] = [];
+    const hand = defineTool({
+      name: "hand_over",
+      description: "交出去。",
+      parameters: z.object({}),
+      effect: "say",
+      speed: "instant",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      async call(ctx) {
+        const references = rig.sup.services.get(ReplyReferencesKey);
+        taken.push(references?.take(ctx.turn, ctx.context)?.id ?? null);
+        return "交出去了";
+      },
+    });
+    const rig = await Rig.create({
+      mode: "lively",
+      provide: (_sup, tools) => tools.register(hand),
+    });
+    rig.model.push(calls("hand_over", {}, "c1"), says("給你"));
+    const asked = mention(C1, "amy", "@她 檔案給我");
+    rig.say(asked);
+    await until(() => outcomes(rig).length === 1, 3_000, "the answer");
+    // The hand-over quoted amy's line, so her line after it does not.
+    expect(taken).toEqual([asked.id.id]);
+    expect(replies(rig)).toEqual([["給你", null]]);
+    // A glance answers nobody: nothing to quote, never the turn's own id.
+    rig.model.push(calls("hand_over", {}, "c2"), says("順便"));
+    rig.say(line(C1, "bob", "今天好冷喔大家"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the glance");
+    expect(outcomes(rig)[1]?.reason).toBe("ambient");
+    expect(taken).toEqual([asked.id.id, null]);
+    expect(replies(rig).at(-1)).toEqual(["順便", null]);
   });
 });
 

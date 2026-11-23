@@ -26,7 +26,7 @@ import {
 } from "@miyoria/llm/llm";
 import type { ToolEntry } from "@miyoria/llm/tools";
 import { type SpeakerNames, type TranscriptTail, toMessages } from "@miyoria/memory/transcript";
-import { dataBlock, isJsonObject } from "@miyoria/types";
+import { dataBlock, isJsonObject, sameAccount } from "@miyoria/types";
 import { FOR_ARG, FOR_PROPERTY, slimTool } from "../../agent/src/index.js";
 import { PREFIX_PROFILE, type ProfileName } from "./profiles.js";
 import {
@@ -37,7 +37,7 @@ import {
   rulesFor,
   WAKE_LINES,
 } from "./rules.js";
-import type { PromptInput, PromptSource, Wake } from "./types.js";
+import type { PromptInput, PromptSource, Wake, WakeAuthor } from "./types.js";
 
 /** The text of each block around the transcript; `null`: the block is left out. */
 export interface PromptBlocks {
@@ -120,9 +120,21 @@ export async function gatherBlocks(
 export function wakeLine(wake: Wake, names: SpeakerNames | null = null): string {
   switch (wake.kind) {
     case "addressed": {
-      const from = wake.from;
-      const who = names?.({ account: from.account, author: from.name, bot: false }) ?? from.name;
-      return wake.line ?? WAKE_LINES[wake.reason](who);
+      if (wake.line !== undefined) return wake.line;
+      const handle = (a: WakeAuthor) =>
+        names?.({ account: a.account, author: a.name, bot: false }) ?? a.name;
+      // Whose lines the run answers, each with theirs, in the order they first spoke.
+      const people: { from: WakeAuthor; said: string[] }[] = [];
+      for (const s of wake.said ?? []) {
+        const known = people.find((p) => sameAccount(p.from.account, s.from.account));
+        if (known === undefined) people.push({ from: s.from, said: [s.text] });
+        else known.said.push(s.text);
+      }
+      if (people.length > 1) {
+        return WAKE_LINES.several(people.map((p) => ({ name: handle(p.from), said: p.said })));
+      }
+      const own = people.find((p) => sameAccount(p.from.account, wake.from.account));
+      return WAKE_LINES[wake.reason](handle(wake.from), own?.said ?? null);
     }
     case "result":
       return WAKE_LINES.result(wake.tool, wake.job, wake.ok);

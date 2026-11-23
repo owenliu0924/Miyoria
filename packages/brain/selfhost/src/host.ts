@@ -24,10 +24,12 @@
 // (directives, permissions, budget, Floor, moderation, quiet hours), the mouth as the outlet
 // (`MouthOutlet`), `say` to the places she knows (never a DM: that is `message_dm`'s). A run
 // holds the Floor from its start to its end, as the old turn did; a glance the Floor refuses is
-// not run. Her first line answering one person quotes their line (`#replyTarget`); a line the
+// not run. Her first line answering one person quotes their line (`#replyTarget`), or the file
+// `share` hands over when that goes first (`ReplyReferencesKey`); a line the
 // scheduler failed late is marked as not heard. What a run did is published as today's turn
 // records.
 
+import { ReplyReferencesKey } from "@miyoria/gate/actions";
 import {
   type ContentPart,
   currentLlmTag,
@@ -44,7 +46,6 @@ import {
 import { errorMessage, type Subscription, sleep } from "@miyoria/runtime/kernel";
 import { MessageLogKey, StoreKey } from "@miyoria/store";
 import {
-  type AccountRef,
   ActionSinkKey,
   type ContextKey,
   contextKeyEquals,
@@ -342,6 +343,8 @@ export class SelfHost implements TextRunner {
     };
     this.quota = options.runner?.quota ?? hostQuota(agent, options.quiet ?? null);
     agent.ctx.provide(PersonQuotaKey, this.quota);
+    // A file `share` hands over quotes by the rule her lines follow (`#takeQuote`).
+    agent.ctx.provide(ReplyReferencesKey, { take: (turn, place) => this.#takeQuote(turn, place) });
     this.runner = new SelfRunner(
       {
         transcript,
@@ -949,6 +952,14 @@ export class SelfHost implements TextRunner {
       if (known === undefined) callers.push({ from, message: m.id });
       else if (m !== first) known.message = m.id;
     }
+    // What block 7 quotes: the callers' lines of the run, not the transcript's newest line, which
+    // may be someone else's that came in meanwhile.
+    const said = inputs
+      .filter((m) => callers.some((c) => sameAccount(c.from.account, m.author.account)))
+      .map((m) => ({
+        from: { account: m.author.account, name: m.author.display_name },
+        text: m.text,
+      }));
     return {
       kind: "addressed",
       reason,
@@ -956,6 +967,7 @@ export class SelfHost implements TextRunner {
       message: first.id,
       ...(asked === undefined ? {} : { line: askedLine(asked.author.display_name, asked.text) }),
       ...(callers.length > 1 ? { callers } : {}),
+      said,
     };
   }
 
@@ -1231,19 +1243,24 @@ export class SelfHost implements TextRunner {
    * only when one person called her; with several, an unmarked reply quotes nobody.
    */
   #replyTarget(line: OutgoingLine): MessageRef | null {
-    const state = this.#turns.get(line.turn);
-    const agent = this.#agent;
-    if (state === undefined || !line.focus || line.replyTo === null || state.quoted) return null;
-    if (!agent.config.reply_reference || line.place.kind === "dm") return null;
-    if (state.run.wake.kind !== "addressed") return null;
-    const callers: AccountRef[] = [];
-    for (const m of state.run.inputs) {
-      if (!callsHer(this.#call(m))) continue;
-      if (!callers.some((a) => sameAccount(a, m.author.account))) callers.push(m.author.account);
-    }
-    if (callers.length > 1) return null;
+    if (!line.focus || line.replyTo === null) return null;
+    return this.#takeQuote(line.turn, line.place) === null ? null : line.replyTo;
+  }
+
+  /**
+   * The message the first thing `turn` puts in `place` quotes (her line, or a file `share` hands
+   * over: `ReplyReferencesKey`), and the run's one quote is used; `null`: nothing is quoted.
+   */
+  #takeQuote(turn: string, place: ContextKey): MessageRef | null {
+    const state = this.#turns.get(turn);
+    if (state === undefined || state.quoted) return null;
+    if (!this.#agent.config.reply_reference || place.kind === "dm") return null;
+    const wake = state.run.wake;
+    if (wake.kind !== "addressed" || !contextKeyEquals(place, state.place.context)) return null;
+    // Several callers counted as the wake counted them (`#addressedWake`).
+    if (wake.callers !== undefined && wake.callers.length > 1) return null;
     state.quoted = true;
-    return line.replyTo;
+    return wake.message;
   }
 
   #onRunEvent(event: RunEvent): void {
