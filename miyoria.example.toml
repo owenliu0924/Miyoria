@@ -975,20 +975,22 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # 回合:最後一則訊息後等多久才開始回(打字中會延長);回覆會引用叫她的那則訊息
 # debounce_ms = 800
 # reply_reference = true
-# 每個對話(一個頻道、討論串、私訊或語音頻道)最近一小時內最多花多少在模型上,照 [llm.pricing] 算;
-# 那一小時用過沒有價格的模型時改用 token 算。到了她在那裡先不回,有人叫她時說一次大概幾分鐘後回來
-# (同一段時間只說一次),記錄裡有一行警告。0 = 不設這個上限(每天的 [llm.budget] 照樣算)。
-# 也可以在面板替某個伺服器或頻道另外設;私訊用這裡的值
-# session_usd_per_hour = 1
-# session_tokens_per_hour = 3000000
-# 文字頻道裡她一次做事的上限:能連續用工具幾步、每步最多幾個工具、最長幾秒、一個工具最長幾秒、所有步驟加起來幾個 token
-# (每一步都會重送整份提示詞,讀了好幾個長網頁或檔案的一次大約一兩百萬)。到了上限,最後一步可以用 delegate
-# 把剩下的交給小幫手。語音另外算(兩步、12 秒)。也可以在面板替某個伺服器或頻道另外設
+# 文字頻道裡她一次做事的上限:能連續用工具幾步、最長幾秒、一個工具最長幾秒(擋停不下來的迴圈)。
+# 到了上限,最後一步可以用 delegate 把剩下的交給小幫手。每步最多 8 個工具和整次的 token 上限是固定的,
+# 不是設定;錢由下面的每人 AI 額度和 [llm.budget] 管。語音另外算(兩步、12 秒)。也可以在面板替某個伺服器或頻道另外設
 # text_rounds = 20
-# text_calls_per_round = 8
 # text_seconds = 300
 # text_tool_seconds = 60
-# text_tokens = 3000000
+
+# 每人的 AI 額度:她為一個人花的模型費用(回他的話,文字或語音,和他要的小幫手工作),照 [llm.pricing] 算;
+# 沒有價目的模型照 unpriced_usd_per_mtok 換成美元。她自己主動的事(看一眼、提醒、反思、她自己開的工作)
+# 不算在任何人身上,只受 [llm.budget] 管。owner 不受限。到了上限,她回那個人一句固定的話(說大概多久後
+# 再來,同一段時間只說一次,不呼叫模型);他要開小幫手會被拒絕,做到一半的工作做完這一步就交代結果。
+# 重啟不會歸零。0 = 不設那個上限
+# [modules.agent.quota]
+# person_usd_per_hour = 3        # 每人最近一小時
+# person_usd_per_day = 10        # 每人她的一天(照 [modules.arbiter] 的換日時間)
+# unpriced_usd_per_mtok = 1      # 沒有價目的模型,每一百萬 token 算多少美元
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
 # × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
@@ -1025,43 +1027,35 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # 會先寫計畫);research 只上網查;curator 只整理筆記本。語音頻道裡也可以交代,結果回到她還在的那個語音頻道。
 # 小幫手不會講話、不私訊、不花魚幣、不在 Discord 上做事;結果回到交代的那個地方叫她,有人在等的她一定要交代。
 # 進行中的工作和它們的計畫在她的提示詞「進行中的工作」裡;重啟後沒做完的工作從自己的紀錄接著做。
-# 額度都在這裡,和她自己的額度分開記
+# 一件工作的花費算在要它的人的 AI 額度([modules.agent.quota])裡;她自己開的不算在任何人身上
 # [modules.agent.delegate]
 # enabled = true
 # max_running = 3                # 同時跑幾個(1 到 8);多的排隊
 # max_queued = 8                 # 最多排幾個,更多的 delegate 被拒絕(她會知道)
-# daily_usd = 10                 # 所有小幫手一天(以一天的開始算)加起來最多花多少美元,依模型價目表;用完就不再開
-# daily_tokens = 30000000        # 模型沒有價目時改用 token 算的一天上限
-# reflect_daily_usd = 0.5        # 每晚的反思一天最多花多少美元,另外記
-# reflect_daily_tokens = 1500000 # 反思在模型沒有價目時的 token 上限
+# reflect_daily_usd = 0.5        # 每晚的反思一天最多花多少美元,另外記(沒有價目的模型照 unpriced_usd_per_mtok 換算)
 # result_chars = 1500            # 結果叫醒她時放進去的字數;更長的用 delegate_read 讀
 # read_chars = 8000              # delegate_read 一次給她的字數
 # keep_ended = 20                # 結束的工作留幾個給 delegate_list 和面板
 
-# 每種小幫手一件工作能用多少(下面都是預設值)。輪數、時間、token 是整件工作的,重啟前用掉的也算;
-# 時間不算重啟停下來的那段。預算 usd_default 是她沒說時給的,她說了也不會超過 usd_max
+# 每種小幫手一件工作能用多少(下面都是預設值)。輪數、時間、預算是整件工作的,重啟前用掉的也算;
+# 時間不算重啟停下來的那段。預算是一件工作的大小:usd_default 是她沒說時給的,她說了也不會超過 usd_max。
+# 每步最多 8 個工具和 token 上限是固定的,不是設定
 # [modules.agent.delegate.kinds.worker]
 # rounds = 60                    # 能呼叫工具的步數;用完再多一步寫結果
-# calls_per_round = 8            # 一步最多呼叫幾個工具
 # minutes = 30                   # 整件工作最多跑幾分鐘
 # tool_seconds = 180             # 一次工具呼叫最多等幾秒(跑程式要的時間)
-# tokens = 4000000               # 整件工作最多用多少 token(輸入加輸出)
 # usd_default = 1                # 預設的預算(美元)
 # usd_max = 3                    # 她能要的最多預算(美元)
 # [modules.agent.delegate.kinds.research]
 # rounds = 16
-# calls_per_round = 4
 # minutes = 8
 # tool_seconds = 45
-# tokens = 500000
 # usd_default = 0.25
 # usd_max = 1
 # [modules.agent.delegate.kinds.curator]
 # rounds = 20
-# calls_per_round = 6
 # minutes = 8
 # tool_seconds = 30
-# tokens = 500000
 # usd_default = 0.25
 # usd_max = 0.75
 
@@ -1719,13 +1713,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # max_redirects = 3
 # allow_ports = []               # 80 和 443 以外還要允許的連接埠
 # cache_ttl_s = 600              # 同一個搜尋或網頁這段時間內不重查
-# window_s = 600                 # 以下次數都是這段時間內
-# search_per_person = 6
-# read_per_person = 10
-# search_global = 30
-# read_global = 60
-# image_per_person = 10          # web_image 每人在 window_s 內最多看幾張
-# image_global = 40
+# search_per_person_hour = 60    # 每人一小時最多查幾次(付費的搜尋每次都花點數;她自己算一個人);0 = 不限。
+#                                # 讀網頁和看圖不另外計次,由她一次做事的步數和每人的 AI 額度管
 
 # ---- Stage 節點(在直播機執行 `miyoria stage`)-------------------------------
 [stage]
