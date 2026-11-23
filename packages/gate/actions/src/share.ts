@@ -238,6 +238,41 @@ export interface ShareOptions {
   clock?: Clock;
   /** The names she knows people by (default: the handle table). */
   names?: NameLookup | null;
+  /** The daily counts, shared with `page_publish` (default: one of its own). */
+  limiter?: RateLimiter;
+}
+
+/** Why an attachment went without a link, in one sentence she can pass on. */
+const NO_LINK = {
+  unconfigured: "檔案網域沒有設定,所以只能傳附件。",
+  no_login: "只給特定的人的連結要登入網站才打得開,這裡沒有開登入,所以只傳了附件。",
+  unknown_person: "我認不出開口的人,做不了只給他的連結,所以只傳了附件。",
+  error: "做連結的時候出了錯,所以這次只有附件。",
+  page: "網頁原始檔在檔案網域上不做下載連結;要讓人在瀏覽器裡打開這個網頁,用 page_publish 發成網頁。",
+  runs: "一打開就會執行的檔案(腳本、SVG 這類)在檔案網域上不做下載連結,所以只傳了附件。",
+  type: "這種檔案不做連結(壓縮檔和 Office 檔的連結只給做給的那個人),所以只傳了附件。",
+  secret: "檔案網域的檢查發現裡面有看起來像密碼或密鑰的內容,所以沒有做連結。",
+  quota: "這個人今天能拿的連結和網頁已經到上限了,所以只傳了附件。",
+  audience: "這個檔案不能給那麼多人看,所以沒有做連結。",
+  other: "檔案網域現在做不出連結,所以只傳了附件。",
+} as const;
+
+/** `NO_LINK` for a refusal of the file origin. */
+function noLinkWhy(refused: string, active: string | null): string {
+  switch (refused) {
+    case "type_not_allowed":
+      return active === "HTML" ? NO_LINK.page : active !== null ? NO_LINK.runs : NO_LINK.type;
+    case "secret":
+      return NO_LINK.secret;
+    case "quota":
+      return NO_LINK.quota;
+    case "audience":
+      return NO_LINK.audience;
+    case "no_login":
+      return NO_LINK.no_login;
+    default:
+      return NO_LINK.other;
+  }
 }
 
 function refused(code: ShareRefusalCode, text: string, extra: Record<string, JsonValue> = {}) {
@@ -248,8 +283,8 @@ function personKey(account: AccountRef): string {
   return `${account.platform}:${account.id}`;
 }
 
-/** The share limits of `[modules.actions.share]`, per rolling day. */
-function shareLimits(config: ShareConfig) {
+/** The share limits of `[modules.actions.share]`, per rolling day (pages count too). */
+export function shareLimits(config: ShareConfig) {
   return {
     perDay: config.per_day,
     perPersonPerDay: config.per_person_per_day,
@@ -280,7 +315,7 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
   const { services, publish } = options;
   const clock = options.clock ?? systemClock;
   const names = options.names === undefined ? handleLookup(services) : options.names;
-  const limiter = new RateLimiter();
+  const limiter = options.limiter ?? new RateLimiter();
 
   /**
    * The checks of the bytes and the share limit (rules 6 to 8), before anything goes out, as an
@@ -398,17 +433,23 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
     }
   };
 
-  /** A link on the file origin, when one is configured and the audience can be opened there. */
+  /**
+   * A link on the file origin, when one is configured and the audience can be opened there; else
+   * why not, in one sentence she can pass on.
+   */
   const issueLink = async (
     artifact: Artifact,
     here: boolean,
     site: ArtifactSite,
     turn: string | null,
     hours: number | null,
-  ): Promise<Extract<FileLinkResult, { ok: true }> | null> => {
+    active: string | null,
+  ): Promise<{ link: Extract<FileLinkResult, { ok: true }> } | { why: string; code: string }> => {
     const links = services.get(FileLinksKey);
     const audience = here ? "space" : "person";
-    if (links === undefined || !links.available(audience) || site.person_id === null) return null;
+    if (links === undefined) return { why: NO_LINK.unconfigured, code: "unconfigured" };
+    if (!links.available(audience)) return { why: NO_LINK.no_login, code: "no_login" };
+    if (site.person_id === null) return { why: NO_LINK.unknown_person, code: "unknown_person" };
     try {
       const result = await links.issue({
         artifact_id: artifact.id,
@@ -419,12 +460,13 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         requested_by: site.person_id,
         turn,
       });
-      if (result.ok) return result;
+      if (result.ok) return { link: result };
       log.info({ artifact: artifact.id, refused: result.refused }, "no link for a share");
+      return { why: noLinkWhy(result.refused, active), code: result.refused };
     } catch (error) {
       log.warn({ err: String(error), artifact: artifact.id }, "cannot issue a share link");
+      return { why: NO_LINK.error, code: "error" };
     }
-    return null;
   };
 
   const revokeLink = (store: ArtifactStore, shareId: string, by: string | null) => {
@@ -474,7 +516,8 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         "artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。" +
         "只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;" +
         "翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。" +
-        "有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。",
+        "有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。" +
+        "有人想在瀏覽器裡打開的網頁用 page_publish 發成網頁,不是用這個傳檔案。",
       properties: {
         artifact: { type: "string", description: "產物的 id" },
         to: {
@@ -560,7 +603,18 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
       const filename = outgoingFilename(handed.filename, vetted.bytes, false);
       let asText = filename !== handed.filename && !site.dm;
       const person = personKey(who);
-      const link = await issueLink(artifact, here, site, ctx.request.turn, args.hours ?? null);
+      // What kind of text it is, if one a browser would run (why a link may be refused).
+      const active =
+        handed.kind === "text" ? activeText(new TextDecoder("utf-8").decode(vetted.bytes)) : null;
+      const issued = await issueLink(
+        artifact,
+        here,
+        site,
+        ctx.request.turn,
+        args.hours ?? null,
+        active,
+      );
+      const link = "link" in issued ? issued.link : null;
       let sent = await send(handed, where, reply, ctx.signal, link?.url ?? "");
       if ("text" in sent) {
         const code = (sent.data as { refused?: string }).refused;
@@ -568,6 +622,13 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         const linkOnly = link !== null && (code === "platform" || code === "too_large");
         if (!linkOnly) {
           if (link !== null) revokeLink(store, link.share_id, site.person_id);
+          // Where the link would have been the way out, say why there is none.
+          if ("why" in issued && (code === "platform" || code === "too_large")) {
+            return {
+              text: `${sent.text} 也沒辦法改給連結:${issued.why}`,
+              data: { ...(sent.data as Record<string, JsonValue>), link_refused: issued.code },
+            };
+          }
           return sent;
         }
         asText = filename !== handed.filename && link.audience !== "person";
@@ -602,7 +663,9 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
       }
       const linkText =
         link === null
-          ? ""
+          ? "why" in issued
+            ? ` 沒有附連結:${issued.why}`
+            : ""
           : ` 也附了一條連結(${link.audience === "space" ? "這個伺服器的成員" : "只有對方"}打得開):${link.url}`;
       const textNote = asText
         ? ` 這種檔案一打開就會執行,所以在這裡是當成文字檔傳的,檔名是 ${escapeData(filename)}:跟對方說一聲,要用的話下載後自己把最後的 .txt 拿掉。`
@@ -619,6 +682,7 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
           metadata_stripped: stripped,
           ...(asText ? { sent_as: filename } : {}),
           ...(link === null ? {} : { url: link.url, link_expires_at: link.expires_at }),
+          ...("why" in issued ? { link_refused: issued.code } : {}),
         },
       };
     },

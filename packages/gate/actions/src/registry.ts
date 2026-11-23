@@ -71,6 +71,7 @@ import {
 import { type ActionsConfig, capabilityMatches, defaultActionsConfig } from "./config.js";
 import { EmergencyStop } from "./emergency.js";
 import { publishNotice, recordOutcome } from "./outcome.js";
+import { pageCapabilities } from "./page.js";
 import { PRIVACY_PROFILE, Privacy } from "./privacy.js";
 import { effectiveLimits, RateLimiter, type RateRun, tightened } from "./rate.js";
 import { approvalCard, Escalations, parseReview, reviewMessages } from "./review.js";
@@ -295,14 +296,25 @@ export class ActuatorRegistry implements ActuatorExecutor {
     });
     if (options.builtins ?? true) {
       for (const capability of builtinCapabilities(options.services)) this.register(capability);
+      // Attachments and pages count toward one daily share limit.
+      const shared = new RateLimiter();
       this.register(
         shareCapability({
           services: options.services,
           config: () => this.#config.share,
           publish: (definition, data, ...meta) => this.#publish(definition, data, ...meta),
           clock: this.#clock,
+          limiter: shared,
         }) as Capability,
       );
+      for (const capability of pageCapabilities({
+        services: options.services,
+        config: () => this.#config.share,
+        limiter: shared,
+        clock: this.#clock,
+      })) {
+        this.register(capability);
+      }
     }
   }
 
