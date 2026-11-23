@@ -116,11 +116,15 @@ export const TOPICS: Record<PushTopic, TopicDef> = {
       return exchangeListWatch(state, c, param as (typeof LIST_KINDS)[number]);
     },
   },
-  /** One ticker's line and chart (`GET /api/member/exchange/ticker/{code}`). */
+  /**
+   * One ticker's line and chart (`GET /api/member/exchange/ticker/{code}`): built again when
+   * quotes were taken (`exchange.quotes`, about once a second at most while US quotes stream in),
+   * so the open ticker and its order panel's estimate follow the price within a second or two.
+   */
   exchange_ticker: {
     audience: "member",
     param: true,
-    timing: { triggers: ["economy.posted"], everyMs: 10_000 },
+    timing: { triggers: ["economy.posted", "exchange.quotes"], everyMs: 10_000 },
     open: (state, c, param) => {
       if (param === undefined) throw ApiError.badRequest("which ticker");
       return exchangeTickerWatch(state, c, param);
