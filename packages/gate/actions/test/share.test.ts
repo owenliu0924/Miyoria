@@ -451,7 +451,10 @@ describe("share: what may leave", () => {
     // HTML goes as an attachment only; a page that would open it still refuses it.
     const page = text("<!doctype html><html><body>hi</body></html>");
     expect(checkContent(page, true)).toMatchObject({ ok: false, what: "HTML" });
-    expect(checkContent(page, true, { attachment: true })).toEqual({ ok: true, mime: "text/plain" });
+    expect(checkContent(page, true, { attachment: true })).toEqual({
+      ok: true,
+      mime: "text/plain",
+    });
     // A zip header without a directory is not a zip she hands out.
     const header = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
     expect(checkContent(header, true)).toMatchObject({ ok: false, what: "zip: no zip directory" });
