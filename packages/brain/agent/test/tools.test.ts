@@ -1,6 +1,6 @@
 import type { Tool } from "@miyoria/llm/tools";
 import { describe, expect, it } from "vitest";
-import { ReactTool, ToolArgumentError, ToolRegistry, truncate } from "../src/index.js";
+import { ReactTool, slimTool, ToolArgumentError, ToolRegistry, truncate } from "../src/index.js";
 
 const named = (name: string): Tool => ({
   spec: { name, description: "test", parameters: { type: "object" } },
@@ -64,5 +64,35 @@ describe("react", () => {
       ToolArgumentError,
     );
     expect(actions).toEqual([]);
+  });
+});
+
+describe("a tool as she is offered it", () => {
+  const spec = {
+    name: "run_code",
+    description: "跑一段程式。",
+    parameters: {
+      type: "object",
+      properties: {
+        code: { type: "string", description: "程式" },
+        why: { type: "string", description: "你為什麼要這樣做(一句話,會記錄下來)" },
+        on_own: { type: "boolean", description: "你自己想做就設 true" },
+      },
+    },
+  };
+  const props = (s: { parameters: unknown }) =>
+    Object.keys((s.parameters as { properties: object }).properties);
+
+  it("keeps `why` on a high-risk tool: its review reads the reason", () => {
+    const limits = { description: 0, argument: 0 };
+    expect(props(slimTool(spec, limits, "high"))).toEqual(["code", "why", "on_own"]);
+    expect(props(slimTool(spec, limits, "medium"))).toEqual(["code", "on_own"]);
+    expect(props(slimTool(spec, limits, "low"))).toEqual(["code", "on_own"]);
+  });
+
+  it("without a risk, keeps `why` only where the spec requires it", () => {
+    expect(props(slimTool(spec))).toEqual(["code", "on_own"]);
+    const required = { ...spec, parameters: { ...spec.parameters, required: ["code", "why"] } };
+    expect(props(slimTool(required))).toEqual(["code", "why", "on_own"]);
   });
 });

@@ -196,14 +196,15 @@ ${FEEL_REMINDER}`
 
 /**
  * The tools as the model is offered them, in the order given: each spec once, without the
- * request rule every capability repeats (the rules say it once; `slimTool`). A tool that acts for
+ * request rule every capability repeats (the rules say it once; `slimTool`), and without `why`
+ * but on a high-risk tool, whose review reads it. A tool that acts for
  * whoever asked (`actsFor`) always has an optional `for_whom` argument, used when several people
  * called her at once: always there, so the list reads the same from run to run (the old turn
  * added it, required, only in such a turn, which changed the tools' prefix).
  */
 export function toolSpecs(offered: readonly ToolEntry[]): ToolSpec[] {
   return offered.map((entry) => {
-    const spec = slimTool(entry.tool.spec, { description: 0, argument: 0 });
+    const spec = slimTool(entry.tool.spec, { description: 0, argument: 0 }, entry.risk);
     return entry.tool.actsFor === true ? withFor(spec) : spec;
   });
 }
