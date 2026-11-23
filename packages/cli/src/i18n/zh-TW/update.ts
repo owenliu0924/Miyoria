@@ -1,0 +1,66 @@
+import type { update as en } from "../en/update.js";
+
+export const update: typeof en = {
+  notGit: "不是 git 資料夾,略過 pull",
+  wouldPull: "將執行:git pull --ff-only(工作目錄有未提交的變更時略過)",
+  gitMissing: "找不到 git,略過 pull",
+  dirtyTree: "工作目錄有未提交的變更,略過 git pull(使用 --no-pull 可不顯示此訊息)",
+  pullFailed: "git pull --ff-only 失敗(分支已分岔或沒有網路?)",
+  pullAborted: "pull 失敗,未變更任何建置",
+  pulled: "已更新到最新的提交",
+  alreadyCurrent: "已是最新版本",
+  depsCurrent: "相依套件  與 pnpm-lock.yaml 一致",
+  wouldInstall: "將執行:pnpm install",
+  installing: "正在安裝相依套件(pnpm install)…",
+  installFailed: "pnpm install 失敗",
+  installAborted: "相依套件無法安裝,未執行後續的建置",
+  depsInstalled: "相依套件  已安裝",
+  building: (label) => `正在建置 ${label}…`,
+  buildRetry: (label) =>
+    `${label} 建置失敗;改用不壓縮的方式重試(防毒軟體鎖住 esbuild 暫存檔時常見)`,
+  buildFailed: (label, timedOut) => `${label} 建置失敗${timedOut ? "(逾時)" : ""};輸出未變更`,
+  noIndexHtml: (label) => `${label} 建置完成但沒有 index.html;保留原本的 dist`,
+  swapFailed: (label, error) => `${label} 已建置,但替換 dist 失敗:${error}`,
+  swapHint: (next) => `新的輸出位於 ${next};關閉佔用 dist 的程式後手動重新命名即可`,
+  built: (label) => `${label}  已建置`,
+  unusedSkipped: "未使用,略過",
+  wouldBuild: (label, why, command) => `將建置 ${label}(${why}):${command}`,
+  notBuilt: "尚未建置",
+  wouldBuildMod: "將以 JDK 21 執行 gradlew build(mod 比原始碼舊,或尚未建置)",
+  modNoJdk: (missing) => `${missing},mod 未重新建置`,
+  modJdkFix: "    修正:winget install EclipseAdoptium.Temurin.21.JDK,或將 JAVA_HOME 指向 JDK 21",
+  buildingMod: (home) => `正在建置 Minecraft mod(JDK ${home})…`,
+  modBuildFailed: "mod 建置失敗",
+  modBuilt: "Minecraft mod  已建置",
+  modCurrent: "Minecraft mod  jar 與原始碼一致",
+  wouldCopyMod: (mods) => `將比對 ${mods} 中的 miyoria-bridge jar,不同時先備份再複製(需確認)`,
+  modSame: "遊戲中的 mod  與建置結果相同",
+  askCopy: (jar, mods) => `要將 ${jar} 複製到 ${mods} 嗎?`,
+  askReplace: (jar, mods, installed, backup) =>
+    `要以 ${jar} 取代 ${mods} 中的 ${installed} 嗎?舊檔會先備份到 ${backup}(請先關閉遊戲)`,
+  modNotConfirmed: "未更新遊戲中的 mod(未確認;自動化請加上 --yes)",
+  modUpdated: (backup) => `遊戲中的 mod  已更新${backup !== null ? `,舊檔備份於 ${backup}` : ""}`,
+  copyFailed: (code, busy) =>
+    `複製 mod 失敗(${code});${busy ? "遊戲或啟動器是否仍在執行?關閉後再重新執行" : "請檢查資料夾權限"}`,
+  upgradeHint:
+    "以 npm 安裝的版本:請以 `npm update -g miyoria`(pnpm:`pnpm update -g miyoria`)升級套件,再重新執行 `miyoria update`",
+  noHostToml: "沒有 host.toml,略過服務的同步與重新啟動(`miyoria add <服務>` 會建立它)",
+  servicesSection: "服務",
+  envsCurrent: "環境皆與 uv.lock、extras 和 service.toml 一致",
+  wouldSync: (services) => `將同步環境:${services}`,
+  wouldStopSyncStart: (services) => `將停止、同步、再啟動(經過保護):${services}`,
+  wouldRestart: (services) => `將重新啟動(經過保護):${services}`,
+  asksFirst: "下載前會詢問一次(--yes 不詢問)",
+  guarded: (service, detail) => `${service}  正在翻唱或直播,未變更:${detail}`,
+  filesSkipped:
+    "未下載模型檔;之後可用 `miyoria doctor --fix` 補齊(缺少必要檔案的服務 hostd 不會啟動)",
+  notRestarted: (services, commands) =>
+    `未重新啟動(--no-restart):${services}。要使用新版本時:${commands}`,
+  busyNotRestarted: (services, commands) =>
+    `仍在忙碌,未重新啟動:${services}。待空閒後執行 ${commands}(需要同步環境的服務,請重新執行 \`miyoria update\`)`,
+  incomplete: (count) => `${count} 項未完成,請見上方訊息`,
+  planTitle: "更新計畫(dry-run,不會變更任何內容)",
+  done: "完成。",
+  doneNoRestart:
+    "完成。已在執行的服務未重新啟動(--no-restart);要使用新版本時請執行 `miyoria restart <服務>`。",
+};
