@@ -231,6 +231,6 @@ export class RecallTool implements Tool {
       ctx.signal,
     );
     if (recalled.length === 0) return RECALL_NOTHING;
-    return formatLines(recalled, now);
+    return formatLines(recalled, now, this.#engine.handles);
   }
 }

@@ -29,17 +29,17 @@ import type {
   Timestamp,
   TurnRetrievalQuery,
 } from "@miyoria/types";
-import { timestampMs } from "@miyoria/types";
+import { safeName, timestampMs } from "@miyoria/types";
 import { precise } from "../../notes/src/precision.js";
 import type { NotesViewer, ScopeResolver } from "../../notes/src/scope.js";
 import { type NotesStore, personSubject, placeSubject } from "../../notes/src/store.js";
 import { type RebuildState, rebuildState, switched, writtenSince } from "../../notes/src/switch.js";
 import type { NotesSearch } from "../../notes/src/vectors.js";
-import { lineOf, PROMPT_KINDS, turnOf } from "./contributor.js";
+import { attributed, lineOf, PROMPT_KINDS, turnOf } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { LINE_REF_PREFIX } from "./evidence.js";
 import { MemoryRetriever } from "./retrieval.js";
-import { visibleScopes } from "./scope.js";
+import { barePronoun, namesIn, visibleScopes } from "./scope.js";
 import { effectiveConfidence } from "./score.js";
 
 /** The rebuild's state, read from the settings and kept for synchronous readers. */
@@ -202,10 +202,9 @@ export class NotesRecall implements MemoryRetrieval {
       .filter((h) => !seen.has(h.line.id));
     const { hits, weak } = precise([...scoped, ...wide], config.notes_recall, config.min_vector);
     const kept = new Set(hits.map((h) => h.line.id));
-    const lines = [...scoped, ...wide]
-      .filter((h) => kept.has(h.line.id))
-      .map((h) => this.#lineMemory(h));
-    const scopedCount = scoped.filter((h) => kept.has(h.line.id)).length;
+    const shown = (h: (typeof scoped)[number]) => kept.has(h.line.id) && this.#lineShown(h);
+    const lines = [...scoped, ...wide].filter(shown).map((h) => this.#lineMemory(h));
+    const scopedCount = scoped.filter(shown).length;
 
     // Records written since the rebuild began, and episodes older than what it could make again.
     const since = state.since;
@@ -229,7 +228,7 @@ export class NotesRecall implements MemoryRetrieval {
       id: record.id,
       kind: record.kind === "followup" ? "fact" : record.kind,
       origin: record.origin ?? (record.source !== null ? "told" : "unknown"),
-      content: record.content,
+      content: attributed(record, engine.handles),
       said_by: record.source?.name ?? null,
       source_events: [...(record.source_events ?? [])],
       created_at: record.created_at,
@@ -301,6 +300,34 @@ export class NotesRecall implements MemoryRetrieval {
     return [...out].slice(0, 16);
   }
 
+  /**
+   * Who a line of her self document says 他 / 你 of, when it names nobody: the one person whose
+   * words it rests on. `undefined`: it names someone, or has no such pronoun; `null`: nobody can
+   * tell.
+   */
+  #pronounOf(hit: Awaited<ReturnType<NotesSearch["lines"]>>[number]): PersonId | null | undefined {
+    const { line, document } = hit;
+    if (document.kind !== "self" || !barePronoun(line.text)) return undefined;
+    const names = (this.#d.engine.handles?.list() ?? []).flatMap((h) => [
+      h.handle,
+      h.display_name,
+      ...(h.names ?? []),
+    ]);
+    if (namesIn(line.text, names)) return undefined;
+    const by = new Set(line.evidence.flatMap((e) => (e.person_id === null ? [] : [e.person_id])));
+    if (line.told_by !== null) by.add(line.told_by);
+    const [only, ...more] = by;
+    return only === undefined || more.length > 0 ? null : only;
+  }
+
+  /**
+   * A line of her self document saying 他 / 你 of nobody that can be told, outside a DM, is not
+   * shown: it would read as whoever she is talking with.
+   */
+  #lineShown(hit: Awaited<ReturnType<NotesSearch["lines"]>>[number]): boolean {
+    return hit.line.scope.type === "dm" || this.#pronounOf(hit) !== null;
+  }
+
   #lineMemory(hit: Awaited<ReturnType<NotesSearch["lines"]>>[number]): RetrievedMemory {
     const { line, document } = hit;
     const handles = this.#d.engine.handles;
@@ -316,8 +343,11 @@ export class NotesRecall implements MemoryRetrieval {
           ? (nameOf(document.person_id) ?? document.title)
           : document.title;
     const bySubject = line.provenance === "told_by_subject" && teller !== null;
+    const pronoun = this.#pronounOf(hit);
+    const whom = pronoun === null || pronoun === undefined ? null : nameOf(pronoun);
+    const text = whom === null ? line.text : `${line.text}(關於 ${safeName(whom)})`;
     const content =
-      title === "" || bySubject || line.text.includes(title) ? line.text : `${title}:${line.text}`;
+      title === "" || bySubject || line.text.includes(title) ? text : `${title}:${text}`;
     return {
       id: `${NOTE_PREFIX}${line.id}`,
       kind: document.kind === "self" ? "self_note" : "fact",

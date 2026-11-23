@@ -324,6 +324,48 @@ describe.each(BACKENDS)("consolidation (%s store)", (backend) => {
     }
   });
 
+  // A note of hers saying 他 of nobody named was stored for the whole server, and read in a turn
+  // with someone else as being about them.
+  it("a server note saying 他 is the one speaker's, and with several is not kept", async () => {
+    const json = `{
+      "self_notes": [
+        {"note": "我答應他下次一起去吃拉麵", "importance": 0.8},
+        {"note": "我沒吃過拉麵", "importance": 0.8}
+      ]
+    }`;
+    const handles = new FakeHandles();
+    const one = await envWith(
+      backend,
+      memoryConfig(),
+      new MockProvider("sum").reply(json),
+      null,
+      handles,
+    );
+    const owen = await one.person(acct("2"), "Owen");
+    handles.add("Owen", owen, acct("2"));
+    const ctx = guildCtx("g1", "c1");
+    await one.log(ctx, acct("2"), "Owen", "下次一起去吃拉麵好不好", t0(-MINUTE), false);
+    await one.log(ctx, acct("1"), "DeepSeek-chan", "好啊,下次一起去吃拉麵", t0(-30 * SECOND), true);
+    await one.engine.consolidate(ctx, t0());
+    const mine = await one.all();
+    const promise = find(mine, "答應他");
+    expect(promise.content).toBe("我答應他下次一起去吃拉麵(關於 Owen)");
+    expect([promise.scope, promise.subjects]).toEqual([{ type: "person", person: owen }, [owen]]);
+    expect(find(mine, "沒吃過拉麵").scope).toEqual({ type: "global" });
+
+    const several = new MockProvider("sum").reply(json);
+    const [e, gctx] = await guildSetup(backend, several);
+    await e.log(gctx, acct("1"), "DeepSeek-chan", "好啊,下次一起去吃拉麵", t0(-SECOND), true);
+    const report = await e.engine.consolidate(gctx, t0());
+    const records = await e.all();
+    expect(
+      records.some((r) => r.content.includes("答應他")),
+      "who 他 is cannot be told",
+    ).toBe(false);
+    expect(report.skipped).toBeGreaterThanOrEqual(1);
+    expect(find(records, "沒吃過拉麵").kind).toBe("self_note");
+  });
+
   it("an old global note about someone stays in its server before it is moved too", async () => {
     const e = await env(backend);
     const amy = await e.person(acct("3"), "Amy");

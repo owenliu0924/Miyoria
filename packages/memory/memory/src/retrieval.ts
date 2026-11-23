@@ -10,7 +10,7 @@ import type {
   Timestamp,
   TurnRetrievalQuery,
 } from "@miyoria/types";
-import { lineOf, PROMPT_KINDS, turnOf } from "./contributor.js";
+import { attributed, lineOf, PROMPT_KINDS, turnOf } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { visibleScopes } from "./scope.js";
 import { effectiveConfidence } from "./score.js";
@@ -44,7 +44,7 @@ export class MemoryRetriever implements MemoryRetrieval {
       id: record.id,
       kind: record.kind as RetrievedKind,
       origin: record.origin ?? (record.source !== null ? "told" : "unknown"),
-      content: record.content,
+      content: attributed(record, engine.handles),
       said_by: record.source?.name ?? null,
       source_events: [...(record.source_events ?? [])],
       created_at: record.created_at,

@@ -2,6 +2,7 @@
 
 import type { MemoryKind, MemoryRecord } from "@miyoria/store";
 import {
+  type HandleDirectory,
   type MemoryOrigin,
   type PersonId,
   type PromptContributor,
@@ -12,7 +13,7 @@ import {
   type Timestamp,
 } from "@miyoria/types";
 import type { MemoryEngine, Recalled, TurnQuery } from "./engine.js";
-import { presentPeople, requestScopes } from "./scope.js";
+import { namesIn, presentPeople, requestScopes } from "./scope.js";
 import { relativeDate } from "./score.js";
 
 export const CONTRIBUTOR_KEY = "memory";
@@ -46,7 +47,7 @@ export class MemoryContributor implements PromptContributor {
       {
         key: CONTRIBUTOR_KEY,
         title: SECTION_TITLE,
-        body: formatLines(recalled, request.now),
+        body: formatLines(recalled, request.now, this.#engine.handles),
         order: 20,
       },
     ];
@@ -101,17 +102,47 @@ export function lineOf(memory: Readable, now: Timestamp): string {
   return `- ${content}(${when})`;
 }
 
-/** The record as a `Readable`. */
-export function readable(record: MemoryRecord): Readable {
+/**
+ * A memory's words, and who it is about when they do not say (`Sora 說他很累` needs nothing;
+ * `他很累` about Sora reads `他很累(關於 Sora)`), so a 他 or a 你 is not taken for whoever she is
+ * talking with. Episodes are tagged with everyone who spoke and say who they are about themselves.
+ */
+export function attributed(
+  record: Pick<MemoryRecord, "kind" | "content" | "subjects">,
+  handles: Pick<HandleDirectory, "ofPerson" | "resolve"> | null,
+): string {
+  if (record.kind === "episode" || record.subjects.length === 0 || handles === null) {
+    return record.content;
+  }
+  const missing: string[] = [];
+  for (const person of record.subjects) {
+    const handle = handles.ofPerson(person);
+    if (handle === null) continue;
+    const entry = handles.resolve(handle);
+    const names = [handle, ...(entry === null ? [] : [entry.display_name, ...(entry.names ?? [])])];
+    if (!namesIn(record.content, names)) missing.push(safeName(handle));
+  }
+  return missing.length === 0 ? record.content : `${record.content}(關於 ${missing.join("、")})`;
+}
+
+/** The record as a `Readable`; with `handles`, saying who it is about (`attributed`). */
+export function readable(
+  record: MemoryRecord,
+  handles: Pick<HandleDirectory, "ofPerson" | "resolve"> | null = null,
+): Readable {
   return {
-    content: record.content,
+    content: attributed(record, handles),
     origin: record.origin ?? (record.source !== null ? "told" : "unknown"),
     said_by: record.source?.name ?? null,
     created_at: record.created_at,
   };
 }
 
-/** Bullet lines of recalled records (`lineOf`). */
-export function formatLines(recalled: readonly Recalled[], now: Timestamp): string {
-  return recalled.map((r) => lineOf(readable(r.record), now)).join("\n");
+/** Bullet lines of recalled records (`lineOf`), saying who each is about (`attributed`). */
+export function formatLines(
+  recalled: readonly Recalled[],
+  now: Timestamp,
+  handles: Pick<HandleDirectory, "ofPerson" | "resolve"> | null = null,
+): string {
+  return recalled.map((r) => lineOf(readable(r.record, handles), now)).join("\n");
 }

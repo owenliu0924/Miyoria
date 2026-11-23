@@ -26,6 +26,7 @@ import {
   TableEmbedder,
   t0,
 } from "./helpers.js";
+import { FakeHandles } from "./recent-helpers.js";
 
 const G1: MemoryScope = { type: "guild", platform: "discord", guild: "g1" };
 
@@ -108,13 +109,14 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     // while the record sharing the most words (often about someone else) took the first place.
     const embedder = new TableEmbedder()
       .with("小魚喜歡吃什麼", [1, 0, 0])
-      .with("她最愛的食物是拉麵", [0.8, 0.6, 0])
+      // No 她: a note of hers saying 她 of nobody is not brought into a turn.
+      .with("最愛的食物是拉麵", [0.8, 0.6, 0])
       // Far enough from each other not to be merged as the same memory.
       .with("小魚喜歡打籃球", [0.55, 0, Math.sqrt(1 - 0.55 ** 2)])
       .with("今天的天空很藍", [0.45, -Math.sqrt(1 - 0.45 ** 2), 0]);
     const e = await envWith(backend, memoryConfig(), null, embedder);
     const global: MemoryScope = { type: "global" };
-    const ramen = await e.add("self_note", global, [], "她最愛的食物是拉麵", 0.5, t0());
+    const ramen = await e.add("self_note", global, [], "最愛的食物是拉麵", 0.5, t0());
     const ball = await e.add("self_note", global, [], "小魚喜歡打籃球", 0.5, t0());
     const sky = await e.add("self_note", global, [], "今天的天空很藍", 0.5, t0());
     const got = await e.engine.recall([global], [], "小魚喜歡吃什麼", PROMPT_KINDS, 8, t0());
@@ -177,6 +179,36 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     const record = await e.rec(id);
     if (!record) throw new Error("missing");
     expect(formatLines([{ record, score: 1 }], t0())).toBe("- Owen 喜歡拉麵(三天前)");
+  });
+
+  it("a line says who it is about when its words do not, and a 他 of nobody stays out", async () => {
+    const handles = new FakeHandles();
+    const e = await envWith(backend, memoryConfig(), null, null, handles);
+    const owen = await e.person(acct("2"), "Owen");
+    handles.add("Owen", owen, acct("2"));
+    const tired = await e.add("fact", G1, [owen], "他最近加班很累", 0.5, t0(-3 * DAY));
+    const named = await e.add("fact", G1, [owen], "Owen 喜歡拉麵", 0.5, t0(-3 * DAY));
+    const record = await e.rec(tired);
+    const plain = await e.rec(named);
+    if (!record || !plain) throw new Error("missing");
+    expect(formatLines([{ record, score: 1 }], t0(), handles)).toBe(
+      "- 他最近加班很累(關於 Owen)(三天前)",
+    );
+    expect(formatLines([{ record: plain, score: 1 }], t0(), handles)).toBe(
+      "- Owen 喜歡拉麵(三天前)",
+    );
+
+    // A note of hers from the server saying 他 of nobody: not brought into a turn there; in a DM
+    // the 他 is the one person in it.
+    await e.add("self_note", G1, [], "我答應他明天一起加班", 0.8, t0(-DAY));
+    const dmScope: MemoryScope = { type: "dm", account: acct("3") };
+    await e.add("self_note", dmScope, [], "我答應他週末一起加班", 0.8, t0(-DAY));
+    const inGuild = visibleScopes(guildCtx("g1", "c1"), [acct("3")], []);
+    const got = await e.engine.recall(inGuild, [], "加班", PROMPT_KINDS, 8, t0());
+    expect(got.map((r) => r.record.content)).not.toContain("我答應他明天一起加班");
+    const inDm = visibleScopes(dmCtx("d3"), [acct("3")], []);
+    const there = await e.engine.recall(inDm, [], "加班", PROMPT_KINDS, 8, t0());
+    expect(there.map((r) => r.record.content)).toContain("我答應他週末一起加班");
   });
 
   it("remember_and_recall_tools_respect_scopes", async () => {

@@ -17,6 +17,7 @@ import {
   type NotesStore,
   notesTables,
   personSubject,
+  SELF_SUBJECT,
   topicSubject,
 } from "../../notes/src/store.js";
 import { markRebuildStarted, markRebuilt, ulidTime } from "../../notes/src/switch.js";
@@ -31,6 +32,7 @@ import {
   RecallTool,
 } from "../src/index.js";
 import { acct, profile } from "./helpers.js";
+import { FakeHandles } from "./recent-helpers.js";
 
 const OWEN = "01HOWEN0000000000000000000" as PersonId;
 const AMY = "01HAMY00000000000000000000" as PersonId;
@@ -54,12 +56,13 @@ afterEach(async () => {
   for (const s of stores.splice(0)) await s.close();
 });
 
-async function rig(config = memoryConfig()) {
+async function rig(config = memoryConfig(), handles: FakeHandles | null = null) {
   const store = await SqliteStore.open(":memory:", { plugins: [memoryTables, notesTables] });
   stores.push(store);
   const notes = store.plugin(notesTables) as NotesStore;
   const engine = new MemoryEngine(profile(), config, store.plugin(memoryTables), {
     settings: store.settings,
+    ...(handles === null ? {} : { handles }),
   });
   const search = new NotesSearch({
     notes,
@@ -225,6 +228,31 @@ describe("NotesRecall", () => {
     const text = await tool.call(ctx, { query: "拉麵" });
     expect(text).toContain("喜歡吃拉麵");
     expect(text).toContain(RECALL_WEAK);
+  });
+
+  it("says who a self line's 他 is, and leaves one nobody can tell out", async () => {
+    const handles = new FakeHandles().add("Owen", OWEN, OWEN_ACCOUNT);
+    const r = await rig(memoryConfig(), handles);
+    const self = (text: string, by: PersonId | null) =>
+      r.notes.add(
+        SELF_SUBJECT,
+        {
+          section: "recent",
+          text,
+          provenance: "observed",
+          scope: inSpace,
+          confidence: 0.9,
+          evidence: [{ quote: "下次一起吃拉麵", person_id: by }],
+        },
+        { author: "tool" },
+      );
+    self("答應他下次一起吃拉麵", OWEN);
+    self("覺得她煮的拉麵太鹹", null);
+    await switchOver(r, Date.now() + 60_000);
+    const found = await r.recall.recollect(ask("拉麵", []));
+    const contents = found.memories.map((m) => m.content);
+    expect(contents).toContain("答應他下次一起吃拉麵(關於 Owen)");
+    expect(contents.some((c) => c.includes("太鹹"))).toBe(false);
   });
 
   it("returns nothing for a question nothing in the notes is about", async () => {

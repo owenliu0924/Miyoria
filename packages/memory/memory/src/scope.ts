@@ -147,6 +147,31 @@ export function refersToOthers(text: string): boolean {
   return THIRD_PARTIES.test(text) || PRONOUN.test(text);
 }
 
+const THIRD_PARTIES_ALL = new RegExp(THIRD_PARTIES.source, "g");
+
+/** `text` holds a bare pronoun for one person (他、你、對方…), words for several aside. */
+export function barePronoun(text: string): boolean {
+  return PRONOUN.test(text.replace(THIRD_PARTIES_ALL, ""));
+}
+
+/**
+ * Whether a note says 他 / 你 of nobody it names or is tagged with: read where someone else is
+ * talking, the pronoun would be taken for them.
+ */
+export function pronounOnly(
+  content: string,
+  subjects: readonly PersonId[],
+  names: readonly NamedPerson[],
+): boolean {
+  if (subjects.length > 0 || !barePronoun(content)) return false;
+  return !names.some((n) => namesIn(content, [n.name]));
+}
+
+/** A scope of a private place (a DM, or a channel outside any guild). */
+export function privateScope(scope: MemoryScope): boolean {
+  return scope.type === "dm" || (scope.type === "channel" && isPrivate(scope.context));
+}
+
 /**
  * Who a note of hers is about besides her: the people it is tagged with (`subjects`) and the ones
  * whose names it holds (`namesIn`). One person, and no word for anyone beyond them, is that person
