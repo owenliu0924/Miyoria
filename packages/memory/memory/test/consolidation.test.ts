@@ -374,7 +374,7 @@ describe.each(BACKENDS)("consolidation (%s store)", (backend) => {
         {"subject_name": "annabel", "statement": "Annabel 在學吉他", "importance": 0.7, "confidence": 0.9, "global": false}
       ]
     }`;
-    const e = await envWith(backend, memoryConfig(), new MockProvider("sum").reply(json));
+    const e = await envWith(backend, memoryConfig(), new MockProvider("sum").reply(json), null);
     const annabel = await e.person(acct("7"), "Annabel");
     const ming = await e.person(acct("8"), "小明");
     const ctx = guildCtx("g1", "c1");
