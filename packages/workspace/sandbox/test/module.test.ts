@@ -62,7 +62,9 @@ describe("SandboxModule capabilities", () => {
     expect(registry.get("workspace.run")).toBeUndefined();
     expect(registry.get("workspace.save_script")).toBeUndefined();
     const status = (await registry.statusLines()).join("\n");
-    expect(status).toContain("工作區:0/500 個檔案");
+    expect(status).toContain("工作區:0/20000 個檔案");
+    // A workspace not made yet is empty, not one with too many entries.
+    expect(status).not.toContain("項目太多");
     expect(status).toContain("網路:關閉");
     await sup.stopAll();
     expect(registry.get("workspace.write")).toBeUndefined();

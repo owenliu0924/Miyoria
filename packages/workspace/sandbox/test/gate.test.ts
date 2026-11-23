@@ -1,4 +1,9 @@
-import { ActionDeniedError, APPROVE_ROUTE, RESULT_PENDING } from "@miyoria/gate/actions";
+import {
+  ActionDeniedError,
+  APPROVE_ROUTE,
+  RESULT_PENDING,
+  WORKSPACE_ALL,
+} from "@miyoria/gate/actions";
 import { DATA_CLOSE, DATA_OPEN, Events, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
@@ -195,7 +200,8 @@ describe("sessions through the gate", () => {
   it("code_run_takes_her_session_choice_and_explains_a_gone_session", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
-    h.grants.grant(AMY, NODE_CODE_RUN);
+    // Asked by someone who sees all of her sessions (an owner).
+    h.grants.grant(AMY, NODE_CODE_RUN).grant(AMY, WORKSPACE_ALL);
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
     const spec = JSON.stringify(tool.spec);
@@ -243,7 +249,7 @@ describe("sessions through the gate", () => {
   it("code_session_lists_and_closes_without_a_review", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
-    h.grants.grant(AMY, NODE_CODE_RUN);
+    h.grants.grant(AMY, NODE_CODE_RUN).grant(AMY, WORKSPACE_ALL);
     h.sandbox.sessions = ["weather-tool"];
     const tool = h.tools.get("code_session");
     if (!tool) throw new Error("no tool");

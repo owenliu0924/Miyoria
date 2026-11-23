@@ -130,7 +130,15 @@ export {
   type PermitSources,
   permit,
   permitted,
+  SANDBOX_CODE_RUN,
+  SANDBOX_WORKSPACE,
+  SKILLS_MANAGE,
+  SKILLS_USE,
   WORK_BELOW_BOND,
+  WORK_BOND,
+  WORK_DELEGATE,
+  WORK_NODES,
+  WORKSPACE_ALL,
 } from "./work.js";
 export {
   inspectZip,

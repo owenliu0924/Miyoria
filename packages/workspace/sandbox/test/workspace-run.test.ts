@@ -3,7 +3,7 @@
 // integration test (not run here).
 
 import { mkdtempSync, rmSync } from "node:fs";
-import { readFile, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { JsonValue } from "@miyoria/types";
@@ -74,6 +74,73 @@ describe("persistent workspace in runs", () => {
     expect(await readFile(join(dir, "counter.txt"), "utf8")).toBe("2");
     // The workspace outlives the run directories, and the tools see it too.
     expect((await sbx.workspace?.read("counter.txt"))?.text).toBe("2");
+  });
+
+  it("a_run_for_someone_mounts_only_their_folder_under_its_own_caps", async () => {
+    const sbx = sandbox({ workspace: { person_max_files: 2 } });
+    const ws = sbx.workspace;
+    if (!ws) throw new Error("no workspace");
+    await ws.write("diary.md", "hers");
+    const dir = join(root, "profiles", "deepseek-chan", "workspace");
+    runner.onRun = async (args) => {
+      const mounted = mountSource(args, "/workspace") as string;
+      for (const name of ["a.txt", "b.txt", "c.txt", "d.txt"]) {
+        await writeFile(join(mounted, name), name);
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      return result({ stdout: Buffer.from("ok\n") });
+    };
+    const out = await sbx.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      workspace_folder: "discord-200",
+    });
+    const args = runner.calledWith("run")[0] ?? [];
+    expect(mountSource(args, "/workspace")).toBe(join(dir, "people", "discord-200"));
+    expect((out.workspace_removed ?? []).map((r) => r.reason)).toContain("over_quota");
+    const left = (await ws.list("people/discord-200")).entries;
+    expect(left.length).toBe(2);
+    expect((await ws.read("diary.md")).text).toBe("hers");
+  });
+
+  it("refuses_a_folder_that_is_a_link_or_not_a_folder_name", async () => {
+    const sbx = sandbox();
+    const ws = sbx.workspace;
+    if (!ws) throw new Error("no workspace");
+    const outside = mkdtempSync(join(tmpdir(), "miyoria-outside-"));
+    try {
+      const people = join(await ws.ensure(), "people");
+      await mkdir(people, { recursive: true });
+      await symlink(outside, join(people, "planted"), "junction");
+      const linked = await errorOf(
+        sbx.run({
+          language: "python",
+          code: "x",
+          mount_workspace: true,
+          workspace_folder: "planted",
+        }),
+      );
+      expect(linked.kind).toBe("invalid_path");
+      for (const folder of ["../x", "a/b", "a\\b", "C:", "UPPER"]) {
+        const bad = await errorOf(
+          sbx.run({
+            language: "python",
+            code: "x",
+            mount_workspace: true,
+            workspace_folder: folder,
+          }),
+        );
+        expect(bad.kind, folder).toBe("invalid_request");
+      }
+      const unmounted = await errorOf(
+        sbx.run({ language: "python", code: "x", workspace_folder: "discord-200" }),
+      );
+      expect(unmounted.kind).toBe("invalid_request");
+      expect(runner.calledWith("run")).toHaveLength(0);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 
   it("mounts_nothing_unless_asked", async () => {

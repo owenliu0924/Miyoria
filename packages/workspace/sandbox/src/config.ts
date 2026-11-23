@@ -123,18 +123,26 @@ export type SandboxFiles = z.output<typeof SandboxFilesSchema>;
 
 /**
  * `[modules.sandbox.workspace]`: her own directory, kept between runs and sessions
- * (`<root>/profiles/<profile>/workspace`, mounted read-write at `/workspace` on request). The
- * quotas hold for what she writes through the tools; what a program leaves there is checked
- * right after the run and what is over a quota is removed (see `PersistentWorkspace.enforce`).
+ * (`<root>/profiles/<profile>/workspace`, mounted read-write at `/workspace` on request). Work
+ * done for someone stays in their folder `people/<id>/` (see `people.ts`), with its own caps;
+ * she and the owners see the whole of it. The quotas hold for what is written through the tools;
+ * what a program leaves there is checked right after the run and what is over a quota is removed
+ * (see `PersistentWorkspace.enforce`).
  */
 export const SandboxWorkspaceSchema = z.object({
   enabled: z.boolean().default(true),
-  /** All files together, in MiB. */
-  max_mb: z.number().int().min(1).default(64),
-  /** Files at most. */
-  max_files: z.number().int().min(1).default(500),
+  /** All files together, everyone's folders included, in MiB. */
+  max_mb: z.number().int().min(1).default(4096),
+  /** Files at most, everyone's folders included. */
+  max_files: z.number().int().min(1).default(20_000),
   /** One file at most, in KiB. */
-  max_file_kb: z.number().int().min(1).default(1024),
+  max_file_kb: z.number().int().min(1).default(8192),
+  /** One person's folder at most, in MiB. */
+  person_max_mb: z.number().int().min(1).default(256),
+  /** Files in one person's folder at most. */
+  person_max_files: z.number().int().min(1).default(2000),
+  /** The largest file `workspace_export` takes out (to hand over with `share`), in KiB. */
+  export_max_kb: z.number().int().min(1).default(8192),
   /**
    * Characters of a file `workspace_read` returns at once (the rest is read with `offset`).
    */

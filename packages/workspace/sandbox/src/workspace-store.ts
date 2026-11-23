@@ -142,6 +142,9 @@ export class PersistentWorkspace implements WorkspaceApi {
 
   /** Walks the whole workspace (links and special files are not counted). */
   async #walk(): Promise<WorkWalk> {
+    // Not made yet: empty, not unreadable.
+    const stat = await lstat(this.dir).catch(() => null);
+    if (stat === null) return { files: [], truncated: false, entries: 0, bytes: 0 };
     return walkWork(this.dir, this.#maxEntries());
   }
 
@@ -184,6 +187,26 @@ export class PersistentWorkspace implements WorkspaceApi {
       if (!last && !stat.isDirectory()) throw invalid(path, `\`${part}\` is not a directory`);
     }
     return full;
+  }
+
+  /**
+   * The directory `path` of this workspace as a workspace of its own with `limits` (a person's
+   * folder, for a run that mounts only it). Missing directories are created; none of its
+   * components may be a link, so the mount cannot be sent elsewhere. Its scripts are not approved
+   * through it (no ledger).
+   */
+  async subdir(path: string, limits: WorkspaceLimits): Promise<PersistentWorkspace> {
+    await this.ensure();
+    const normalized = normalizeRelativePath(path);
+    const full = await this.#resolve(`${normalized}/.dir`, true);
+    const dir = join(full, "..");
+    const stat = await lstat(dir).catch(() => null);
+    if (stat === null || stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw invalid(path, "is not a directory");
+    }
+    const sub = new PersistentWorkspace(dir, limits);
+    await sub.ensure();
+    return sub;
   }
 
   async list(prefix?: string): Promise<{ entries: WorkspaceEntry[]; truncated: boolean }> {

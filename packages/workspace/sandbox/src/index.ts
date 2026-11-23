@@ -122,6 +122,19 @@ export {
   normalizeRelativePath,
   safeJoin,
 } from "./paths.js";
+export {
+  ALL_SESSIONS,
+  DEFAULT_PERSON_LIMITS,
+  folderFor,
+  PEOPLE_DIR,
+  PERSON_FOLDER,
+  type PersonLimits,
+  PersonWorkspace,
+  personFolder,
+  type SessionView,
+  sessionView,
+  workspaceFor,
+} from "./people.js";
 export { type PoolStats, type Standby, WarmPool, type WarmPoolOptions } from "./pool.js";
 export {
   type ApprovedToolSpec,
@@ -195,6 +208,7 @@ export {
 } from "./workspace.js";
 export { type WorkspaceExportOptions, workspaceExportCapability } from "./workspace-export.js";
 export {
+  callWorkspace,
   NODE_WORKSPACE,
   type WorkspaceGateOptions,
   workspaceFileCapabilities,

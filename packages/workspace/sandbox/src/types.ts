@@ -67,6 +67,11 @@ export interface RunRequest {
    */
   mount_workspace?: boolean;
   /**
+   * With `mount_workspace`: mount only this person's folder (`people/<folder>`, see `people.ts`)
+   * at `/workspace`, under that folder's caps, instead of the whole workspace.
+   */
+  workspace_folder?: string;
+  /**
    * `"fresh"` (default): a throwaway container. A name (`weather-tool`): the long-lived session
    * of that name, created by its first run; `/work` and `/tmp` carry over between its runs.
    * Sessions never mount `/tools`.
@@ -83,6 +88,10 @@ export const RunRequestSchema = z.object({
   network: NetworkPolicySchema.optional(),
   mount_tools: z.boolean().optional(),
   mount_workspace: z.boolean().optional(),
+  workspace_folder: z
+    .string()
+    .regex(/^[a-z0-9_][a-z0-9_-]{0,64}$/)
+    .optional(),
   session: SessionChoiceSchema.optional(),
 });
 

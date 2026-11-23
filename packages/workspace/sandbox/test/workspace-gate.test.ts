@@ -1,17 +1,20 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DATA_CLOSE, DATA_OPEN } from "@miyoria/types";
+import { WORKSPACE_ALL } from "@miyoria/gate/actions";
+import { DATA_CLOSE, DATA_OPEN, Principals, SocialSignalsKey } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   NODE_CODE_RUN,
   NODE_WORKSPACE,
   PersistentWorkspace,
+  PersonWorkspace,
+  personFolder,
   type RunResult,
   renderRun,
 } from "../src/index.js";
-import { AMY, harness, toolContext } from "./gate-helpers.js";
+import { AMY, CTX, harness, toolContext } from "./gate-helpers.js";
 
 let base: string;
 let workspace: PersistentWorkspace;
@@ -33,7 +36,8 @@ function setup(allow: string[] = []) {
   const h = harness();
   h.sandbox.workspace = workspace;
   h.sandbox.networkAllow = allow;
-  h.grants.grant(AMY, NODE_WORKSPACE).grant(AMY, NODE_CODE_RUN);
+  // These tests are about the tools on the whole workspace: Amy sees all of it, as an owner does.
+  h.grants.grant(AMY, NODE_WORKSPACE).grant(AMY, NODE_CODE_RUN).grant(AMY, WORKSPACE_ALL);
   return h;
 }
 
@@ -160,14 +164,14 @@ describe("workspace scripts", () => {
     const h = setup();
     h.gate.offerWorkspace();
     await h.gate.setAvailable(true);
-    // A script cannot be written the plain way.
+    // A source file is written like any file (a deliverable, or to run now with code_run)...
     const plain = await tool(h, "workspace_write").call(toolContext(), {
       path: "scripts/hello.py",
       content: "print(1)",
     });
-    expect(plain).toContain("workspace_save_script");
-    expect(await workspace.exists("scripts/hello.py")).toBe(false);
-    // Not saved, not approved: nothing runs.
+    expect(plain).toContain("已存好 scripts/hello.py");
+    expect(await workspace.exists("scripts/hello.py")).toBe(true);
+    // ...but it was not reviewed, so the unattended runner does not run it.
     expect(
       await tool(h, "workspace_run").call(toolContext(), { path: "scripts/hello.py" }),
     ).toContain("不能執行");
@@ -368,5 +372,171 @@ describe("long output goes to the workspace instead of being cut silently", () =
     );
     expect(text).toContain("被清掉了");
     expect(text).toContain("huge.bin");
+  });
+});
+
+describe("a member's own folder", () => {
+  /** Amy as a member: the work nodes, but not her whole workspace. */
+  function member(person: string | null = null) {
+    const h = harness();
+    h.sandbox.workspace = workspace;
+    h.grants.grant(AMY, NODE_WORKSPACE).grant(AMY, NODE_CODE_RUN);
+    if (person !== null) {
+      h.services.provide("test", SocialSignalsKey, {
+        attitude: () => ({
+          person,
+          affinity: 50,
+          trust: 50,
+          familiarity: 50,
+          blocked: false,
+          label: "朋友",
+          call_name: null,
+        }),
+      });
+    }
+    h.gate.offerWorkspace();
+    return h;
+  }
+  const call = (h: ReturnType<typeof member>, name: string, args: object, as = toolContext()) =>
+    tool(h, name).call(as, args as never);
+
+  it("writes, lists and reads relative to people/<her id>/, and sees nothing else", async () => {
+    await workspace.write("diary.md", "her own diary\n");
+    await workspace.write("people/someone-else/secret.txt", "not Amy's\n");
+    const h = member("01JAMY0000000000000000PERS");
+    expect(await call(h, "workspace_write", { path: "notes/a.md", content: "hi" })).toContain(
+      "已存好 notes/a.md",
+    );
+    expect(await workspace.exists("people/01jamy0000000000000000pers/notes/a.md")).toBe(true);
+    const listed = await call(h, "workspace_list", {});
+    expect(listed).toContain("notes/a.md");
+    expect(listed).not.toContain("diary");
+    expect(listed).not.toContain("secret");
+    expect(listed).not.toContain("people/");
+    expect(await call(h, "workspace_read", { path: "notes/a.md" })).toContain("hi");
+    // Her own files and another person's are not there for Amy.
+    for (const path of ["diary.md", "people/someone-else/secret.txt"]) {
+      expect(await call(h, "workspace_read", { path }), path).toContain("沒辦法處理");
+    }
+    // Asking her to do it "on her own" does not widen it.
+    const own = toolContext(Principals.self(CTX, AMY));
+    expect(await call(h, "workspace_read", { path: "diary.md" }, own)).toContain("沒辦法處理");
+    expect(await call(h, "workspace_list", {}, own)).not.toContain("diary");
+  });
+
+  it("refuses every way out: .., absolute paths, drive letters, backslashes", async () => {
+    await workspace.write("diary.md", "her own diary\n");
+    await workspace.write("people/other/secret.txt", "x\n");
+    const h = member();
+    for (const path of [
+      "../diary.md",
+      "../../diary.md",
+      "../other/secret.txt",
+      "a/../../other/secret.txt",
+      "/diary.md",
+      "/etc/passwd",
+      "C:/Windows/win.ini",
+      "C:\\Windows\\win.ini",
+      "..\\diary.md",
+      "notes\\..\\..\\diary.md",
+      ".",
+      "",
+    ]) {
+      const read = await call(h, "workspace_read", { path }).catch((e: unknown) => String(e));
+      expect(read, path).not.toContain("her own diary");
+      const wrote = await call(h, "workspace_write", { path, content: "x" }).catch((e: unknown) =>
+        String(e),
+      );
+      expect(wrote, path).not.toContain("已存好");
+      const removed = await call(h, "workspace_delete", { path }).catch((e: unknown) => String(e));
+      expect(removed, path).not.toContain("已刪掉");
+    }
+    expect(await workspace.exists("diary.md")).toBe(true);
+    expect(await workspace.exists("people/other/secret.txt")).toBe(true);
+  });
+
+  it("never follows a link planted in the person's folder", async () => {
+    const outside = join(base, "outside");
+    mkdirSync(outside);
+    await writeFile(join(outside, "host.txt"), "host secret\n");
+    mkdirSync(join(workspace.dir, "people", "discord-200"), { recursive: true });
+    // A junction on Windows (no privilege needed), a directory link elsewhere.
+    symlinkSync(outside, join(workspace.dir, "people", "discord-200", "out"), "junction");
+    const h = member();
+    expect(await call(h, "workspace_read", { path: "out/host.txt" })).toContain("沒辦法處理");
+    expect(await call(h, "workspace_write", { path: "out/new.txt", content: "x" })).toContain(
+      "沒辦法處理",
+    );
+    expect(existsSync(join(outside, "new.txt"))).toBe(false);
+    expect(await call(h, "workspace_list", {})).not.toContain("host");
+  });
+
+  it("a person id with path characters stays one folder under people/", async () => {
+    const h = member("../../evil\\x");
+    await call(h, "workspace_write", { path: "a.txt", content: "x" });
+    const { entries } = await workspace.list();
+    expect(entries.map((e) => e.path)).toEqual([`people/${personFolder("../../evil\\x")}/a.txt`]);
+    expect(personFolder("../../evil\\x")).toMatch(/^_[0-9a-f]{32}$/);
+    expect(personFolder("con")).toMatch(/^_/);
+    expect(personFolder("01JABC")).toBe("01jabc");
+  });
+
+  it("has caps of its own, and the workspace total still holds", async () => {
+    const person = new PersonWorkspace(workspace, "p1", { maxBytes: 10, maxFiles: 2 });
+    await person.write("a.txt", "12345");
+    await person.write("b.txt", "1");
+    await expect(person.write("c.txt", "1")).rejects.toThrow("at most 2 files");
+    await expect(person.write("b.txt", "123456")).rejects.toThrow("your folder is full");
+    // Replacing a file counts its new size, not both.
+    await person.write("b.txt", "12345");
+    expect((await person.usage()).bytes).toBe(10);
+    expect(person.limits.maxFileBytes).toBe(workspace.limits.maxFileBytes);
+    // The folder's caps never exceed the workspace's.
+    const wide = new PersonWorkspace(workspace, "p2", { maxBytes: 1e12, maxFiles: 1e9 });
+    expect(wide.limits).toMatchObject({ maxBytes: 100_000, maxFiles: 50 });
+    expect(() => new PersonWorkspace(workspace, "../x", { maxBytes: 1, maxFiles: 1 })).toThrow();
+  });
+
+  it("an owner and her own runs see the whole workspace, people's folders included", async () => {
+    const h = member();
+    await call(h, "workspace_write", { path: "mine.txt", content: "Amy's" });
+    h.grants.grant(AMY, WORKSPACE_ALL);
+    expect(await call(h, "workspace_list", {})).toContain("people/discord-200/mine.txt");
+    const hers = toolContext(Principals.self(CTX));
+    expect(await call(h, "workspace_list", {}, hers)).toContain("people/discord-200/mine.txt");
+  });
+
+  it("a member's run mounts only their folder, and their long output stays there", async () => {
+    const h = member();
+    await h.gate.setAvailable(true);
+    h.router.verdict("allow");
+    h.sandbox.stdout = "x".repeat(5000);
+    const out = await call(h, "code_run", { language: "python", code: "x", use_workspace: true });
+    expect(h.sandbox.requests[0]).toMatchObject({
+      mount_workspace: true,
+      workspace_folder: "discord-200",
+    });
+    expect(out).toContain("outputs/");
+    const { entries } = await workspace.list();
+    expect(entries.every((e) => e.path.startsWith("people/discord-200/outputs/"))).toBe(true);
+  });
+
+  it("a member's sessions are theirs only", async () => {
+    const h = member();
+    await h.gate.setAvailable(true);
+    h.sandbox.sessions = ["hers"];
+    h.router.verdict("allow");
+    await call(h, "code_run", { language: "python", code: "x", session: "calc" });
+    const real = h.sandbox.requests[0]?.session ?? "";
+    expect(real).not.toBe("calc");
+    expect(real.endsWith("-calc")).toBe(true);
+    h.sandbox.sessions = ["hers", real];
+    const list = await call(h, "code_session", { action: "list" });
+    expect(list).toContain("calc(python)");
+    expect(list).not.toContain("hers");
+    expect(await call(h, "code_session", { action: "close", name: "hers" })).toContain("沒有");
+    expect(h.sandbox.sessions).toContain("hers");
+    expect(await call(h, "code_session", { action: "close", name: "calc" })).toContain("關掉了");
+    expect(h.sandbox.closed).toEqual([real]);
   });
 });

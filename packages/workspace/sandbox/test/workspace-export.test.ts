@@ -5,13 +5,14 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ActionResult, ExecContext } from "@miyoria/gate/actions";
+import { type ActionResult, type ExecContext, WORKSPACE_ALL } from "@miyoria/gate/actions";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import { ArtifactStoreKey, SqliteStore } from "@miyoria/store";
-import type { AccountRef, ContextKey } from "@miyoria/types";
+import { type AccountRef, AuthorizerKey, type ContextKey } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NODE_WORKSPACE, PersistentWorkspace, workspaceExportCapability } from "../src/index.js";
-import { AMY, harness } from "./gate-helpers.js";
+import { AMY, Grants, harness } from "./gate-helpers.js";
+import { buildZip } from "./zip-fixture.js";
 
 const OWEN: AccountRef = { platform: "discord", id: "100" };
 const MIA: AccountRef = { platform: "discord", id: "200" };
@@ -23,6 +24,7 @@ let base: string;
 let store: SqliteStore;
 let workspace: PersistentWorkspace;
 let services: ServiceRegistry;
+let grants: Grants;
 
 beforeEach(async () => {
   base = mkdtempSync(join(tmpdir(), "miyoria-ws-export-"));
@@ -39,6 +41,9 @@ beforeEach(async () => {
   store.persons.resolve(OWEN_DM, { account: OWEN, display_name: "Owen" });
   services = new ServiceRegistry();
   services.provide("test", ArtifactStoreKey, store.artifacts as never);
+  // Owen sees her whole workspace (an owner); Mia gets her own folder.
+  grants = new Grants().grant(OWEN, WORKSPACE_ALL);
+  services.provide("test", AuthorizerKey, grants);
 });
 
 afterEach(async () => {
@@ -52,7 +57,7 @@ async function exportFile(
   where: ContextKey | null = ROOM,
   withStore = true,
 ): Promise<ActionResult> {
-  const cap = workspaceExportCapability({ workspace });
+  const cap = workspaceExportCapability({ workspace, maxBytes: 50_000 });
   const principal = { kind: "user", requester: who, context: where, override: false, actor: null };
   const ctx = {
     principal,
@@ -128,11 +133,67 @@ describe("workspace.export", () => {
     expect((result.data as { filename: string }).filename).toMatch(/\.png$/);
   });
 
-  it("stores HTML and SVG as the plain text they are, never as a type a browser runs", async () => {
+  it("stores HTML as the plain text it is, never as a type a browser runs, under its own name", async () => {
     await workspace.write("page.html", "<!doctype html><html><script>alert(1)</script></html>");
     const result = await exportFile("page.html");
-    expect(result.data).toMatchObject({ ok: true, mime: "text/plain" });
-    expect((result.data as { filename: string }).filename).not.toMatch(/\.html$/);
+    expect(result.data).toMatchObject({ ok: true, mime: "text/plain", filename: "page.html" });
+    for (const name of ["notes.md", "data.csv", "data.json", "main.py", "app.js"]) {
+      await workspace.write(name, "a,b\n");
+      expect((await exportFile(name)).data, name).toMatchObject({ ok: true, filename: name });
+    }
+  });
+
+  it("takes a zip and the Office files, by their listing, and refuses a bomb or a traversal", async () => {
+    const zip = buildZip([{ name: "word/document.xml", data: new TextEncoder().encode("<w/>") }]);
+    await writeFile(join(workspace.dir, "report.docx"), zip);
+    await writeFile(join(workspace.dir, "bundle.zip"), zip);
+    const docx = await exportFile("report.docx");
+    expect(docx.data).toMatchObject({ ok: true, filename: "report.docx" });
+    expect((docx.data as { mime: string }).mime).toContain("wordprocessingml");
+    expect((await exportFile("bundle.zip")).data).toMatchObject({
+      ok: true,
+      mime: "application/zip",
+    });
+    const one = new TextEncoder().encode("x");
+    await writeFile(
+      join(workspace.dir, "bomb.zip"),
+      buildZip([{ name: "a.bin", data: one, claimedSize: 2 ** 31 }]),
+    );
+    await writeFile(join(workspace.dir, "climb.zip"), buildZip([{ name: "../x", data: one }]));
+    await writeFile(
+      join(workspace.dir, "climb2.zip"),
+      buildZip([{ name: "a\\..\\..\\x", data: one }]),
+    );
+    for (const name of ["bomb.zip", "climb.zip", "climb2.zip"]) {
+      expect(refused(await exportFile(name)), name).toBe("zip_refused");
+    }
+    // A docx that is not a zip is not stored as one.
+    await workspace.write("fake.docx", "just text\n");
+    expect(refused(await exportFile("fake.docx"))).toBe("type_not_allowed");
+  });
+
+  it("takes a file up to its cap and says the cap when it is over", async () => {
+    await workspace.write("big.txt", "a".repeat(60_000));
+    const result = await exportFile("big.txt");
+    expect(refused(result)).toBe("limit");
+    expect(result.text).toContain("MB");
+  });
+
+  it("a member exports from their own folder only", async () => {
+    await workspace.write("hers.txt", "her own\n");
+    await workspace.write("people/someone-else/theirs.txt", "not Mia's\n");
+    await workspace.write("people/discord-200/mine.txt", "Mia's\n");
+    expect((await exportFile("mine.txt", MIA)).data).toMatchObject({ ok: true });
+    for (const path of [
+      "hers.txt",
+      "../hers.txt",
+      "../someone-else/theirs.txt",
+      "people/someone-else/theirs.txt",
+      "..\\someone-else\\theirs.txt",
+      "/hers.txt",
+    ]) {
+      expect((await exportFile(path, MIA)).data, path).toMatchObject({ ok: false });
+    }
   });
 
   it("refuses an executable or other binary", async () => {

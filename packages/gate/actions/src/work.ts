@@ -6,6 +6,18 @@
 import { WORK_BOND, WORK_NODES } from "@miyoria/commands";
 import type { AccountRef, Authorizer, SocialSignals } from "@miyoria/types";
 
+// The nodes, for the packages that define work capabilities.
+export {
+  SANDBOX_CODE_RUN,
+  SANDBOX_WORKSPACE,
+  SKILLS_MANAGE,
+  SKILLS_USE,
+  WORK_BOND,
+  WORK_DELEGATE,
+  WORK_NODES,
+  WORKSPACE_ALL,
+} from "@miyoria/commands";
+
 /** What she reads when the person asking does not know her well enough for real work. */
 export const WORK_BELOW_BOND =
   "開口的人跟你還沒那麼熟,要動到檔案和程式的事你只幫比較熟的人做,所以這次沒有做。" +

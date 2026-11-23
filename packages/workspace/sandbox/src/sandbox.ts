@@ -41,6 +41,7 @@ import {
   proxyEnv,
 } from "./egress.js";
 import { checkProfileId } from "./paths.js";
+import { PEOPLE_DIR } from "./people.js";
 import { type PoolStats, type Standby, WarmPool } from "./pool.js";
 import type { DockerRunner, ExecOptions, ExecResult } from "./runner.js";
 import { Semaphore } from "./semaphore.js";
@@ -74,7 +75,7 @@ import {
   writeInputs,
   writeProgram,
 } from "./workspace.js";
-import { PersistentWorkspace, type Removed } from "./workspace-store.js";
+import { PersistentWorkspace, type Removed, type WorkspaceLimits } from "./workspace-store.js";
 
 const log = getLogger("sandbox");
 
@@ -185,7 +186,10 @@ interface Launch {
   standby?: boolean;
 }
 
-type Validated = Required<Omit<RunRequest, "network">> & { network: "none" | "allow" };
+type Validated = Required<Omit<RunRequest, "network" | "workspace_folder">> & {
+  network: "none" | "allow";
+  workspace_folder: string | null;
+};
 type Executed = Omit<RunResult, "files_out" | "files_out_truncated" | "session">;
 
 /** One of her named sessions. */
@@ -296,6 +300,16 @@ export class DockerSandbox implements Sandbox {
 
   get root(): string {
     return this.#root;
+  }
+
+  /** The caps of one person's folder (`[modules.sandbox.workspace] person_*`). */
+  #personLimits(root: PersistentWorkspace): WorkspaceLimits {
+    const ws = this.#config.workspace;
+    return {
+      maxBytes: Math.min(ws.person_max_mb * MIB, root.limits.maxBytes),
+      maxFiles: Math.min(ws.person_max_files, root.limits.maxFiles),
+      maxFileBytes: root.limits.maxFileBytes,
+    };
   }
 
   get networkAllow(): readonly string[] {
@@ -590,9 +604,13 @@ export class DockerSandbox implements Sandbox {
     if (session !== FRESH && wantsNetwork) {
       throw new SandboxError("invalid_request", "sessions have no network; use a fresh run");
     }
+    if (r.workspace_folder !== undefined && r.mount_workspace !== true) {
+      throw new SandboxError("invalid_request", "workspace_folder needs mount_workspace");
+    }
     return {
       network: wantsNetwork ? "allow" : "none",
       mount_workspace: r.mount_workspace ?? false,
+      workspace_folder: r.workspace_folder ?? null,
       language: r.language,
       code: r.code,
       files: r.files ?? [],
@@ -713,10 +731,17 @@ export class DockerSandbox implements Sandbox {
       await writeProgram(dirs.codeDir, r.language, r.code);
       const inputs = await writeInputs(dirs.workDir, r.files, this.#config.caps);
       const toolsDir = r.mount_tools ? await this.tools.ensure() : null;
-      const workspace = r.mount_workspace ? this.workspace : null;
+      const root = r.mount_workspace ? this.workspace : null;
+      // A run for someone mounts their folder only, under its own caps.
+      const workspace =
+        root !== null && r.workspace_folder !== null
+          ? await root.subdir(`${PEOPLE_DIR}/${r.workspace_folder}`, this.#personLimits(root))
+          : root;
       let workspaceDir: string | null = null;
       let before: Map<string, string> = new Map();
+      let rootBefore: Map<string, string> | null = null;
       if (workspace) {
+        if (workspace !== root && root !== null) rootBefore = await root.snapshot();
         workspaceDir = await workspace.ensure();
         const usage = await workspace.usage();
         if (usage.overflow) {
@@ -754,6 +779,12 @@ export class DockerSandbox implements Sandbox {
           log.warn({ err: errorMessage(error) }, "could not check the workspace after a run");
           return undefined;
         });
+        // The folder fits its own caps; the whole workspace must still fit its total, taking
+        // from what this run changed first.
+        if (root !== null && rootBefore !== null) {
+          const more = await root.enforce(rootBefore).catch(() => []);
+          removed?.push(...more);
+        }
         if (removed === undefined) return;
         state.removed = removed;
         if (removed.length > 0) {
