@@ -163,6 +163,39 @@ export const CostReportSchema = z
   .meta({ id: "ApiCostReport" });
 export type CostReport = z.output<typeof CostReportSchema>;
 
+/** `[modules.agent.quota]`: each person's AI quota (USD; 0: no such limit). */
+export const QuotaLimitsSchema = z
+  .object({
+    person_usd_per_hour: z.number(),
+    person_usd_per_day: z.number(),
+    /** What a million tokens of a model with no price count as. */
+    unpriced_usd_per_mtok: z.number(),
+  })
+  .meta({ id: "ApiQuotaLimits" });
+export type QuotaLimits = z.output<typeof QuotaLimitsSchema>;
+
+/** One person she spent on today. */
+export const QuotaPersonSchema = z
+  .object({
+    /** Their person id, or their account (`platform:id`) when she does not know them. */
+    person: z.string(),
+    /** Their display name, when known. */
+    name: z.string().nullable(),
+    /** USD in the last hour and in her day. */
+    hour_usd: z.number(),
+    day_usd: z.number(),
+    /** The limit they are at now; `null`: none. */
+    capped: z.enum(["hour", "day"]).nullable(),
+  })
+  .meta({ id: "ApiQuotaPerson" });
+export type QuotaPerson = z.output<typeof QuotaPersonSchema>;
+
+/** `GET /api/llm/quota`: the limits, and everyone charged in her day, the most first. */
+export const QuotaReportSchema = z
+  .object({ limits: QuotaLimitsSchema, people: z.array(QuotaPersonSchema) })
+  .meta({ id: "ApiQuotaReport" });
+export type QuotaReport = z.output<typeof QuotaReportSchema>;
+
 export const modules = {
   list: route
     .meta({ audience: "admin", permission: null })
@@ -473,6 +506,11 @@ export const llm = {
     .meta({ audience: "admin", permission: null })
     .route({ method: "GET", path: "/api/llm/cost" })
     .output(CostReportSchema),
+  /** Each person's AI quota: the limits and what everyone charged today used. `503` without it. */
+  quota: route
+    .meta({ audience: "admin", permission: null })
+    .route({ method: "GET", path: "/api/llm/quota" })
+    .output(QuotaReportSchema),
   /** The call inspector's list, newest first. */
   calls: route
     .meta({ audience: "admin", permission: null })

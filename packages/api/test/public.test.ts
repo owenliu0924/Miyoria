@@ -7,6 +7,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import { PersonQuota, PersonQuotaKey } from "@miyoria/brain/self";
 import {
   type CardCatalogue,
   type CardOdds,
@@ -689,6 +690,7 @@ const ME_SHAPE = [
   "memories[].date",
   "memories[].kind",
   "memories[].text",
+  "quota",
   "songs[].artist",
   "songs[].requested_at",
   "songs[].state",
@@ -1431,6 +1433,27 @@ describe("the member view", () => {
       "小愛喜歡貓",
       "Alice 第一次來語音陪她聊天",
     ]);
+  });
+
+  it("shows their own AI quota, and nothing of anyone else's", async () => {
+    const r = await rig();
+    const cookie = await r.login("alice");
+    expect(((await r.get("/api/member/me", cookie)).body as { quota: unknown }).quota).toBeNull();
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 3, usdPerDay: 10, unpricedUsdPerMtok: 1 }),
+      day: () => ({ key: "today", endsAt: Date.now() + 86_400_000 }),
+    });
+    quota.add(String(r.people.get(ALICE)), Date.now() - 60_000, 0.5);
+    quota.add(String(r.people.get(BOB)), Date.now() - 60_000, 2);
+    r.sup.services.provide("agent", PersonQuotaKey, quota);
+    const body = (await r.get("/api/member/me", cookie)).body as { quota: unknown };
+    expect(body.quota).toEqual({
+      hour_usd: 0.5,
+      day_usd: 0.5,
+      hour_limit_usd: 3,
+      day_limit_usd: 10,
+      exempt: false,
+    });
   });
 
   it("lists their own song requests and nobody else's", async () => {

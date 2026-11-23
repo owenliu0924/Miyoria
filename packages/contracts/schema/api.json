@@ -14648,6 +14648,33 @@
         "date"
       ]
     },
+    "ApiMemberQuota": {
+      "type": "object",
+      "properties": {
+        "hour_usd": {
+          "type": "number"
+        },
+        "day_usd": {
+          "type": "number"
+        },
+        "hour_limit_usd": {
+          "type": "number"
+        },
+        "day_limit_usd": {
+          "type": "number"
+        },
+        "exempt": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "hour_usd",
+        "day_usd",
+        "hour_limit_usd",
+        "day_limit_usd",
+        "exempt"
+      ]
+    },
     "ApiMemberRing": {
       "type": "object",
       "properties": {
@@ -14816,6 +14843,16 @@
           "required": [
             "removes",
             "keeps"
+          ]
+        },
+        "quota": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiMemberQuota"
+            },
+            {
+              "type": "null"
+            }
           ]
         }
       },
@@ -18784,6 +18821,84 @@
       "required": [
         "paused",
         "items"
+      ]
+    },
+    "ApiQuotaLimits": {
+      "type": "object",
+      "properties": {
+        "person_usd_per_hour": {
+          "type": "number"
+        },
+        "person_usd_per_day": {
+          "type": "number"
+        },
+        "unpriced_usd_per_mtok": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "person_usd_per_hour",
+        "person_usd_per_day",
+        "unpriced_usd_per_mtok"
+      ]
+    },
+    "ApiQuotaPerson": {
+      "type": "object",
+      "properties": {
+        "person": {
+          "type": "string"
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hour_usd": {
+          "type": "number"
+        },
+        "day_usd": {
+          "type": "number"
+        },
+        "capped": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "person",
+        "name",
+        "hour_usd",
+        "day_usd",
+        "capped"
+      ]
+    },
+    "ApiQuotaReport": {
+      "type": "object",
+      "properties": {
+        "limits": {
+          "$ref": "#/$defs/ApiQuotaLimits"
+        },
+        "people": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiQuotaPerson"
+          }
+        }
+      },
+      "required": [
+        "limits",
+        "people"
       ]
     },
     "ApiRaisedTopic": {

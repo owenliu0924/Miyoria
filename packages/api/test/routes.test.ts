@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthService, AuthServiceKey } from "@miyoria/auth";
+import { PersonQuota, PersonQuotaKey } from "@miyoria/brain/self";
 import type { AssignRoleRequest } from "@miyoria/contracts/api";
 import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type HeartStore, heartTables } from "@miyoria/heart/person";
@@ -265,6 +266,34 @@ describe("routes", () => {
     for (const key of ["daily_usd", "monthly_usd", "degrade_at", "today", "month"]) {
       expect(body, `missing \`${key}\``).toHaveProperty(key);
     }
+  });
+
+  it("llm_quota_report", async () => {
+    const h = await harness();
+    // Without the text host there is no quota.
+    expect((await raw(h.base, "GET", "/api/llm/quota", { token: TOKEN })).status).toBe(503);
+    const now = Date.now();
+    // One day for the whole test, whatever the hour.
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 1, usdPerDay: 5, unpricedUsdPerMtok: 1 }),
+      day: () => ({ key: "today", endsAt: now + 86_400_000 }),
+    });
+    const owen = await h.store.people.upsertAccount(account("1"), "Owen");
+    quota.add(String(owen), now - 2 * 3_600_000, 0.75);
+    quota.add(String(owen), now - 60_000, 1.25);
+    quota.add("discord:9", now - 60_000, 0.25);
+    h.sup.services.provide("agent", PersonQuotaKey, quota);
+    const r = await raw(h.base, "GET", "/api/llm/quota", { token: TOKEN });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({
+      limits: { person_usd_per_hour: 1, person_usd_per_day: 5, unpriced_usd_per_mtok: 1 },
+      people: [
+        { person: String(owen), name: "Owen", hour_usd: 1.25, day_usd: 2, capped: "hour" },
+        { person: "discord:9", name: null, hour_usd: 0.25, day_usd: 0.25, capped: null },
+      ],
+    });
+    // Admins only.
+    expect((await raw(h.base, "GET", "/api/llm/quota", {})).status).toBe(401);
   });
 
   it("people_list_detail_and_changes", async () => {
