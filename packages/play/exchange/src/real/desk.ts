@@ -55,6 +55,7 @@ import {
   localStep,
   SPAN_DAYS,
   type Timeframe,
+  withQuote,
 } from "./candles.js";
 import {
   adminSellReal,
@@ -1557,11 +1558,16 @@ export class RealDesk {
     const now = this.#now();
     if (viewed) this.#d.store.real.setInstrument(code, { last_viewed_at: now }, now);
     const zone = this.sessions[inst.market].zone;
-    const set = (candles: Candle[], source: CandleSet["source"], stale: boolean): CandleSet => ({
+    // The price beside the chart is the quote; the chart's last bar says the same (`withQuote`).
+    const quote =
+      line.price === null || line.at === null || line.basis === "reference"
+        ? null
+        : { price: line.price, at: Date.parse(line.at) };
+    const set = (bars: Candle[], source: CandleSet["source"], stale: boolean): CandleSet => ({
       line,
       tf,
-      candles,
-      volume: source === "provider" && candles.some((c) => c.v !== null && c.v > 0),
+      candles: source === "provider" ? withQuote(bars, tf, zone, quote) : bars,
+      volume: source === "provider" && bars.some((c) => c.v !== null && c.v > 0),
       zone,
       source,
       stale,

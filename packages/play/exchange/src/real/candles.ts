@@ -110,6 +110,36 @@ export function periodKey(ms: number, tf: Timeframe, zone: string, stepMs = 5 * 
   return new Date(monday).toISOString().slice(0, 10);
 }
 
+/**
+ * `candles` with a newer quote folded in, so a chart never ends before the price shown beside it:
+ * the provider's bars are cached, and the last one may be a session (or minutes) behind the quote.
+ * A quote in the last bar's period moves its close (and its high or low); a later one adds a bar
+ * that opens where the quote is first seen. One at or before the last bar's own time changes nothing.
+ */
+export function withQuote(
+  candles: readonly Candle[],
+  tf: Timeframe,
+  zone: string,
+  quote: { price: number; at: number } | null,
+): Candle[] {
+  const last = candles.at(-1);
+  if (!quote || !last || !(quote.price > 0) || quote.at <= last.at) return [...candles];
+  if (periodKey(quote.at, tf, zone) === periodKey(last.at, tf, zone)) {
+    const moved: Candle = {
+      ...last,
+      h: Math.max(last.h, quote.price),
+      l: Math.min(last.l, quote.price),
+      c: quote.price,
+    };
+    return [...candles.slice(0, -1), moved];
+  }
+  const at = tf === "intraday" ? Number(periodKey(quote.at, tf, zone)) : quote.at;
+  return [
+    ...candles,
+    { at, o: quote.price, h: quote.price, l: quote.price, c: quote.price, v: null },
+  ];
+}
+
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 /** A bar from four prices, its high and low widened to hold the open and close. */
