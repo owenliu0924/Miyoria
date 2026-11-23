@@ -17,8 +17,18 @@ export interface LlmCallTag {
   label?: string | null;
   /** Repair attempt of a structured reply (1 = the first retry). */
   repair?: number | null;
-  /** Called once the call is recorded and again when it ends. */
-  onCall?: ((call: { id: string; cost_usd: number | null; status: string }) => void) | null;
+  /**
+   * Called once the call is recorded and again when it ends; `usage` is the tokens of an ended
+   * call, when the provider reported them (a call without a price is counted by them).
+   */
+  onCall?:
+    | ((call: {
+        id: string;
+        cost_usd: number | null;
+        status: string;
+        usage?: { prompt_tokens: number; completion_tokens: number } | null;
+      }) => void)
+    | null;
 }
 
 const tags = new AsyncLocalStorage<LlmCallTag>();

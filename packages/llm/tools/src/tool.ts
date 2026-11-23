@@ -111,6 +111,11 @@ export interface Tool {
   /** Permission node the triggering user needs, if any. */
   readonly permission?: string | null;
   /**
+   * A node the call needs by what it asks for (a helper of one kind); `null`: none beyond
+   * `permission`. Read by the runner's guard with the parsed arguments.
+   */
+  readonly permissionFor?: (args: JsonValue) => string | null;
+  /**
    * It acts for the person who asked (their wallet, their request, their limits). In a turn where
    * several people called her at once, the call must say whom it is for: the agent offers it a
    * `for_whom` argument then, takes it off before `call`, and refuses a call that does not say.
@@ -168,6 +173,7 @@ export interface ToolDefinition extends ToolMeta {
   description: string;
   parameters: z.ZodType;
   permission?: string | null;
+  permissionFor?: (args: JsonValue) => string | null;
   actsFor?: boolean;
   readOnly?: boolean;
   framed?: boolean;
@@ -175,13 +181,24 @@ export interface ToolDefinition extends ToolMeta {
 }
 
 export function defineTool(definition: ToolDefinition): Tool {
-  const { name, description, parameters, permission, actsFor, readOnly, framed, call, ...meta } =
-    definition;
+  const {
+    name,
+    description,
+    parameters,
+    permission,
+    permissionFor,
+    actsFor,
+    readOnly,
+    framed,
+    call,
+    ...meta
+  } = definition;
   return {
     spec: toolSpec(name, description, parameters),
     meta,
     parameters,
     ...(permission === undefined ? {} : { permission }),
+    ...(permissionFor === undefined ? {} : { permissionFor }),
     ...(actsFor === undefined ? {} : { actsFor }),
     ...(readOnly === undefined ? {} : { readOnly }),
     ...(framed === undefined ? {} : { framed }),

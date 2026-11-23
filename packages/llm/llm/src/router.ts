@@ -525,7 +525,14 @@ export class LlmRouter {
       }
       this.#calls.respond(record.id, text, reasoning, tools);
       this.#finish(record, call.request, { text, reasoning, tool_calls: tools });
-      call.tag?.onCall?.({ id: record.id, cost_usd: record.cost_usd, status });
+      const usage =
+        record.usage === null
+          ? null
+          : {
+              prompt_tokens: record.usage.prompt_tokens,
+              completion_tokens: record.usage.completion_tokens,
+            };
+      call.tag?.onCall?.({ id: record.id, cost_usd: record.cost_usd, status, usage });
     };
     try {
       for (let next = first; !next.done; ) {
