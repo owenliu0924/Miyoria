@@ -249,7 +249,7 @@ describe("what the Arbiter admits", () => {
     for (let i = 0; i < 8; i++) {
       rig.model.push({
         events: (request) => {
-          const helper = String(request.messages[0]?.content ?? "").includes("小幫手");
+          const helper = String(request.messages[0]?.content ?? "").includes("你現在在背後做事");
           const text = textOf(request);
           if (helper) {
             return text.includes("三個結果")
