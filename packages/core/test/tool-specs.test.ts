@@ -186,6 +186,7 @@ describe("the registry behind them", () => {
       "message_dm",
       "notebook_read",
       "notebook_write",
+      "page_publish",
       "react",
       "recall",
       "remember",

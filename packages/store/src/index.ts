@@ -11,8 +11,13 @@ export {
   type FileLinkResult,
   type FileLinks,
   FileLinksKey,
+  type FilePages,
+  FilePagesKey,
   type HandOut,
   isCleanCopy,
+  type PagePublishRefusal,
+  type PagePublishRequest,
+  type PagePublishResult,
 } from "./artifacts/handout.js";
 export {
   ArtifactTypeError,
@@ -31,6 +36,16 @@ export { isSpaceMember, type SpaceMembership, spaceMembership } from "./artifact
 export { artifactSchema } from "./artifacts/migrations.js";
 export { ArtifactAttachments } from "./artifacts/outgoing.js";
 export {
+  type ArtifactPage,
+  type ArtifactPageAsset,
+  ArtifactPages,
+  PAGE_MAX_ASSETS,
+  type PageInput,
+  type PageLookup,
+  type PageRefusal,
+  pageAssetPath,
+} from "./artifacts/pages.js";
+export {
   ArtifactPathError,
   BlobLayout,
   cleanFilename,
@@ -48,6 +63,8 @@ export {
   ARTIFACT_SCOPES,
   ARTIFACT_SOURCES,
   type ArtifactBlobRow,
+  type ArtifactPageAssetRow,
+  type ArtifactPageRow,
   type ArtifactRow,
   type ArtifactShareRow,
   KEPT_BY,

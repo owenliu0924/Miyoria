@@ -1130,6 +1130,112 @@
       "framed": false
     },
     {
+      "name": "page_list",
+      "description": "列出你用 page_publish 幫開口的人發的、還在線上的網頁:id、網址、誰打得開、哪天下架。主人問的話列出全部。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
+          "on_own": {
+            "type": "boolean",
+            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
+          }
+        }
+      },
+      "permission": null,
+      "actsFor": true,
+      "readOnly": true,
+      "framed": false
+    },
+    {
+      "name": "page_publish",
+      "description": "把你做的網頁發到檔案網域,回給你一個在瀏覽器裡直接打開、會顯示成網頁的網址;有人想在瀏覽器裡打開你做的網頁就用這個,不是用 share 傳檔案。artifact 填網頁本身(.html)用 workspace_export 存成產物的 id。網頁用到的 css、js、圖片這些檔案也各自匯出,放進 assets:path 是網頁裡引用它的相對路徑(例如 style.css、img/cat.png),artifact 是它的產物 id;只有一個 .html 檔(樣式和程式都寫在裡面)就不用 assets。to 省略或 speaker:只有開口要的人登入後打得開;here:這個伺服器的成員登入後打得開;anyone:有網址的人都打得開(主人有開才行)。days 是幾天後下架,省略就用預設。網頁上不能送出表單、不能連到別的網站拿資料或載入外面的程式,上面會有一條橫幅寫著這是成員請你做的、不是官方網站。不行的時候會告訴你原因,照原因跟對方說就好。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "type": "string",
+            "description": "網頁本身(.html)的產物 id"
+          },
+          "assets": {
+            "type": "array",
+            "description": "網頁用到的其他檔案:每個是 {path, artifact}",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "網頁裡引用它的相對路徑,例如 style.css"
+                },
+                "artifact": {
+                  "type": "string",
+                  "description": "這個檔案的產物 id"
+                }
+              },
+              "required": [
+                "path",
+                "artifact"
+              ]
+            }
+          },
+          "to": {
+            "type": "string",
+            "description": "給誰:省略或 speaker(開口要的人);here(這個伺服器的成員);anyone(有網址的人)"
+          },
+          "days": {
+            "type": "integer",
+            "description": "幾天後下架;省略是預設"
+          },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
+          "on_own": {
+            "type": "boolean",
+            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
+          }
+        },
+        "required": [
+          "artifact"
+        ]
+      },
+      "permission": null,
+      "actsFor": true,
+      "readOnly": false,
+      "framed": false
+    },
+    {
+      "name": "page_unpublish",
+      "description": "把一個用 page_publish 發的網頁馬上拿下來,網址就打不開了。page 填網頁的 id(page_publish 或 page_list 給你的)。只能拿下開口的人自己的網頁;主人可以拿下任何一個。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "網頁的 id"
+          },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
+          "on_own": {
+            "type": "boolean",
+            "description": "這是你自己想做的(不是照對方的要求)就設 true;對方沒有權限要求的事,只有你自己真的想做時才可以這樣做,而且受你自己的次數限制。"
+          }
+        },
+        "required": [
+          "page"
+        ]
+      },
+      "permission": null,
+      "actsFor": true,
+      "readOnly": false,
+      "framed": false
+    },
+    {
       "name": "party_ask",
       "description": "海龜湯專用:有人問了是非題,或說出他猜的真相,就把那句話交給裁判(湯底只有裁判知道)。回傳「是 / 不是 / 不重要 / 很接近了」或猜中了,照結果回答,不要自己加料。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
@@ -1582,7 +1688,7 @@
     },
     {
       "name": "share",
-      "description": "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "description": "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。有人想在瀏覽器裡打開的網頁用 page_publish 發成網頁,不是用這個傳檔案。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -3343,6 +3449,85 @@
       }
     },
     {
+      "name": "page_list",
+      "description": "列出你用 page_publish 幫開口的人發的、還在線上的網頁:id、網址、誰打得開、哪天下架。主人問的話列出全部。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "on_own": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "page_publish",
+      "description": "把你做的網頁發到檔案網域,回給你一個在瀏覽器裡直接打開、會顯示成網頁的網址;有人想在瀏覽器裡打開你做的網頁就用這個,不是用 share 傳檔案。artifact 填網頁本身(.html)用 workspace_export 存成產物的 id。網頁用到的 css、js、圖片這些檔案也各自匯出,放進 assets:path 是網頁裡引用它的相對路徑(例如 style.css、img/cat.png),artifact 是它的產物 id;只有一個 .html 檔(樣式和程式都寫在裡面)就不用 assets。to 省略或 speaker:只有開口要的人登入後打得開;here:這個伺服器的成員登入後打得開;anyone:有網址的人都打得開(主人有開才行)。days 是幾天後下架,省略就用預設。網頁上不能送出表單、不能連到別的網站拿資料或載入外面的程式,上面會有一條橫幅寫著這是成員請你做的、不是官方網站。不行的時候會告訴你原因,照原因跟對方說就好。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "artifact": {
+            "type": "string",
+            "description": "網頁本身(.html)的產物 id"
+          },
+          "assets": {
+            "type": "array",
+            "description": "網頁用到的其他檔案:每個是 {path, artifact}",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "網頁裡引用它的相對路徑,例如 style.css"
+                },
+                "artifact": {
+                  "type": "string",
+                  "description": "這個檔案的產物 id"
+                }
+              },
+              "required": [
+                "path",
+                "artifact"
+              ]
+            }
+          },
+          "to": {
+            "type": "string",
+            "description": "給誰:省略或 speaker(開口要的人);here(這個伺服器的成員);anyone(有網址的人)"
+          },
+          "days": {
+            "type": "integer",
+            "description": "幾天後下架;省略是預設"
+          },
+          "on_own": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "artifact"
+        ]
+      }
+    },
+    {
+      "name": "page_unpublish",
+      "description": "把一個用 page_publish 發的網頁馬上拿下來,網址就打不開了。page 填網頁的 id(page_publish 或 page_list 給你的)。只能拿下開口的人自己的網頁;主人可以拿下任何一個。",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "string",
+            "description": "網頁的 id"
+          },
+          "on_own": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "page"
+        ]
+      }
+    },
+    {
       "name": "party_ask",
       "description": "海龜湯專用:有人問了是非題,或說出他猜的真相,就把那句話交給裁判(湯底只有裁判知道)。回傳「是 / 不是 / 不重要 / 很接近了」或猜中了,照結果回答,不要自己加料。",
       "parameters": {
@@ -3698,7 +3883,7 @@
     },
     {
       "name": "share",
-      "description": "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。",
+      "description": "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。有人想在瀏覽器裡打開的網頁用 page_publish 發成網頁,不是用這個傳檔案。",
       "parameters": {
         "type": "object",
         "properties": {

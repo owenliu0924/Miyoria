@@ -4,6 +4,7 @@
 // [modules.api.files]
 // origin = "https://files.example.com"   # empty: no links are issued (attachments still work)
 // bind = "127.0.0.1:7886"                # the file origin's own listener (the tunnel points here)
+// pages_public = false                   # web pages (`page_publish`) only after the login
 // ```
 //
 // The file origin is a host of its own with no cookies, so a file someone opens there can never
@@ -35,6 +36,19 @@ export const FilesConfigSchema = z.object({
   per_link_per_minute: z.number().int().positive().default(120),
   /** How long a CDN may keep a file of a link anyone can open; 0: not at all. */
   public_cache_secs: z.number().int().min(0).max(3600).default(300),
+  /**
+   * Whether a web page (`page_publish`) may be opened by anyone with its address, without the
+   * login. Off: a page is for the person who asked, or a server's members, after the login.
+   */
+  pages_public: z.boolean().default(false),
+  /** The largest HTML of a page, in KiB. */
+  page_max_kb: z.number().int().positive().default(2048),
+  /** A page and every file it loads together, in KiB. */
+  page_total_max_kb: z.number().int().positive().default(8192),
+  /** How many days a page stays up when she names no other. */
+  page_days: z.number().int().positive().default(30),
+  /** The longest a page may stay up, in days. */
+  page_max_days: z.number().int().positive().default(90),
 });
 export type FilesConfig = z.output<typeof FilesConfigSchema>;
 

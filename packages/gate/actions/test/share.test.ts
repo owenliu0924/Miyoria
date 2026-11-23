@@ -857,3 +857,73 @@ describe("share: with a file origin and the image cleaner", () => {
     });
   });
 });
+
+describe("share: why no link came with the attachment", () => {
+  /** A file origin that refuses every link with `refused`. */
+  function refusing(refused: "type_not_allowed" | "secret" | "quota") {
+    const service: FileLinks = {
+      available: () => true,
+      issue: async () => ({ ok: false, refused, message: "no" }),
+    };
+    services.provide("api", FileLinksKey, service);
+  }
+
+  it("says links are not configured when there is no file origin", async () => {
+    const a = await make(text("x\n"), ROOM, OWEN);
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(result.data).toMatchObject({ ok: true, link_refused: "unconfigured" });
+    expect(result.text).toContain("沒有附連結:檔案網域沒有設定");
+  });
+
+  it("says a web page gets no link and points at page_publish", async () => {
+    refusing("type_not_allowed");
+    const a = await make(text("<!doctype html><h1>hi</h1>\n"), ROOM, OWEN, {
+      filename: "miyoria.html",
+    });
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(result.data).toMatchObject({
+      ok: true,
+      sent_as: "miyoria.html.txt",
+      link_refused: "type_not_allowed",
+    });
+    expect(result.text).toContain("沒有附連結:網頁原始檔在檔案網域上不做下載連結");
+    expect(result.text).toContain("page_publish");
+  });
+
+  it("says why for a script, the secret check and the quota", async () => {
+    refusing("type_not_allowed");
+    const sh = await make(text("#!/bin/sh\necho hi\n"), ROOM, OWEN, { filename: "run.sh" });
+    expect((await exec(OWEN, ROOM, { artifact: sh.id })).text).toContain("一打開就會執行的檔案");
+    refusing("secret");
+    const b = await make(text("y\n"), ROOM, OWEN);
+    expect((await exec(OWEN, ROOM, { artifact: b.id })).text).toContain("密碼或密鑰");
+    refusing("quota");
+    const c = await make(text("z\n"), ROOM, OWEN);
+    const quota = await exec(OWEN, ROOM, { artifact: c.id });
+    expect(quota.text).toContain("今天能拿的連結和網頁已經到上限");
+    expect(quota.data).toMatchObject({ link_refused: "quota" });
+  });
+
+  it("says the login is off for a link to one person", async () => {
+    services.provide("api", FileLinksKey, {
+      available: (audience) => audience === "link",
+      issue: async () => {
+        throw new Error("not asked");
+      },
+    } satisfies FileLinks);
+    const a = await make(text("x\n"), ROOM, OWEN);
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(result.data).toMatchObject({ ok: true, link_refused: "no_login" });
+    expect(result.text).toContain("沒有開登入");
+  });
+
+  it("says why there is no link either when no attachment fits", async () => {
+    refusing("type_not_allowed");
+    const a = await make(text("<!doctype html><p>x</p>\n"), ROOM, OWEN, { filename: "p.html" });
+    sink.limit = null;
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(refusal(result)).toBe("platform");
+    expect(result.text).toContain("也沒辦法改給連結");
+    expect(result.text).toContain("page_publish");
+  });
+});

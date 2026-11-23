@@ -76,6 +76,8 @@ import {
   TextCheck,
   textExtension,
 } from "./media.js";
+import { isSpaceMember } from "./membership.js";
+import { ArtifactPages } from "./pages.js";
 import { BlobLayout, cleanFilename, isSha256 } from "./paths.js";
 import { ArtifactPlaces } from "./places.js";
 import {
@@ -291,6 +293,8 @@ export class ArtifactStore {
   readonly layout: BlobLayout;
   /** Share tokens of these artifacts. */
   readonly shares: ArtifactShares;
+  /** Web pages made of these artifacts (`pages.ts`). */
+  readonly pages: ArtifactPages;
   /** Contexts as places and viewers (`places.ts`). */
   readonly places: ArtifactPlaces;
   readonly #db: Db;
@@ -340,6 +344,11 @@ export class ArtifactStore {
     this.shares = new ArtifactShares(db, events, {
       get: (id) => this.get(id),
       isLive: (artifact) => this.#isLive(artifact),
+    });
+    this.pages = new ArtifactPages(db, {
+      get: (id) => this.get(id),
+      isLive: (artifact) => this.#isLive(artifact),
+      isMember: (person, space) => isSpaceMember(db, person, space),
     });
   }
 
@@ -911,6 +920,33 @@ export class ArtifactStore {
           .update(artifactItems)
           .set({ kept_by: null, expires_at: expires })
           .where(eq(artifactItems.id, target))
+          .run();
+      }
+      return true;
+    });
+  }
+
+  /**
+   * Makes an artifact that is not kept live until `untilMs` at least (a page shows it that long);
+   * its copies with it. Never shortens. `false`: not live.
+   */
+  extend(id: string, untilMs: number): boolean {
+    return this.#db.tx(() => {
+      const artifact = this.get(id);
+      if (artifact === null || !isLive(artifact, this.#nowMs())) return false;
+      if (artifact.kept_by !== null) return true;
+      const until = TIME(untilMs);
+      for (const target of [id, ...this.#copiesOf(id)]) {
+        this.#db.orm
+          .update(artifactItems)
+          .set({ expires_at: until })
+          .where(
+            and(
+              eq(artifactItems.id, target),
+              isNull(artifactItems.kept_by),
+              lt(artifactItems.expires_at, until),
+            ),
+          )
           .run();
       }
       return true;

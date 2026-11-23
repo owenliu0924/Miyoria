@@ -38,10 +38,13 @@ import {
   ArtifactCleanerKey,
   ArtifactStoreKey,
   FileLinksKey,
+  FilePagesKey,
   SettingsStoreKey,
 } from "@miyoria/store";
 import {
   ActivityManagerKey,
+  CharacterKey,
+  DEFAULT_CHARACTER,
   Events,
   KeepsakesKey,
   ModerationKey,
@@ -53,6 +56,7 @@ import { CardFaceService } from "./card-faces.js";
 import { ImageCleaner } from "./files/clean.js";
 import { FilesConfigSchema, parseOrigin } from "./files/config.js";
 import { FileLinkService, shareZip } from "./files/links.js";
+import { PageService } from "./files/pages.js";
 import { fileOriginApp } from "./files/serve.js";
 import type { FilesSide } from "./files/side.js";
 import { Tickets } from "./files/tickets.js";
@@ -371,6 +375,7 @@ export class ApiModule implements Module {
     state.files = files;
     ctx.provide(ArtifactCleanerKey, files.cleaner);
     if (files.links !== null) ctx.provide(FileLinksKey, files.links);
+    if (files.pages !== null) ctx.provide(FilePagesKey, files.pages);
 
     const split = config.public_bind.trim() !== "";
     const servers: ServerType[] = [];
@@ -417,6 +422,8 @@ export class ApiModule implements Module {
           publicCacheSecs: config.files.public_cache_secs,
           clientIpHeader: config.public.client_ip_header,
           zip: () => shareZip(ctx.services),
+          origin: files.origin,
+          name: () => ctx.services.get(CharacterKey)?.name ?? DEFAULT_CHARACTER.name,
         });
         const fileServer = createAdaptorServer({ fetch: fileApp.fetch });
         servers.push(fileServer);
@@ -523,9 +530,21 @@ export class ApiModule implements Module {
             now: () => ctx.clock.now(),
             zip: () => shareZip(ctx.services),
           });
+    const pages =
+      origin === null
+        ? null
+        : new PageService({
+            store,
+            cleaner,
+            origin,
+            scoped: () => scoped,
+            config: () => config.files,
+            moderation: () => ctx.services.get(ModerationKey),
+            now: () => ctx.clock.now(),
+          });
     if (origin === null)
-      ctx.log.debug("no file origin: share links are off, attachments still work");
-    return { config: config.files, origin, site, tickets, links, cleaner };
+      ctx.log.debug("no file origin: share links and pages are off, attachments still work");
+    return { config: config.files, origin, site, tickets, links, pages, cleaner };
   }
 
   async stop(): Promise<void> {

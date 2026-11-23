@@ -276,6 +276,14 @@ token = "${MIYORIA_API_TOKEN:-}"
 # per_ip_per_minute = 60           # 每個訪客每分鐘的請求數
 # per_link_per_minute = 120        # 每條連結每分鐘的請求數(所有人加起來)
 # public_cache_secs = 300          # 有連結就能看的檔案讓 CDN 快取幾秒;0 = 不快取
+# 她能發網頁(page_publish):網址是 https://<origin>/p/<代號>/,在瀏覽器裡打開會顯示成網頁。網頁在沙箱裡跑:
+# 不能送出表單、不能連線拿資料、只能載入自己的檔案,最上面有一條「成員請她做的、不是官方網站、不要輸入密碼」的橫幅。
+# 網頁和連結一起算 links_per_person_per_day。
+# pages_public = false             # true = 網頁也可以給「有網址的人都打得開」(不用登入);false = 只給本人或伺服器成員登入後看
+# page_max_kb = 2048               # 網頁本身(HTML)最大幾 KiB
+# page_total_max_kb = 8192         # 網頁加上它載入的檔案(css、js、圖片)合計最大幾 KiB
+# page_days = 30                   # 網頁預設幾天後下架
+# page_max_days = 90               # 網頁最多能放幾天
 
 # 每台電腦的管家(hostd)連進來的控制連線:回報這台有哪些服務、位址和健康。預設開著;
 # 埠被占用時這個模組會失敗,Core 照常執行。

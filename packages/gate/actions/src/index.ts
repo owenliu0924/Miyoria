@@ -74,6 +74,13 @@ export {
   outcomeNotice,
 } from "./outcome.js";
 export {
+  PAGE_LIST,
+  PAGE_PUBLISH,
+  PAGE_UNPUBLISH,
+  type PageOptions,
+  pageCapabilities,
+} from "./page.js";
+export {
   DEFAULT_PRIVACY,
   PRIVACY_PROFILE,
   Privacy,
@@ -121,6 +128,7 @@ export {
   type ShareOptions,
   type ShareRefusalCode,
   shareCapability,
+  shareLimits,
   zipLimits,
 } from "./share.js";
 export { CapabilityTool, REQUEST_RULE, RESULT_PENDING, REVIEW_PENDING } from "./tools.js";
