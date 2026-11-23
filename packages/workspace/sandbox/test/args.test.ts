@@ -64,6 +64,26 @@ describe("buildRunArgs", () => {
     expect(values(args, "--label")).toEqual(["miyoria.sandbox=1", "miyoria.sandbox.instance=abc"]);
   });
 
+  it("covers_the_hidden_directories_of_the_workspace_with_an_empty_unwritable_tmpfs", () => {
+    const args = buildRunArgs(
+      spec({ workspaceDir: "C:\\data\\workspace", hiddenInWorkspace: ["people"] }),
+    );
+    expect(values(args, "--mount").slice(2)).toEqual([
+      "type=bind,source=C:\\data\\workspace,target=/workspace",
+      "type=tmpfs,target=/workspace/people,tmpfs-size=4k,tmpfs-mode=0555",
+    ]);
+    // Nothing hidden without a workspace, and only plain names.
+    expect(values(buildRunArgs(spec({ hiddenInWorkspace: ["people"] })), "--mount")).toHaveLength(
+      2,
+    );
+    for (const name of ["../x", "a/b", "People", ""]) {
+      expect(
+        () => buildRunArgs(spec({ workspaceDir: "C:\\w", hiddenInWorkspace: [name] })),
+        name,
+      ).toThrow("bad hidden directory");
+    }
+  });
+
   it("mounts_only_work_read_write", () => {
     const args = buildRunArgs(spec({ toolsDir: "C:\\data\\tools" }));
     expect(values(args, "--mount")).toEqual([

@@ -5,7 +5,7 @@
 // at /workspace). Writing any text file, source code included, is ordinary writing.
 //
 // A call made for someone works in that person's folder only (`people.ts`); her own calls with
-// nobody behind them and the owners' see the whole workspace.
+// nobody behind them see the whole workspace but `people/`; the owners' see all of it.
 //
 // Everything that comes back from the workspace is data: file names and contents may have been
 // written by a program that ran on a stranger's request, so they are shown inside a data block.
@@ -75,7 +75,7 @@ function shown(path: string): string {
 /** Told with every file tool: whose files a call sees. */
 const WHOSE =
   "替別人做事時(對方要你做、或幫手替對方做),你只看得到那個人自己的資料夾,路徑都從那裡算起;" +
-  "別人的檔案和你自己的東西在那時候都碰不到。";
+  "別人的檔案和你自己的東西在那時候都碰不到。沒有人要、你自己做的時候,people/ 底下是大家各自的資料夾,也碰不到。";
 
 /** The workspace a call works in: the asker's folder, or the whole one. */
 export function callWorkspace(o: WorkspaceGateOptions, ctx: ExecContext): WorkspaceApi {

@@ -1,8 +1,10 @@
 // Her workspace, one folder per person. A tool call made for someone (they asked, or a helper
 // works for them) sees only `people/<their folder>/`: its paths are relative to that folder,
 // listing shows nothing else, and nothing outside can be read, written, deleted, exported or
-// mounted into a run. Her own calls with nobody behind them, and an owner's (`WORKSPACE_ALL`),
-// see the whole workspace with the paths they always had.
+// mounted into a run. Her own calls with nobody behind them see the whole workspace with the paths
+// they always had, except `people/`: a member can get such a call made (a glance at what they
+// said, something left in her inbox), so other people's folders are not hers to reach. Only an
+// owner (`WORKSPACE_ALL`) and the admin panel see everything.
 //
 // The folder view goes through the whole workspace's own methods, so every path defence stays:
 // the person's path is checked lexically first (no `..`, absolute paths, drive letters or
@@ -56,33 +58,134 @@ export function personFolder(id: string): string {
 }
 
 /**
- * The folder a call made for `principal` is confined to, or `null` for the whole workspace: her
- * own call with nobody behind it, or someone who holds `WORKSPACE_ALL` (owners). Everyone else is
- * confined, whatever the principal's kind, so a member cannot widen it by asking her to act "on
- * her own". Without an authorizer nobody is taken for an owner.
+ * What of the workspace a call reaches: `all` (an owner, the panel), `own` (her own call with
+ * nobody behind it: everything but `people/`), or one person's `folder`.
  */
-export function folderFor(principal: Principal, services: ServiceLookup): string | null {
+export type WorkspaceScope = { kind: "all" } | { kind: "own" } | { kind: "person"; folder: string };
+
+/**
+ * The scope of a call made for `principal`. Whoever asked is confined to their folder, whatever
+ * the principal's kind, so a member cannot widen it by asking her to act "on her own"; someone
+ * who holds `WORKSPACE_ALL` (owners) and the panel reach everything; her own call with nobody
+ * behind it reaches everything but the people's folders. Without an authorizer nobody is taken
+ * for an owner.
+ */
+export function scopeFor(principal: Principal, services: ServiceLookup): WorkspaceScope {
+  if (principal.kind === "panel") return { kind: "all" };
   const requester = principal.requester;
-  if (requester === null) return null;
-  if (services.get(AuthorizerKey)?.allows(requester, WORKSPACE_ALL) === true) return null;
+  if (requester === null) return { kind: "own" };
+  if (services.get(AuthorizerKey)?.allows(requester, WORKSPACE_ALL) === true) {
+    return { kind: "all" };
+  }
   // The heart's person id outlives a re-linked account; an account the heart does not know
   // gets a folder of its own.
   const person = services.get(SocialSignalsKey)?.attitude(requester)?.person ?? null;
-  return personFolder(person ?? `${requester.platform}-${requester.id}`);
+  return {
+    kind: "person",
+    folder: personFolder(person ?? `${requester.platform}-${requester.id}`),
+  };
 }
 
-/** The workspace a call for `principal` works in, and its folder (`null`: the whole one). */
+/** The folder of `scopeFor`, or `null` when the call is not confined to one. */
+export function folderFor(principal: Principal, services: ServiceLookup): string | null {
+  const scope = scopeFor(principal, services);
+  return scope.kind === "person" ? scope.folder : null;
+}
+
+/** The workspace a call for `principal` works in, its folder and its scope. */
 export function workspaceFor(
   root: WorkspaceApi,
   principal: Principal,
   services: ServiceLookup,
   limits: PersonLimits = DEFAULT_PERSON_LIMITS,
-): { workspace: WorkspaceApi; folder: string | null } {
-  const folder = folderFor(principal, services);
+): { workspace: WorkspaceApi; folder: string | null; scope: WorkspaceScope } {
+  const scope = scopeFor(principal, services);
   return {
-    workspace: folder === null ? root : new PersonWorkspace(root, folder, limits),
-    folder,
+    workspace:
+      scope.kind === "person"
+        ? new PersonWorkspace(root, scope.folder, limits)
+        : scope.kind === "own"
+          ? new OwnWorkspace(root)
+          : root,
+    folder: scope.kind === "person" ? scope.folder : null,
+    scope,
   };
+}
+
+/** Whether `path` names `people` or something in it (any case: file systems that ignore it alias). */
+function inPeople(path: string): boolean {
+  return (path.split("/")[0] ?? "").toLowerCase() === PEOPLE_DIR;
+}
+
+/**
+ * Her whole workspace without the people's folders, for her own calls: `people` and everything
+ * under it cannot be listed, read, written, deleted (the folder itself neither), exported or run.
+ */
+export class OwnWorkspace implements WorkspaceApi {
+  readonly limits: WorkspaceLimits;
+
+  constructor(readonly root: WorkspaceApi) {
+    this.limits = root.limits;
+  }
+
+  /** The path, refused when it reaches into `people/`. */
+  #mine(path: string): string {
+    const normalized = normalizeRelativePath(path);
+    if (inPeople(normalized)) {
+      throw new SandboxError(
+        "invalid_path",
+        `invalid workspace path \`${normalized.slice(0, 80)}\`: people/ holds other people's folders`,
+      );
+    }
+    return normalized;
+  }
+
+  usage(): Promise<WorkspaceUsage> {
+    return this.root.usage();
+  }
+
+  async list(prefix?: string): Promise<{ entries: WorkspaceEntry[]; truncated: boolean }> {
+    const base = prefix?.replace(/\/+$/, "") ?? "";
+    const { entries, truncated } = await this.root.list(base === "" ? undefined : this.#mine(base));
+    return { entries: entries.filter((e) => !inPeople(e.path)), truncated };
+  }
+
+  async read(
+    path: string,
+    options?: { offset?: number; maxChars?: number },
+  ): Promise<WorkspaceRead> {
+    return this.root.read(this.#mine(path), options);
+  }
+
+  async write(path: string, text: string, options?: { append?: boolean }): Promise<WorkspaceEntry> {
+    return this.root.write(this.#mine(path), text, options);
+  }
+
+  async readBytes(path: string, maxBytes: number): Promise<Uint8Array> {
+    return this.root.readBytes(this.#mine(path), maxBytes);
+  }
+
+  async remove(path: string): Promise<boolean> {
+    return this.root.remove(this.#mine(path));
+  }
+
+  async exists(path: string): Promise<boolean> {
+    return this.root.exists(this.#mine(path));
+  }
+
+  async saveScript(path: string, text: string): Promise<WorkspaceEntry> {
+    return this.root.saveScript(this.#mine(path), text);
+  }
+
+  async approvedScript(path: string): Promise<Awaited<ReturnType<WorkspaceApi["approvedScript"]>>> {
+    let mine: string;
+    try {
+      mine = this.#mine(path);
+    } catch {
+      return null;
+    }
+    return this.root.approvedScript(mine);
+  }
 }
 
 /** One person's folder of the workspace, as a workspace of its own. */
@@ -234,16 +337,29 @@ export interface SessionView {
 
 const SESSION_NAME_MAX = 48;
 
-/** The whole set of sessions, for her and the owners. */
+/** The whole set of sessions, for the owners. */
 export const ALL_SESSIONS: SessionView = {
   real: (name) => name,
   own: (real) => real,
   maxName: SESSION_NAME_MAX,
 };
 
-/** The sessions of the person whose folder is `folder` (`null`: all of them). */
-export function sessionView(folder: string | null): SessionView {
-  if (folder === null) return ALL_SESSIONS;
+/** What `sessionView` puts in front of a person's session names. */
+const PERSON_SESSION = /^p[0-9a-f]{7}-/;
+
+/** Her own sessions: every one but the people's, whose `/work` is theirs. */
+export const OWN_SESSIONS: SessionView = {
+  real: (name) => name,
+  own: (real) => (PERSON_SESSION.test(real) ? null : real),
+  maxName: SESSION_NAME_MAX,
+};
+
+/**
+ * The sessions of the person whose folder is `folder`; `null`: all of them, or with `own` her
+ * own (`OWN_SESSIONS`). A name the caller may not use is one whose `own(real(name))` is `null`.
+ */
+export function sessionView(folder: string | null, own = false): SessionView {
+  if (folder === null) return own ? OWN_SESSIONS : ALL_SESSIONS;
   const tag = `p${createHash("sha256").update(folder, "utf8").digest("hex").slice(0, 7)}-`;
   return {
     real: (name) => (name === "fresh" ? name : `${tag}${name}`),

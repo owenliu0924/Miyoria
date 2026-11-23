@@ -120,19 +120,24 @@ export {
   MAX_PATH_DEPTH,
   NAME,
   normalizeRelativePath,
+  normalizeWorkspacePath,
   safeJoin,
 } from "./paths.js";
 export {
   ALL_SESSIONS,
   DEFAULT_PERSON_LIMITS,
   folderFor,
+  OWN_SESSIONS,
+  OwnWorkspace,
   PEOPLE_DIR,
   PERSON_FOLDER,
   type PersonLimits,
   PersonWorkspace,
   personFolder,
   type SessionView,
+  scopeFor,
   sessionView,
+  type WorkspaceScope,
   workspaceFor,
 } from "./people.js";
 export { type PoolStats, type Standby, WarmPool, type WarmPoolOptions } from "./pool.js";

@@ -13,6 +13,7 @@ import {
   personFolder,
   type RunResult,
   renderRun,
+  workspaceFor,
 } from "../src/index.js";
 import { AMY, CTX, harness, toolContext } from "./gate-helpers.js";
 
@@ -497,13 +498,87 @@ describe("a member's own folder", () => {
     expect(() => new PersonWorkspace(workspace, "../x", { maxBytes: 1, maxFiles: 1 })).toThrow();
   });
 
-  it("an owner and her own runs see the whole workspace, people's folders included", async () => {
+  it("an owner and the panel see the whole workspace, people's folders included", async () => {
     const h = member();
     await call(h, "workspace_write", { path: "mine.txt", content: "Amy's" });
     h.grants.grant(AMY, WORKSPACE_ALL);
     expect(await call(h, "workspace_list", {})).toContain("people/discord-200/mine.txt");
+    const panel = toolContext(Principals.panel("api", CTX));
+    expect(await call(h, "workspace_list", {}, panel)).toContain("people/discord-200/mine.txt");
+  });
+
+  it("her own calls with nobody behind them reach everything but people/", async () => {
+    await workspace.write("skills/hello.md", "her skill\n");
+    await workspace.write("people/discord-200/notes.md", "Amy's notes\n");
+    const h = member();
     const hers = toolContext(Principals.self(CTX));
-    expect(await call(h, "workspace_list", {}, hers)).toContain("people/discord-200/mine.txt");
+    const listed = await call(h, "workspace_list", {}, hers);
+    expect(listed).toContain("skills/hello.md");
+    expect(listed).not.toContain("people");
+    expect(await call(h, "workspace_read", { path: "skills/hello.md" }, hers)).toContain(
+      "her skill",
+    );
+    for (const path of ["people/discord-200/notes.md", "People/discord-200/notes.md", "people"]) {
+      expect(await call(h, "workspace_read", { path }, hers), path).toContain("沒辦法處理");
+      expect(await call(h, "workspace_delete", { path }, hers), path).toContain("沒辦法處理");
+      expect(
+        await call(h, "workspace_write", { path, content: "x", append: true }, hers),
+        path,
+      ).toContain("沒辦法處理");
+    }
+    await expect(call(h, "workspace_list", { path: "people" }, hers)).rejects.toThrow("people/");
+    expect(await workspace.read("people/discord-200/notes.md")).toMatchObject({
+      text: "Amy's notes\n",
+    });
+    // Not exportable or runnable either.
+    const { workspace: own, scope } = workspaceFor(workspace, Principals.self(CTX), h.services);
+    expect(scope).toEqual({ kind: "own" });
+    await expect(own.readBytes("people/discord-200/notes.md", 1000)).rejects.toThrow("people/");
+    await workspace.saveScript("people/discord-200/run.py", "print(1)\n");
+    expect(await own.approvedScript("people/discord-200/run.py")).toBeNull();
+    expect(await own.exists("skills/hello.md")).toBe(true);
+  });
+
+  it("her own calls cannot use a person's sandbox session", async () => {
+    const h = member();
+    await h.gate.setAvailable(true);
+    h.router.verdict("allow");
+    await call(h, "code_run", { language: "python", code: "x", session: "calc" });
+    const real = h.sandbox.requests[0]?.session ?? "";
+    h.sandbox.sessions = ["hers", real];
+    const hers = toolContext(Principals.self(CTX));
+    const list = await call(h, "code_session", { action: "list" }, hers);
+    expect(list).toContain("hers");
+    expect(list).not.toContain(real);
+    expect(await call(h, "code_session", { action: "close", name: real }, hers)).toContain(
+      "別人的",
+    );
+    expect(h.sandbox.sessions).toContain(real);
+    h.router.verdict("allow");
+    const ran = await call(h, "code_run", { language: "python", code: "x", session: real }, hers);
+    expect(ran).toContain("別人的");
+    expect(h.sandbox.requests).toHaveLength(1);
+  });
+
+  it("a person gets 8 segments and 255 characters after their folder, and keeps them", async () => {
+    const h = member();
+    const deep = "a/b/c/d/e/f/g/h.txt";
+    expect(await call(h, "workspace_write", { path: deep, content: "deep" })).toContain("已存好");
+    const long = `${"x".repeat(100)}/${"y".repeat(100)}/${"z".repeat(50)}.md`;
+    expect(long.length).toBe(255);
+    expect(await call(h, "workspace_write", { path: long, content: "long" })).toContain("已存好");
+    expect(await call(h, "workspace_read", { path: deep })).toContain("deep");
+    expect(await call(h, "workspace_list", {})).toContain("a/b/c/d/e/f/g/h.txt");
+    // One more is still too many.
+    expect(await call(h, "workspace_write", { path: `x/${deep}`, content: "x" })).toContain(
+      "too deep",
+    );
+    // The whole workspace sees them and does not clean them out.
+    expect((await workspace.usage()).overflow).toBe(false);
+    expect(await workspace.enforce()).toEqual([]);
+    expect(await workspace.exists(`people/discord-200/${deep}`)).toBe(true);
+    // Her own root paths keep the plain limits.
+    await expect(workspace.write("a/b/c/d/e/f/g/h/i.txt", "x")).rejects.toThrow("too deep");
   });
 
   it("a member's run mounts only their folder, and their long output stays there", async () => {

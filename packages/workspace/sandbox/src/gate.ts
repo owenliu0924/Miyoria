@@ -45,9 +45,9 @@ import { clip, type RenderOptions, renderRun, SESSION_REASON, sha256 } from "./f
 import { NODE_CODE_RUN, NODE_PROPOSED_PREFIX, NODE_TOOL_PROPOSE } from "./nodes.js";
 import { checkName } from "./paths.js";
 import {
-  folderFor,
   type PersonLimits,
   type SessionView,
+  scopeFor,
   sessionView,
   workspaceFor,
 } from "./people.js";
@@ -262,17 +262,21 @@ export function codeRunCapability(o: SandboxGateOptions): Capability<CodeRunArgs
       const { use_workspace, use_network, ...request } = a;
       const allowed = o.sandbox.networkAllow;
       const root = o.sandbox.workspace;
+      const scope = scopeFor(ctx.principal, ctx.services);
       const { workspace, folder } =
         root === null
-          ? { workspace: null, folder: folderFor(ctx.principal, ctx.services) }
+          ? { workspace: null, folder: scope.kind === "person" ? scope.folder : null }
           : workspaceFor(root, ctx.principal, ctx.services, o.people);
-      const view = sessionView(folder);
+      const view = sessionView(folder, scope.kind === "own");
       const session = a.session ?? FRESH;
       if (session !== FRESH && session.length > view.maxName) {
         return {
           text: `工作階段的名字最多 ${view.maxName} 個字;這次的程式沒有執行。換個短一點的名字。`,
           data: { error: "invalid_request", session },
         };
+      }
+      if (session !== FRESH && view.own(view.real(session)) === null) {
+        return { text: NOT_YOUR_SESSION, data: { error: "invalid_request", session } };
       }
       if ((use_workspace === true || use_network === true) && (a.session ?? FRESH) !== FRESH) {
         return {
@@ -324,6 +328,9 @@ export function codeRunCapability(o: SandboxGateOptions): Capability<CodeRunArgs
   });
 }
 
+/** A session name that is someone else's (a person's, for her own calls). */
+const NOT_YOUR_SESSION = "這個名字的工作階段是別人的,不能用,這次沒有執行;換一個名字。";
+
 function minutes(ms: number): string {
   return `${Math.max(0, Math.round(ms / 60_000))} 分鐘`;
 }
@@ -355,9 +362,13 @@ export function codeSessionCapability(o: SandboxGateOptions): Capability<CodeSes
       required: ["action"],
     },
     async execute(a, ctx): Promise<ActionResult> {
-      const view = sessionView(folderFor(ctx.principal, ctx.services));
+      const scope = scopeFor(ctx.principal, ctx.services);
+      const view = sessionView(scope.kind === "person" ? scope.folder : null, scope.kind === "own");
       if (a.action === "close") {
         const name = a.name as string;
+        if (view.own(view.real(name)) === null) {
+          return { text: NOT_YOUR_SESSION, data: { name, closed: false } };
+        }
         const closed = await o.sandbox.closeSession(view.real(name));
         return {
           text: closed

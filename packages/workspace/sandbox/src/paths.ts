@@ -44,13 +44,56 @@ export function normalizeRelativePath(path: string): string {
   return segments.join("/");
 }
 
+/** The workspace's directory of the people's folders (`people.ts`). */
+const PEOPLE = "people";
+
 /**
- * `base` joined with a path that already passed `normalizeRelativePath`, verified to resolve
- * strictly inside `base`. Throws `SandboxError` (`invalid_path`) otherwise.
+ * Whether `path` (already normalized) lies under `people/<folder>/` of her workspace: such a path
+ * is checked by its person-relative part (`normalizeWorkspacePath`). Case-insensitive, as the
+ * file systems that ignore case alias `People` to `people`.
  */
-export function safeJoin(base: string, relativePath: string): string {
+export function inPersonFolder(path: string): boolean {
+  const parts = path.split("/");
+  return parts.length >= 2 && (parts[0] ?? "").toLowerCase() === PEOPLE;
+}
+
+/**
+ * The deepest a directory at `dir` (a workspace path) may hold: `MAX_PATH_DEPTH`, plus the two
+ * segments of `people/<folder>` below a person's folder, so a person gets the room a path of
+ * theirs has (`normalizeWorkspacePath`).
+ */
+export function workspaceDepth(dir: string): number {
+  return inPersonFolder(dir) ? MAX_PATH_DEPTH + 2 : MAX_PATH_DEPTH;
+}
+
+/**
+ * `normalizeRelativePath` for a path of her whole workspace: a path under `people/<folder>/` is
+ * held to the limits by what follows the folder (what the person wrote), not by the whole, so a
+ * person gets the same 8 segments and 255 characters as anyone; `people` and the folder name are
+ * checked as segments too. Every other path as `normalizeRelativePath`.
+ */
+export function normalizeWorkspacePath(path: string): string {
+  if (typeof path === "string") {
+    const parts = path.split("/");
+    if (parts.length >= 3 && (parts[0] ?? "").toLowerCase() === PEOPLE) {
+      const head = normalizeRelativePath(parts.slice(0, 2).join("/"));
+      return `${head}/${normalizeRelativePath(parts.slice(2).join("/"))}`;
+    }
+  }
+  return normalizeRelativePath(path);
+}
+
+/**
+ * `base` joined with a path that already passed `normalize` (default `normalizeRelativePath`),
+ * verified to resolve strictly inside `base`. Throws `SandboxError` (`invalid_path`) otherwise.
+ */
+export function safeJoin(
+  base: string,
+  relativePath: string,
+  normalize: (path: string) => string = normalizeRelativePath,
+): string {
   const root = resolve(base);
-  const full = resolve(root, ...normalizeRelativePath(relativePath).split("/"));
+  const full = resolve(root, ...normalize(relativePath).split("/"));
   const rel = relative(root, full);
   if (rel === "" || rel.startsWith(`..${sep}`) || rel === ".." || isAbsolute(rel)) {
     throw invalid(relativePath, "escapes the workspace");
