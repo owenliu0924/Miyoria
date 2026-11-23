@@ -38,7 +38,8 @@ export const doctor = {
   noHostToml: (file: string) =>
     `${file} not found; service checks skipped (create it with \`miyoria add <service>\`, or convert an older configuration with \`miyoria host migrate\`)`,
   servicesTitle: "Services on this machine",
-  failed: (count: number) => `${count} ${count === 1 ? "check" : "checks"} failed`,
+  failed: (count: number) =>
+    `${count} ${count === 1 ? "check" : "checks"} failed. Run \`miyoria doctor --fix\` to apply safe repairs.`,
   stackPassed: "Deployment checks passed",
   machineReady: "Everything this machine needs is in place",
   profile: "Profile",
@@ -52,7 +53,7 @@ export const doctor = {
   databaseFailed: (url: string, error: string) => `${url}: ${error}`,
   allPassed: "All checks passed",
   // ---- Discord ----
-  discordStatus: (status: number) => `Discord API returned ${status} (is the token correct?)`,
+  discordStatus: (status: number) => `Discord API returned ${status}; check DISCORD_BOT_TOKEN`,
   noMessageContent: (bot: string) =>
     `Bot \`${bot}\` does not have the Message Content Intent enabled (Developer Portal → Bot → Privileged Gateway Intents)`,
   /** `intents`: `common.list`. */

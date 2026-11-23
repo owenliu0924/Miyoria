@@ -50,6 +50,52 @@ export interface InitOptions {
   catalogRoot?: string;
 }
 
+/** Where `init --non-interactive` reads the secrets it is given (never from a flag's value). */
+export const SECRET_ENV = {
+  llmKey: "MIYORIA_LLM_API_KEY",
+  discordToken: "MIYORIA_DISCORD_BOT_TOKEN",
+} as const;
+
+export interface SecretSources {
+  /** `--llm-key-stdin`: the LLM API key is on standard input. */
+  llmKeyStdin?: boolean;
+  /** `--discord-token-stdin`: the Discord bot token is on standard input (after the LLM key when both are). */
+  discordTokenStdin?: boolean;
+}
+
+/**
+ * The secrets of a non-interactive run, by the `.env` variable they go to: from standard input
+ * when asked (one per line, the LLM key first), else from `SECRET_ENV`.
+ */
+export async function initSecrets(
+  sources: SecretSources,
+  env: Readonly<Record<string, string | undefined>>,
+  readStdin: () => Promise<string>,
+): Promise<Record<string, string>> {
+  let llm = env[SECRET_ENV.llmKey]?.trim() ?? "";
+  let discord = env[SECRET_ENV.discordToken]?.trim() ?? "";
+  if (sources.llmKeyStdin || sources.discordTokenStdin) {
+    const lines = (await readStdin()).split(/\r?\n/).map((l) => l.trim());
+    let next = 0;
+    if (sources.llmKeyStdin) llm = lines[next++] ?? "";
+    if (sources.discordTokenStdin) discord = lines[next++] ?? "";
+  }
+  const out: Record<string, string> = {};
+  if (llm !== "") {
+    out.LLM_API_KEY = llm;
+    out.OPENCODE_API_KEY = llm;
+  }
+  if (discord !== "") out.DISCORD_BOT_TOKEN = discord;
+  return out;
+}
+
+/** All of standard input, as text. */
+export async function readAllStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 /** All questions of a machine that runs Core, editing `ws` in memory. Returns the generated tokens. */
 export async function flow(p: Prompter, ws: Workspace): Promise<string[]> {
   // The answers are checked by the root schema, which loads every module package: start now.
@@ -186,8 +232,8 @@ export async function run(
   }
 
   const cmd = options.command ?? commandPrefix();
-  const width = `${cmd} config`.length + 2;
-  const line = (c: string, what: string) => `  ${`${cmd} ${c}`.padEnd(width)} ${what}`;
+  // A step: what it does, ending in a colon, then the literal command to type.
+  const line = (c: string, what: string) => `  ${what}\n    ${cmd} ${c}`;
 
   if (mode === "service") {
     await runService(p, options, { hostToml, cmd, line });
@@ -229,7 +275,7 @@ export async function run(
     [
       t.init.nextSteps,
       ...next,
-      t.init.nextPanel(panel),
+      `  ${t.init.nextPanel}\n    ${panel}`,
       ...(mode === "voice" ? [t.init.nextVoiceLater] : []),
       line("doctor", t.init.nextDoctor),
       line("config", t.init.nextConfig),
@@ -261,9 +307,8 @@ async function runService(
     [
       t.init.nextSteps,
       line(`add ${services.join(" ")}`, t.init.nextAddServices),
-      t.init.nextInvite,
-      t.init.joinCommand(cmd),
-      t.init.nextApprove(plan.name),
+      `  ${t.init.nextInvite}\n    ${cmd} host join <core-url> --code <code>`,
+      `  ${t.init.nextApprove}\n    miyoria host approve ${plan.name}`,
       line("up", t.init.nextUpServices),
     ].join("\n"),
   );

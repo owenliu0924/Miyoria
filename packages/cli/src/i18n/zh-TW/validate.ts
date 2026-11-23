@@ -1,17 +1,17 @@
 import type { validate as en } from "../en/validate.js";
 
 export const validate: typeof en = {
-  httpUrl: "必須是以 http:// 或 https:// 開頭的網址,例如 http://127.0.0.1:8001",
-  wsUrl: "必須是以 ws:// 或 wss:// 開頭的網址,例如 ws://127.0.0.1:7882/stage-link",
-  sqlitePath: "SQLite 必須指定檔案路徑,例如 sqlite:data/miyoria.db",
-  noPostgres: "已不再支援 PostgreSQL;請使用 sqlite:data/miyoria.db 或 memory://",
+  httpUrl: "必須是以 http:// 或 https:// 開頭的網址，例如 http://127.0.0.1:8001",
+  wsUrl: "必須是以 ws:// 或 wss:// 開頭的網址，例如 ws://127.0.0.1:7882/stage-link",
+  sqlitePath: "SQLite 必須指定檔案路徑，例如 sqlite:data/miyoria.db",
+  noPostgres: "已不再支援 PostgreSQL；請使用 sqlite:data/miyoria.db 或 memory://",
   databaseUrl: "必須是 sqlite:data/miyoria.db 或 memory://",
   port: "埠必須是 1–65535 的整數",
-  bind: "格式為 主機:埠,例如 127.0.0.1:7878",
-  discordId: "Discord id 為 17–20 位數字(開發者模式 → 按右鍵 → 複製 ID)",
+  bind: "格式為 主機：埠，例如 127.0.0.1:7878",
+  discordId: "Discord id 為 17–20 位數字（開發者模式 → 按右鍵 → 複製 ID）",
   modelEmpty: "模型 id 不可為空白",
   modelSpace: "模型 id 不可包含空白",
-  envName: (name) => `\`${name}\` 不是有效的環境變數名稱(英數字與底線,例如 LLM_API_KEY)`,
+  envName: (name) => `\`${name}\` 不是有效的環境變數名稱（英數字與底線，例如 LLM_API_KEY）`,
   types: {
     string: "字串",
     number: "數字",
@@ -29,6 +29,6 @@ export const validate: typeof en = {
   unknownKey: (key) => `\`${key}\` 不是此表格可用的鍵`,
   keyString: (key) => `\`${key}\` 必須是字串`,
   keyBoolean: (key) => `\`${key}\` 必須是 true 或 false`,
-  idsArray: '必須是陣列,例如 ["123456789012345678"]',
-  idsString: '伺服器 id 必須是字串,例如 ["123456789012345678"]',
+  idsArray: '必須是陣列，例如 ["123456789012345678"]',
+  idsString: '伺服器 id 必須是字串，例如 ["123456789012345678"]',
 };

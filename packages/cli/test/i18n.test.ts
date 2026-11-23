@@ -175,11 +175,11 @@ describe("rendering", () => {
     setLang("en");
     expect(await firstScreen()).toBe(
       [
-        "intro: Miyoria setup",
-        "What will this machine run? (Run init again to change this later.)",
-        "> Core, text only (no GPU required)",
-        "  Core with voice: speech recognition and synthesis on this machine (NVIDIA GPU required)",
-        "  Service node: provide services to a remote Core (for example, GPU time for singing)",
+        "intro: Miyoria setup. Press Ctrl+C at any time to cancel.",
+        "Choose a role for this machine",
+        "> Core node, text only (recommended; no GPU required)",
+        "  Core node with voice (speech recognition and synthesis here; requires an NVIDIA GPU)",
+        "  Service node: provides services, such as GPU singing, to a Core node on another machine",
       ].join("\n"),
     );
   });
@@ -188,11 +188,11 @@ describe("rendering", () => {
     setLang("zh-TW");
     expect(await firstScreen()).toBe(
       [
-        "intro: Miyoria 設定精靈",
-        "本機的用途?(之後可重新執行 init 變更)",
-        "> Core 節點,僅文字(不需要顯示卡)",
-        "  Core 節點加語音:本機同時執行語音辨識與語音合成(需要 NVIDIA 顯示卡)",
-        "  服務節點:為遠端的 Core 提供服務(例如以顯示卡執行翻唱)",
+        "intro: Miyoria 設定精靈。隨時可按 Ctrl+C 取消。",
+        "請選擇本機的用途",
+        "> Core 節點，僅文字（建議；不需要顯示卡）",
+        "  Core 節點（含語音）：於本機執行語音辨識與語音合成（需要 NVIDIA 顯示卡）",
+        "  服務節點：為另一台機器上的 Core 節點提供服務（例如以顯示卡執行翻唱）",
       ].join("\n"),
     );
   });
@@ -200,13 +200,15 @@ describe("rendering", () => {
   it("builds the help in the language active when it is asked for", () => {
     setLang("zh-TW");
     const zh = helpText(parseArgs([]).path);
-    expect(zh).toContain("用法: miyoria [選項] <指令>");
+    expect(zh).toContain("用法：miyoria [選項] <指令>");
     expect(zh).toContain("--lang <LANG>");
-    expect(zh).toContain("zh-TW、zh-HK、zh-Hant 使用繁體中文");
+    expect(zh).toContain("使用 `miyoria <指令> --help` 查看指令的詳細說明。");
+    expect(zh).toContain("zh-TW、zh-HK、zh-MO、zh-Hant 使用繁體中文");
     setLang("en");
     const en = helpText(parseArgs([]).path);
     expect(en).toContain("Usage: miyoria [options] <command>");
-    expect(en).toContain("Traditional Chinese");
+    expect(en).toContain("Use `miyoria <command> --help` for more about a command.");
+    expect(en).toContain("zh-Hant select Traditional Chinese");
   });
 
   it("words hostd's refusals from their codes", () => {
@@ -217,7 +219,7 @@ describe("rendering", () => {
     const missing = new HostRpcError(HOST_ERROR_CODE.NotInstalled, "sing 不是這台的服務");
     setLang("en");
     expect(rpcText(guarded, "sing")).toBe(
-      "sing is protected (singing in progress, live stream in progress). Try again later, or add --force.",
+      "sing is busy (singing in progress, live stream in progress). Try again when it is idle, or add --force.",
     );
     expect(rpcText(unknown, "sing")).toContain("could not be determined");
     expect(rpcText(missing, "sing")).toBe(
@@ -228,14 +230,14 @@ describe("rendering", () => {
     expect(rpcText(new HostRpcError(HOST_ERROR_CODE.Busy, "busy"), "sing")).toBe("busy");
     setLang("zh-TW");
     expect(rpcText(guarded, "sing")).toBe(
-      "sing 受保護:翻唱進行中、直播進行中。請稍後再試,或加上 --force。",
+      "sing 正在使用中（翻唱進行中、直播進行中）。請待其閒置後再試；若仍要執行，請加上 --force。",
     );
   });
 
   it("follows --lang and refuses an unknown language", async () => {
     expect(await main(["--lang", "zh-TW", "--help"])).toBe(0);
     expect(lang()).toBe("zh-TW");
-    expect(out.join("")).toContain("用法:");
+    expect(out.join("")).toContain("用法：");
     out.length = 0;
     expect(await main(["--help"])).toBe(0);
     expect(lang()).toBe("en"); // MIYORIA_LANG=en (vitest.config.ts)

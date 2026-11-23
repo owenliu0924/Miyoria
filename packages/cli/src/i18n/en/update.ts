@@ -7,7 +7,7 @@ export const update = {
   gitMissing: "git not found; skipping pull",
   dirtyTree:
     "The working tree has uncommitted changes; skipping git pull (use --no-pull to hide this message)",
-  pullFailed: "git pull --ff-only failed (diverged branch or no network?)",
+  pullFailed: "git pull --ff-only failed: the branch has diverged or the network is unavailable",
   pullAborted: "Pull failed; no builds were changed",
   pulled: "Updated to the latest commit",
   alreadyCurrent: "Already up to date",
@@ -66,9 +66,9 @@ export const update = {
   noHostToml:
     "No host.toml; skipping service sync and restarts (`miyoria add <service>` creates it)",
   servicesSection: "Services",
-  envsCurrent: "Environments match uv.lock, extras and service.toml",
+  envsCurrent: "Python environments match uv.lock, extras and service.toml",
   /** `services`: `common.list`. */
-  wouldSync: (services: string) => `Would sync environments: ${services}`,
+  wouldSync: (services: string) => `Would sync Python environments: ${services}`,
   wouldStopSyncStart: (services: string) =>
     `Would stop, sync and start again (guarded): ${services}`,
   wouldRestart: (services: string) => `Would restart (guarded): ${services}`,

@@ -62,7 +62,7 @@ export const cluster = {
   localNoCode: "--local does not take an invite code.",
   alreadyJoinedLocal: (file: string) =>
     `This machine has already joined Core (${file} exists). To join again, run \`miyoria host remove <name>\` first, then add --force.`,
-  joinedLocal: (name: string) => `This machine joined the local Core as ${name}`,
+  joinedLocal: (name: string) => `Joined the local Core as ${name}`,
   // ---- `up` links this machine to its own Core ----
   clause: {
     connected: "connected",
@@ -74,7 +74,7 @@ export const cluster = {
   },
   /** `clause`: one of `clause`. */
   selfLinked: (name: string, capabilities: string, clause: string) =>
-    `This machine is linked to the local Core (name ${name}, approved: ${capabilities}); ${clause}`,
+    `Linked this machine to the local Core (name ${name}, approved: ${capabilities}); ${clause}`,
   noCapabilities: "none",
   goneFromCore: (id: string) =>
     `Core no longer has this machine (${id}); it was not linked automatically. Run \`miyoria host join --local --force\` to join again.`,

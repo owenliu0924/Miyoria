@@ -457,7 +457,7 @@ describe("update: the services part", () => {
     const failures = await update.updateServices(config(), {}, updateDeps(uv), null);
     expect(failures).toBe(0);
     expect(uv.calls).toHaveLength(0);
-    expect(text()).toContain("Environments match uv.lock");
+    expect(text()).toContain("Python environments match uv.lock");
   });
 
   it("syncs_a_stale_service_that_is_not_running_and_leaves_the_rest", async () => {
@@ -481,7 +481,7 @@ describe("update: the services part", () => {
     await update.updateServices(config(), { dryRun: true }, updateDeps(uv), null);
     expect(uv.calls).toHaveLength(0);
     expect(text()).toContain("py");
-    expect(text()).toContain("Would sync environments");
+    expect(text()).toContain("Would sync Python environments");
   });
 
   it("skips_the_part_without_a_host_toml", async () => {

@@ -3,6 +3,16 @@
 export const remote = {
   noToken: "MIYORIA_API_TOKEN is not set. Run `miyoria init` to generate it.",
   usageTitle: "LLM usage (since start)",
+  /** Module states as `module list` and `status` show them. */
+  moduleStates: {
+    starting: "starting",
+    running: "running",
+    degraded: "degraded",
+    stopping: "stopping",
+    stopped: "stopped",
+    failed: "failed",
+    disabled: "disabled",
+  },
   /** `prompt`, `cached`, `completion`: token counts, formatted. */
   usage: (model: string, calls: number, prompt: string, cached: string, completion: string) =>
     `  ${model}: ${calls} ${calls === 1 ? "call" : "calls"}, input ${prompt} tokens (${cached} cached), output ${completion} tokens`,

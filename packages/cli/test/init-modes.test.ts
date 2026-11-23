@@ -85,7 +85,7 @@ describe("the first question", () => {
       processEnv: NO_ENV,
       command: "miyoria",
     });
-    expect(p.asked[0]).toContain("What will this machine run?");
+    expect(p.asked[0]).toContain("Choose a role for this machine");
     expect(INIT_MODES).toEqual(["text", "voice", "service"]);
   });
 
@@ -141,7 +141,7 @@ describe("text only", () => {
       command: "miyoria",
     });
     const outro = p.printed.at(-1) ?? "";
-    expect(outro).toMatch(/miyoria up\s+Start Core/);
+    expect(outro).toMatch(/ {2}Start Core:\n {4}miyoria up\n/);
     expect(outro).toContain("http://127.0.0.1:7878/");
     expect(outro).not.toContain("miyoria add");
   });
@@ -228,11 +228,12 @@ describe("services for somebody else's Core", () => {
     expect(existsSync(join(dir, "profiles"))).toBe(false);
     expect(Object.keys(hostToml().services).sort()).toEqual(["asr", "lyrics"]);
 
-    const choices = p.asked.find((q) => q.includes("Services to provide")) ?? "";
+    const choices =
+      p.asked.find((q) => q.includes("Choose the services this machine provides")) ?? "";
     expect(choices).toBeDefined();
     const outro = p.printed.at(-1) ?? "";
     expect(outro).toContain("miyoria add asr lyrics");
-    expect(outro).toContain("miyoria host join <address> --code <code>");
+    expect(outro).toContain("miyoria host join <core-url> --code <code>");
     expect(outro).toContain("miyoria host invite");
     expect(outro).toContain(`miyoria host approve ${hostToml().name}`);
   });
@@ -246,7 +247,7 @@ describe("services for somebody else's Core", () => {
       return original(message, options, initial);
     };
     await run(configPath(), p, { catalogRoot: dir, command: "miyoria" });
-    expect(labels.find((l) => l.startsWith("asr"))).toContain("[GPU required, about 1,500 MB]");
+    expect(labels.find((l) => l.startsWith("asr"))).toContain("[requires a GPU, about 1,500 MB]");
     expect(labels.find((l) => l.startsWith("lyrics"))).not.toContain("GPU");
     expect(labels.some((l) => l.startsWith("core") || l.startsWith("obs"))).toBe(false);
   });

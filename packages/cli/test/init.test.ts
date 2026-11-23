@@ -73,9 +73,9 @@ describe("init flow", () => {
     expect(generated).toEqual([]); // tokens must not be regenerated
     expect(ws.changes()).toEqual([]);
     expect(
-      p.asked.some((q) => q.startsWith("LLM API key") && q.includes("[set; press Enter to keep]")),
+      p.asked.some((q) => q.startsWith("LLM API key") && q.includes("(set; press Enter to keep)")),
     ).toBe(true);
-    expect(p.asked.some((q) => q.includes("Discord bot token") && q.includes("[set;"))).toBe(true);
+    expect(p.asked.some((q) => q.includes("Discord bot token") && q.includes("(set;"))).toBe(true);
   });
 
   it("changes_only_what_was_typed", async () => {

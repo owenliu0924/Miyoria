@@ -49,7 +49,7 @@ export const autostart = {
   registeredStatus: "Registered: hostd starts when this account logs in",
   runsIndented: (command: string) => `  Runs: ${command}`,
   stale:
-    "The registered entry differs from the current settings (was the folder or Node moved?). Run `miyoria host autostart on` again.",
+    "The registered entry differs from the current settings; the folder or Node may have moved. Run `miyoria host autostart on` again.",
   /** `mark`: `notRegistered`, dimmed. */
   notRegisteredStatus: (mark: string) =>
     `${mark}: hostd does not start at logon (\`miyoria host autostart on\`)`,

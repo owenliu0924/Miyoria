@@ -4,7 +4,7 @@ const int = (n: number): string => Math.round(n).toLocaleString("en-US");
 
 export const common: typeof en = {
   list: (items) => items.join("、"),
-  none: "(無)",
+  none: "（無）",
   yes: "是",
   no: "否",
   cancelled: "已取消",

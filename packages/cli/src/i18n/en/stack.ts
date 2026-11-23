@@ -167,7 +167,7 @@ export const stack = {
     serviceNotRunning: (state: string) => `Not running (${state})`,
     unknownToHostd: "unknown to hostd",
     upService: (service: string) => `Run \`miyoria up ${service}\``,
-    noAnswer: (url: string) => `${url} does not answer (not started?)`,
+    noAnswer: (url: string) => `${url} does not answer; the service may not be running`,
     upStart: "Start it with `miyoria up`",
     httpStatus: (url: string, status: number) => `${url} returned HTTP ${status}`,
     /** `models`: `common.list`. */
@@ -219,25 +219,9 @@ export const stack = {
   },
 
   roles: {
-    label: {
-      broadcast: "Streaming machine",
-      core: "Bot server",
-      inference: "GPU inference machine",
-    },
-    help: {
-      broadcast:
-        "Streaming machine: Discord voice and Go Live (voice node); VTube Studio, OBS and the overlay (stage)",
-      core: "Discord bot, all modules, the database and the admin panel (core); the end-of-turn worker (turn); Docker for the file sandbox",
-      inference:
-        "All AI models: speech recognition (asr), speech synthesis (tts) and singing (sing); all three must run on the same machine",
-    },
     /** `roles`, `services`: `common.list`. */
     unknownTarget: (word: string, roles: string, services: string) =>
       `Unknown target \`${word}\`. Roles: ${roles} (or all); services: ${services}`,
-    /** `services`: `common.list`. */
-    custom: (services: string) => `Custom: ${services}`,
-    noRoles: "(no roles selected)",
-    withLabel: (role: string, label: string) => `${role} (${label})`,
   },
 
   config: {

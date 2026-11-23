@@ -30,7 +30,7 @@ export const config = {
     llm: "LLM",
     discord: "Discord bot",
     oauth: "Admin panel sign-in (Discord OAuth)",
-    voice: "Voice (ASR / TTS workers, voice link)",
+    voice: "Voice (speech recognition and synthesis services, voice link)",
     stage: "Stage (VTube Studio / OBS)",
     database: "Database",
     owner: "Owner",

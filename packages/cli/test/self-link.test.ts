@@ -210,7 +210,7 @@ describe("up links this machine to its own Core", () => {
     expect(loaded().config.cluster?.url).toBe("ws://127.0.0.1:47880/cluster-link");
     expect(linkLines()).toHaveLength(1);
     expect(linkLines()[0]).toContain(
-      "This machine is linked to the local Core (name test-pc, approved: core)",
+      "Linked this machine to the local Core (name test-pc, approved: core)",
     );
     expect(text()).toContain("All services are ready");
   }, 30_000);

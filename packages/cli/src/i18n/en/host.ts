@@ -4,7 +4,7 @@ export const host = {
   /** A colon and a detail after a phrase: `stopped: <reason>`. */
   suffix: (detail: string) => `: ${detail}`,
   noHostToml: (file: string) =>
-    `${file} not found. Run \`miyoria host migrate\` to create it from [machine] and [stack] in miyoria.toml.`,
+    `${file} not found. Run \`miyoria init\` to create it, or \`miyoria host migrate\` to convert an older miyoria.toml.`,
   logFile: (file: string) => `    Log file: ${file}`,
   /** How long a start took: `1.2 s`. */
   elapsed: (seconds: string) => `${seconds} s`,
@@ -101,11 +101,11 @@ export const host = {
     port: "Port",
     pid: "PID",
     restarts: "Restarts",
-    since: "Since",
+    since: "Changed",
     reason: "Reason",
   },
   noHostTomlNote: (file: string) =>
-    `No ${file} (\`miyoria host migrate\` can create it from [machine] and [stack])`,
+    `${file} not found. Run \`miyoria init\` to create it, or \`miyoria host migrate\` to convert an older miyoria.toml.`,
   thisMachine: (name: string) => `This machine: ${name}`,
   notRunningStartHint: "hostd is not running (`miyoria up` starts it)",
   enabledInHostToml: (list: string) => `Services enabled in host.toml: ${list}`,
@@ -119,6 +119,18 @@ export const host = {
   noServices: "host.toml has no services",
   coreSkipped: (error: string) => `(Core not checked: ${error})`,
   coreNotAnswering: "Core's admin API is not responding",
+  /** hostd's service states, as the status table shows them; an unknown state prints as it is. */
+  states: {
+    stopped: "stopped",
+    starting: "starting",
+    running: "running",
+    stopping: "stopping",
+    backoff: "retrying",
+    failed: "failed",
+    external: "external",
+    foreign: "not managed",
+    disabled: "disabled",
+  },
   /** Refusals of hostd, worded here from their codes (`HOST_ERROR_CODE`). */
   rpc: {
     unknownService: (service: string) => `No service named ${service}`,
@@ -126,9 +138,9 @@ export const host = {
       `${service} is not a service of this machine (host.toml has no [services.${service}])`,
     /** `states`: the guarded states that are active, as a list. */
     guarded: (service: string, states: string) =>
-      `${service} is protected (${states}). Try again later, or add --force.`,
+      `${service} is busy (${states}). Try again when it is idle, or add --force.`,
     guardUnknown: (service: string) =>
-      `${service} is protected, and Core's current state could not be determined. Add --force to proceed anyway.`,
+      `${service} is protected, and Core's current state could not be determined. To proceed anyway, add --force.`,
     singing: "singing in progress",
     live: "live stream in progress",
   },
