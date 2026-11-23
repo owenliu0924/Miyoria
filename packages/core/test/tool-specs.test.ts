@@ -178,6 +178,8 @@ describe("the registry behind them", () => {
     expect(always).toEqual([
       "code_run",
       "delegate",
+      "delegate_list",
+      "delegate_read",
       "find_tools",
       "keep_note",
       "look",
@@ -190,6 +192,7 @@ describe("the registry behind them", () => {
       "remind_me",
       "say",
       "schedule",
+      "share",
       "skill",
       "watch_look",
       "watch_start",
@@ -197,6 +200,10 @@ describe("the registry behind them", () => {
       "web_image",
       "web_read",
       "web_search",
+      "workspace_export",
+      "workspace_list",
+      "workspace_read",
+      "workspace_write",
     ]);
     const next = tools.entries().filter((e) => e.next);
     expect(next.map((e) => e.name)).toEqual([

@@ -393,7 +393,7 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
     permission: null,
     tool: {
       name: "share",
-      meta: { effect: "say", speed: "instant", group: "files" },
+      meta: { effect: "say", speed: "instant", group: "files", core: true },
       description:
         "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。" +
         "artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。" +

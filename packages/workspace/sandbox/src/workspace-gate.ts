@@ -72,7 +72,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_list",
-      meta: { effect: "read", speed: "instant", group: "workspace" },
+      meta: { effect: "read", speed: "instant", group: "workspace", core: true },
       framed: true,
       readOnly: true,
       description:
@@ -116,7 +116,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_read",
-      meta: { effect: "read", speed: "instant", group: "workspace" },
+      meta: { effect: "read", speed: "instant", group: "workspace", core: true },
       framed: true,
       readOnly: true,
       description:
@@ -153,7 +153,7 @@ export function workspaceFileCapabilities(o: WorkspaceGateOptions): Capability<n
     permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_write",
-      meta: { effect: "act", speed: "instant", group: "workspace" },
+      meta: { effect: "act", speed: "instant", group: "workspace", core: true },
       description:
         "把文字存成工作區裡的檔案(沒有的資料夾會自動建立,同名的檔案會被取代;append=true 則接在後面)。" +
         `工作區有額度(檔案數、總大小、單檔大小),超過會失敗。一次最多 ${MAX_WRITE_CHARS} 個字。` +

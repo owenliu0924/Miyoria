@@ -1,6 +1,6 @@
-// Her tools for the sub-agents: `delegate` (core: it starts a job and answers at once with its id)
-// and `delegate_list`, `delegate_cancel`, `delegate_read` (found with `find_tools`). All are for
-// the new runner only (`next`), so the current turn's tool list does not change.
+// Her tools for the sub-agents: `delegate` (core: it starts a job and answers at once with its id),
+// `delegate_list` and `delegate_read` (core too), `delegate_cancel` (found with `find_tools`).
+// All are for the new runner only (`next`), so the current turn's tool list does not change.
 
 import {
   defineTool,
@@ -126,6 +126,7 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         ...common,
         effect: "read",
         speed: "instant",
+        core: true,
         readOnly: true,
       },
       async () => {
@@ -159,6 +160,7 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         ...common,
         effect: "read",
         speed: "instant",
+        core: true,
         readOnly: true,
         framed: true,
       },

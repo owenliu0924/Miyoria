@@ -56,7 +56,7 @@ export function workspaceExportCapability(
     permission: NODE,
     tool: {
       name: "workspace_export",
-      meta: { effect: "act", speed: "instant", group: "files" },
+      meta: { effect: "act", speed: "instant", group: "files", core: true },
       description:
         "把工作區裡的一個檔案存成產物,回給你它的 id;要把檔案交給人,就用這個 id 呼叫 share。" +
         "產物是給現在開口要的人做的,只在現在這個頻道或私訊裡看得到。" +
