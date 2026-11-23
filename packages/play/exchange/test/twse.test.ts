@@ -575,6 +575,17 @@ describe("the desk on Taiwan quotes", () => {
     expect(lineOf(r)).toMatchObject({ price: 2000, basis: "close", stale: true, open: true });
   });
 
+  it("asks for every Taiwan ticker while the market is open, viewed by anyone or not", async () => {
+    const { r, f } = await desk(() => answer());
+    known(r);
+    r.clock.at = NOW;
+    r.restart();
+    // Nobody holds, watches or has opened it.
+    await r.service.tick();
+    expect(f.calls.length).toBeGreaterThan(0);
+    expect(lineOf(r)).toMatchObject({ price: 2010, basis: "quote", stale: false });
+  });
+
   it("uses Yahoo alone when the setting says so, and keeps a JSON provider's tickers on it", async () => {
     const { r, f, y } = await desk(() => answer(), { quotes_tw_provider: "yahoo" });
     y.set("2330.TW", 2010, 2000, NOW - 30_000, true);
