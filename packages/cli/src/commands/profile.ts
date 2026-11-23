@@ -17,6 +17,7 @@ import {
 } from "@miyoria/core/light";
 import { type Config, characterOf } from "@miyoria/runtime/kernel";
 import { exampleConfig, exampleEnv, PACKAGE_ROOT } from "../assets.js";
+import { t } from "../i18n/index.js";
 import { capturedProcessEnv } from "../process-env.js";
 import { profileLine, selectProfile } from "../profile.js";
 import { TomlDocument } from "../toml-patch.js";
@@ -29,11 +30,17 @@ export class ProfileCommandError extends Error {
 /** A new profile's folder name: what `profile new` accepts. */
 const NEW_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
-const SOURCE: Record<ResolvedProfile["source"], string> = {
-  env: `環境變數 ${PROFILE_ENV}`,
-  config: "core.profile",
-  default: "預設",
-};
+/** How the running profile was chosen, in words. */
+function sourceOf(source: ResolvedProfile["source"]): string {
+  switch (source) {
+    case "env":
+      return t.profile.sourceEnv(PROFILE_ENV);
+    case "config":
+      return "core.profile";
+    case "default":
+      return t.profile.sourceDefault;
+  }
+}
 
 /**
  * The real environment, as Core sees it when it picks the profile: a `MIYORIA_PROFILE` written in
@@ -60,12 +67,12 @@ export async function list(installPath: string): Promise<void> {
   const running = selectProfile(installPath, realEnv());
   const folders = listProfileFolders(profilesDirOf(running));
   if (folders.length === 0) {
-    warn(`${profilesDirOf(running)} 裡沒有任何 profile`);
+    warn(t.profile.noProfiles(profilesDirOf(running)));
     return;
   }
   for (const f of folders) {
     const mark = f.id === running.id ? "●" : "○";
-    const where = f.own ? "自己的設定和資料" : "安裝資料夾的設定和資料";
+    const where = f.own ? t.profile.ownData : t.profile.installData;
     println(`${mark} ${f.id}  ${dim(where)}`);
   }
 }
@@ -74,24 +81,24 @@ export async function show(installPath: string): Promise<void> {
   const profile = selectProfile(installPath, realEnv());
   const config = runningConfig(profile);
   const character = characterOf(config?.section("character"));
-  println(`現在的角色:${profileLine(profile, character.name)}`);
-  println(`  選擇    ${SOURCE[profile.source]}`);
-  println(`  設定    ${profile.configPath}`);
+  println(t.profile.current(profileLine(profile, character.name)));
+  println(t.profile.showSource(sourceOf(profile.source)));
+  println(t.profile.showConfig(profile.configPath));
   const url = config === null ? DEFAULT_DATABASE_URL : databaseUrl(config);
-  println(`  資料    ${databaseDir(url, profile.baseDir) ?? url}`);
-  println(`  人格    ${profile.dir}`);
+  println(t.profile.showData(databaseDir(url, profile.baseDir) ?? url));
+  println(t.profile.showPersona(profile.dir));
 }
 
 /** Writes `core.profile` of the install's config (comments kept); runs from the next start. */
 export async function use(installPath: string, id: string): Promise<void> {
   if (!existsSync(installPath)) {
-    throw new ProfileCommandError(`找不到 ${installPath}:先執行 \`miyoria init\` 建立設定`);
+    throw new ProfileCommandError(t.profile.noInstall(installPath));
   }
-  if (!isProfileFolderName(id)) throw new ProfileCommandError(`「${id}」不是資料夾名稱`);
+  if (!isProfileFolderName(id)) throw new ProfileCommandError(t.profile.notFolderName(id));
   const current = selectProfile(installPath, {});
   const dir = join(profilesDirOf(current), id);
   if (!existsSync(join(dir, "profile.toml"))) {
-    throw new ProfileCommandError(`${dir} 不是 profile(沒有 profile.toml)`);
+    throw new ProfileCommandError(t.profile.notProfile(dir));
   }
   const text = readFileSync(installPath, "utf8");
   const doc = TomlDocument.parse(text);
@@ -99,11 +106,9 @@ export async function use(installPath: string, id: string): Promise<void> {
   const next = doc.toString();
   if (next !== text) writeFileSync(installPath, next, "utf8");
   const own = existsSync(join(dir, PROFILE_CONFIG_FILE));
-  ok(
-    `下次啟動 core 時跑 ${id}(${own ? "它自己的設定和資料" : `${installPath} 的設定和資料`});正在跑的 core 要重啟才換:\`miyoria restart core\``,
-  );
+  ok(t.profile.nextStart(id, own ? t.profile.dataOwn : t.profile.dataOf(installPath)));
   const env = realEnv()[PROFILE_ENV]?.trim();
-  if (env) warn(`環境變數 ${PROFILE_ENV}=${env} 會蓋過 core.profile`);
+  if (env) warn(t.profile.envOverrides(PROFILE_ENV, env));
 }
 
 export interface NewProfileOptions {
@@ -150,13 +155,13 @@ export async function create(
   options: NewProfileOptions = {},
 ): Promise<void> {
   if (!NEW_ID.test(id)) {
-    throw new ProfileCommandError(`「${id}」不能當 profile 名稱:用小寫英文、數字、- 或 _`);
+    throw new ProfileCommandError(t.profile.badId(id));
   }
   const name = options.name?.trim() || id;
   const current = selectProfile(installPath, {});
   const dir = join(profilesDirOf(current), id);
   if (existsSync(dir)) {
-    throw new ProfileCommandError(`${dir} 已經存在:不會覆寫任何 profile`);
+    throw new ProfileCommandError(t.profile.exists(dir));
   }
   const files = scaffold(id, name, dir, dirname(resolve(installPath)), options.templates);
   mkdirSync(join(dir, "persona", "examples"), { recursive: true });
@@ -165,10 +170,10 @@ export async function create(
     mkdirSync(dirname(join(dir, file)), { recursive: true });
     writeFileSync(join(dir, file), text, "utf8");
   }
-  ok(`建立了 ${dir}`);
-  println(`  人格    ${join(dir, "persona")}(identity.md、style.md 寫她是誰、怎麼說話)`);
-  println(`  設定    ${join(dir, PROFILE_CONFIG_FILE)}([character] 寫她的名字和簡稱)`);
-  println(`  密碼    ${join(dir, ".env")}(她自己的 LLM 金鑰、Discord token;不會用到別的角色的)`);
-  println(`  資料    ${join(dir, "data")}`);
-  println(`寫好之後:\`miyoria profile use ${id}\`,再重啟 core`);
+  ok(t.profile.created(dir));
+  println(t.profile.newPersona(join(dir, "persona")));
+  println(t.profile.newConfig(join(dir, PROFILE_CONFIG_FILE)));
+  println(t.profile.newSecrets(join(dir, ".env")));
+  println(t.profile.newData(join(dir, "data")));
+  println(t.profile.newNext(id));
 }

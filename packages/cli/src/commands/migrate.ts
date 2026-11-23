@@ -8,6 +8,7 @@ import { dirname, relative, resolve } from "node:path";
 import { parseHostConfig } from "@miyoria/hostd";
 import type { Config } from "@miyoria/runtime/kernel";
 import { isJsonObject } from "@miyoria/types";
+import { t } from "../i18n/index.js";
 import { parseBind, repoRoot, stackConfig, startOrder, WORKER_DEFAULTS } from "../stack/config.js";
 import { apiHealth, stageOverlayBind } from "../stack/plan.js";
 import { isLoopback } from "../stack/roles.js";
@@ -49,7 +50,7 @@ function folder(workspace: string, abs: string): string {
 
 export interface Migration {
   text: string;
-  /** What `host.toml` cannot say; written as comments too. */
+  /** What `host.toml` cannot say; written as comments too (file content: not translated). */
   notes: string[];
   /** Old-setup values the person must look at; printed after the notes, not written. */
   review: string[];
@@ -106,9 +107,7 @@ export function hostTomlFrom(
     }
     const sing = Object.keys(w.env).filter((k) => k.startsWith("SING_"));
     if (w.name === "sing" && sing.length > 0) {
-      review.push(
-        `sing:${sing.join("、")} 留在 [services.sing] env;顯卡仲裁(hostd 的 GPU arbiter)讀的就是這些,請確認值還對`,
-      );
+      review.push(t.migrate.reviewSing(t.common.list(sing)));
     }
     if (w.vramMb !== null) notes.push(`${w.name}:vram_mb = ${w.vramMb}`);
     if (w.startTimeoutSecs !== null) {
@@ -154,9 +153,7 @@ export function hostTomlFrom(
     return isJsonObject(section) && section[key] !== undefined;
   };
   for (const [module, key] of ADDRESSES) {
-    review.push(
-      `[modules.${module}] ${key}:舊設定${set(module, key) ? "有寫(沒有預設值了;原樣留在 miyoria.toml)" : "沒有寫"};這台的 hostd 跑這個服務時,不用寫任何位址`,
-    );
+    review.push(t.migrate.reviewAddress(module, key, set(module, key)));
   }
   return { text, notes, review };
 }
@@ -173,19 +170,17 @@ export async function migrate(target: HostTarget, options: MigrateOptions = {}):
   const name = options.name ?? (osHostname().toLowerCase() || "main");
   const { text, notes, review } = hostTomlFrom(config, target.configPath, target.hostToml, name);
   if (!options.dryRun && existsSync(target.hostToml) && !options.force) {
-    throw new HostCommandError(`${target.hostToml} 已經存在;要覆寫請加 --force`);
+    throw new HostCommandError(t.migrate.exists(target.hostToml));
   }
-  if (options.dryRun) section(`會寫入 ${target.hostToml}(dry-run,沒有寫入)`);
+  if (options.dryRun) section(t.migrate.dryRun(target.hostToml));
   else {
     writeFileSync(target.hostToml, text, "utf8");
-    ok(`已寫入 ${target.hostToml}`);
+    ok(t.migrate.wrote(target.hostToml));
   }
   for (const line of text.trimEnd().split("\n")) println(dim(`  ${line}`));
   if (/^\[services\.(voice-node|stage)\]/m.test(text)) {
-    note(
-      "voice node 和 stage 的連線位址與權杖,在這台電腦加入 Core 之後(`miyoria host join`)由 Core 經 hostd 給它們;還沒加入的電腦照舊用 voice node 自己的 .env",
-    );
+    note(t.migrate.linkNote);
   }
-  for (const n of notes) warn(`沒有帶過來:${n}`);
-  for (const r of review) warn(`請看:${r}`);
+  for (const n of notes) warn(t.migrate.notCarried(n));
+  for (const r of review) warn(t.migrate.review(r));
 }

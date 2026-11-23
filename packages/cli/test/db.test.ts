@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { SqliteStore } from "@miyoria/store";
 import { v4File } from "@miyoria/store/testing";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { COMMANDS, helpText, parseArgs } from "../src/cli.js";
+import { commands, helpText, parseArgs } from "../src/cli.js";
 import { archiveCommand, doctorCommand, importLinksCommand } from "../src/commands/db.js";
 import { setOutput } from "../src/ui.js";
 import { Scripted, Text } from "./scripted.js";
@@ -49,20 +49,20 @@ describe("miyoria db import-links", () => {
     const old = oldDatabase();
     const cfg = config("sqlite:data/core.db");
     await importLinksCommand(cfg, { from: old, dryRun: true });
-    expect(text()).toContain("試跑完成,沒有寫入任何東西");
+    expect(text()).toContain("Dry run complete; nothing was written");
     expect(text()).toContain("owen → owen#2");
     expect(existsSync(join(root, "data", "core.db"))).toBe(false);
 
     out = [];
     await importLinksCommand(cfg, { from: old, dryRun: false });
     expect(lastLines(7)).toEqual([
-      "數量",
-      "  人 4(另有 1 人只為了保存選擇而建立)、帳號 6",
-      "  handle:沿用 4、改名 1、新取 0",
-      "  選擇:隱私 1、語音同意 3",
-      "  紀念卡資料:有舊羈絆的 2 人、舊卡 3 張",
-      "  略過:已經匯入 0、沒有帳號 1、找不到人的帳號 1、沒人用的 handle 1",
-      `✓ 匯入完成:5 人、6 個帳號,5 筆 identity.imported 事件,建立了 ${slashed(join(root, "data", "core.db"))}`,
+      "Counts",
+      "  People: 4 (plus 1 created only to keep preferences), accounts: 6",
+      "  Handles: 4 kept, 1 renamed, 0 new",
+      "  Preferences: privacy 1, voice consent 3",
+      "  Keepsake card data: 2 people with an old bond level, 3 old cards",
+      "  Skipped: 0 already imported, 1 without accounts, 1 accounts without a person, 1 unused handles",
+      `✓ Import complete: 5 people, 6 accounts, 5 identity.imported events; created ${slashed(join(root, "data", "core.db"))}`,
     ]);
   });
 
@@ -84,15 +84,15 @@ describe("miyoria db archive", () => {
     const options = { file: undefined, dryRun: false, yes: false };
     await expect(archiveCommand(cfg, options, null)).rejects.toThrow("--yes");
     await archiveCommand(cfg, options, new Scripted([Text("yes")]));
-    expect(text()).toContain("已取消,沒有搬動任何檔案。");
+    expect(text()).toContain("Cancelled; no files were moved.");
     expect(readdirSync(join(root, "data")).sort()).toEqual(["miyoria.db"]);
 
     out = [];
     await archiveCommand(cfg, options, new Scripted([Text("archive")]));
     expect(readdirSync(join(root, "data")).sort()).toEqual(["archive"]);
-    expect(text()).toContain("沒有刪除任何檔案");
+    expect(text()).toContain("no files were deleted");
     const next = lastLines(7);
-    expect(next[0]).toBe("接下來");
+    expect(next[0]).toBe("Next steps");
     expect(next[1]).toBe(
       `  miyoria config set core.database_url sqlite:data/core.db -c ${slashed(cfg)}`,
     );
@@ -104,10 +104,10 @@ describe("miyoria db doctor", () => {
   it("describes a V4 file with what the guard says and what an import would bring", async () => {
     const old = oldDatabase();
     await doctorCommand(join(root, "none.toml"), old);
-    expect(text()).toContain("V4 的資料庫(schema_version 18)");
-    expect(text()).toContain("Core 會拒絕開啟這個檔案");
-    expect(text()).toContain("import-links 會帶過來的");
-    expect(text()).toContain("人 5、帳號 6、事件(log_events) 1");
+    expect(text()).toContain("V4 database (schema_version 18)");
+    expect(text()).toContain("Core will refuse to open this file");
+    expect(text()).toContain("What import-links would bring over");
+    expect(text()).toContain("People: 5, accounts: 6, events (log_events): 1");
   });
 
   it("lists a V5 file's servers, their members and the primary", async () => {
@@ -117,15 +117,15 @@ describe("miyoria db doctor", () => {
     store.places.seen("discord", "222", "第二");
     await store.close();
     await doctorCommand(join(root, "none.toml"), path);
-    expect(text()).toContain("伺服器");
-    expect(text()).toMatch(/魚缸 {2}.*discord:111.* {2}成員 0 {2}主要的/);
-    expect(text()).toMatch(/第二 {2}.*discord:222.* {2}成員 0\n/);
+    expect(text()).toContain("Servers");
+    expect(text()).toMatch(/魚缸 {2}.*discord:111.* {2}0 members {2}primary/);
+    expect(text()).toMatch(/第二 {2}.*discord:222.* {2}0 members\n/);
   });
 
   it("fails on a file that is not a database", async () => {
     const path = join(root, "notes.db");
     writeFileSync(path, "x".repeat(200));
-    await expect(doctorCommand(join(root, "none.toml"), path)).rejects.toThrow("1 項檢查沒通過");
+    await expect(doctorCommand(join(root, "none.toml"), path)).rejects.toThrow("1 check failed");
   });
 });
 
@@ -134,8 +134,9 @@ describe("the db commands", () => {
     const parsed = parseArgs(["db", "import-links", "--from", "x.db", "--dry-run"]);
     expect(parsed.path.map((c) => c.name)).toEqual(["miyoria", "db", "import-links"]);
     expect(parsed.ctx.options).toMatchObject({ from: "x.db", "dry-run": true });
-    const db = COMMANDS.subcommands?.find((c) => c.name === "db");
+    const root = commands();
+    const db = root.subcommands?.find((c) => c.name === "db");
     expect(db?.subcommands?.map((c) => c.name)).toEqual(["import-links", "archive", "doctor"]);
-    expect(helpText([COMMANDS, db as NonNullable<typeof db>])).toContain("import-links");
+    expect(helpText([root, db as NonNullable<typeof db>])).toContain("import-links");
   });
 });

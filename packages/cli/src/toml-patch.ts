@@ -15,6 +15,7 @@
 // * keys inside inline tables are edited by rewriting that inline table.
 
 import { parse as parseToml, TomlDate } from "smol-toml";
+import { t } from "./i18n/index.js";
 
 export type TomlValue =
   | string
@@ -53,10 +54,10 @@ export function parseKey(key: string): string[] {
       i++;
       for (;;) {
         const ch = s[i++];
-        if (ch === undefined) throw new TomlEditError(`\`${key}\`:引號沒有結束`);
+        if (ch === undefined) throw new TomlEditError(t.workspace.toml.unclosedQuote(key));
         if (ch === "\\") {
           const next = s[i++];
-          if (next === undefined) throw new TomlEditError(`\`${key}\`:引號沒有結束`);
+          if (next === undefined) throw new TomlEditError(t.workspace.toml.unclosedQuote(key));
           seg += next;
         } else if (ch === '"') break;
         else seg += ch;
@@ -65,7 +66,7 @@ export function parseKey(key: string): string[] {
       i++;
       for (;;) {
         const ch = s[i++];
-        if (ch === undefined) throw new TomlEditError(`\`${key}\`:引號沒有結束`);
+        if (ch === undefined) throw new TomlEditError(t.workspace.toml.unclosedQuote(key));
         if (ch === "'") break;
         seg += ch;
       }
@@ -74,20 +75,18 @@ export function parseKey(key: string): string[] {
         const ch = s[i] as string;
         if (ch === "." || /\s/.test(ch)) break;
         if (!isBareChar(ch)) {
-          throw new TomlEditError(
-            `\`${key}\`:鍵名裡有 \`${ch}\` 的部分要加引號,例如 modules."voice.link".bind`,
-          );
+          throw new TomlEditError(t.workspace.toml.quoteNeeded(key, ch));
         }
         seg += ch;
         i++;
       }
-      if (seg === "") throw new TomlEditError(`\`${key}\`:有空的鍵名`);
+      if (seg === "") throw new TomlEditError(t.workspace.toml.emptyPart(key));
     }
     segments.push(seg);
     ws();
     const next = s[i++];
     if (next === undefined) break;
-    if (next !== ".") throw new TomlEditError(`\`${key}\`:多了 \`${next}\``);
+    if (next !== ".") throw new TomlEditError(t.workspace.toml.unexpected(key, next));
   }
   return segments;
 }
@@ -505,10 +504,10 @@ export class TomlDocument {
    * goes through a non-table value.
    */
   set(path: readonly string[], value: TomlValue): void {
-    if (path.length === 0) throw new TomlEditError("鍵名是空的");
+    if (path.length === 0) throw new TomlEditError(t.workspace.toml.emptyKey);
     const shown = formatKey(path);
     if (this.#arrayTableAt(path)) {
-      throw new TomlEditError(`\`${shown}\` 在 [[陣列表格]] 裡,請用 \`miyoria config edit\` 修改`);
+      throw new TomlEditError(t.workspace.toml.inArrayTable(shown));
     }
     const { headers, entries } = this.#scan;
     const exact = entries.find((e) => !e.inArray && same(this.#fullPath(e), path));
@@ -519,7 +518,7 @@ export class TomlDocument {
     const isTablePath =
       headers.some((h) => startsWith(h.path, path)) ||
       entries.some((e) => !e.inArray && startsWith(this.#fullPath(e), path));
-    if (isTablePath) throw new TomlEditError(`\`${shown}\` 是表格,不能設成單一值`);
+    if (isTablePath) throw new TomlEditError(t.workspace.toml.isTable(shown));
 
     const outer = entries.find((e) => !e.inArray && startsWith(path, this.#fullPath(e)));
     if (outer) {
@@ -527,7 +526,7 @@ export class TomlDocument {
       const current = this.get(outerPath);
       if (!isTable(current)) {
         // Name the deepest existing non-table (like toml_edit).
-        throw new TomlEditError(`\`${formatKey(outerPath)}\` 是單一值,不是表格`);
+        throw new TomlEditError(t.workspace.toml.notTable(formatKey(outerPath)));
       }
       const rest = path.slice(outerPath.length);
       const updated = setIn(structuredClone(current), rest, value, outerPath);
@@ -688,13 +687,13 @@ function setIn(
       cur = next;
     } else {
       throw new TomlEditError(
-        `\`${formatKey([...shown, ...path.slice(0, i + 1)])}\` 是單一值,不是表格`,
+        t.workspace.toml.notTable(formatKey([...shown, ...path.slice(0, i + 1)])),
       );
     }
   }
   const lastSeg = path.at(-1) as string;
   if (isTable(cur[lastSeg])) {
-    throw new TomlEditError(`\`${formatKey([...shown, ...path])}\` 是表格,不能設成單一值`);
+    throw new TomlEditError(t.workspace.toml.isTable(formatKey([...shown, ...path])));
   }
   cur[lastSeg] = value;
   return root;

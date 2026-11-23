@@ -11,7 +11,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { memoryTables } from "../../memory/memory/src/tables.js";
 import { notesTables } from "../../memory/notes/src/store.js";
 import { rebuildState } from "../../memory/notes/src/switch.js";
-import { COMMANDS, helpText, parseArgs } from "../src/cli.js";
+import { commands, helpText, parseArgs } from "../src/cli.js";
 import { type RebuildModel, rebuildCommand } from "../src/commands/memory.js";
 import { setOutput } from "../src/ui.js";
 
@@ -82,10 +82,11 @@ const free = () => [] as string[];
 
 describe("miyoria memory rebuild", () => {
   it("is a command with its options", () => {
-    const memory = COMMANDS.subcommands?.find((c) => c.name === "memory");
+    const root = commands();
+    const memory = root.subcommands?.find((c) => c.name === "memory");
     const rebuild = memory?.subcommands?.find((c) => c.name === "rebuild");
     expect(rebuild).toBeDefined();
-    expect(helpText([COMMANDS, memory as never, rebuild as never])).toContain("--apply");
+    expect(helpText([root, memory as never, rebuild as never])).toContain("--apply");
     const parsed = parseArgs(["memory", "rebuild", "--apply", "--max-usd", "3", "x.db"]);
     expect(parsed.ctx.options).toMatchObject({ apply: true, "max-usd": "3" });
     expect(parsed.ctx.args).toEqual(["x.db"]);
@@ -94,12 +95,12 @@ describe("miyoria memory rebuild", () => {
   it("previews by default: sessions, segments, lines, tokens, and no model call", async () => {
     const m = model(null);
     await rebuildCommand(cfg, { ...options, file: db }, { model: async () => m.model, held: free });
-    expect(text()).toContain("對話(session):1");
-    expect(text()).toContain("聊天行數:5");
-    expect(text()).toContain("段落:2");
-    expect(text()).toMatch(/預估:輸入 [\d,]+ tokens、輸出 [\d,]+ tokens/);
-    expect(text()).toContain("價格未知");
-    expect(text()).toContain("加 --apply");
+    expect(text()).toContain("Sessions: 1");
+    expect(text()).toContain("Chat lines: 5");
+    expect(text()).toContain("Segments: 2");
+    expect(text()).toMatch(/Estimate: [\d,]+ input tokens, [\d,]+ output tokens/);
+    expect(text()).toContain("price unknown");
+    expect(text()).toContain("Add --apply");
     expect(m.asked).toHaveLength(0);
 
     out = [];
@@ -109,8 +110,8 @@ describe("miyoria memory rebuild", () => {
       { ...options, file: db },
       { model: async () => priced.model, held: free },
     );
-    expect(text()).toMatch(/預估費用:\$/);
-    expect(text()).not.toContain("價格未知");
+    expect(text()).toMatch(/Estimated cost: \$/);
+    expect(text()).not.toContain("price unknown");
     expect(priced.asked).toHaveLength(0);
 
     // A pass that thinks first: the output counts the thinking, and the line says so.
@@ -121,7 +122,7 @@ describe("miyoria memory rebuild", () => {
       { ...options, file: db },
       { model: async () => ({ ...thinking.model, reasoning: "medium" }), held: free },
     );
-    expect(text()).toMatch(/輸出 6,600 tokens.*含思考,推理 medium/);
+    expect(text()).toMatch(/6,600 output tokens.*includes reasoning, level medium/);
   });
 
   it("leaves out what is before --since", async () => {
@@ -130,14 +131,14 @@ describe("miyoria memory rebuild", () => {
       { ...options, file: db, since: "2026-11-20T12:30:00Z" },
       { model: async () => model(null).model, held: free },
     );
-    expect(text()).toContain("聊天行數:2");
+    expect(text()).toContain("Chat lines: 2");
   });
 
   it("refuses --apply while another process holds the database, unless --force", async () => {
     const m = model(PRICE);
     const seams = { model: async () => m.model, held: (files: readonly string[]) => [...files] };
     await expect(rebuildCommand(cfg, { ...options, file: db, apply: true }, seams)).rejects.toThrow(
-      "資料庫還開著",
+      "open in another process",
     );
     expect(m.asked).toHaveLength(0);
     await rebuildCommand(cfg, { ...options, file: db, apply: true, force: true }, seams);
@@ -185,7 +186,7 @@ describe("miyoria memory rebuild", () => {
     );
     expect(second.asked).toHaveLength(1);
     expect(text()).toContain("done");
-    expect(text()).toContain("記憶以筆記為主");
+    expect(text()).toContain("memory is based on notes");
     expect((await state())?.done_at).not.toBeNull();
 
     out = [];
@@ -194,7 +195,7 @@ describe("miyoria memory rebuild", () => {
       { ...options, file: db },
       { model: async () => model(PRICE).model, held: free },
     );
-    expect(text()).toContain("段落:0");
+    expect(text()).toContain("Segments: 0");
   });
 
   it("ends --apply with vectors for her documents' lines, and says how many wait", async () => {
@@ -224,22 +225,22 @@ describe("miyoria memory rebuild", () => {
 
     const withEmbedder = { ...seams, embedder: async () => embedder };
     await rebuildCommand(cfg, { ...options, file: db }, withEmbedder);
-    expect(text()).toContain("向量:1 行還沒有(共 1 行)");
+    expect(text()).toContain("Vectors: 1 of 1 lines without a vector");
     expect(embedded).toEqual([]);
 
     out = [];
     await rebuildCommand(cfg, { ...options, file: db, apply: true }, withEmbedder);
-    expect(text()).toContain("向量:補上 1 行");
+    expect(text()).toContain("Vectors: 1 added");
     expect(embedded).toContain("車站前的拉麵很好吃");
 
     out = [];
     await rebuildCommand(cfg, { ...options, file: db }, withEmbedder);
-    expect(text()).toContain("向量:0 行還沒有(共 1 行)");
+    expect(text()).toContain("Vectors: 0 of 1 lines without a vector");
 
     // `[memory.embedding]` not set: the report says so.
     out = [];
     await rebuildCommand(cfg, { ...options, file: db }, seams);
-    expect(text()).toContain("向量:沒開");
+    expect(text()).toContain("Vectors: off");
   });
 
   it("rejects a bad --since and a bad --max-usd", async () => {

@@ -1,6 +1,7 @@
 // `${VAR}` / `${VAR:-default}` references in `miyoria.toml` strings, and masking of secrets.
 
 import { isEnvName } from "./env-file.js";
+import { t } from "./i18n/index.js";
 
 export interface EnvRef {
   name: string;
@@ -45,11 +46,11 @@ export function sourceLabel(source: Source): string {
     case "dotenv":
       return ".env";
     case "process":
-      return "環境變數";
+      return t.workspace.sources.process;
     case "default":
-      return "預設值";
+      return t.workspace.sources.default;
     case "unset":
-      return "未設定";
+      return t.workspace.sources.unset;
   }
 }
 
@@ -95,7 +96,7 @@ export function isSecret(name: string): boolean {
 /** `••••` plus the last four characters of long values. */
 export function mask(value: string): string {
   const chars = [...value];
-  if (chars.length === 0) return "(空)";
+  if (chars.length === 0) return t.workspace.empty;
   if (chars.length <= 8) return "••••";
   return `••••${chars.slice(-4).join("")}`;
 }

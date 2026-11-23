@@ -4,6 +4,7 @@
 // describes the key (`validate.ts`); the labels, choices and defaults here are the prompts'.
 
 import { randomBytes } from "node:crypto";
+import { t } from "./i18n/index.js";
 import type { Prompter } from "./prompt.js";
 import { maskUrl, singleRef } from "./refs.js";
 import {
@@ -92,7 +93,7 @@ export function checkOf(field: Field, ctx: SchemaContext | null): Check | undefi
   const format = formatCheck(field.kind, described);
   if (path === null || !described) return format;
   return (s) => {
-    if (field.kind.type === "port" && !/^\d+$/.test(s.trim())) return "port 要是整數";
+    if (field.kind.type === "port" && !/^\d+$/.test(s.trim())) return t.settings.portInteger;
     return validate.schemaCheck(ctx, path, typed(field.kind, s)) ?? format?.(s) ?? null;
   };
 }
@@ -102,64 +103,73 @@ export function checkOf(field: Field, ctx: SchemaContext | null): Check | undefi
  * `.env` (`env` names the variable to use when the key has no `${VAR}` reference yet).
  */
 export interface Field {
-  label: string;
+  /** Read when shown: a getter for the fields defined at the top level. */
+  readonly label: string;
   key: string | null;
   env: string | null;
   kind: Kind;
   default: string;
 }
 
+/** A label, or the function giving it in the active language. */
+export type Label = string | (() => string);
+
+function labelled(label: Label, field: Omit<Field, "label">): Field {
+  const get = typeof label === "string" ? () => label : label;
+  return Object.defineProperty({ ...field }, "label", { get, enumerable: true }) as Field;
+}
+
 export function tomlField(
-  label: string,
+  label: Label,
   key: string,
   kind: Kind,
-  extra: Partial<Field> = {},
+  extra: Partial<Omit<Field, "label">> = {},
 ): Field {
-  return { label, key, env: null, kind, default: "", ...extra };
+  return labelled(label, { key, env: null, kind, default: "", ...extra });
 }
 
-export function envField(label: string, env: string, kind: Kind): Field {
-  return { label, key: null, env, kind, default: "" };
+export function envField(label: Label, env: string, kind: Kind): Field {
+  return labelled(label, { key: null, env, kind, default: "" });
 }
 
-export const PROFILE = tomlField("角色(profiles/ 底下的資料夾名稱)", "core.profile", TEXT);
+const f = () => t.settings.fields;
+
+export const PROFILE = tomlField(() => f().profile, "core.profile", TEXT);
 export const DATABASE = tomlField("DATABASE_URL", "core.database_url", TEXT, {
   env: "DATABASE_URL",
 });
 export const DISCORD_TOKEN = tomlField(
-  "Discord bot token(可留空,之後再填)",
+  () => f().discordToken,
   'modules."platform.discord.bot".token',
   SECRET,
   { env: "DISCORD_BOT_TOKEN" },
 );
 export const DISCORD_GUILDS = tomlField(
-  "立即生效的伺服器 id(逗號分隔,空 = 全域)",
+  () => f().discordGuilds,
   'modules."platform.discord.bot".command_guilds',
   { type: "ids" },
 );
-export const OWNER = envField("你的 Discord user id(擁有者權限,可留空)", "MIYORIA_OWNER_ID", {
-  type: "id",
-});
+export const OWNER = envField(() => f().owner, "MIYORIA_OWNER_ID", { type: "id" });
 export const OAUTH_CLIENT_ID = tomlField(
-  "Discord OAuth client id(Developer Portal → OAuth2)",
+  () => f().oauthClientId,
   "modules.api.discord_oauth.client_id",
   { type: "id" },
   { env: "DISCORD_CLIENT_ID" },
 );
 export const OAUTH_SECRET = tomlField(
-  "Discord OAuth client secret",
+  () => f().oauthSecret,
   "modules.api.discord_oauth.client_secret",
   SECRET,
   { env: "DISCORD_CLIENT_SECRET" },
 );
 export const OAUTH_REDIRECT = tomlField(
-  "OAuth redirect URI",
+  () => f().oauthRedirect,
   "modules.api.discord_oauth.redirect_uri",
   URL_KIND,
   { default: DEFAULT_REDIRECT_URI },
 );
 export const API_BIND = tomlField(
-  "Admin API / 面板位址",
+  () => f().apiBind,
   "modules.api.bind",
   { type: "bind" },
   {
@@ -168,15 +178,15 @@ export const API_BIND = tomlField(
 );
 
 export const VOICE: readonly Field[] = [
-  tomlField("ASR worker URL", "speech.asr.local.url", URL_KIND, {
+  tomlField(() => f().asrUrl, "speech.asr.local.url", URL_KIND, {
     default: "http://127.0.0.1:8003",
   }),
-  tomlField("TTS worker URL", "speech.tts.local.url", URL_KIND, {
+  tomlField(() => f().ttsUrl, "speech.tts.local.url", URL_KIND, {
     default: "http://127.0.0.1:8002",
   }),
-  tomlField("TTS 聲音", "speech.tts.local.voice", TEXT),
+  tomlField(() => f().ttsVoice, "speech.tts.local.voice", TEXT),
   tomlField(
-    "語音節點連入位址(voice link)",
+    () => f().voiceLink,
     'modules."voice.link".bind',
     { type: "bind" },
     {
@@ -184,7 +194,7 @@ export const VOICE: readonly Field[] = [
     },
   ),
   tomlField(
-    "收音同意",
+    () => f().consent,
     "modules.voice.consent",
     { type: "choice", options: ["opt-out", "opt-in"] },
     {
@@ -192,7 +202,7 @@ export const VOICE: readonly Field[] = [
     },
   ),
   tomlField(
-    "有人插話時",
+    () => f().bargeIn,
     "modules.voice.barge_in",
     // `[modules.voice] barge_in`'s own values and default (`selective`).
     { type: "choice", options: ["selective", "stop", "ignore"] },
@@ -204,7 +214,7 @@ export const VOICE: readonly Field[] = [
 
 export const STAGE: readonly Field[] = [
   tomlField(
-    "Stage 節點連到 core 的位址",
+    () => f().stageCoreUrl,
     "stage.core_url",
     { type: "ws_url" },
     {
@@ -212,18 +222,18 @@ export const STAGE: readonly Field[] = [
     },
   ),
   tomlField(
-    "core 等 Stage 節點連入的位址",
+    () => f().stageBind,
     'modules."stage.link".bind',
     { type: "bind" },
     {
       default: "127.0.0.1:7882",
     },
   ),
-  tomlField("VTube Studio", "stage.vts.enabled", { type: "bool" }, { default: "true" }),
-  tomlField("OBS", "stage.obs.enabled", { type: "bool" }, { default: "false" }),
-  tomlField("OBS 主機", "stage.obs.host", TEXT, { default: "127.0.0.1" }),
-  tomlField("OBS WebSocket port", "stage.obs.port", { type: "port" }, { default: "4455" }),
-  tomlField("OBS WebSocket 密碼", "stage.obs.password", SECRET, { env: "OBS_PASSWORD" }),
+  tomlField(() => f().vts, "stage.vts.enabled", { type: "bool" }, { default: "true" }),
+  tomlField(() => f().obs, "stage.obs.enabled", { type: "bool" }, { default: "false" }),
+  tomlField(() => f().obsHost, "stage.obs.host", TEXT, { default: "127.0.0.1" }),
+  tomlField(() => f().obsPort, "stage.obs.port", { type: "port" }, { default: "4455" }),
+  tomlField(() => f().obsPassword, "stage.obs.password", SECRET, { env: "OBS_PASSWORD" }),
 ];
 
 /** Every static field, for `miyoria config set` on known secret keys. */
@@ -244,15 +254,13 @@ export function allFields(): Field[] {
 }
 
 /** `[variable, keys referencing it, what uses it]`. */
-export const TOKENS: ReadonlyArray<readonly [string, readonly string[], string]> = [
-  ["MIYORIA_API_TOKEN", ["modules.api.token"], "Admin API(CLI、面板)"],
-  [
-    "VOICE_LINK_TOKEN",
-    ['modules."voice.link".token'],
-    "語音節點(apps/voice-node 的 .env 要填同一個)",
-  ],
-  ["STAGE_LINK_TOKEN", ['modules."stage.link".token', "stage.token"], "Stage 節點"],
-];
+export function tokens(): ReadonlyArray<readonly [string, readonly string[], string]> {
+  return [
+    ["MIYORIA_API_TOKEN", ["modules.api.token"], t.settings.tokens.api],
+    ["VOICE_LINK_TOKEN", ['modules."voice.link".token'], t.settings.tokens.voice],
+    ["STAGE_LINK_TOKEN", ['modules."stage.link".token', "stage.token"], t.settings.tokens.stage],
+  ];
+}
 
 /** 52 random hex characters (208 bits); only authenticates local nodes / the CLI. */
 export function newToken(): string {
@@ -283,14 +291,15 @@ export function current(ws: Workspace, field: Field): Current {
 export function fieldLabel(ws: Workspace, field: Field): string {
   const cur = current(ws, field);
   let shown: string;
-  if (field.kind.type === "secret") shown = cur.value === "" ? "未設定" : "已設定";
-  else if (cur.value === "") shown = field.default === "" ? "未設定" : `預設 ${field.default}`;
+  if (field.kind.type === "secret") shown = cur.value === "" ? t.common.notSet : t.common.set;
+  else if (cur.value === "")
+    shown = field.default === "" ? t.common.notSet : t.settings.defaultIs(field.default);
   else shown = maskUrl(cur.value);
   return `${field.label}  [${shown}]`;
 }
 
 export function secretLabel(label: string, isSet: boolean): string {
-  return isSet ? `${label} [已設定(按 Enter 保留)]` : `${label} [未設定,可留空]`;
+  return isSet ? t.settings.secretSet(label) : t.settings.secretUnset(label);
 }
 
 /**
@@ -352,7 +361,7 @@ function typed(kind: Kind, s: string): TomlValue {
       return s === "true";
     case "port": {
       // The range is checked before (the schema's, or `validate.port`); this is the parse.
-      if (!/^\d+$/.test(s.trim())) throw new Error("port 要是整數");
+      if (!/^\d+$/.test(s.trim())) throw new Error(t.settings.portInteger);
       return BigInt(s.trim());
     }
     case "ids":
@@ -372,7 +381,7 @@ export async function editFields(
   fields: readonly Field[],
 ): Promise<void> {
   const labels = fields.map((f) => fieldLabel(ws, f));
-  const picked = await p.multiSelect("要修改哪些?", labels, []);
+  const picked = await p.multiSelect(t.settings.whichToChange, labels, []);
   for (const i of picked) await ask(p, ws, fields[i] as Field);
 }
 
@@ -384,7 +393,7 @@ export async function profileStep(p: Prompter, ws: Workspace): Promise<boolean> 
   const cur = current(ws, PROFILE).value;
   if (cur !== "" && !ids.includes(cur)) ids.push(cur);
   const start = Math.max(ids.indexOf(cur), 0);
-  const picked = ids[await p.select("角色", ids, start)] as string;
+  const picked = ids[await p.select(t.settings.profile, ids, start)] as string;
   if (picked === cur) return false;
   apply(ws, PROFILE, picked);
   return true;
@@ -472,7 +481,7 @@ function setModelRef(ws: Workspace, old: string | null, next: string): void {
 /** The API key field of the provider the chat purpose uses. */
 export function llmApiKeyField(ws: Workspace): Field {
   const st = llmState(ws);
-  return tomlField("LLM API key", providerKey(st.provider, "api_key"), SECRET, {
+  return tomlField(() => t.settings.fields.llmApiKey, providerKey(st.provider, "api_key"), SECRET, {
     env: apiKeyVar(st.kind),
   });
 }
@@ -500,12 +509,12 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
     const keyMissing =
       current(ws, tomlField("", providerKey(st.provider, "api_key"), SECRET)).value === "";
     const labels = [
-      `服務類型  [${st.kind}]`,
-      `Base URL  [${baseNow}]`,
-      `API key  [${keyMissing ? "未設定" : "已設定"}]`,
-      `模型  [${st.model}]`,
+      t.settings.llmKindLabel(st.kind),
+      t.settings.llmBaseLabel(baseNow),
+      t.settings.llmKeyLabel(keyMissing ? t.common.notSet : t.common.set),
+      t.settings.llmModelLabel(st.model),
     ];
-    const chosen = await p.multiSelect("要修改哪些?", labels, []);
+    const chosen = await p.multiSelect(t.settings.whichToChange, labels, []);
     todo = [0, 1, 2, 3].map((i) => chosen.includes(i));
   }
 
@@ -514,7 +523,7 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
   if (todo[0]) {
     const options = [...LLM_KINDS];
     const start = Math.max(options.indexOf(kind as (typeof LLM_KINDS)[number]), 0);
-    const nextKind = options[await p.select("LLM API 類型", options, start)] as string;
+    const nextKind = options[await p.select(t.settings.llmKind, options, start)] as string;
     if (nextKind !== kind) {
       provider = switchKind(ws, provider, nextKind);
       kind = nextKind;
@@ -529,7 +538,7 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
 
   if (todo[1]) {
     const [key, def] = baseField(provider, kind);
-    const field = tomlField("LLM base URL", key, URL_KIND, { default: def });
+    const field = tomlField(t.settings.fields.llmBaseUrl, key, URL_KIND, { default: def });
     const suggest = kind !== st.kind && provider === st.provider && def !== "";
     if (suggest) {
       // Same provider, new kind: offer the new kind's endpoint.
@@ -541,7 +550,7 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
   }
 
   if (todo[2]) {
-    const field = tomlField("LLM API key", providerKey(provider, "api_key"), SECRET, {
+    const field = tomlField(t.settings.fields.llmApiKey, providerKey(provider, "api_key"), SECRET, {
       env: apiKeyVar(kind),
     });
     await ask(p, ws, field);
@@ -549,7 +558,7 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
 
   if (todo[3]) {
     const def = provider === st.provider && st.model !== "" ? st.model : defaultModel(kind);
-    const model = await p.text("模型 id(會寫進角色的 profile.toml)", def, validate.modelId);
+    const model = await p.text(t.settings.model, def, validate.modelId);
     const nextRef = `${provider}:${model.trim()}`;
     if (st.reference !== nextRef) setModelRef(ws, st.reference, nextRef);
   }
@@ -559,8 +568,8 @@ export async function llmStep(p: Prompter, ws: Workspace, pick: boolean): Promis
 
 export async function databaseStep(p: Prompter, ws: Workspace): Promise<void> {
   const cur = current(ws, DATABASE).value;
-  const options = ["SQLite(推薦,存在 data/miyoria.db)", "memory://(不保存,先試用)"];
-  const pick = await p.select("資料庫", options, cur === "memory://" ? 1 : 0);
+  const options = [t.settings.databaseSqlite, t.settings.databaseMemory];
+  const pick = await p.select(t.settings.database, options, cur === "memory://" ? 1 : 0);
   const next = pick === 1 ? "memory://" : cur.startsWith("sqlite:") ? cur : DEFAULT_SQLITE_URL;
   if (next !== cur) apply(ws, DATABASE, next);
 }
@@ -577,11 +586,11 @@ export async function oauthStep(p: Prompter, ws: Workspace, init: boolean): Prom
   const fields = [OAUTH_CLIENT_ID, OAUTH_SECRET, OAUTH_REDIRECT, API_BIND];
   let todo: number[];
   if (init) {
-    if (!(await p.confirm("設定管理面板的 Discord 登入(OAuth)?", configured))) return;
+    if (!(await p.confirm(t.settings.oauthConfirm, configured))) return;
     todo = [0, 1, 2];
   } else {
     todo = await p.multiSelect(
-      "要修改哪些?",
+      t.settings.whichToChange,
       fields.map((f) => fieldLabel(ws, f)),
       [],
     );
@@ -592,11 +601,9 @@ export async function oauthStep(p: Prompter, ws: Workspace, init: boolean): Prom
     apply(ws, OAUTH_REDIRECT, DEFAULT_REDIRECT_URI);
   }
   if (oauthReady(ws)) {
-    p.note(
-      `Discord Developer Portal → OAuth2 → Redirects 要加上 ${current(ws, OAUTH_REDIRECT).value}`,
-    );
+    p.note(t.settings.oauthRedirectNote(current(ws, OAUTH_REDIRECT).value));
   } else if (ws.item("modules.api.discord_oauth") !== undefined) {
-    p.warn("client id、client secret、redirect URI 都填了才會開啟 Discord 登入");
+    p.warn(t.settings.oauthIncomplete);
   }
 }
 
@@ -608,7 +615,7 @@ export async function oauthStep(p: Prompter, ws: Workspace, init: boolean): Prom
  */
 export function ensureTokens(ws: Workspace): string[] {
   const generated: string[] = [];
-  for (const [variable, keys] of TOKENS) {
+  for (const [variable, keys] of tokens()) {
     for (const key of keys) {
       if (ws.item(key) === undefined) ws.set(key, `\${${variable}:-}`);
     }

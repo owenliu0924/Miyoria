@@ -31,22 +31,26 @@ describe("argument parsing", () => {
       checkArgs(p.path, p.ctx);
       return p;
     };
-    expect(() => run(["module", "enable"])).toThrow("缺少參數 <id>");
-    expect(() => run(["config", "get", "--env", "X", "core.log"])).toThrow(/不能和/);
-    expect(() => run(["status", "extra"])).toThrow(/多了參數/);
+    expect(() => run(["module", "enable"])).toThrow("Missing argument <id>");
+    expect(() => run(["config", "get", "--env", "X", "core.log"])).toThrow(
+      /cannot be combined with/,
+    );
+    expect(() => run(["status", "extra"])).toThrow(/Unexpected argument/);
     expect(run(["events", "agent.*", "platform.*"]).ctx.args).toEqual(["agent.*", "platform.*"]);
     expect(run(["decisions", "-l", "5"]).ctx.options.limit).toBe("5");
-    expect(run(["chat"]).ctx.options.name).toBe("你");
+    expect(run(["chat"]).ctx.options.name).toBe("You");
   });
 
-  it("prints_traditional_chinese_help", () => {
+  it("prints_help", () => {
     const root = helpText(parseArgs([]).path);
-    expect(root).toContain("用法:");
-    expect(root).toContain("指令:");
+    expect(root).toContain("Usage:");
+    expect(root).toContain("Commands:");
+    expect(root).toContain("--lang <LANG>");
+    expect(root).toContain("MIYORIA_LANG");
     expect(root).toContain("init");
     expect(root).toContain("-V, --version");
     const set = helpText(parseArgs(["config", "set"]).path);
-    expect(set).toContain("<KEY 值>...");
+    expect(set).toContain("<key value>...");
     expect(set).toContain("--env <NAME>");
     expect(set).not.toContain("--version");
   });
@@ -65,14 +69,14 @@ describe("main", () => {
   it("exit_codes_and_helpful_errors", async () => {
     capture();
     expect(await main(["--help"])).toBe(0);
-    expect(out.join("")).toContain("Miyoria — AI waifu 框架");
+    expect(out.join("")).toContain("Miyoria — AI VTuber framework");
     expect(await main(["--version"])).toBe(0);
     expect(out.join("")).toMatch(/miyoria \d+\.\d+\.\d+/);
     expect(await main(["nope"])).toBe(2);
-    expect(out.join("")).toContain("未知的指令 `nope`");
+    expect(out.join("")).toContain("Unknown command `nope`");
     out.length = 0;
     expect(await main(["status", "-c", "does/not/exist/miyoria.toml"])).toBe(1);
-    expect(out.join("")).toContain("先執行 `miyoria init`");
+    expect(out.join("")).toContain("Run `miyoria init` first");
   });
 });
 

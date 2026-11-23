@@ -20,8 +20,8 @@ describe("dotted keys", () => {
     expect(key('modules."voice.link".bind')).toEqual(["modules", "voice.link", "bind"]);
     expect(key("a.'b.c' . d")).toEqual(["a", "b.c", "d"]);
     expect(() => parseKey("a..b")).toThrow(TomlEditError);
-    expect(() => parseKey("modules.voice/link")).toThrow(/加引號/);
-    expect(() => parseKey('a."open')).toThrow(/引號沒有結束/);
+    expect(() => parseKey("modules.voice/link")).toThrow(/must be quoted/);
+    expect(() => parseKey('a."open')).toThrow(/unclosed quote/);
     expect(formatKey(key('modules."platform.discord.bot".token'))).toBe(
       'modules."platform.discord.bot".token',
     );
@@ -84,8 +84,12 @@ describe("TomlDocument.set", () => {
     expect(d.unset(key("core.nope"))).toBe(false);
     expect(d.unset(key("nope.nope"))).toBe(false);
     expect(d.toString()).not.toContain("database_url");
-    expect(() => d.set(key("core.profile.x"), 1n)).toThrow("`core.profile` 是單一值,不是表格");
-    expect(() => d.set(key("llm.providers"), 1n)).toThrow("`llm.providers` 是表格,不能設成單一值");
+    expect(() => d.set(key("core.profile.x"), 1n)).toThrow(
+      "`core.profile` is a single value, not a table",
+    );
+    expect(() => d.set(key("llm.providers"), 1n)).toThrow(
+      "`llm.providers` is a table and cannot be set to a single value",
+    );
   });
 
   it("replaces_multi_line_values_and_keeps_the_comment", () => {
@@ -129,7 +133,7 @@ describe("TomlDocument.set", () => {
 
   it("refuses_array_of_tables_edits", () => {
     const d = TomlDocument.parse('[[mcp.servers]]\nname = "a"\n');
-    expect(() => d.set(["mcp", "servers", "name"], "b")).toThrow(/陣列表格/);
+    expect(() => d.set(["mcp", "servers", "name"], "b")).toThrow(/array of tables/);
   });
 
   it("replaces_strings_in_purpose_arrays", () => {

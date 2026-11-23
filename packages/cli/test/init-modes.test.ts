@@ -85,7 +85,7 @@ describe("the first question", () => {
       processEnv: NO_ENV,
       command: "miyoria",
     });
-    expect(p.asked[0]).toContain("這台電腦要做什麼");
+    expect(p.asked[0]).toContain("What will this machine run?");
     expect(INIT_MODES).toEqual(["text", "voice", "service"]);
   });
 
@@ -93,7 +93,7 @@ describe("the first question", () => {
     const parsed = parseArgs(["init", "--mode", "service", "--services", "asr,tts", "-y"]);
     expect(parsed.ctx.options).toMatchObject({ mode: "service", services: "asr,tts", yes: true });
     // The flags that wrote [machine] and addresses are gone.
-    expect(() => parseArgs(["init", "--roles", "core"])).toThrow(/未知的選項/);
+    expect(() => parseArgs(["init", "--roles", "core"])).toThrow(/Unknown option/);
   });
 });
 
@@ -141,7 +141,7 @@ describe("text only", () => {
       command: "miyoria",
     });
     const outro = p.printed.at(-1) ?? "";
-    expect(outro).toMatch(/miyoria up\s+啟動她/);
+    expect(outro).toMatch(/miyoria up\s+Start Core/);
     expect(outro).toContain("http://127.0.0.1:7878/");
     expect(outro).not.toContain("miyoria add");
   });
@@ -228,11 +228,11 @@ describe("services for somebody else's Core", () => {
     expect(existsSync(join(dir, "profiles"))).toBe(false);
     expect(Object.keys(hostToml().services).sort()).toEqual(["asr", "lyrics"]);
 
-    const choices = p.asked.find((q) => q.includes("提供哪些服務")) ?? "";
+    const choices = p.asked.find((q) => q.includes("Services to provide")) ?? "";
     expect(choices).toBeDefined();
     const outro = p.printed.at(-1) ?? "";
     expect(outro).toContain("miyoria add asr lyrics");
-    expect(outro).toContain("miyoria host join <位址> --code <代碼>");
+    expect(outro).toContain("miyoria host join <address> --code <code>");
     expect(outro).toContain("miyoria host invite");
     expect(outro).toContain(`miyoria host approve ${hostToml().name}`);
   });
@@ -246,8 +246,8 @@ describe("services for somebody else's Core", () => {
       return original(message, options, initial);
     };
     await run(configPath(), p, { catalogRoot: dir, command: "miyoria" });
-    expect(labels.find((l) => l.startsWith("asr"))).toContain("需要顯卡,約 1500 MB");
-    expect(labels.find((l) => l.startsWith("lyrics"))).not.toContain("顯卡");
+    expect(labels.find((l) => l.startsWith("asr"))).toContain("[GPU required, about 1,500 MB]");
+    expect(labels.find((l) => l.startsWith("lyrics"))).not.toContain("GPU");
     expect(labels.some((l) => l.startsWith("core") || l.startsWith("obs"))).toBe(false);
   });
 
@@ -266,7 +266,7 @@ describe("services for somebody else's Core", () => {
         services: ["nope"],
         catalogRoot: dir,
       }),
-    ).rejects.toThrow(/沒有可以提供的服務 nope/);
+    ).rejects.toThrow(/Cannot provide nope/);
     rmSync(join(dir, "host.toml"));
     await expect(
       run(configPath(), new DefaultsPrompter(quiet), {
@@ -274,7 +274,7 @@ describe("services for somebody else's Core", () => {
         mode: "service",
         catalogRoot: dir,
       }),
-    ).rejects.toThrow(/沒有選任何服務/);
+    ).rejects.toThrow(/No services selected/);
     expect(existsSync(join(dir, "host.toml"))).toBe(false);
   });
 
@@ -287,7 +287,7 @@ describe("services for somebody else's Core", () => {
   it("explains an empty catalog", async () => {
     rmSync(join(dir, "workers"), { recursive: true });
     await expect(run(configPath(), new Scripted([Pick(2)]), { catalogRoot: dir })).rejects.toThrow(
-      /找不到服務目錄/,
+      /No service catalog found/,
     );
   });
 });
