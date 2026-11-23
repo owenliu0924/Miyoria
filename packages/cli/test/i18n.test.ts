@@ -179,7 +179,7 @@ describe("rendering", () => {
         "What will this machine run? (Run init again to change this later.)",
         "> Core, text only (no GPU required)",
         "  Core with voice: speech recognition and synthesis on this machine (NVIDIA GPU required)",
-        "  Worker node: provide services to a remote Core (for example, GPU time for singing)",
+        "  Service node: provide services to a remote Core (for example, GPU time for singing)",
       ].join("\n"),
     );
   });
@@ -192,7 +192,7 @@ describe("rendering", () => {
         "本機的用途?(之後可重新執行 init 變更)",
         "> Core 節點,僅文字(不需要顯示卡)",
         "  Core 節點加語音:本機同時執行語音辨識與語音合成(需要 NVIDIA 顯示卡)",
-        "  工作節點:為遠端的 Core 提供服務(例如以顯示卡執行翻唱)",
+        "  服務節點:為遠端的 Core 提供服務(例如以顯示卡執行翻唱)",
       ].join("\n"),
     );
   });

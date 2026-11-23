@@ -41,8 +41,8 @@ export const cli: typeof en = {
   },
   cmd: {
     init: {
-      help: "設定精靈:先詢問本機的用途(Core 節點僅文字、Core 節點加語音,或工作節點),再設定 LLM、Discord、資料庫與管理面板登入。可重複執行,按 Enter 保留目前的值",
-      mode: "本機的用途,略過第一個問題:text(Core 節點僅文字,預設)、voice(Core 節點加語音)、service(工作節點)",
+      help: "設定精靈:先詢問本機的用途(Core 節點僅文字、Core 節點加語音,或服務節點),再設定 LLM、Discord、資料庫與管理面板登入。可重複執行,按 Enter 保留目前的值",
+      mode: "本機的用途,略過第一個問題:text(Core 節點僅文字,預設)、voice(Core 節點加語音)、service(服務節點)",
       services: "搭配 --mode service:本機提供的服務(以逗號分隔,例如 asr,tts);省略則以互動方式選擇",
       notTty:
         "在腳本中請使用 `miyoria init --yes`(全部採用預設值)或 `miyoria config set <key> <value>`",
@@ -125,7 +125,7 @@ export const cli: typeof en = {
       gc: "列出沒有任何已啟用服務使用的模型,確認後刪除(-y 直接刪除)",
     },
     hostd: {
-      help: "在此終端機執行本機的 hostd(`up` 會在背景啟動它);按 Ctrl+C 停止全部服務",
+      help: "在此終端機執行本機的主機常駐程式(hostd);`up` 則會在背景啟動它。按 Ctrl+C 停止全部服務",
       start:
         "hostd 啟動後立即啟動 host.toml 啟用的全部服務(登入時自動啟動即使用此選項;未加則只啟動 hostd 本身)",
     },

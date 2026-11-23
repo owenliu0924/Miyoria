@@ -6,7 +6,7 @@ export const init: typeof en = {
   modes: {
     text: "Core 節點,僅文字(不需要顯示卡)",
     voice: "Core 節點加語音:本機同時執行語音辨識與語音合成(需要 NVIDIA 顯示卡)",
-    service: "工作節點:為遠端的 Core 提供服務(例如以顯示卡執行翻唱)",
+    service: "服務節點:為遠端的 Core 提供服務(例如以顯示卡執行翻唱)",
   },
   sections: {
     profile: "角色",

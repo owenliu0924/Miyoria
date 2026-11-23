@@ -10,7 +10,9 @@
 //
 // Terms, the same in every message (English / Traditional Chinese):
 //   this machine / 本機            host (any machine known to a Core: `miyoria host`) / 主機
-//   Core node (runs Core) / Core 節點   worker node (serves a remote Core) / 工作節點
+//   Core node (runs Core) / Core 節點   service node (serves a remote Core) / 服務節點
+//   host daemon (hostd), on every machine / 主機常駐程式(hostd); "worker" only names the speech
+//   and singing service processes that carry it (ASR worker URL, `[stack.workers]`)
 //   the character / 角色 (not "she" in setup text)   profile / 角色
 //   service / 服務   capability / 能力   invite code / 邀請碼   approve / 核准   revoke / 撤銷
 //   admin API / 管理 API   admin panel / 管理面板   GPU / 顯示卡   VRAM / VRAM

@@ -43,8 +43,8 @@ export const cli = {
   },
   cmd: {
     init: {
-      help: "Setup wizard: first asks what this machine runs (Core with text only, Core with voice, or a worker node), then the LLM, Discord, database and admin panel sign-in. Safe to re-run; press Enter to keep current values",
-      mode: "What this machine runs, skipping the first question: text (Core, text only; default), voice (Core with voice) or service (worker node)",
+      help: "Setup wizard: first asks what this machine runs (Core with text only, Core with voice, or a service node), then the LLM, Discord, database and admin panel sign-in. Safe to re-run; press Enter to keep current values",
+      mode: "What this machine runs, skipping the first question: text (Core, text only; default), voice (Core with voice) or service (service node)",
       services:
         "With --mode service: the services this machine provides (comma-separated, e.g. asr,tts); omit to choose interactively",
       notTty:
@@ -130,7 +130,7 @@ export const cli = {
       gc: "List models no enabled service uses and delete them after confirmation (-y deletes without asking)",
     },
     hostd: {
-      help: "Run this machine's hostd in this terminal (`up` starts it in the background); Ctrl+C stops all services",
+      help: "Run this machine's host daemon (hostd) in this terminal (`up` starts it in the background); Ctrl+C stops all services",
       start:
         "Start every service enabled in host.toml once hostd is up (autostart at login uses this; without it, only hostd itself starts)",
     },

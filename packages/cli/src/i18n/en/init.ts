@@ -7,7 +7,7 @@ export const init = {
     text: "Core, text only (no GPU required)",
     voice:
       "Core with voice: speech recognition and synthesis on this machine (NVIDIA GPU required)",
-    service: "Worker node: provide services to a remote Core (for example, GPU time for singing)",
+    service: "Service node: provide services to a remote Core (for example, GPU time for singing)",
   },
   sections: {
     profile: "Profile",
@@ -36,7 +36,7 @@ export const init = {
     "  Add the voice node (the client that joins Discord voice channels) and singing later; see docs/SETUP.md.",
   nextDoctor: "Check for anything missing",
   nextConfig: "Change individual settings later",
-  // ---- worker node ----
+  // ---- service node ----
   serviceOnly: (file: string) =>
     `Only ${file} is written. This machine does not run Core, so the LLM, Discord and database questions are skipped.`,
   noCatalog:

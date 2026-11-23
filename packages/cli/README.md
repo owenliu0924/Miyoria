@@ -1,7 +1,8 @@
 # miyoria
 
 The command-line tool of Miyoria, an AI VTuber framework for Discord. It sets up a machine,
-starts and supervises its services, and manages the configuration.
+starts its services through the host daemon (hostd) that supervises them, and manages the
+configuration.
 
 ```sh
 pnpm dlx miyoria@latest init   # setup wizard
@@ -15,7 +16,7 @@ miyoria --help                 # every command
 - **Core, text only**: the Core node, which runs the character (no GPU required).
 - **Core with voice**: the Core node with speech recognition and synthesis on the same machine
   (NVIDIA GPU required).
-- **Worker node**: provides services, such as GPU time for singing, to a Core on another machine.
+- **Service node**: provides services, such as GPU time for singing, to a Core on another machine.
   It joins that Core with `miyoria host join` and an invite code from `miyoria host invite`.
 
 ## Language

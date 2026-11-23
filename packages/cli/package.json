@@ -1,7 +1,7 @@
 {
   "name": "miyoria",
   "version": "0.1.0",
-  "description": "Miyoria — AI waifu 框架:`pnpm dlx miyoria@latest init` 建立設定,`miyoria core` 啟動",
+  "description": "Miyoria — AI VTuber framework: `pnpm dlx miyoria@latest init` creates the configuration, `miyoria core` starts it",
   "type": "module",
   "engines": {
     "node": ">=24"
