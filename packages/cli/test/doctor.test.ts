@@ -135,15 +135,15 @@ describe("doctor: the services of host.toml", () => {
     const uv = fakeUv();
     await install(uv);
     await run({ deps: deepDeps() });
-    expect(text()).toMatch(/✓ py\s+環境/);
-    expect(text()).toContain("這台電腦需要的都齊了");
+    expect(text()).toMatch(/✓ py\s+Python environment/);
+    expect(text()).toContain("Everything this machine needs is in place");
   });
 
   it("fails_for_a_missing_environment_and_names_the_command", async () => {
     service();
     write("host.toml", 'name = "pc"\n[services.py]\n');
-    await expect(run({ deps: deepDeps() })).rejects.toThrow(/1 項檢查失敗/);
-    expect(text()).toMatch(/✗ py\s+環境\s+還沒建立/);
+    await expect(run({ deps: deepDeps() })).rejects.toThrow(/1 check failed/);
+    expect(text()).toMatch(/✗ py\s+Python environment\s+Not created/);
     expect(text()).toContain("miyoria add py");
   });
 
@@ -162,36 +162,36 @@ describe("doctor: the services of host.toml", () => {
     });
     await install(fakeUv());
     await run({ deps: deepDeps() });
-    expect(text()).toMatch(/! py\s+手動項目\s+缺 a voice sample/);
+    expect(text()).toMatch(/! py\s+Manual item\s+Missing a voice sample/);
     write("data/voice.wav", "x");
     out.length = 0;
     await run({ deps: deepDeps() });
-    expect(text()).toMatch(/✓ py\s+手動項目/);
+    expect(text()).toMatch(/✓ py\s+Manual item/);
   });
 
   it("fails_for_a_system_program_that_is_not_on_path_and_says_how_to_get_it", async () => {
     service({ install: 'system = ["ffmpeg"]' });
     await install(fakeUv());
     await expect(run({ deps: deepDeps() })).rejects.toThrow();
-    expect(text()).toMatch(/✗ py\s+系統程式 ffmpeg/);
+    expect(text()).toMatch(/✗ py\s+System program ffmpeg/);
     expect(text()).toMatch(/ffmpeg/);
   });
 
   it("notes_a_missing_host_toml_and_a_user_managed_environment_is_left_alone", async () => {
     service();
     await doctor.run(config(), { stackOnly: true, deps: deepDeps() }).catch(() => undefined);
-    expect(text()).toContain("沒有");
+    expect(text()).toContain("service checks skipped");
     expect(text()).toContain("host.toml");
 
     write("host.toml", 'name = "pc"\n[services.py]\npython = "envs/mine"\n');
     await expect(run({ deps: deepDeps() })).rejects.toThrow();
-    expect(text()).toContain("host.toml 指定的環境不存在");
+    expect(text()).toContain("The environment set in host.toml does not exist");
     const python = pythonIn(join(dir, "envs", "mine"), "linux");
     mkdirSync(dirname(python), { recursive: true });
     writeFileSync(python, "");
     out.length = 0;
     await run({ deps: deepDeps() });
-    expect(text()).toContain("Miyoria 不會動它");
+    expect(text()).toContain("Miyoria leaves it unchanged");
   });
 
   it("reports_hostd_not_running_and_a_cluster_without_a_host_key", async () => {
@@ -203,14 +203,14 @@ describe("doctor: the services of host.toml", () => {
     const python = pythonIn(join(dir, "envs", "mine"), "linux");
     mkdirSync(dirname(python), { recursive: true });
     writeFileSync(python, "");
-    await expect(run({ deps: deepDeps() })).rejects.toThrow(/1 項/);
-    expect(text()).toMatch(/! hostd\s+沒有在執行/);
+    await expect(run({ deps: deepDeps() })).rejects.toThrow(/1 check/);
+    expect(text()).toMatch(/! hostd\s+Not running/);
     expect(text()).toMatch(/✗ host\.key/);
     expect(text()).toContain("miyoria host join");
     write("data/host/host.key", JSON.stringify({ id: "h1", key: "k" }));
     out.length = 0;
     await run({ deps: deepDeps() });
-    expect(text()).toMatch(/✓ host\.key\s+已加入 Core/);
+    expect(text()).toMatch(/✓ host\.key\s+Joined Core/);
   });
 });
 
@@ -233,7 +233,7 @@ describe("doctor --deep", () => {
     const call = calls.find((c) => c.args[0] === "-c");
     expect(call?.file).toBe(pythonIn(join(dir, "data", "host", "envs", "py"), "linux"));
     expect(call?.args[1]).toBe("import torch, numpy");
-    expect(text()).toMatch(/✓ py\s+匯入檢查\s+torch、numpy/);
+    expect(text()).toMatch(/✓ py\s+Import check\s+torch, numpy/);
 
     out.length = 0;
     const broken: Runner = async (_file, args) =>
@@ -241,7 +241,7 @@ describe("doctor --deep", () => {
         ? { ...NONE, code: 1, stderr: "Traceback\nModuleNotFoundError: No module named 'torch'\n" }
         : NONE;
     await deep({ deps: deepDeps({ run: broken }) });
-    expect(text()).toMatch(/✗ py\s+匯入檢查\s+import torch, numpy 失敗:ModuleNotFoundError/);
+    expect(text()).toMatch(/✗ py\s+Import check\s+import torch, numpy failed: ModuleNotFoundError/);
   });
 
   it("does_not_import_without_deep", async () => {
@@ -264,19 +264,19 @@ describe("doctor --deep", () => {
     await install(fakeUv());
     write("host.toml", 'name = "pc"\n[gpu]\nreserve_mb = 4000\n[services.py]\n');
     await deep({ deps: deepDeps({ run: smi(12288) }) });
-    expect(text()).toMatch(/! 顯存預算.*超過 8288 MB 的 92%/);
+    expect(text()).toMatch(/! VRAM budget.*over 92% of 8,288 MB/);
 
     out.length = 0;
     write("host.toml", 'name = "pc"\n[services.py]\n');
     await deep({ deps: deepDeps({ run: smi(12288) }) });
-    expect(text()).toMatch(/✓ 顯存預算.*保留 0 MB.*尖峰 9000 MB/);
+    expect(text()).toMatch(/✓ VRAM budget.*reserved 0 MB.*peak 9,000 MB/);
   });
 
   it("counts_an_on_demand_service_at_its_own_work_not_on_top_of_what_it_evicts", async () => {
     service({ top: GPU(7500, "on_demand") });
     await install(fakeUv());
     await deep({ deps: deepDeps({ run: smi(12288) }) });
-    expect(text()).toMatch(/✓ 顯存預算.*尖峰 7500 MB/);
+    expect(text()).toMatch(/✓ VRAM budget.*peak 7,500 MB/);
   });
 
   it("skips_the_gpu_budget_without_nvidia_smi", async () => {
@@ -284,19 +284,19 @@ describe("doctor --deep", () => {
     await install(fakeUv());
     const noSmi: Runner = async (cmd) => (cmd === "nvidia-smi" ? { ...NONE, missing: true } : NONE);
     await deep({ deps: deepDeps({ run: noSmi }) });
-    expect(text()).toContain("沒有 nvidia-smi");
+    expect(text()).toContain("nvidia-smi not found");
   });
 
   it("tells_a_foreign_listener_from_a_windows_reservation_on_the_services_port", async () => {
     service({ port: 18123 });
     await install(fakeUv());
     await deep({ deps: deepDeps({ probe: async () => "in-use" }) });
-    expect(text()).toMatch(/! 埠 18123\(py\)\s+已有程式在聽/);
+    expect(text()).toMatch(/! Port 18123 \(py\)\s+Another program is listening/);
     expect(text()).toContain("netstat");
 
     out.length = 0;
     await deep({ deps: deepDeps({ probe: async () => "denied" }) });
-    expect(text()).toMatch(/✗ 埠 18123\(py\)/);
+    expect(text()).toMatch(/✗ Port 18123 \(py\)/);
     expect(text()).toContain("winnat");
   });
 
@@ -307,8 +307,8 @@ describe("doctor --deep", () => {
     await deep({
       deps: deepDeps({ probe: async () => "in-use", fetchImpl: answer }),
     });
-    expect(text()).toMatch(/✓ 埠 18123\(py\)\s+已有 Miyoria 服務在聽/);
-    expect(text()).toMatch(/hostd\s+沒有在執行/);
+    expect(text()).toMatch(/✓ Port 18123 \(py\)\s+A Miyoria service is listening/);
+    expect(text()).toMatch(/hostd\s+Not running/);
   });
 });
 
@@ -326,8 +326,8 @@ describe("doctor --fix", () => {
     });
     expect(uv.calls).toHaveLength(1);
     expect(existsSync(pythonIn(join(dir, "data", "host", "envs", "py"), "linux"))).toBe(true);
-    expect(text()).toContain("修復 py");
-    expect(text()).toMatch(/✓ py\s+環境/);
+    expect(text()).toContain("Fixing py");
+    expect(text()).toMatch(/✓ py\s+Python environment/);
   });
 
   it("does_nothing_when_nothing_needs_fixing", async () => {
@@ -341,6 +341,6 @@ describe("doctor --fix", () => {
       services: { install: { runner: uv.runner, platform: "linux", env: { PATH: bin() } } },
     });
     expect(uv.calls).toHaveLength(0);
-    expect(text()).toContain("沒有可以自動修的項目");
+    expect(text()).toContain("Nothing to fix automatically");
   });
 });

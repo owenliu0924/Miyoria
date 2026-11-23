@@ -15,6 +15,7 @@ import {
   readHostKey,
 } from "@miyoria/hostd";
 import { isJsonObject } from "@miyoria/types";
+import { t } from "../i18n/index.js";
 import { type DeepDeps, type Finding, fail, type Listener, ok, ping, warn } from "./checks.js";
 
 export interface HostCheckInput {
@@ -42,104 +43,75 @@ function installDeps(input: HostCheckInput): InstallDeps {
 
 /** Platform, runtime, system programs, manual items, files and models of one service. */
 export async function serviceChecks(input: HostCheckInput): Promise<Finding[]> {
+  const m = t.stack.hostChecks;
   const findings: Finding[] = [];
   for (const entry of input.entries) {
     const inspected = inspectService(entry, input.host, installDeps(input));
     if (!inspected.platformOk) {
       findings.push(
         fail(
-          name(entry, "平台"),
-          `只支援 ${entry.descriptor.platforms.join("、")};這台是 ${input.deps.platform}`,
-          [`從 host.toml 拿掉 [services.${entry.name}],或用 \`miyoria remove ${entry.name}\``],
+          name(entry, m.platform),
+          m.platformUnsupported(t.common.list(entry.descriptor.platforms), input.deps.platform),
+          [m.platformFix(entry.name)],
         ),
       );
       continue;
     }
     const rt = inspected.runtime;
+    const env = name(entry, m.environment);
     if (rt.kind === "managed") {
       const state = rt.state;
       if (state?.state === "ready") {
         findings.push(
-          ok(
-            name(entry, "環境"),
-            `${rt.dir}${rt.extras.length > 0 ? `(extras:${rt.extras.join("、")})` : ""}`,
-          ),
+          ok(env, m.envReady(rt.dir ?? "", rt.extras.length > 0 ? t.common.list(rt.extras) : null)),
         );
         if (input.deep) findings.push(...(await importCheck(input, entry, rt.dir ?? "")));
       } else if (state?.state === "stale") {
-        findings.push(
-          fail(
-            name(entry, "環境"),
-            `和目前的 uv.lock、extras 或 service.toml 不一致:${state.reasons.join("、")}`,
-            ["`miyoria doctor --fix` 或 `miyoria update` 重新同步"],
-          ),
-        );
+        findings.push(fail(env, m.envStale(t.common.list(state.reasons)), [m.envStaleFix]));
       } else {
-        findings.push(
-          fail(name(entry, "環境"), `還沒建立:${rt.dir}`, [
-            `\`miyoria add ${entry.name}\`(或 \`miyoria doctor --fix\`)建立;沒有 uv 的話先安裝 uv`,
-          ]),
-        );
+        findings.push(fail(env, m.envMissing(rt.dir ?? ""), [m.envMissingFix(entry.name)]));
       }
     } else if (rt.kind === "user-managed") {
       if (rt.pythonExists) {
-        findings.push(ok(name(entry, "環境"), `用 host.toml 指定的 ${rt.dir}(Miyoria 不會動它)`));
+        findings.push(ok(env, m.envUserManaged(rt.dir ?? "")));
         if (input.deep) findings.push(...(await importCheck(input, entry, rt.dir ?? "")));
       } else {
-        findings.push(
-          fail(name(entry, "環境"), `host.toml 指定的環境不存在:${rt.dir}`, [
-            `建立它,或從 [services.${entry.name}] 拿掉 python 讓 Miyoria 自己建`,
-          ]),
-        );
+        findings.push(fail(env, m.envUserMissing(rt.dir ?? ""), [m.envUserMissingFix(entry.name)]));
       }
     }
     for (const s of inspected.system) {
+      const what = name(entry, m.systemProgram(s.program));
       findings.push(
-        s.found
-          ? ok(name(entry, `系統程式 ${s.program}`), "在 PATH 上")
-          : fail(
-              name(entry, `系統程式 ${s.program}`),
-              "不在 PATH 上",
-              s.hint ? [s.hint] : undefined,
-            ),
+        s.found ? ok(what, m.onPath) : fail(what, m.notOnPath, s.hint ? [s.hint] : undefined),
       );
     }
-    for (const m of inspected.manual) {
+    for (const item of inspected.manual) {
+      const what = name(entry, m.manualItem);
       findings.push(
-        m.present
-          ? ok(name(entry, "手動項目"), `${m.what}:${m.path}`)
-          : warn(name(entry, "手動項目"), `缺 ${m.what}:${m.path}`, [
-              "Miyoria 不會替你下載;自己放好後再 `miyoria doctor`",
-            ]),
+        item.present
+          ? ok(what, m.manualPresent(item.what, item.path))
+          : warn(what, m.manualMissing(item.what, item.path), [m.manualFix]),
       );
     }
     // `install.files`: hashed when new or changed since the last check (`--deep`: every one).
     for (const f of await checkServiceFiles(entry, input.host, input.deep ? "deep" : "cached")) {
-      const what = name(entry, `檔案 ${f.path}`);
+      const what = name(entry, m.file(f.path));
       if (f.state === "verified" || f.state === "present") {
-        findings.push(ok(what, `已驗證(${formatBytes(f.size)})`));
+        findings.push(ok(what, m.fileVerified(formatBytes(f.size))));
       } else if (f.state === "wrong") {
-        findings.push(
-          fail(what, `不對:${f.detail ?? "檢查碼不符"}`, [
-            "`miyoria doctor --fix` 重新下載(會先列出來問你)",
-          ]),
-        );
+        findings.push(fail(what, m.fileWrong(f.detail ?? m.checksumMismatch), [m.fileRefetch]));
       } else {
-        const detail = `缺 ${f.what}(${formatBytes(f.size)},授權 ${f.licence},來自 ${f.source})`;
-        const fix = [
-          "`miyoria doctor --fix` 下載(會先列出來問你)",
-          ...(f.optional ? [] : ["缺這個檔案 hostd 不會啟動這個服務"]),
-        ];
+        const detail = m.fileMissing(f.what, formatBytes(f.size), f.licence, f.source);
+        const fix = [m.fileFetch, ...(f.optional ? [] : [m.fileRequired])];
         findings.push(f.optional ? warn(what, detail, fix) : fail(what, detail, fix));
       }
     }
-    for (const m of inspected.models) {
+    for (const model of inspected.models) {
+      const what = name(entry, m.model(model.repo));
       findings.push(
-        m.present
-          ? ok(name(entry, `模型 ${m.repo}`), "在快取裡")
-          : warn(name(entry, `模型 ${m.repo}`), "還沒下載(第一次啟動會自己下載,但會等很久)", [
-              `\`miyoria models pull ${entry.name}\``,
-            ]),
+        model.present
+          ? ok(what, m.modelCached)
+          : warn(what, m.modelMissing, [m.modelPull(entry.name)]),
       );
     }
   }
@@ -158,8 +130,9 @@ async function importCheck(
   const result = await input.deps.run(python, ["-c", `import ${modules.join(", ")}`], {
     timeoutMs: 180_000,
   });
-  const what = name(entry, "匯入檢查");
-  if (result.code === 0) return [ok(what, modules.join("、"))];
+  const m = t.stack.hostChecks;
+  const what = name(entry, m.importCheck);
+  if (result.code === 0) return [ok(what, t.common.list(modules))];
   const last = `${result.stderr}\n${result.stdout}`
     .split(/\r?\n/)
     .map((l) => l.trim())
@@ -169,11 +142,9 @@ async function importCheck(
     fail(
       what,
       result.missing
-        ? `找不到 ${python}`
-        : `import ${modules.join(", ")} 失敗${result.timedOut ? "(逾時)" : ""}${last ? `:${last}` : ""}`,
-      [
-        `\`miyoria doctor --fix\` 重新同步;還是不行就 \`miyoria remove ${entry.name}\` 再 \`miyoria add ${entry.name}\``,
-      ],
+        ? m.pythonMissing(python)
+        : m.importFailed(modules.join(", "), result.timedOut, last ? last : null),
+      [m.importFix(entry.name)],
     ),
   ];
 }
@@ -181,13 +152,14 @@ async function importCheck(
 // ---- hostd, the control link, the host key -----------------------------------------------
 
 export function hostdChecks(input: HostCheckInput): Finding[] {
+  const m = t.stack.hostChecks;
   const findings: Finding[] = [];
   const { daemon, host } = input;
   if (daemon === null) {
-    findings.push(warn("hostd", "沒有在執行", ["`miyoria up` 啟動它(`miyoria status` 看狀態)"]));
+    findings.push(warn("hostd", m.hostdNotRunning, [m.hostdStart]));
   } else {
     const running = daemon.services.filter((s) => s.state === "running").length;
-    findings.push(ok("hostd", `${daemon.name},${running} / ${daemon.services.length} 個服務在跑`));
+    findings.push(ok("hostd", m.hostdRunning(daemon.name, running, daemon.services.length)));
   }
   if (host.config.cluster === undefined) return findings;
   let key: ReturnType<typeof readHostKey> = null;
@@ -197,38 +169,27 @@ export function hostdChecks(input: HostCheckInput): Finding[] {
   } catch (error) {
     keyError = error instanceof Error ? error.message : String(error);
   }
+  const url = host.config.cluster.url;
   if (keyError !== null) {
-    findings.push(fail("host.key", `讀不了:${keyError}`, ["`miyoria host join` 重新加入 Core"]));
+    findings.push(fail("host.key", m.hostKeyUnreadable(keyError), [m.hostKeyRejoin]));
   } else if (key === null) {
-    findings.push(
-      fail("host.key", `${host.config.cluster.url} 有設定,但這台還沒加入 Core`, [
-        "在 Core 那台 `miyoria host invite`,這台照它印出的 `miyoria host join ...` 執行",
-      ]),
-    );
+    findings.push(fail("host.key", m.hostKeyMissing(url), [m.hostKeyJoin]));
   } else {
-    findings.push(ok("host.key", `已加入 Core(host id ${key.id})`));
+    findings.push(ok("host.key", m.hostKeyOk(key.id)));
   }
   if (daemon !== null) {
     switch (daemon.link) {
       case "connected":
-        findings.push(ok("Core 連線", `已連上 ${host.config.cluster.url}`));
+        findings.push(ok(m.coreLink, m.linkConnected(url)));
         break;
       case "unauthorized":
-        findings.push(
-          fail("Core 連線", "Core 拒絕了這台(host.key 無效或已撤銷)", [
-            "`miyoria host join` 重新加入",
-          ]),
-        );
+        findings.push(fail(m.coreLink, m.linkUnauthorized, [m.linkRejoin]));
         break;
       case "connecting":
-        findings.push(
-          warn("Core 連線", "連線中;Core 沒開或網址不通就會一直試", [
-            `確認 ${host.config.cluster.url} 連得到`,
-          ]),
-        );
+        findings.push(warn(m.coreLink, m.linkConnecting, [m.linkReachable(url)]));
         break;
       default:
-        findings.push(warn("Core 連線", "沒有連線", ["`miyoria up` 之後再看 `miyoria status`"]));
+        findings.push(warn(m.coreLink, m.linkNone, [m.linkCheck]));
     }
   }
   return findings;
@@ -265,24 +226,25 @@ export function listenersOf(input: HostCheckInput): Listener[] {
 }
 
 export async function healthChecks(input: HostCheckInput): Promise<Finding[]> {
+  const m = t.stack.hostChecks;
   const findings: Finding[] = [];
   for (const l of listenersOf(input)) {
     if (l.health === undefined) continue;
-    const what = `服務 ${l.label}`;
+    const what = m.service(l.label);
     const status = input.daemon?.services.find((s) => s.name === l.label);
     if (input.daemon !== null && status?.state !== "running") {
       findings.push(
-        warn(what, `沒有在跑(${status?.state ?? "hostd 不認得它"})`, [`\`miyoria up ${l.label}\``]),
+        warn(what, m.serviceNotRunning(status?.state ?? m.unknownToHostd), [m.upService(l.label)]),
       );
       continue;
     }
     const res = await ping(input.deps.fetchImpl, l.health);
     if (!res) {
-      findings.push(warn(what, `${l.health} 沒有回應(沒啟動?)`, ["`miyoria up` 啟動"]));
+      findings.push(warn(what, m.noAnswer(l.health), [m.upStart]));
       continue;
     }
     if (!res.ok) {
-      findings.push(fail(what, `${l.health} 回應 ${res.status}`));
+      findings.push(fail(what, m.httpStatus(l.health, res.status)));
       continue;
     }
     let version: string | null = null;
@@ -293,11 +255,9 @@ export async function healthChecks(input: HostCheckInput): Promise<Finding[]> {
         const missing = [
           body.smart_turn === false ? "smart_turn" : null,
           body.silero === false ? "silero" : null,
-        ];
+        ].filter((x): x is string => x !== null);
         findings.push(
-          warn(what, `${l.health} 在跑,但 ${missing.filter(Boolean).join("、")} 模型沒載入`, [
-            "看 /health 的 errors,多半是模型檔不在;`miyoria doctor --fix` 下載後重啟",
-          ]),
+          warn(what, m.modelsNotLoaded(l.health, t.common.list(missing)), [m.modelsNotLoadedFix]),
         );
         continue;
       }
@@ -305,12 +265,8 @@ export async function healthChecks(input: HostCheckInput): Promise<Finding[]> {
       // health without a JSON body is fine
     }
     if (l.health.endsWith("/api/health") && version && version !== input.deps.version) {
-      findings.push(
-        warn(what, `執行中的 core 是 ${version},這份 CLI 是 ${input.deps.version}`, [
-          "重啟 core 讓它用新版(`miyoria update` 之後要重啟)",
-        ]),
-      );
-    } else findings.push(ok(what, version ? `正常(版本 ${version})` : "正常"));
+      findings.push(warn(what, m.versionMismatch(version, input.deps.version), [m.versionFix]));
+    } else findings.push(ok(what, m.healthy(version ? version : null)));
   }
   return findings;
 }
@@ -342,40 +298,35 @@ export async function vramChecks(input: HostCheckInput): Promise<Finding[]> {
     ["--query-gpu=name,memory.total,memory.used", "--format=csv,noheader,nounits"],
     { timeoutMs: 15_000 },
   );
-  if (smi.missing || smi.code !== 0) {
-    return [warn("顯存", "沒有 nvidia-smi,略過顯存預算(沒有 NVIDIA 顯卡就不需要)")];
-  }
+  const m = t.stack.hostChecks;
+  if (smi.missing || smi.code !== 0) return [warn(m.vram, m.noSmi)];
   const [gpuName, total, used] = (smi.stdout.split(/\r?\n/)[0] ?? "")
     .split(",")
     .map((s) => s.trim());
   const totalMb = Number(total);
   const usedMb = Number(used);
-  if (!Number.isFinite(totalMb)) return [warn("顯存", "讀不到 nvidia-smi 的輸出")];
-  const head = `${gpuName}:${usedMb} / ${totalMb} MB 已用`;
-  if (gpus.length === 0) return [ok("顯存", head)];
+  if (!Number.isFinite(totalMb)) return [warn(m.vram, m.smiUnreadable)];
+  const head = m.vramUsed(gpuName ?? "", t.common.int(usedMb), t.common.mb(totalMb));
+  if (gpus.length === 0) return [ok(m.vram, head)];
 
   const reserve = input.host.config.gpu.reserve_mb;
   const available = totalMb - reserve;
   const sum = (policies: readonly string[]) =>
     gpus.filter((s) => policies.includes(s.gpu.policy)).reduce((n, s) => n + s.gpu.resident, 0);
   let peak = sum(["pinned", "evictable", "reserve"]);
-  let peakWhy = "常駐的服務都載入時";
+  let peakWhy = m.peakResident;
   const pinned = sum(["pinned", "reserve"]);
   for (const s of gpus) {
     if (s.gpu.policy !== "on_demand") continue;
     const during = s.gpu.resident + pinned;
     if (during > peak) {
       peak = during;
-      peakWhy = `${s.entry.name} 工作時(可卸下的先卸下)`;
+      peakWhy = m.peakOnDemand(s.entry.name);
     }
   }
-  const detail = `${head};保留 ${reserve} MB;估計尖峰 ${peak} MB(${peakWhy};各服務的估計值在 service.toml 的 [gpu] vram_mb)`;
+  const detail = m.vramDetail(head, t.common.mb(reserve), t.common.mb(peak), peakWhy);
   if (peak > available * 0.92) {
-    return [
-      warn("顯存預算", `${detail},超過 ${available} MB 的 92%`, [
-        "把 host.toml 的 [services.<名字>.gpu] policy 改成 evictable / on_demand,或改用較小的模型(ASR_QWEN_SIZE=0.6B)",
-      ]),
-    ];
+    return [warn(m.vramBudget, m.vramOver(detail, t.common.mb(available)), [m.vramFix])];
   }
-  return [ok("顯存預算", detail)];
+  return [ok(m.vramBudget, detail)];
 }

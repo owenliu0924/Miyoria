@@ -29,6 +29,7 @@ import {
   servicesChangedBy,
 } from "@miyoria/hostd";
 import type { Config } from "@miyoria/runtime/kernel";
+import { t } from "../i18n/index.js";
 import {
   type BuildTarget,
   buildTargets,
@@ -127,33 +128,33 @@ export interface PullResult {
 
 async function pull(root: string, deps: UpdateDeps, dryRun: boolean): Promise<PullResult | null> {
   if (!existsSync(join(root, ".git"))) {
-    note("不是 git 資料夾,略過 pull");
+    note(t.update.notGit);
     return null;
   }
   if (dryRun) {
-    note("會執行:git pull --ff-only(工作目錄有未提交的變更就略過)");
+    note(t.update.wouldPull);
     return null;
   }
   const status = await deps.run("git", ["status", "--porcelain"], { cwd: root, timeoutMs: 30_000 });
   if (status.missing) {
-    warn("找不到 git,略過 pull");
+    warn(t.update.gitMissing);
     return null;
   }
   if (status.stdout.trim() !== "") {
-    warn("工作目錄有未提交的變更,略過 git pull(用 --no-pull 可不顯示這則)");
+    warn(t.update.dirtyTree);
     return null;
   }
   const head = () => deps.run("git", ["rev-parse", "HEAD"], { cwd: root, timeoutMs: 15_000 });
   const before = (await head()).stdout.trim();
   const result = await deps.run("git", ["pull", "--ff-only"], { cwd: root, timeoutMs: 120_000 });
   if (result.code !== 0) {
-    fail("git pull --ff-only 失敗(分支分岔或沒有網路?)");
+    fail(t.update.pullFailed);
     for (const l of failureTail(result.stdout, result.stderr)) println(l);
-    throw new UpdateError("pull 失敗,沒有改動任何建置");
+    throw new UpdateError(t.update.pullAborted);
   }
   const after = (await head()).stdout.trim();
   const changed = after !== before;
-  ok(changed ? "已更新到最新的提交" : "已經是最新");
+  ok(changed ? t.update.pulled : t.update.alreadyCurrent);
   return changed ? { before, after } : null;
 }
 
@@ -207,62 +208,65 @@ export function planServiceUpdate(input: ServicePlanInput): ServiceUpdatePlan {
 
 async function install(root: string, deps: UpdateDeps, force: boolean, dryRun: boolean) {
   if (!force && !installNeeded(root)) {
-    ok("相依套件  與 pnpm-lock.yaml 一致");
+    ok(t.update.depsCurrent);
     return;
   }
   if (dryRun) {
-    note("會執行:pnpm install");
+    note(t.update.wouldInstall);
     return;
   }
-  note("安裝相依套件(pnpm install)…");
+  note(t.update.installing);
   const r = await deps.run("pnpm", ["install"], { cwd: root, timeoutMs: BUILD_TIMEOUT_MS });
   if (r.code !== 0) {
-    fail("pnpm install 失敗");
+    fail(t.update.installFailed);
     for (const l of failureTail(r.stdout, r.stderr)) println(l);
-    throw new UpdateError("相依套件裝不起來,後面的建置沒有執行");
+    throw new UpdateError(t.update.installAborted);
   }
-  ok("相依套件  已安裝");
+  ok(t.update.depsInstalled);
 }
 
 /** Builds one target; a Vite build goes to `<dist>.next` and replaces `dist` only on success. */
-export async function buildTarget(t: BuildTarget, deps: UpdateDeps): Promise<boolean> {
-  const next = t.swapDir ? `${t.swapDir}.next` : null;
+export async function buildTarget(target: BuildTarget, deps: UpdateDeps): Promise<boolean> {
+  const next = target.swapDir ? `${target.swapDir}.next` : null;
   const withOut = (a: string[]) => (next ? [...a, "--outDir", basename(next), "--emptyOutDir"] : a);
-  note(`建置 ${t.label}…`);
-  let r = await deps.run(t.command, withOut(t.args), { cwd: t.cwd, timeoutMs: BUILD_TIMEOUT_MS });
-  if (r.code !== 0 && t.fallbackArgs) {
+  note(t.update.building(target.label));
+  let r = await deps.run(target.command, withOut(target.args), {
+    cwd: target.cwd,
+    timeoutMs: BUILD_TIMEOUT_MS,
+  });
+  if (r.code !== 0 && target.fallbackArgs) {
     // Antivirus holding esbuild's temp file is the usual cause; the retry skips the minifier.
-    warn(`${t.label} 建置失敗;改用不壓縮的建置再試一次(防毒軟體鎖住 esbuild 暫存檔時常見)`);
-    r = await deps.run(t.command, withOut(t.fallbackArgs), {
-      cwd: t.cwd,
+    warn(t.update.buildRetry(target.label));
+    r = await deps.run(target.command, withOut(target.fallbackArgs), {
+      cwd: target.cwd,
       timeoutMs: BUILD_TIMEOUT_MS,
     });
   }
   if (r.code !== 0) {
-    fail(`${t.label} 建置失敗${r.timedOut ? "(逾時)" : ""};輸出沒有被動到`);
+    fail(t.update.buildFailed(target.label, r.timedOut));
     for (const l of failureTail(r.stdout, r.stderr)) println(l);
     if (next) rmSync(next, { recursive: true, force: true });
     return false;
   }
-  if (next && t.swapDir) {
+  if (next && target.swapDir) {
     if (!existsSync(join(next, "index.html"))) {
-      fail(`${t.label} 建置完成但沒有 index.html;保留原本的 dist`);
+      fail(t.update.noIndexHtml(target.label));
       rmSync(next, { recursive: true, force: true });
       return false;
     }
-    const previous = `${t.swapDir}.prev`;
+    const previous = `${target.swapDir}.prev`;
     try {
       rmSync(previous, { recursive: true, force: true });
-      if (existsSync(t.swapDir)) renameSync(t.swapDir, previous);
-      renameSync(next, t.swapDir);
+      if (existsSync(target.swapDir)) renameSync(target.swapDir, previous);
+      renameSync(next, target.swapDir);
       rmSync(previous, { recursive: true, force: true });
     } catch (error) {
-      fail(`${t.label} 建好了,但換進 dist 失敗:${(error as Error).message}`);
-      note(`新的輸出在 ${next};關掉佔用 dist 的程式後手動改名即可`);
+      fail(t.update.swapFailed(target.label, (error as Error).message));
+      note(t.update.swapHint(next));
       return false;
     }
   }
-  ok(`${t.label}  已建置`);
+  ok(t.update.built(target.label));
   return true;
 }
 
@@ -291,17 +295,15 @@ async function updateMod(
   const state = modFreshness(mod);
   if (options.force || state.state !== "fresh") {
     if (options.dryRun) {
-      note("會用 JDK 21 執行 gradlew build(mod 比原始碼舊或還沒建置)");
+      note(t.update.wouldBuildMod);
     } else {
       const jdk = await findJdk21(deps.run, deps.env, deps.platform);
       if (!jdk.jdk21?.home) {
-        fail(`找不到 JDK 21${jdk.onPath ? `(PATH 上的 java 是 ${jdk.onPath})` : ""},mod 沒有重建`);
-        println(
-          dim("    修正:winget install EclipseAdoptium.Temurin.21.JDK,或把 JAVA_HOME 指到 JDK 21"),
-        );
+        fail(t.update.modNoJdk(t.stack.checks.jdkMissing(jdk.onPath)));
+        println(dim(t.update.modJdkFix));
         return false;
       }
-      note(`建置 Minecraft mod(JDK ${jdk.jdk21.home})…`);
+      note(t.update.buildingMod(jdk.jdk21.home));
       const gradle = deps.platform === "win32" ? "gradlew.bat" : "./gradlew";
       const r = await deps.run(gradle, ["build"], {
         cwd: mod.dir,
@@ -309,35 +311,40 @@ async function updateMod(
         timeoutMs: 20 * 60_000,
       });
       if (r.code !== 0 || !existsSync(mod.jar)) {
-        fail("mod 建置失敗");
+        fail(t.update.modBuildFailed);
         for (const l of failureTail(r.stdout, r.stderr)) println(l);
         return false;
       }
-      ok("Minecraft mod  已建置");
+      ok(t.update.modBuilt);
     }
   } else {
-    ok("Minecraft mod  jar 與原始碼一致");
+    ok(t.update.modCurrent);
   }
 
   const mods = minecraftModsDir(config);
   if (!mods) return good;
   if (options.dryRun) {
-    note(`會比對 ${mods} 裡的 miyoria-bridge jar,不同時先備份再複製(要確認)`);
+    note(t.update.wouldCopyMod(mods));
     return good;
   }
   if (!existsSync(mod.jar)) return good;
   const installed = installedModJars(mods);
   if (installed.length === 1 && sameFile(installed[0] as string, mod.jar)) {
-    ok("遊戲裡的 mod  和建置出來的相同");
+    ok(t.update.modSame);
     return good;
   }
   const backupDir = join(dirname(mods), "miyoria-backup", timestamp(deps.now()));
   const what =
     installed.length === 0
-      ? `把 ${basename(mod.jar)} 複製到 ${mods}?`
-      : `用 ${basename(mod.jar)} 取代 ${mods} 裡的 ${installed.map((p) => basename(p)).join("、")}?舊檔會先備份到 ${backupDir}(請先關掉遊戲)`;
+      ? t.update.askCopy(basename(mod.jar), mods)
+      : t.update.askReplace(
+          basename(mod.jar),
+          mods,
+          t.common.list(installed.map((p) => basename(p))),
+          backupDir,
+        );
   if (!(await deps.confirm(what))) {
-    warn("沒有更新遊戲裡的 mod(沒有確認;自動化請加 --yes)");
+    warn(t.update.modNotConfirmed);
     return good;
   }
   try {
@@ -350,20 +357,16 @@ async function updateMod(
     for (const p of installed) {
       if (basename(p) !== basename(mod.jar)) unlinkSync(p);
     }
-    ok(`遊戲裡的 mod  已更新${installed.length > 0 ? `,舊檔備份在 ${backupDir}` : ""}`);
+    ok(t.update.modUpdated(installed.length > 0 ? backupDir : null));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     fail(
-      `複製 mod 失敗(${code ?? (error as Error).message});${code === "EBUSY" || code === "EPERM" ? "遊戲或啟動器還開著嗎?關掉後重跑" : "檢查資料夾權限"}`,
+      t.update.copyFailed(code ?? (error as Error).message, code === "EBUSY" || code === "EPERM"),
     );
     good = false;
   }
   return good;
 }
-
-/** The packaged install has no git checkout: the package manager upgrades it. */
-export const UPGRADE_HINT =
-  "用 npm 安裝的:`npm update -g miyoria`(pnpm:`pnpm update -g miyoria`)升級套件,再重新執行 `miyoria update`";
 
 /**
  * The services part: sync the stale environments, then restart what changed, one at a time. Returns
@@ -377,7 +380,7 @@ export async function updateServices(
 ): Promise<number> {
   const target = hostTarget(configPath, options.hostConfig);
   if (!existsSync(target.hostToml)) {
-    note("沒有 host.toml,略過服務的同步與重啟(`miyoria add <服務>` 會建立它)");
+    note(t.update.noHostToml);
     return 0;
   }
   const host = loadHost(target);
@@ -421,22 +424,22 @@ export async function updateServices(
       })),
   });
 
-  section("服務");
+  section(t.update.servicesSection);
   const nothing = plan.syncStopped.length + plan.syncAndRestart.length + plan.restart.length === 0;
   if (nothing && client === null && needs.length === 0) {
-    ok("環境都與 uv.lock、extras 和 service.toml 一致");
+    ok(t.update.envsCurrent);
     return 0;
   }
   if (options.dryRun) {
-    if (plan.syncStopped.length > 0) note(`會同步環境:${plan.syncStopped.join("、")}`);
+    if (plan.syncStopped.length > 0) note(t.update.wouldSync(t.common.list(plan.syncStopped)));
     if (plan.syncAndRestart.length > 0) {
-      note(`會停止、同步、再啟動(經過保護):${plan.syncAndRestart.join("、")}`);
+      note(t.update.wouldStopSyncStart(t.common.list(plan.syncAndRestart)));
     }
-    if (plan.restart.length > 0) note(`會重啟(經過保護):${plan.restart.join("、")}`);
-    if (nothing) ok("環境都與 uv.lock、extras 和 service.toml 一致");
+    if (plan.restart.length > 0) note(t.update.wouldRestart(t.common.list(plan.restart)));
+    if (nothing) ok(t.update.envsCurrent);
     if (needs.length > 0) {
       printFileNeeds(needs, host.state.models);
-      note("會先問一次再下載(--yes 不問)");
+      note(t.update.asksFirst);
     }
     return 0;
   }
@@ -471,7 +474,7 @@ export async function updateServices(
       );
       return !printInstall(result, { brief: true });
     } catch (error) {
-      fail(`${name}  ${rpcText(error)}`);
+      fail(`${name}  ${rpcText(error, name)}`);
       return false;
     }
   };
@@ -494,12 +497,12 @@ export async function updateServices(
       }
     } catch (error) {
       if (error instanceof HostRpcError && error.code === HOST_ERROR_CODE.Guarded) {
-        warn(`${bold(name)}  她正在唱歌或直播,沒有動它:${error.message}`);
+        warn(t.update.guarded(bold(name), error.message));
         later.push(name);
         return;
       }
       failures += 1;
-      fail(`${name}  ${rpcText(error)}`);
+      fail(`${name}  ${rpcText(error, name)}`);
       return;
     }
     const watched = await watchStarts(client, [name], logs, 10 * 60_000);
@@ -540,22 +543,24 @@ export async function updateServices(
           if (bad) failures += 1;
         } catch (error) {
           failures += 1;
-          fail(`${name}  ${rpcText(error)}`);
+          fail(`${name}  ${rpcText(error, name)}`);
         }
       }
     } else if (!refused) {
-      note("沒有下載模型檔;之後 `miyoria doctor --fix` 可以補(缺必要檔案的服務 hostd 不會啟動)");
+      note(t.update.filesSkipped);
     }
   }
 
   if (later.length > 0) {
+    const names = t.common.list(later);
+    const commands = t.common.list(later.map((n) => `\`miyoria restart ${n}\``));
     warn(
       options.noRestart
-        ? `沒有重啟(--no-restart):${later.join("、")}。要用新版時:${later.map((n) => `\`miyoria restart ${n}\``).join("、")}`
-        : `還在忙所以沒有重啟:${later.join("、")}。等她不忙再執行 ${later.map((n) => `\`miyoria restart ${n}\``).join("、")}(要先同步環境的,重新執行 \`miyoria update\`)`,
+        ? t.update.notRestarted(names, commands)
+        : t.update.busyNotRestarted(names, commands),
     );
   }
-  if (nothing) ok("環境都與 uv.lock、extras 和 service.toml 一致");
+  if (nothing) ok(t.update.envsCurrent);
   return failures;
 }
 
@@ -567,34 +572,38 @@ export async function run(
   const root = repoRoot(configPath);
   if (!root) {
     // A packaged install: the package manager upgrades the code; the services part still runs.
-    note(UPGRADE_HINT);
+    note(t.update.upgradeHint);
     const failures = await updateServices(configPath, options, deps, null);
-    if (failures > 0) throw new UpdateError(`${failures} 項沒有完成,見上面的訊息`);
+    if (failures > 0) throw new UpdateError(t.update.incomplete(failures));
     return;
   }
   const config = await loadConfig(configPath);
   const configDir = dirname(resolve(configPath));
-  if (options.dryRun) section("更新計畫(dry-run,不會改任何東西)");
+  if (options.dryRun) section(t.update.planTitle);
 
   let failures = 0;
   const pulled = options.noPull ? null : await pull(root, deps, options.dryRun === true);
   const files = pulled === null ? null : await changedFiles(root, pulled, deps);
   await install(root, deps, options.force === true, options.dryRun === true);
 
-  for (const t of buildTargets(root, configDir, config)) {
-    const f = checkTarget(t);
-    const skip = !options.force && f.state === "missing" && t.configured === false;
+  for (const target of buildTargets(root, configDir, config)) {
+    const f = checkTarget(target);
+    const skip = !options.force && f.state === "missing" && target.configured === false;
     if (!options.force && (f.state === "fresh" || skip)) {
-      ok(`${t.label}  ${skip ? "沒有用到,略過" : f.detail}`);
+      ok(`${target.label}  ${skip ? t.update.unusedSkipped : f.detail}`);
       continue;
     }
     if (options.dryRun) {
       note(
-        `會建置 ${t.label}(${f.state === "stale" ? f.detail : "還沒建置"}):${t.command} ${t.args.join(" ")}`,
+        t.update.wouldBuild(
+          target.label,
+          f.state === "stale" ? f.detail : t.update.notBuilt,
+          `${target.command} ${target.args.join(" ")}`,
+        ),
       );
       continue;
     }
-    if (!(await buildTarget(t, deps))) failures++;
+    if (!(await buildTarget(target, deps))) failures++;
   }
 
   if (!options.skipMod && !(await updateMod(root, config, deps, options))) failures++;
@@ -606,12 +615,8 @@ export async function run(
     pulled === null ? null : { root, files },
   );
 
-  if (failures > 0) throw new UpdateError(`${failures} 項沒有完成,見上面的訊息`);
+  if (failures > 0) throw new UpdateError(t.update.incomplete(failures));
   if (!options.dryRun) {
-    println(
-      options.noRestart
-        ? "\n完成。已經在執行的服務沒有重啟(--no-restart);要用新版時 `miyoria restart <服務>`。"
-        : "\n完成。",
-    );
+    println(`\n${options.noRestart ? t.update.doneNoRestart : t.update.done}`);
   }
 }

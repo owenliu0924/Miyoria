@@ -21,6 +21,7 @@ import {
 } from "@miyoria/hostd";
 import { Config, configureLogging, errorMessage } from "@miyoria/runtime/kernel";
 import { cliVersion } from "../assets.js";
+import { t } from "../i18n/index.js";
 import {
   buildChecks,
   type DeepDeps,
@@ -106,7 +107,7 @@ function realDeps(): DeepDeps {
 function printFinding(f: Finding): void {
   const mark = f.level === "ok" ? green("✓") : f.level === "warn" ? yellow("!") : red("✗");
   println(`${mark} ${f.what}  ${f.detail}`);
-  for (const line of f.fix ?? []) println(dim(`    修正:${line}`));
+  for (const line of f.fix ?? []) println(dim(t.doctor.fix(line)));
 }
 
 /** The host.toml side of the checks: loaded once, with the daemon's answer. */
@@ -183,7 +184,7 @@ async function applyFixes(side: HostSide, deps: DeepDeps, options: DoctorOptions
     const getFiles = download && needs.some((n) => n.service === entry.name);
     if (!envNeedsSync && !getFiles) continue;
     any = true;
-    println(`\n修復 ${entry.name}`);
+    println(`\n${t.doctor.fixing(entry.name)}`);
     try {
       const result = await installer.install(
         { service: entry.name, only_stale: true, ...(getFiles ? {} : { no_files: true }) },
@@ -194,10 +195,10 @@ async function applyFixes(side: HostSide, deps: DeepDeps, options: DoctorOptions
       if (bad) failures += 1;
     } catch (error) {
       failures += 1;
-      println(`${red("✗")} ${entry.name}  ${rpcText(error)}`);
+      println(`${red("✗")} ${entry.name}  ${rpcText(error, entry.name)}`);
     }
   }
-  if (!any) println(dim("\n沒有可以自動修的項目"));
+  if (!any) println(dim(`\n${t.doctor.nothingToFix}`));
   return failures;
 }
 
@@ -211,7 +212,7 @@ export async function printHashes(target: HostTarget, service: string): Promise<
   const host = loadHost(target);
   const root = catalogRoot(target.hostToml);
   const entry = loadCatalog(root).services.get(service);
-  if (entry === undefined) throw new DoctorError(`目錄裡沒有叫 ${service} 的服務`);
+  if (entry === undefined) throw new DoctorError(t.doctor.unknownService(service));
   const { files, skipped } = await presentFileHashes(entry, host, root);
   const descriptor = relative(root, entry.file).replaceAll("\\", "/");
   println(`# ${service}:這台電腦上現有檔案的 SHA-256 和大小`);
@@ -248,32 +249,35 @@ async function installReport(
     } catch (error) {
       findings.push({
         level: "warn",
-        what: "檢查",
-        detail: `${label} 中斷了:${error instanceof Error ? error.message : String(error)}`,
+        what: t.doctor.check,
+        detail: t.doctor.interrupted(label, error instanceof Error ? error.message : String(error)),
       });
     }
   };
   if (side !== null) {
     if (side.entries.length === 0) {
-      note("host.toml 沒有啟用任何服務(`miyoria add <服務>` 加入)");
+      note(t.doctor.noServicesEnabled);
     }
     const input = hostInput(side, deps, options);
-    await collect("hostd", () => hostdChecks(input));
-    await collect("服務", () => serviceChecks(input));
+    const groups = t.doctor.groups;
+    await collect(groups.hostd, () => hostdChecks(input));
+    await collect(groups.services, () => serviceChecks(input));
     if (deep) {
-      await collect("埠", () => portChecks({ deps }, listenersOf(input)));
-      await collect("健康檢查", () => healthChecks(input));
-      await collect("顯存", () => vramChecks(input));
-      await collect("狀態資料夾", () => {
+      await collect(groups.ports, () => portChecks({ deps }, listenersOf(input)));
+      await collect(groups.health, () => healthChecks(input));
+      await collect(groups.vram, () => vramChecks(input));
+      await collect(groups.state, () => {
         const code = writableProbe(
           existsSync(side.host.state.root) ? side.host.state.root : dirname(side.host.state.root),
         );
         return [
           code === null
-            ? okFinding("狀態資料夾", `${side.host.state.root} 可寫入`)
-            : failFinding("狀態資料夾", `${side.host.state.root} 不能寫入(${code})`, [
-                "檢查資料夾權限和防毒的保護資料夾設定,或在 host.toml 的 [paths] state 指到別處",
-              ]),
+            ? okFinding(t.doctor.stateFolder, t.doctor.stateWritable(side.host.state.root))
+            : failFinding(
+                t.doctor.stateFolder,
+                t.doctor.stateNotWritable(side.host.state.root, code),
+                [t.doctor.stateFix],
+              ),
         ];
       });
     }
@@ -285,8 +289,8 @@ async function installReport(
       root: repoRoot(configPath),
       deps,
     };
-    await collect("建置", () => buildChecks(input));
-    await collect("暫存檔", () => tempChecks(input));
+    await collect(t.doctor.groups.builds, () => buildChecks(input));
+    await collect(t.doctor.groups.temp, () => tempChecks(input));
   }
   for (const f of findings) printFinding(f);
   return findings.filter((f) => f.level === "fail").length;
@@ -309,10 +313,10 @@ export async function run(configPath: string, options: DoctorOptions = {}): Prom
   let config: Config;
   try {
     config = await Config.load(configPath);
-    report(true, "設定檔", configPath);
+    report(true, t.doctor.configFile, configPath);
   } catch (error) {
-    report(false, "設定檔", `${errorMessage(error)}(先執行 \`miyoria init\`)`);
-    throw new DoctorError("無法繼續檢查");
+    report(false, t.doctor.configFile, t.doctor.configFailed(errorMessage(error)));
+    throw new DoctorError(t.doctor.cannotContinue);
   }
 
   const deps = options.deps ?? realDeps();
@@ -325,34 +329,36 @@ export async function run(configPath: string, options: DoctorOptions = {}): Prom
       report(false, "host.toml", errorMessage(error));
     }
   } else {
-    note(
-      `沒有 ${target.hostToml}:服務的檢查略過(\`miyoria add <服務>\` 建立它,或 \`miyoria host migrate\` 從舊設定轉出)`,
-    );
+    note(t.doctor.noHostToml(target.hostToml));
   }
 
   if (options.fix && side !== null) {
-    println("\n修復(只做安全的事:同步環境、下載缺的檔案)");
+    println(`\n${t.doctor.fixingTitle}`);
     failures += await applyFixes(side, deps, options);
     side = await loadHostSide(target);
   } else if (options.fix) {
-    note("--fix 需要 host.toml");
+    note(t.doctor.fixNeedsHostToml);
   }
 
   const runsCore = side === null || side.entries.some((e) => e.name === "core");
   if (options.stackOnly || !runsCore) {
-    println(`\n這台電腦的服務`);
+    println(`\n${t.doctor.servicesTitle}`);
     failures += await installReport(config, configPath, deps, side, options);
-    if (failures > 0) throw new DoctorError(`${failures} 項檢查失敗`);
-    println(options.stackOnly ? "\n部署檢查通過" : "\n這台電腦需要的都齊了");
+    if (failures > 0) throw new DoctorError(t.doctor.failed(failures));
+    println(`\n${options.stackOnly ? t.doctor.stackPassed : t.doctor.machineReady}`);
     return;
   }
 
   let profile: Awaited<ReturnType<typeof loadProfile>> | null = null;
   try {
     profile = await loadProfile(config, baseDir);
-    report(true, "角色", `${profile.displayName}(${profile.sections.length} 個人格段落)`);
+    report(
+      true,
+      t.doctor.profile,
+      t.doctor.profileOk(profile.displayName, profile.sections.length),
+    );
   } catch (error) {
-    report(false, "角色", errorMessage(error));
+    report(false, t.doctor.profile, errorMessage(error));
   }
 
   // The full core (every module package) is only loaded for the checks that need it.
@@ -374,7 +380,7 @@ export async function run(configPath: string, options: DoctorOptions = {}): Prom
       report(
         true,
         "LLM",
-        `${first} 回應「${response.text.trim()}」,${Math.round(performance.now() - started)} ms`,
+        t.doctor.llmOk(first, response.text.trim(), t.common.int(performance.now() - started)),
       );
     } catch (error) {
       report(false, "LLM", errorMessage(error));
@@ -390,8 +396,8 @@ export async function run(configPath: string, options: DoctorOptions = {}): Prom
     typeof section.token === "string"
       ? section.token
       : "";
-  if (!discord.enabled) report(true, "Discord", "已停用");
-  else if (token === "") report(false, "Discord", "沒有設定 DISCORD_BOT_TOKEN");
+  if (!discord.enabled) report(true, "Discord", t.doctor.disabled);
+  else if (token === "") report(false, "Discord", t.doctor.noDiscordToken);
   else {
     try {
       report(true, "Discord", await checkDiscord(token, fetch, wantsPresence(section)));
@@ -404,18 +410,18 @@ export async function run(configPath: string, options: DoctorOptions = {}): Prom
   try {
     const store = await core.openStore(url);
     await store.close();
-    report(true, "資料庫", redactUrl(url));
+    report(true, t.doctor.database, redactUrl(url));
   } catch (error) {
-    report(false, "資料庫", `${redactUrl(url)}:${errorMessage(error)}`);
+    report(false, t.doctor.database, t.doctor.databaseFailed(redactUrl(url), errorMessage(error)));
   }
 
   if (side !== null || options.deep) {
-    println(`\n這台電腦的服務`);
+    println(`\n${t.doctor.servicesTitle}`);
     failures += await installReport(config, configPath, deps, side, options);
   }
 
-  if (failures > 0) throw new DoctorError(`${failures} 項檢查失敗`);
-  println("\n全部正常!");
+  if (failures > 0) throw new DoctorError(t.doctor.failed(failures));
+  println(`\n${t.doctor.allPassed}`);
 }
 
 /**
@@ -431,7 +437,7 @@ export async function checkDiscord(
     headers: { authorization: `Bot ${token}` },
     signal: AbortSignal.timeout(15_000),
   });
-  if (!response.ok) throw new DoctorError(`Discord API 回應 ${response.status}(token 錯了嗎?)`);
+  if (!response.ok) throw new DoctorError(t.doctor.discordStatus(response.status));
   const app = (await response.json()) as {
     name?: string;
     bot?: { username?: string };
@@ -440,9 +446,7 @@ export async function checkDiscord(
   const name = app.bot?.username ?? app.name ?? "?";
   const flags = app.flags ?? 0;
   if ((flags & (GATEWAY_MESSAGE_CONTENT | GATEWAY_MESSAGE_CONTENT_LIMITED)) === 0) {
-    throw new DoctorError(
-      `bot \`${name}\` 沒有開啟 Message Content Intent(Developer Portal → Bot → Privileged Gateway Intents)`,
-    );
+    throw new DoctorError(t.doctor.noMessageContent(name));
   }
   if (presenceIntents) {
     const missing = [
@@ -450,14 +454,12 @@ export async function checkDiscord(
       (flags & (GATEWAY_GUILD_MEMBERS | GATEWAY_GUILD_MEMBERS_LIMITED)) === 0
         ? "Server Members Intent"
         : null,
-    ].filter(Boolean);
+    ].filter((x): x is string => x !== null);
     if (missing.length > 0) {
-      throw new DoctorError(
-        `bot \`${name}\` 沒有開啟 ${missing.join("、")}(Developer Portal → Bot → Privileged Gateway Intents);或 \`miyoria config set modules."platform.discord.bot".presence_intents false\` 不要這兩項,Discord 會拒絕連線`,
-      );
+      throw new DoctorError(t.doctor.missingIntents(name, t.common.list(missing)));
     }
   }
-  return `bot \`${name}\``;
+  return t.doctor.bot(name);
 }
 
 function wantsPresence(section: unknown): boolean {
