@@ -177,10 +177,10 @@ sing = { env = { SING_VRAM_RESERVE_MB = "1500", SING_X = "1" } }
 url = "http://192.168.1.20:8005"
 `);
     const lines = some.review.join("\n");
-    expect(lines).toMatch(/sing:SING_VRAM_RESERVE_MB、SING_X 留在 \[services\.sing\] env/);
-    expect(lines).toMatch(/\[modules\.sing\] url:舊設定有寫/);
-    expect(lines).toMatch(/\[modules\.voice\] turn_url:舊設定沒有寫/);
-    expect(lines).toMatch(/\[modules\.imagegen\] url:舊設定沒有寫/);
+    expect(lines).toMatch(/sing: SING_VRAM_RESERVE_MB, SING_X stay in \[services\.sing\] env/);
+    expect(lines).toMatch(/\[modules\.sing\] url: set in the old configuration/);
+    expect(lines).toMatch(/\[modules\.voice\] turn_url: not set in the old configuration/);
+    expect(lines).toMatch(/\[modules\.imagegen\] url: not set in the old configuration/);
     expect(some.text).toContain("SING_VRAM_RESERVE_MB");
 
     const none = migrated(ALL).review.join("\n");
@@ -188,7 +188,7 @@ url = "http://192.168.1.20:8005"
 
     write("miyoria.toml", ALL);
     await migrate(host.hostTarget(join(dir, "miyoria.toml")), { dryRun: true, name: "pc" });
-    expect(text()).toContain("請看:[modules.voice] turn_url");
+    expect(text()).toContain("Review: [modules.voice] turn_url");
     expect(text()).toContain("miyoria host join");
   });
 
@@ -226,12 +226,12 @@ describe("status table", () => {
       state: "failed",
       healthy: false,
       restarts: 5,
-      reason: "放棄",
+      reason: "gave up",
     };
     const lines = host.serviceTable([s, failed], 61_000);
     expect(lines).toHaveLength(3);
-    expect(lines[1]).toMatch(/^asr\s+running\s+✓\s+8003\s+42\s+0\s+1 分前$/);
-    expect(lines[2]).toMatch(/^voice-node\s+failed\s+-\s+-\s+-\s+5\s+1 分前\s+放棄$/);
+    expect(lines[1]).toMatch(/^asr\s+running\s+✓\s+8003\s+42\s+0\s+1 min ago$/);
+    expect(lines[2]).toMatch(/^voice-node\s+failed\s+-\s+-\s+-\s+5\s+1 min ago\s+gave up$/);
     // The columns start at the same place in every row.
     expect(lines[1]?.indexOf("running")).toBe(lines[2]?.indexOf("failed"));
   });
@@ -239,17 +239,17 @@ describe("status table", () => {
   it("says who decides how the card is shared", () => {
     expect(host.arbiterLines(undefined)).toEqual([]);
     expect(host.arbiterLines({ mode: "worker", active: false, leases: [], last: null })[0]).toMatch(
-      /由翻唱服務自己決定/,
+      /decided by the singing service itself/,
     );
     expect(
       host.arbiterLines({
         mode: "hostd",
         active: false,
-        reason: "讀不到顯卡",
+        reason: "no card",
         leases: [],
         last: null,
       })[0],
-    ).toMatch(/hostd,但沒有在運作:讀不到顯卡/);
+    ).toMatch(/hostd, not active: no card/);
     const lines = host.arbiterLines(
       {
         mode: "hostd",
@@ -272,15 +272,19 @@ describe("status table", () => {
           stage: "convert",
           mode: "exclusive",
           code: "window",
-          reason: "沒有人在聽",
+          reason: "nobody listens",
           at: 31_000,
         },
       },
       61_000,
     );
-    expect(lines[0]).toContain("hostd(政策 yield),1 個租約");
-    expect(lines[1]).toContain("sing 在 convert 階段(exclusive / window),已 1 分,讓出:tts、asr");
-    expect(lines[2]).toContain("上次判斷:convert exclusive / window,30 秒前:沒有人在聽");
+    expect(lines[0]).toContain("hostd (policy yield), 1 lease");
+    expect(lines[1]).toContain(
+      "sing in stage convert (exclusive / window), held for 1 min, evicted: tts, asr",
+    );
+    expect(lines[2]).toContain(
+      "Last decision: convert exclusive / window, 30 s ago: nobody listens",
+    );
   });
 });
 
@@ -319,9 +323,9 @@ http.createServer((req, res) => { res.writeHead(200, { "content-type": "applicat
   }, async () => {
     const target = await running();
     // A plain second `hostd` is refused; with --start (the logon entry) it is not an error.
-    await expect(host.hostd(target)).rejects.toThrow(/已在執行/);
+    await expect(host.hostd(target)).rejects.toThrow(/already running/);
     await host.hostd(target, { start: true });
-    expect(text()).toMatch(/已請它啟動 1 個啟用的服務/);
+    expect(text()).toMatch(/asked it to start 1 service enabled in host\.toml/);
     const client = await HostdClient.connect(host.loadHost(target).state.root);
     if (client === null) throw new Error("the daemon of this test does not answer");
     const { services } = await client.call<{ services: HostServiceStatus[] }>("service.list");
@@ -331,16 +335,16 @@ http.createServer((req, res) => { res.writeHead(200, { "content-type": "applicat
   it("starts_shows_tails_restarts_and_stops", { timeout: 60_000 }, async () => {
     const target = await running();
     await host.up(target, { services: [] });
-    expect(text()).toMatch(/hostd 已在執行/);
+    expect(text()).toMatch(/hostd is already running/);
     expect(text()).toMatch(/✓ fake\s+http:\/\/127\.0\.0\.1:\d+/);
-    expect(text()).toContain("全部就緒");
+    expect(text()).toContain("All services are ready");
 
     out.length = 0;
     await host.status(target);
-    expect(text()).toContain("這台電腦:test-pc");
+    expect(text()).toContain("This machine: test-pc");
     expect(text()).toMatch(/fake\s+running\s+✓/);
-    expect(text()).toContain("讀不到");
-    expect(text()).toContain("Core 連線:沒有");
+    expect(text()).toContain("unavailable (neither NVML nor nvidia-smi answered)");
+    expect(text()).toContain("Core link: none");
 
     out.length = 0;
     await host.logs(target, { service: "fake", lines: 10 });
@@ -353,25 +357,25 @@ http.createServer((req, res) => { res.writeHead(200, { "content-type": "applicat
     out.length = 0;
     await host.down(target, { services: ["fake"] });
     expect(text()).toContain("■ fake");
-    await expect(host.up(target, { services: ["nope"] })).rejects.toThrow(/沒有起來/);
-    expect(text()).toContain("沒有叫 nope 的服務");
+    await expect(host.up(target, { services: ["nope"] })).rejects.toThrow(/did not start/);
+    expect(text()).toContain("No service named nope");
 
     out.length = 0;
     await host.down(target, { services: [] });
-    expect(text()).toContain("hostd 已結束");
+    expect(text()).toContain("hostd stopped");
   });
 
   it("says_so_when_no_daemon_runs", async () => {
     write("host.toml", 'name = "idle-pc"\n[services.asr]\n[services.tts]\nenabled = false\n');
     const target = host.hostTarget(join(dir, "miyoria.toml"));
     await host.down(target, { services: [] });
-    expect(text()).toContain("hostd 沒有在執行");
+    expect(text()).toContain("hostd is not running");
     out.length = 0;
     // No miyoria.toml either: the Core part says why it is skipped.
     await host.status(target);
-    expect(text()).toContain("hostd 沒有在執行");
-    expect(text()).toContain("host.toml 啟用的服務:asr");
-    expect(text()).toContain("不查 Core");
+    expect(text()).toContain("hostd is not running");
+    expect(text()).toContain("Services enabled in host.toml: asr");
+    expect(text()).toContain("Core not checked");
   });
 
   it("needs_a_host_toml", async () => {

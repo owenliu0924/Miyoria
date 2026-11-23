@@ -26,10 +26,10 @@ import {
 } from "@miyoria/hostd";
 import type { Config } from "@miyoria/runtime/kernel";
 import { cliVersion } from "../assets.js";
+import { t } from "../i18n/index.js";
 import { TomlDocument } from "../toml-patch.js";
 import { bold, dim, green, note, ok, println, red, section, warn, yellow } from "../ui.js";
 import {
-  ago,
   catalogRoot,
   displayWidth,
   HostCommandError,
@@ -77,18 +77,16 @@ function detailOf(error: ClientError): string {
 function coreProblem(error: unknown): unknown {
   if (!(error instanceof ClientError)) return error;
   if (error.kind === "transport") {
-    return new HostCommandError(`連不上 Core 的管理 API:${error.message}(Core 有在執行嗎?)`);
+    return new HostCommandError(t.cluster.unreachable(error.message));
   }
   switch (error.status) {
     case 401:
     case 403:
-      return new HostCommandError("Core 的管理 API 不接受這個 token(檢查 MIYORIA_API_TOKEN)");
+      return new HostCommandError(t.cluster.tokenRejected);
     case 503:
-      return new HostCommandError(
-        "Core 的 cluster 模組沒有在執行(`miyoria module list` 看狀態,它需要資料庫)",
-      );
+      return new HostCommandError(t.cluster.moduleOff);
     default:
-      return new HostCommandError(`Core 回應:${detailOf(error)}`);
+      return new HostCommandError(t.cluster.coreAnswered(detailOf(error)));
   }
 }
 
@@ -129,7 +127,7 @@ function statusLabel(h: ClusterHostView): string {
 function table(
   head: readonly string[],
   rows: ReadonlyArray<readonly string[]>,
-  colour: (row: number, column: number, text: string) => string = (_r, _c, t) => t,
+  colour: (row: number, column: number, text: string) => string = (_r, _c, text) => text,
 ): string[] {
   const widths = head.map((_, i) =>
     Math.max(...[head, ...rows].map((r) => displayWidth(r[i] ?? ""))),
@@ -145,8 +143,8 @@ function table(
       .join("  ")
       .trimEnd();
   return [
-    dim(line(head, (_, t) => t)),
-    ...rows.map((row, r) => line(row, (c, t) => colour(r, c, t))),
+    dim(line(head, (_, text) => text)),
+    ...rows.map((row, r) => line(row, (c, text) => colour(r, c, text))),
   ];
 }
 
@@ -197,7 +195,7 @@ export interface InviteOptions {
 export async function invite(target: HostTarget, options: InviteOptions = {}): Promise<void> {
   const ttl = options.ttlMinutes ?? DEFAULT_TTL_MINUTES;
   if (!Number.isInteger(ttl) || ttl < 1 || ttl > MAX_TTL_MINUTES) {
-    throw new HostCommandError(`--ttl 要是 1 到 ${MAX_TTL_MINUTES} 的整數(分鐘)`);
+    throw new HostCommandError(t.cluster.badTtl(MAX_TTL_MINUTES));
   }
   const { config, client } = await coreOf(target);
   const made = await viaCore(() =>
@@ -207,18 +205,18 @@ export async function invite(target: HostTarget, options: InviteOptions = {}): P
   );
   const address = publicApiAddress(config);
   const nameArg = options.name !== undefined ? ` --name ${options.name}` : "";
-  ok(`邀請碼 ${bold(made.code)}`);
+  ok(t.cluster.inviteCode(bold(made.code)));
   println(
-    `   有效到 ${localMinute(made.expires_at)}(${ttl} 分鐘內),只能用一次${
-      options.name !== undefined ? `,只給叫 ${options.name} 的電腦` : ""
-    }`,
+    t.cluster.inviteValid(
+      localMinute(made.expires_at),
+      t.common.minutes(ttl),
+      options.name ?? null,
+    ),
   );
-  println("\n在要加入的那台電腦上執行:");
+  println(`\n${t.cluster.runOnJoining}`);
   println(`  ${bold(`miyoria host join ${address.url} --code ${made.code}${nameArg}`)}`);
   if (!address.reachable) {
-    warn(
-      `Core 的管理 API 只聽 ${remote.apiEndpoint(config).bind}(本機),別台電腦連不到它。要讓別台電腦加入,把 [modules.api] bind 設成這台電腦的區網或 tailnet 位址(例如 192.168.1.10:7878)再重啟 core,並把上面指令裡的位址換成那個`,
-    );
+    warn(t.cluster.loopbackOnly(remote.apiEndpoint(config).bind));
   }
 }
 
@@ -242,10 +240,10 @@ export function normalizeCoreUrl(text: string): string {
   try {
     url = new URL(withScheme);
   } catch {
-    throw new HostCommandError(`\`${text}\` 不是網址(例如 http://192.168.1.10:7878)`);
+    throw new HostCommandError(t.cluster.notAUrl(text));
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new HostCommandError("Core 的位址要用 http:// 或 https://");
+    throw new HostCommandError(t.cluster.badScheme);
   }
   return url.origin;
 }
@@ -327,16 +325,16 @@ async function relinkDaemon(stateRoot: string): Promise<void> {
   const result = await relink(stateRoot);
   switch (result.kind) {
     case "no-daemon":
-      note("這台的 hostd 沒有在執行:`miyoria up` 啟動時會連上 Core");
+      note(t.cluster.noDaemon);
       return;
     case "old-daemon":
-      warn("這個 hostd 不認得 host.relink(版本太舊):`miyoria down` 之後再 `miyoria up`");
+      warn(t.cluster.oldDaemon);
       return;
     case "failed":
-      warn(`請 hostd 連上 Core 失敗:${result.reason}(\`miyoria down\` 再 \`miyoria up\` 也可以)`);
+      warn(t.cluster.relinkFailed(result.reason));
       return;
     case "link":
-      println(`hostd 與 Core 的連線:${linkText(result.link)}`);
+      println(t.cluster.linkState(linkText(result.link)));
   }
 }
 
@@ -348,12 +346,12 @@ async function finishJoin(
 ): Promise<void> {
   await relinkDaemon(stateRoot);
   if (approvedAlready === null) {
-    println(
-      `\n還差一步:在 Core 那台執行 ${bold(`miyoria host approve ${name}`)}(或用面板)核准這台電腦;核准之前它的服務不會被使用`,
-    );
+    println(`\n${t.cluster.approveNext(bold(`miyoria host approve ${name}`))}`);
   } else {
     ok(
-      `已核准:${approvedAlready.join("、") || "(host.toml 沒有啟用任何服務)"}。這台電腦不需要再核准`,
+      t.cluster.approvedAlready(
+        approvedAlready.length > 0 ? t.common.list(approvedAlready) : t.cluster.noEnabledServices,
+      ),
     );
   }
 }
@@ -368,27 +366,21 @@ function joinFailure(url: string, status: number, body: string, retryAfter: stri
   }
   switch (status) {
     case 403:
-      return new HostCommandError(
-        "邀請碼不能用:不存在、已用過或已過期。到 Core 那台重新執行 `miyoria host invite`",
-      );
+      return new HostCommandError(t.cluster.codeInvalid);
     case 409:
-      return new HostCommandError(
-        `Core 不接受這個名字:${detail}。用 --name 換一個,邀請碼沒有被用掉`,
-      );
+      return new HostCommandError(t.cluster.nameRejected(detail));
     case 429: {
       const secs = Number.parseInt(retryAfter ?? "", 10);
       return new HostCommandError(
-        `試太多次了,Core 暫時不理這個位址${Number.isFinite(secs) ? `;${secs} 秒後再試` : ",稍後再試"}`,
+        t.cluster.tooManyAttempts(Number.isFinite(secs) ? t.common.seconds(secs) : null),
       );
     }
     case 503:
-      return new HostCommandError("Core 的 cluster 模組沒有在執行,現在不能加入");
+      return new HostCommandError(t.cluster.joinModuleOff);
     case 404:
-      return new HostCommandError(
-        `${url} 沒有 /api/cluster/join:這不像 Miyoria Core 的管理 API 位址,或 Core 太舊`,
-      );
+      return new HostCommandError(t.cluster.notCoreApi(url));
     default:
-      return new HostCommandError(`Core 回應 ${status}${detail !== "" ? `:${detail}` : ""}`);
+      return new HostCommandError(t.cluster.coreStatus(status, detail !== "" ? detail : null));
   }
 }
 
@@ -399,24 +391,22 @@ function osName(): string {
 
 /** `miyoria host join <core-url> --code CODE`: one call with the code, then two files. */
 async function joinRemote(target: HostTarget, options: JoinOptions): Promise<void> {
-  if (options.coreUrl === undefined) throw new HostCommandError("缺少 Core 的位址:<core-url>");
+  if (options.coreUrl === undefined) throw new HostCommandError(t.cluster.missingUrl);
   if (options.code === undefined || options.code.trim() === "") {
-    throw new HostCommandError("缺少邀請碼:--code(在 Core 那台執行 `miyoria host invite` 取得)");
+    throw new HostCommandError(t.cluster.missingCode);
   }
   const base = normalizeCoreUrl(options.coreUrl);
   const { root, host } = stateRootOf(target);
   const keyFile = join(root, HOST_KEY_FILE);
   if (existsSync(keyFile) && options.force !== true) {
-    throw new HostCommandError(
-      `這台已經加入過一個 Core(${keyFile} 存在)。要換成別的,先在原來的 Core 上 \`miyoria host remove\`,再加 --force`,
-    );
+    throw new HostCommandError(t.cluster.alreadyJoined(keyFile));
   }
   const name = options.name ?? host?.config.name ?? osName();
   // Fail on an unwritable folder before the code is used up.
   try {
     mkdirSync(root, { recursive: true });
   } catch (error) {
-    throw new HostCommandError(`不能寫入 ${root}:${errorText(error)}`);
+    throw new HostCommandError(t.cluster.cannotWrite(root, errorText(error)));
   }
 
   let response: Response;
@@ -435,7 +425,7 @@ async function joinRemote(target: HostTarget, options: JoinOptions): Promise<voi
   } catch (error) {
     const cause = error instanceof Error && error.cause instanceof Error ? error.cause : null;
     throw new HostCommandError(
-      `連不上 ${base}:${cause !== null ? cause.message : errorText(error)}。位址對嗎?Core 的 [modules.api] bind 是不是只聽本機?`,
+      t.cluster.cannotReach(base, cause !== null ? cause.message : errorText(error)),
     );
   }
   const text = await response.text().catch(() => "");
@@ -446,13 +436,14 @@ async function joinRemote(target: HostTarget, options: JoinOptions): Promise<voi
   try {
     joined = ClusterJoinResultSchema.parse(JSON.parse(text));
   } catch {
-    throw new HostCommandError(`${base} 的回答不是 Miyoria Core 的加入結果`);
+    throw new HostCommandError(t.cluster.notJoinResult(base));
   }
 
   const file = writeHostKey(root, joined.host_id, joined.key);
   writeClusterToml(target.hostToml, joined.link_url, name);
-  ok(`已加入 Core,名字 ${bold(name)}`);
-  note(`金鑰寫在 ${file}(不要給別人);${target.hostToml} 的 [cluster] url = ${joined.link_url}`);
+  ok(t.cluster.joined(bold(name)));
+  note(t.cluster.keyWritten(file));
+  note(t.cluster.clusterUrl(target.hostToml, joined.link_url));
   await finishJoin(root, name, null);
 }
 
@@ -502,9 +493,7 @@ async function createLocalHost(
     created = await client.rpc.cluster.create({ body: { name, capabilities } });
   } catch (error) {
     if (error instanceof ClientError && error.status === 409) {
-      throw new HostCommandError(
-        `Core 裡已經有叫 ${name} 的電腦:先 \`miyoria host remove ${name}\` 再重做,或用 --name 換個名字`,
-      );
+      throw new HostCommandError(t.cluster.nameTaken(name));
     }
     throw coreProblem(error);
   }
@@ -515,17 +504,15 @@ async function createLocalHost(
 
 /** `miyoria host join --local`: the machine Core runs on; the admin token is the credential. */
 async function joinLocal(target: HostTarget, options: JoinOptions): Promise<void> {
-  if (options.code !== undefined) throw new HostCommandError("--local 不用邀請碼");
+  if (options.code !== undefined) throw new HostCommandError(t.cluster.localNoCode);
   const host = loadHost(target);
   const keyFile = join(host.state.root, HOST_KEY_FILE);
   if (existsSync(keyFile) && options.force !== true) {
-    throw new HostCommandError(
-      `這台已經加入過 Core(${keyFile} 存在)。要重做,先 \`miyoria host remove <名字>\`,再加 --force`,
-    );
+    throw new HostCommandError(t.cluster.alreadyJoinedLocal(keyFile));
   }
   const made = await createLocalHost(target, host, options.name ?? host.config.name);
-  ok(`這台電腦已加入本機的 Core,名字 ${bold(made.name)}`);
-  note(`金鑰寫在 ${made.keyFile}(不要給別人)`);
+  ok(t.cluster.joinedLocal(bold(made.name)));
+  note(t.cluster.keyWritten(made.keyFile));
   await finishJoin(host.state.root, made.name, made.capabilities);
 }
 
@@ -545,21 +532,27 @@ function readKeyFile(file: string): { id: string; local: boolean } | null {
   }
 }
 
+/** Capabilities in running text: `asr, tts`, `none`. */
+function capabilityList(capabilities: readonly string[]): string {
+  return capabilities.length > 0 ? t.common.list(capabilities) : t.cluster.noCapabilities;
+}
+
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return a.length === b.length && a.every((x) => b.includes(x));
 }
 
 /** The one line `up` prints about the link state, as a clause. */
 function linkClause(result: RelinkResult): string {
+  const clause = t.cluster.clause;
   switch (result.kind) {
     case "link":
-      return result.link === "connected" ? "已連上" : `連線狀態:${result.link}`;
+      return result.link === "connected" ? clause.connected : clause.state(result.link);
     case "no-daemon":
-      return "hostd 沒有在執行";
+      return clause.noDaemon;
     case "old-daemon":
-      return "這個 hostd 不認得 host.relink,`miyoria down` 再 `miyoria up` 就會連上";
+      return clause.oldDaemon;
     case "failed":
-      return `請 hostd 連上失敗:${result.reason}`;
+      return clause.failed(result.reason);
   }
 }
 
@@ -577,9 +570,7 @@ export async function selfLink(target: HostTarget, host: LoadedHostConfig): Prom
       if (host.config.cluster?.url !== undefined) return; // pointed at a Core by hand
       const made = await createLocalHost(target, host, host.config.name);
       const link = await relink(host.state.root);
-      ok(
-        `這台電腦已連上本機的 Core(名字 ${made.name},核准:${made.capabilities.join("、") || "沒有"});${linkClause(link)}`,
-      );
+      ok(t.cluster.selfLinked(made.name, capabilityList(made.capabilities), linkClause(link)));
       return;
     }
     const key = readKeyFile(keyFile);
@@ -588,49 +579,50 @@ export async function selfLink(target: HostTarget, host: LoadedHostConfig): Prom
     const hosts = await viaCore(() => client.rpc.cluster.hosts());
     const mine = hosts.find((h) => h.id === key.id);
     if (mine === undefined) {
-      warn(
-        `Core 裡沒有這台電腦了(${key.id}):\`miyoria host join --local --force\` 重新加入,沒有自動連上`,
-      );
+      warn(t.cluster.goneFromCore(key.id));
       return;
     }
     const wanted = localCapabilities(target, host);
     if (mine.status === "revoked") {
-      warn(`${mine.name} 在 Core 裡被撤銷了,沒有自動核准`);
+      warn(t.cluster.revoked(mine.name));
       return;
     }
     if (mine.status === "approved" && sameSet(mine.capabilities, wanted)) return;
     const view = await viaCore(() =>
       client.rpc.cluster.approve({ params: { name: mine.name }, body: { capabilities: wanted } }),
     );
-    ok(`已重新核准這台電腦(${view.name}):${view.capabilities.join("、") || "沒有"}`);
+    ok(t.cluster.reapproved(view.name, capabilityList(view.capabilities)));
   } catch (error) {
-    warn(`這台沒有自動連上本機的 Core:${errorText(error)}`);
+    warn(t.cluster.selfLinkFailed(errorText(error)));
   }
 }
 
 // ---- ls --------------------------------------------------------------------------------------
 
-function connectedText(h: ClusterHostView, now: number): string {
-  if (!h.connected) return dim("未連線");
-  const since =
-    h.connected_since !== null ? `(${ago(now - Date.parse(h.connected_since))}前起)` : "";
-  return `${green("已連線")}${since}`;
+/** `connected for 3 min`, `not connected`. */
+function connection(h: ClusterHostView, now: number): string {
+  if (!h.connected) return t.cluster.notConnected;
+  return t.cluster.connectedFor(
+    h.connected_since !== null
+      ? t.common.duration((now - Date.parse(h.connected_since)) / 1000)
+      : null,
+  );
 }
 
 function lastSeen(h: ClusterHostView, now: number): string {
-  return h.last_seen_at === null ? "-" : `${ago(now - Date.parse(h.last_seen_at))}前`;
+  return h.last_seen_at === null ? "-" : t.common.ago((now - Date.parse(h.last_seen_at)) / 1000);
 }
 
 export function hostTable(hosts: readonly ClusterHostView[], now = Date.now()): string[] {
-  const head = ["名稱", "狀態", "連線", "核准的能力", "平台", "版本", "最後上線"];
-  // The colours go on after padding, so the columns line up on the plain text.
+  const c = t.cluster.columns;
+  const head = [c.name, c.status, c.connection, c.capabilities, c.platform, c.version, c.lastSeen];
+  // The colours go on after padding, so the columns line up on the plain text. The status column
+  // is Core's own word for it.
   const rows = hosts.map((h) => [
     h.name,
     h.status,
-    h.connected
-      ? `已連線${h.connected_since !== null ? `(${ago(now - Date.parse(h.connected_since))}前起)` : ""}`
-      : "未連線",
-    h.capabilities.join("、") || "-",
+    connection(h, now),
+    h.capabilities.length > 0 ? t.common.list(h.capabilities) : "-",
     h.platform ?? "-",
     h.version ?? "-",
     lastSeen(h, now),
@@ -648,9 +640,7 @@ export async function ls(target: HostTarget): Promise<void> {
   const { client } = await coreOf(target);
   const hosts = await viaCore(() => client.rpc.cluster.hosts());
   if (hosts.length === 0) {
-    println(
-      "Core 還沒有任何電腦。`miyoria host invite` 產生邀請碼,或 `miyoria host join --local` 加入這一台",
-    );
+    println(t.cluster.noHosts);
     return;
   }
   for (const line of hostTable(hosts)) println(line);
@@ -681,18 +671,16 @@ export async function approve(
       info = await client.rpc.cluster.info({ params: { name } });
     } catch (error) {
       if (error instanceof ClientError && error.status === 404) {
-        throw new HostCommandError(`Core 沒有叫 ${name} 的電腦(\`miyoria host ls\` 看有哪些)`);
+        throw new HostCommandError(t.cluster.noSuchHost(name));
       }
       if (error instanceof ClientError && error.status === 409) {
-        throw new HostCommandError(
-          `${name} 現在沒有連線,Core 不知道它提供什麼:請自己列出要核准的能力,例如 \`miyoria host approve ${name} asr tts\``,
-        );
+        throw new HostCommandError(t.cluster.offlineCapabilities(name));
       }
       throw coreProblem(error);
     }
     asked = providedBy(info);
     if (asked.length === 0) {
-      throw new HostCommandError(`${name} 沒有回報任何服務能力:請自己列出要核准的能力`);
+      throw new HostCommandError(t.cluster.noReportedCapabilities(name));
     }
   }
   let view: ClusterHostView;
@@ -700,11 +688,16 @@ export async function approve(
     view = await client.rpc.cluster.approve({ params: { name }, body: { capabilities: asked } });
   } catch (error) {
     if (error instanceof ClientError && error.status === 404) {
-      throw new HostCommandError(`Core 沒有叫 ${name} 的電腦(\`miyoria host ls\` 看有哪些)`);
+      throw new HostCommandError(t.cluster.noSuchHost(name));
     }
     throw coreProblem(error);
   }
-  ok(`已核准 ${bold(view.name)}:${view.capabilities.join("、") || "(沒有能力)"}`);
+  ok(
+    t.cluster.approved(
+      bold(view.name),
+      view.capabilities.length > 0 ? t.common.list(view.capabilities) : t.common.none,
+    ),
+  );
 }
 
 // ---- remove ----------------------------------------------------------------------------------
@@ -718,17 +711,15 @@ export async function removeHost(
   const hosts = await viaCore(() => client.rpc.cluster.hosts());
   const found = hosts.find((h) => h.name === name);
   if (found === undefined) {
-    throw new HostCommandError(`Core 沒有叫 ${name} 的電腦(\`miyoria host ls\` 看有哪些)`);
+    throw new HostCommandError(t.cluster.noSuchHost(name));
   }
   if (!options.yes) {
     if (options.confirm === null) {
-      throw new HostCommandError("不是互動式終端機:要移除請加 -y");
+      throw new HostCommandError(t.cluster.removeNeedsYes);
     }
-    const yes = await options.confirm(
-      `移除 ${name}(${found.status}${found.connected ? ",目前連線中" : ""})?它的金鑰會失效、連線會斷開、它的服務會從 Core 的端點移除`,
-    );
+    const yes = await options.confirm(t.cluster.removeConfirm(name, found.status, found.connected));
     if (!yes) {
-      note("沒有移除");
+      note(t.cluster.notRemoved);
       return;
     }
   }
@@ -736,11 +727,11 @@ export async function removeHost(
     await client.rpc.cluster.remove({ params: { name } });
   } catch (error) {
     if (error instanceof ClientError && error.status === 404) {
-      throw new HostCommandError(`${name} 已經不在 Core 裡了`);
+      throw new HostCommandError(t.cluster.alreadyGone(name));
     }
     throw coreProblem(error);
   }
-  ok(`已移除 ${name}`);
+  ok(t.cluster.removed(name));
 }
 
 // ---- status --all ----------------------------------------------------------------------------
@@ -752,28 +743,31 @@ export async function hostsSection(client: remote.Remote): Promise<void> {
     hosts = await client.rpc.cluster.hosts();
   } catch (error) {
     const problem = coreProblem(error);
-    println(`\n${dim(`(查不到各台電腦:${errorText(problem)})`)}`);
+    println(`\n${dim(t.cluster.hostsUnavailable(errorText(problem)))}`);
     return;
   }
-  section("所有電腦(Core)");
+  section(t.cluster.allHosts);
   if (hosts.length === 0) {
-    println(dim("Core 還沒有任何電腦(`miyoria host invite`)"));
+    println(dim(t.cluster.noHostsShort));
     return;
   }
   const now = Date.now();
   for (const h of hosts) {
-    println(
-      `\n${bold(h.name)}  ${statusLabel(h)}  ${h.connected ? connectedText(h, now) : `${dim("未連線")}  ${dim(`最後上線 ${lastSeen(h, now)}`)}`}${
-        h.capabilities.length > 0 ? `  ${dim(`核准:${h.capabilities.join("、")}`)}` : ""
-      }`,
-    );
+    const linkPart = h.connected
+      ? green(connection(h, now))
+      : `${dim(connection(h, now))}  ${dim(t.cluster.lastSeen(lastSeen(h, now)))}`;
+    const approved =
+      h.capabilities.length > 0
+        ? `  ${dim(t.cluster.approvedList(t.common.list(h.capabilities)))}`
+        : "";
+    println(`\n${bold(h.name)}  ${statusLabel(h)}  ${linkPart}${approved}`);
     if (!h.connected) continue;
     try {
       const info = await client.rpc.cluster.info({ params: { name: h.name } });
-      if (info.services.length === 0) println(dim("  沒有任何服務"));
+      if (info.services.length === 0) println(dim(t.cluster.noServices));
       for (const line of serviceTable(info.services, now)) println(`  ${line}`);
     } catch (error) {
-      println(dim(`  (查不到服務:${errorText(coreProblem(error))})`));
+      println(dim(t.cluster.servicesUnavailable(errorText(coreProblem(error)))));
     }
   }
 }

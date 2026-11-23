@@ -21,6 +21,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { homedir, userInfo } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { HostdClient } from "@miyoria/hostd";
+import { t } from "../i18n/index.js";
 import { defaultRunner, type Runner } from "../stack/system.js";
 import { bold, dim, fail, note, ok, println, section, warn } from "../ui.js";
 import { HostCommandError, type HostTarget, loadHost, selfCommand } from "./host.js";
@@ -283,8 +284,8 @@ export function planAutostart(
   }
   throw new AutostartUnsupported(
     deps.platform === "darwin"
-      ? "macOS 還不支援登入時自動啟動(請用 `miyoria up` 手動啟動)"
-      : `${deps.platform} 不支援登入時自動啟動`,
+      ? t.autostart.macosUnsupported
+      : t.autostart.unsupported(deps.platform),
   );
 }
 
@@ -298,7 +299,7 @@ async function isRegistered(plan: AutostartPlan, deps: AutostartDeps): Promise<b
 async function confirmed(message: string, deps: AutostartDeps): Promise<boolean> {
   if (deps.yes) return true;
   if (deps.confirm === null) {
-    throw new HostCommandError("這個指令要先確認:請在終端機執行,或加 -y");
+    throw new HostCommandError(t.autostart.needsConfirmation);
   }
   return deps.confirm(message);
 }
@@ -325,19 +326,21 @@ function printCommands(title: string, commands: AutostartPlan["register"]): void
 async function runAll(commands: AutostartPlan["register"], deps: AutostartDeps): Promise<void> {
   for (const c of commands) {
     const r = await deps.runner(c.command, c.args, { timeoutMs: 60_000 });
-    if (r.missing) throw new HostCommandError(`找不到 ${c.command}`);
+    if (r.missing) throw new HostCommandError(t.autostart.commandNotFound(c.command));
     if (r.code !== 0) {
       const detail = `${r.stderr}${r.stdout}`.trim();
       fail(
-        `${display(c.command, c.args)} 失敗(代碼 ${r.code ?? "?"})${detail ? `:${detail}` : ""}`,
+        t.autostart.commandFailed(
+          display(c.command, c.args),
+          r.code !== null ? String(r.code) : "?",
+          detail !== "" ? detail : null,
+        ),
       );
+      // schtasks answers in the language of Windows: English, or Chinese ("拒絕", "存取").
       if (deps.platform === "win32" && /denied|拒絕|存取/i.test(detail)) {
-        note(
-          "這台電腦要求系統管理員才能建立登入工作:請用「以系統管理員身分執行」的終端機再跑一次同一個指令。" +
-            "工作內容不變(仍以你的帳號、一般權限、你的登入工作階段執行)",
-        );
+        note(t.autostart.needsAdmin);
       }
-      throw new HostCommandError("沒有完成");
+      throw new HostCommandError(t.autostart.notCompleted);
     }
   }
 }
@@ -352,44 +355,38 @@ export async function autostartOn(target: HostTarget, deps: AutostartDeps): Prom
       ? plan.register.map((c) => ({ ...c, args: c.args.filter((a) => a !== "--now") }))
       : plan.register;
 
-  section(`登入時自動啟動 hostd(${registered ? "更新已有的登錄" : "新登錄"})`);
-  println(`工作資料夾:${workspaceOf(target)}`);
-  println(`會執行:${bold(display(plan.command[0] as string, plan.command.slice(1)))}`);
-  println(`會寫入:${plan.file.path}`);
-  printCommands("會執行這些系統指令:", register);
-  if (!(await confirmed("要登錄嗎?", deps))) {
-    warn("沒有登錄");
+  section(t.autostart.onTitle(registered));
+  println(t.autostart.workspace(workspaceOf(target)));
+  println(t.autostart.runs(bold(display(plan.command[0] as string, plan.command.slice(1)))));
+  println(t.autostart.writes(plan.file.path));
+  printCommands(t.autostart.systemCommands, register);
+  if (!(await confirmed(t.autostart.confirmOn, deps))) {
+    warn(t.autostart.notRegistered);
     return;
   }
   mkdirSync(dirname(plan.file.path), { recursive: true });
   writeFileSync(plan.file.path, plan.file.content);
   await runAll(register, deps);
-  ok(`已登錄 ${plan.name}`);
+  ok(t.autostart.registered(plan.name));
   if (plan.platform === "win32") {
-    println(
-      "下次這個帳號登入時,工作排程器會在你的登入工作階段、沒有視窗地啟動 hostd,hostd 再啟動 host.toml 啟用的服務。",
-    );
-    println(
-      `  馬上試:${bold(`schtasks /run /tn ${plan.name}`)}(先確認 \`miyoria status\` 沒有 hostd 在跑)`,
-    );
-    println(`  日誌:hostd 的日誌在 ${loadHost(target).state.logs}`);
-    println(
-      dim(
-        "  沒有視窗靠 conhost.exe --headless(微軟沒有文件化這個旗標;如果某次 Windows 更新後出現視窗,執行 `miyoria host autostart off`,並告訴我們)",
-      ),
-    );
+    println(t.autostart.windowsNext);
+    println(t.autostart.windowsTry(bold(`schtasks /run /tn ${plan.name}`)));
+    println(t.autostart.windowsLogs(loadHost(target).state.logs));
+    println(dim(t.autostart.windowsHeadless));
   } else {
-    println("下次這個帳號登入時 systemd 會啟動 hostd(失敗時 10 秒後重試)。");
-    println(
-      `  要在沒有登入的情況下開機就啟動:${bold("loginctl enable-linger")}(用你自己的帳號執行,一次就好)`,
-    );
-    if (running) {
-      note("現在已有 hostd 在跑,所以沒有加 --now;單元會在下次登入時啟動");
-    }
+    // `RestartSec=10` of the unit.
+    println(t.autostart.linuxNext(t.common.seconds(10)));
+    println(t.autostart.linuxLinger(bold("loginctl enable-linger")));
+    if (running) note(t.autostart.linuxNoNow);
   }
   const undo = plan.unregister.map((c) => display(c.command, c.args)).join(" && ");
-  const removes = plan.platform === "win32" ? "" : `,並刪除 ${plan.file.path}`;
-  println(`取消:${bold("miyoria host autostart off")}(等於 ${undo}${removes})`);
+  println(
+    t.autostart.undoHint(
+      bold("miyoria host autostart off"),
+      undo,
+      plan.platform === "win32" ? null : plan.file.path,
+    ),
+  );
 }
 
 export async function autostartOff(target: HostTarget, deps: AutostartDeps): Promise<void> {
@@ -399,40 +396,40 @@ export async function autostartOff(target: HostTarget, deps: AutostartDeps): Pro
   const registered = await isRegistered(plan, deps);
   const fileThere = plan.platform === "linux" && existsSync(plan.file.path);
   if (!registered && !fileThere) {
-    note("沒有登錄登入時自動啟動;沒有要取消的");
+    note(t.autostart.nothingToUndo);
     return;
   }
-  section("取消登入時自動啟動 hostd");
-  printCommands("會執行這些系統指令:", registered ? plan.unregister : []);
-  if (plan.platform === "linux") println(`會刪除:${plan.file.path}`);
-  if (!(await confirmed("要取消嗎?", deps))) {
-    warn("沒有取消");
+  section(t.autostart.offTitle);
+  printCommands(t.autostart.systemCommands, registered ? plan.unregister : []);
+  if (plan.platform === "linux") println(t.autostart.deletes(plan.file.path));
+  if (!(await confirmed(t.autostart.confirmOff, deps))) {
+    warn(t.autostart.notRemoved);
     return;
   }
   if (registered) await runAll(plan.unregister, deps);
   rmSync(plan.file.path, { force: true });
-  ok(`已取消 ${plan.name}`);
+  ok(t.autostart.removed(plan.name));
 }
 
 export async function autostartStatus(target: HostTarget, deps: AutostartDeps): Promise<void> {
   const runDir = existsSync(target.hostToml) ? runDirOf(target) : join(workspaceOf(target), "run");
   const plan = plainPlan(target, deps, runDir);
   const registered = await isRegistered(plan, deps);
-  println(`工作資料夾:${workspaceOf(target)}`);
-  println(`登錄名稱:${plan.name}`);
+  println(t.autostart.workspace(workspaceOf(target)));
+  println(t.autostart.entryName(plan.name));
   if (registered) {
-    ok(`已登錄:這個帳號登入時會啟動 hostd`);
-    println(`  執行:${display(plan.command[0] as string, plan.command.slice(1))}`);
+    ok(t.autostart.registeredStatus);
+    println(t.autostart.runsIndented(display(plan.command[0] as string, plan.command.slice(1))));
     const saved = existsSync(plan.file.path) ? readFileSync(plan.file.path) : null;
     if (saved !== null && Buffer.compare(saved, Buffer.from(plan.file.content)) !== 0) {
-      warn(
-        "登錄的內容和現在的設定不一樣(搬動過資料夾或 Node?):再執行一次 `miyoria host autostart on`",
-      );
+      warn(t.autostart.stale);
     }
   } else {
-    println(`${dim("沒有登錄")}:登入時不會自動啟動(\`miyoria host autostart on\`)`);
+    println(t.autostart.notRegisteredStatus(dim(t.autostart.notRegistered)));
   }
   println(
-    (await deps.daemonRunning(target)) ? "hostd 現在:執行中" : `hostd 現在:${dim("沒有在執行")}`,
+    t.autostart.daemonNow(
+      (await deps.daemonRunning(target)) ? t.autostart.running : dim(t.autostart.notRunning),
+    ),
   );
 }

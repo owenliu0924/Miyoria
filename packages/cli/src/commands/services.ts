@@ -30,6 +30,7 @@ import {
   loadCatalog,
   removeService,
 } from "@miyoria/hostd";
+import { t } from "../i18n/index.js";
 import { TomlDocument } from "../toml-patch.js";
 import { bold, dim, fail, note, ok, println, section, warn } from "../ui.js";
 import { catalogRoot, HostCommandError, type HostTarget, loadHost } from "./host.js";
@@ -74,24 +75,28 @@ const remaining = (s: FileStatus) => (s.adopt !== null ? 0 : Math.max(s.size - s
 
 /** The list a person agrees to: each file with its size, licence and source, and the total. */
 export function printFileNeeds(needs: readonly FileNeed[], models: string): void {
-  section("要下載的模型檔");
+  section(t.services.filesTitle);
   for (const { service, status: s } of needs) {
     if (s.adopt !== null) {
-      println(
-        `  ${bold(service)}  ${s.path}  ${formatBytes(s.size)}  沿用 ${s.adopt}(檢查碼相同,硬連結,不用下載)`,
-      );
-      println(dim(`      ${s.what}${s.optional ? "(沒有也能跑)" : ""}`));
+      println(t.services.fileAdopted(bold(service), s.path, formatBytes(s.size), s.adopt));
+      println(dim(t.services.fileWhat(s.what, s.optional, null)));
       continue;
     }
-    const resume = s.partBytes > 0 ? `(續傳,還要 ${formatBytes(remaining(s))})` : "";
     println(
-      `  ${bold(service)}  ${s.path}  ${formatBytes(s.size)}${resume}  授權 ${s.licence}  來自 ${s.source}`,
+      t.services.fileToFetch(
+        bold(service),
+        s.path,
+        formatBytes(s.size),
+        s.partBytes > 0 ? formatBytes(remaining(s)) : null,
+        s.licence,
+        s.source,
+      ),
     );
-    const why = s.state === "wrong" ? `;現在的檔案不對(${s.detail ?? "檢查碼不符"}),會換掉` : "";
-    println(dim(`      ${s.what}${s.optional ? "(沒有也能跑)" : ""}${why}`));
+    const wrong = s.state === "wrong" ? (s.detail ?? t.services.checksumMismatch) : null;
+    println(dim(t.services.fileWhat(s.what, s.optional, wrong)));
   }
   const total = needs.reduce((n, { status }) => n + remaining(status), 0);
-  println(`  共 ${formatBytes(total)},放到 ${models}`);
+  println(t.services.filesTotal(formatBytes(total), models));
 }
 
 /**
@@ -111,11 +116,11 @@ export async function confirmFiles(
   if (deps.yes === true) return true;
   const canAsk = deps.interactive ?? deps.confirm !== undefined;
   if (!canAsk || deps.confirm === undefined) {
-    throw new HostCommandError(`沒有終端機可以確認要不要下載上面的檔案;同意的話執行 \`${again}\``);
+    throw new HostCommandError(t.services.noTerminalForFiles(again));
   }
   const total = needs.reduce((n, { status }) => n + remaining(status), 0);
   const fetched = needs.filter((n) => n.status.adopt === null).length;
-  return deps.confirm(`下載這 ${fetched} 個檔案(共 ${formatBytes(total)})?`);
+  return deps.confirm(t.services.confirmFiles(t.common.files(fetched), formatBytes(total)));
 }
 
 /** The lines about `install.files` of one install result. Returns whether one failed. */
@@ -123,13 +128,16 @@ export function printFiles(result: HostServiceInstallResult): boolean {
   const name = bold(result.service);
   let failed = false;
   for (const f of result.files) {
-    if (f.state === "downloaded") ok(`${name}  已下載並驗證 ${f.path}`);
-    else if (f.state === "present" && f.detail !== undefined) ok(`${name}  ${f.path}:${f.detail}`);
-    else if (f.state === "failed") {
+    if (f.state === "downloaded") ok(`${name}  ${t.services.downloaded(f.path)}`);
+    else if (f.state === "present" && f.detail !== undefined) {
+      ok(`${name}  ${t.services.detail(f.path, f.detail)}`);
+    } else if (f.state === "failed") {
       failed = true;
-      fail(`${result.service}  ${f.path}:${f.detail ?? "下載失敗"}`);
+      fail(
+        `${result.service}  ${t.services.detail(f.path, f.detail ?? t.services.downloadFailed)}`,
+      );
     } else if (f.state === "missing") {
-      warn(`${name}  還沒有 ${f.path}${f.detail !== undefined ? `(${f.detail})` : ""}`);
+      warn(`${name}  ${t.services.fileMissing(f.path, f.detail ?? null)}`);
     }
   }
   return failed;
@@ -169,15 +177,11 @@ export interface Installer {
 /** Long enough for a CUDA torch sync on a slow line. */
 const INSTALL_TIMEOUT_MS = 2 * 60 * 60_000;
 
-/** What `add voice-node` says on an install that has no repository around it. */
-export const VOICE_NODE_NEEDS_REPOSITORY =
-  "語音節點目前還沒有跟著 miyoria 套件發行,要用它需要 repository:clone 專案後在裡面執行 `miyoria add voice-node`(之後的版本會把它放進套件)";
-
 function entryOf(catalog: Catalog, name: string): CatalogEntry {
   const entry = catalog.services.get(name);
   if (entry === undefined) {
     // The voice node runs from source: the package's catalog does not list it.
-    if (name === "voice-node") throw new HostCommandError(VOICE_NODE_NEEDS_REPOSITORY);
+    if (name === "voice-node") throw new HostCommandError(t.services.voiceNodeNeedsRepository);
     throw new HostCommandError(unknownService(catalog, name));
   }
   return entry;
@@ -265,7 +269,7 @@ function ensureHostToml(hostToml: string): TomlDocument {
     mkdirSync(dirname(hostToml), { recursive: true });
     const name = osHostname().toLowerCase() || "main";
     writeFileSync(hostToml, `name = ${JSON.stringify(name)}\n`, "utf8");
-    note(`建立 ${hostToml}(name = "${name}")`);
+    note(t.services.createdHostToml(hostToml, name));
   }
   return TomlDocument.parse(readFileSync(hostToml, "utf8"));
 }
@@ -292,7 +296,7 @@ function unknownService(catalog: Catalog, name: string): string {
   const known = [...catalog.services.values()]
     .map((e) => `  ${e.name.padEnd(12)} ${e.descriptor.summary}`)
     .join("\n");
-  return `沒有叫 ${name} 的服務。目錄裡有:\n${known}`;
+  return t.services.unknownService(name, known);
 }
 
 export interface AddOptions {
@@ -305,14 +309,14 @@ export interface AddOptions {
 
 /** The catalog as a table: name, summary, what it provides, whether host.toml has it. */
 export function listCatalog(catalog: Catalog, host: LoadedHostConfig | null): void {
-  section("可以加進這台電腦的服務");
+  section(t.services.catalogTitle);
   const rows = [...catalog.services.values()].map((e) => {
     const added = host?.config.services[e.name];
     return [
       e.name,
       e.descriptor.summary,
-      e.descriptor.provides.join("、") || "-",
-      added === undefined ? "-" : added.enabled ? "已加入" : "已加入(停用)",
+      e.descriptor.provides.length > 0 ? t.common.list(e.descriptor.provides) : "-",
+      added === undefined ? "-" : added.enabled ? t.services.added : t.services.addedDisabled,
     ];
   });
   const widths = [0, 1, 2].map((i) => Math.max(...rows.map((r) => displayWidth(r[i] as string))));
@@ -322,8 +326,8 @@ export function listCatalog(catalog: Catalog, host: LoadedHostConfig | null): vo
     );
     println(`  ${cells.join("  ")}  ${row[3]}`);
   }
-  for (const p of catalog.problems) warn(`${p.file}:${p.message}`);
-  println(dim("\n`miyoria add <服務>...` 加入並安裝;`miyoria doctor` 檢查還缺什麼。"));
+  for (const p of catalog.problems) warn(t.services.detail(p.file, p.message));
+  println(dim(`\n${t.services.catalogHint}`));
 }
 
 function displayWidth(text: string): number {
@@ -342,45 +346,44 @@ export function printInstall(
   switch (rt.state) {
     case "synced":
       ok(
-        `${name}  環境已建好${rt.extras && rt.extras.length > 0 ? `(extras:${rt.extras.join("、")})` : ""}  ${dim(rt.dir ?? "")}`,
+        `${name}  ${t.services.envSynced(rt.extras && rt.extras.length > 0 ? t.common.list(rt.extras) : null)}  ${dim(rt.dir ?? "")}`,
       );
       break;
     case "current":
-      ok(`${name}  環境已是最新`);
+      ok(`${name}  ${t.services.envCurrent}`);
       break;
     case "user-managed":
+      // hostd's installer words this detail in English; "does not exist" marks a missing one.
       (rt.detail?.includes("does not exist") ? warn : note)(
-        `${name}  ${rt.detail ?? "用你自己的環境,不會動它"}`,
+        `${name}  ${rt.detail ?? t.services.envUserManaged}`,
       );
       break;
     case "none":
       break;
     case "unsupported":
-      fail(`${result.service}  這個平台不支援:${rt.detail ?? ""}`);
+      fail(`${result.service}  ${t.services.envUnsupported(rt.detail ?? "")}`);
       break;
     case "uv-missing":
-      fail(`${result.service}  找不到 uv:${rt.detail ?? ""}`);
-      println(dim("    uv 不會被自動安裝;裝好後重新執行同一個指令"));
+      fail(`${result.service}  ${t.services.uvMissing(rt.detail ?? "")}`);
+      println(dim(t.services.uvHint));
       break;
     case "failed":
-      fail(`${result.service}  環境沒有建好:${rt.detail ?? ""}`);
+      fail(`${result.service}  ${t.services.envFailed(rt.detail ?? "")}`);
       break;
   }
   if (options.brief) return !result.ok;
   for (const s of result.system) {
     if (s.found) continue;
-    warn(
-      `${name}  PATH 上找不到 ${s.program}(不會替你安裝)${s.hint !== undefined ? `:${s.hint}` : ""}`,
-    );
+    warn(`${name}  ${t.services.programMissing(s.program, s.hint ?? null)}`);
   }
   printFiles(result);
   for (const m of result.manual) {
-    if (!m.present) warn(`${name}  要你自己放:${m.what}(${m.path})`);
+    if (!m.present) warn(`${name}  ${t.services.manualFile(m.what, m.path)}`);
   }
   const unpulled = result.models.filter((m) => !m.present);
   if (unpulled.length > 0) {
     note(
-      `${result.service}  模型還沒下載:${unpulled.map((m) => m.repo).join("、")}(\`miyoria models pull ${result.service}\`)`,
+      `${result.service}  ${t.services.modelsNotPulled(result.service, t.common.list(unpulled.map((m) => m.repo)))}`,
     );
   }
   return !result.ok;
@@ -399,22 +402,24 @@ export async function add(
   }
   const entries = options.services.map((name) => entryOf(catalog, name));
   if (options.extras !== undefined && entries.length !== 1) {
-    throw new HostCommandError("--extra 只能用在一個服務上(每個服務的 extras 名稱不同)");
+    throw new HostCommandError(t.services.extraOneService);
   }
   const platform = deps.install?.platform ?? process.platform;
   const unsupported = entries.filter((e) => !e.descriptor.platforms.includes(platform));
   if (unsupported.length > 0) {
     throw new HostCommandError(
       unsupported
-        .map((e) => `${e.name} 只支援 ${e.descriptor.platforms.join("、")},這台是 ${platform}`)
-        .join(";"),
+        .map((e) =>
+          t.services.platformUnsupported(e.name, t.common.list(e.descriptor.platforms), platform),
+        )
+        .join(t.services.separator),
     );
   }
 
   for (const entry of entries) addHostService(target.hostToml, entry.name, options.extras);
-  ok(`${target.hostToml}:加入 ${entries.map((e) => e.name).join("、")}`);
+  ok(t.services.addedTo(target.hostToml, t.common.list(entries.map((e) => e.name))));
   if (options.noInstall) {
-    note("沒有安裝(--no-install);`miyoria add <服務>` 或 `miyoria doctor --fix` 之後補裝");
+    note(t.services.notInstalled);
     return;
   }
 
@@ -428,14 +433,14 @@ export async function add(
     `miyoria add ${entries.map((e) => e.name).join(" ")} --yes`,
   );
   if (needs.length > 0 && !download) {
-    note("不下載模型檔;之後 `miyoria doctor --fix` 可以補(缺必要檔案的服務 hostd 不會啟動)");
+    note(t.services.filesSkipped);
   }
   const installer = await openInstaller(target, host, deps);
-  note(installer.mode === "daemon" ? "交給執行中的 hostd 安裝" : "hostd 沒有在執行,在這裡安裝");
+  note(installer.mode === "daemon" ? t.services.installingInDaemon : t.services.installingHere);
   const printed: HostServiceInstallResult[] = [];
   let failures = 0;
   for (const entry of entries) {
-    section(`安裝 ${entry.name}`);
+    section(t.services.installing(entry.name));
     let result: HostServiceInstallResult;
     try {
       result = await installer.install(
@@ -455,9 +460,7 @@ export async function add(
     if (printInstall(result)) failures += 1;
   }
   if (failures > 0) {
-    throw new HostCommandError(
-      `${failures} 個服務沒有裝好,見上面的訊息;修好後重新執行(已完成的會跳過)`,
-    );
+    throw new HostCommandError(t.services.installFailed(t.common.services(failures)));
   }
   const todo = printed.filter(
     (r) =>
@@ -467,7 +470,7 @@ export async function add(
       r.models.some((m) => !m.present),
   );
   println(
-    `\n${bold("完成")}${todo.length > 0 ? ",上面標 ! 的還要處理" : ""}。下一步:\`miyoria up ${entries.map((e) => e.name).join(" ")}\`(\`miyoria doctor\` 檢查缺什麼)`,
+    `\n${t.services.addDone(bold(t.services.doneMark), todo.length > 0, entries.map((e) => e.name).join(" "))}`,
   );
 }
 
@@ -492,7 +495,7 @@ export async function remove(
   let errors = 0;
   for (const name of options.services) {
     if (host.config.services[name] === undefined) {
-      warn(`${target.hostToml} 沒有 [services.${name}],略過`);
+      warn(t.services.notInHostToml(target.hostToml, name));
       continue;
     }
     try {
@@ -501,11 +504,12 @@ export async function remove(
         force: options.force === true,
         keep_env: options.keepEnv === true,
       });
-      if (result.stopped) println(`■ ${name}  已停止`);
-      if (result.deleted_env !== undefined) ok(`${name}  已刪除環境 ${result.deleted_env}`);
-      else if (host.config.services[name]?.python !== undefined) {
-        note(`${name}  環境是你在 host.toml 指定的,沒有動它`);
-      } else if (options.keepEnv) note(`${name}  環境保留(--keep-env)`);
+      if (result.stopped) println(`■ ${name}  ${t.services.stopped}`);
+      if (result.deleted_env !== undefined) {
+        ok(`${name}  ${t.services.envDeleted(result.deleted_env)}`);
+      } else if (host.config.services[name]?.python !== undefined) {
+        note(`${name}  ${t.services.envFromHostToml}`);
+      } else if (options.keepEnv) note(`${name}  ${t.services.envKept}`);
     } catch (error) {
       errors += 1;
       if (error instanceof HostRpcError && error.code === HOST_ERROR_CODE.Guarded) {
@@ -514,8 +518,8 @@ export async function remove(
       continue;
     }
     removeHostService(target.hostToml, name);
-    ok(`${target.hostToml}:移除 [services.${name}]`);
+    ok(t.services.removedFrom(target.hostToml, name));
   }
-  note("模型沒有動;`miyoria models gc` 會列出沒有服務用到的");
-  if (errors > 0) throw new HostCommandError(`${errors} 個服務沒有移除`);
+  note(t.services.modelsKept);
+  if (errors > 0) throw new HostCommandError(t.services.notRemoved(t.common.services(errors)));
 }

@@ -272,7 +272,7 @@ describe("host invite", () => {
     expect(text()).toContain("--code ABCD-1234 --name laptop");
     expect(text()).toContain("2030-01-02");
     // loopback: the other machine cannot reach it, and the way out is named
-    expect(text()).toContain("別台電腦連不到");
+    expect(text()).toContain("other machines cannot reach it");
     expect(text()).toContain("[modules.api] bind");
   });
 
@@ -302,9 +302,9 @@ describe("host invite", () => {
       status: 503,
       body: { error: "the cluster module is not running" },
     });
-    await expect(cluster.invite(target())).rejects.toThrow(/cluster 模組沒有在執行/);
+    await expect(cluster.invite(target())).rejects.toThrow(/cluster module is not running/);
     await core.stop();
-    await expect(cluster.invite(target())).rejects.toThrow(/連不上 Core 的管理 API/);
+    await expect(cluster.invite(target())).rejects.toThrow(/Cannot reach Core's admin API/);
     core = new FakeCore(); // a stop() for the afterEach
     await core.start();
   });
@@ -330,7 +330,7 @@ describe("host join", () => {
       'name = "laptop"\n\n[cluster]\nurl = "ws://core.lan:7880/cluster-link"\n',
     );
     expect(text()).not.toContain(KEY);
-    expect(text()).toContain("已加入 Core");
+    expect(text()).toContain("Joined Core");
     expect(text()).toContain("miyoria host approve laptop");
     expect(text()).toContain("miyoria up");
   });
@@ -398,22 +398,28 @@ describe("host join", () => {
 
   it("explains_each_failure_and_writes_nothing", async () => {
     const cases: Array<[Reply, RegExp]> = [
-      [{ status: 403, body: { error: "this code does not work" } }, /邀請碼不能用.*host invite/],
+      [
+        { status: 403, body: { error: "this code does not work" } },
+        /invite code is not valid.*host invite/,
+      ],
       [
         { status: 409, body: { error: "a host named `laptop` exists" } },
-        /不接受這個名字.*exists.*--name/,
+        /rejected the name.*exists.*--name/,
       ],
       [
         { status: 429, body: { error: "too many requests" }, headers: { "retry-after": "42" } },
-        /試太多次.*42 秒/,
+        /Too many attempts.*42 seconds/,
       ],
       [
         { status: 503, body: { error: "the cluster module is not running" } },
-        /cluster 模組沒有在執行/,
+        /cluster module is not running/,
       ],
-      [{ status: 404, body: { error: "not found" } }, /不像 Miyoria Core/],
-      [{ status: 500, body: { error: "boom" } }, /Core 回應 500:boom/],
-      [{ status: 200, body: { nope: true } }, /不是 Miyoria Core 的加入結果/],
+      [
+        { status: 404, body: { error: "not found" } },
+        /not the admin API address of a Miyoria Core/,
+      ],
+      [{ status: 500, body: { error: "boom" } }, /Core answered 500: boom/],
+      [{ status: 200, body: { nope: true } }, /not a join result of a Miyoria Core/],
     ];
     for (const [reply, message] of cases) {
       core.replies.set("POST /api/cluster/join", reply);
@@ -429,7 +435,7 @@ describe("host join", () => {
     const port = dead.port;
     await dead.stop();
     await expect(joinWith({ coreUrl: `127.0.0.1:${port}`, name: "laptop" })).rejects.toThrow(
-      /連不上 http:\/\/127\.0\.0\.1:\d+.*bind/,
+      /Cannot reach http:\/\/127\.0\.0\.1:\d+.*bind/,
     );
     expect(existsSync(join(dir, "data/host/host.key"))).toBe(false);
   });
@@ -477,8 +483,8 @@ describe("host join", () => {
 
     await joinWith();
     expect(made).toEqual([{ url: "ws://core.lan:7880/cluster-link", hostId: "h-1", key: KEY }]);
-    expect(text()).toContain("hostd 與 Core 的連線:");
-    expect(text()).toContain("已連上");
+    expect(text()).toContain("hostd link to Core:");
+    expect(text()).toContain("connected");
     expect(text()).not.toContain("miyoria up");
     expect(text()).not.toContain(KEY);
   });
@@ -508,7 +514,7 @@ describe("host join --local", () => {
     expect(toml).toContain("# kept");
     expect(toml).toContain('[cluster]\nurl = "ws://127.0.0.1:7999/cluster-link"');
     expect(text()).not.toContain(KEY);
-    expect(text()).toContain("已核准");
+    expect(text()).toContain("Approved");
     expect(text()).not.toContain("miyoria host approve");
   });
 
@@ -535,7 +541,7 @@ describe("host join --local", () => {
     );
     expect(existsSync(join(dir, "data/host/host.key"))).toBe(false);
     await expect(cluster.joinHost(target(), { local: true, code: "X" })).rejects.toThrow(
-      /不用邀請碼/,
+      /does not take an invite code/,
     );
     rmSync(join(dir, "host.toml"));
     await expect(cluster.joinHost(target(), { local: true })).rejects.toThrow(/host migrate/);
@@ -561,12 +567,14 @@ describe("host ls", () => {
     ];
     await cluster.ls(target());
     const lines = text().split("\n");
-    expect(lines[0]).toMatch(/名稱\s+狀態\s+連線\s+核准的能力\s+平台\s+版本\s+最後上線/);
-    expect(text()).toMatch(
-      /main-pc\s+approved\s+已連線\(3 分前起\)\s+asr、tts\s+win32\s+0\.1\.0\s+0 秒前/,
+    expect(lines[0]).toMatch(
+      /Name\s+Status\s+Connection\s+Approved capabilities\s+Platform\s+Version\s+Last seen/,
     );
-    expect(text()).toMatch(/laptop\s+pending\s+未連線\s+-\s+darwin\s+0\.2\.0\s+-/);
-    expect(text()).toMatch(/old\s+revoked\s+未連線\s+-\s+-\s+-\s+2 天前/);
+    expect(text()).toMatch(
+      /main-pc\s+approved\s+connected for 3 min\s+asr, tts\s+win32\s+0\.1\.0\s+0 s ago/,
+    );
+    expect(text()).toMatch(/laptop\s+pending\s+not connected\s+-\s+darwin\s+0\.2\.0\s+-/);
+    expect(text()).toMatch(/old\s+revoked\s+not connected\s+-\s+-\s+-\s+2 d ago/);
   });
 
   it("says_what_to_do_when_core_has_no_hosts", async () => {
@@ -593,7 +601,7 @@ describe("host approve", () => {
     await cluster.approve(target(), "laptop", []);
     const call = core.calls_to("POST", "/api/cluster/hosts/laptop/approve")[0];
     expect(call?.body).toEqual({ capabilities: ["asr", "tts", "tts.clone"] });
-    expect(text()).toContain("已核准 laptop:asr、tts、tts.clone");
+    expect(text()).toContain("Approved laptop: asr, tts, tts.clone");
   });
 
   it("approves_exactly_the_named_capabilities_without_asking_the_host", async () => {
@@ -602,12 +610,12 @@ describe("host approve", () => {
     expect(core.calls_to("POST", "/api/cluster/hosts/laptop/approve")[0]?.body).toEqual({
       capabilities: ["sing", "asr"],
     });
-    expect(text()).toContain("已核准 laptop:sing、asr");
+    expect(text()).toContain("Approved laptop: sing, asr");
   });
 
   it("explains_that_capabilities_must_be_named_when_the_host_is_not_connected", async () => {
     await expect(cluster.approve(target(), "laptop", [])).rejects.toThrow(
-      /沒有連線.*miyoria host approve laptop asr tts/,
+      /not connected.*miyoria host approve laptop asr tts/,
     );
     expect(core.calls_to("POST", "/api/cluster/hosts/laptop/approve")).toEqual([]);
   });
@@ -617,7 +625,7 @@ describe("host approve", () => {
       status: 404,
       body: { error: "no host" },
     });
-    await expect(cluster.approve(target(), "ghost", [])).rejects.toThrow(/沒有叫 ghost/);
+    await expect(cluster.approve(target(), "ghost", [])).rejects.toThrow(/no host named ghost/);
     core.replies.set("POST /api/cluster/hosts/old/approve", {
       status: 409,
       body: { error: "host `old` was revoked: it has to join again" },
@@ -656,13 +664,13 @@ describe("host remove", () => {
     expect(asked).toHaveLength(1);
     expect(asked[0]).toContain("laptop");
     expect(deleted()).toEqual([]);
-    expect(text()).toContain("沒有移除");
+    expect(text()).toContain("Not removed");
   });
 
   it("removes_on_yes", async () => {
     await cluster.removeHost(target(), "laptop", { yes: false, confirm: async () => true });
     expect(deleted()).toHaveLength(1);
-    expect(text()).toContain("已移除 laptop");
+    expect(text()).toContain("Removed laptop");
   });
 
   it("removes_without_asking_on_dash_y", async () => {
@@ -681,7 +689,7 @@ describe("host remove", () => {
     ).rejects.toThrow(/-y/);
     await expect(
       cluster.removeHost(target(), "ghost", { yes: true, confirm: null }),
-    ).rejects.toThrow(/沒有叫 ghost/);
+    ).rejects.toThrow(/no host named ghost/);
     expect(deleted()).toEqual([]);
   });
 });
@@ -717,14 +725,14 @@ describe("status --all", () => {
     listed();
     await host.status(target(), { hosts: cluster.hostsSection });
     const all = text();
-    expect(all).toContain("這台電腦:this-pc");
-    expect(all).toContain("所有電腦(Core)");
-    expect(all).toMatch(/main-pc\s+approved\s+已連線/);
-    expect(all).toMatch(/\n {2}服務\s+狀態\s+健康\s+埠\s+PID\s+重啟\s+自從\s+原因/);
-    expect(all).toMatch(/ {2}asr\s+running\s+✓\s+8003\s+42\s+0\s+2 分前/);
+    expect(all).toContain("This machine: this-pc");
+    expect(all).toContain("All hosts (Core)");
+    expect(all).toMatch(/main-pc\s+approved\s+connected/);
+    expect(all).toMatch(/\n {2}Service\s+State\s+Health\s+Port\s+PID\s+Restarts\s+Since\s+Reason/);
+    expect(all).toMatch(/ {2}asr\s+running\s+✓\s+8003\s+42\s+0\s+2 min ago/);
     expect(all).toMatch(/ {2}tts\s+failed/);
     // a host that is not connected is one line, and its services are not asked for
-    expect(all).toMatch(/laptop\s+pending\s+未連線\s+最後上線 10 分前/);
+    expect(all).toMatch(/laptop\s+pending\s+not connected\s+last seen 10 min ago/);
     expect(core.calls_to("GET", "/api/cluster/hosts/laptop/info")).toEqual([]);
     expect(core.calls_to("GET", "/api/cluster/hosts/main-pc/info")).toHaveLength(1);
     expect(all).toContain("core 9.9.9");
@@ -733,16 +741,16 @@ describe("status --all", () => {
   it("is_the_old_output_without_all", async () => {
     listed();
     await host.status(target());
-    expect(text()).not.toContain("所有電腦");
+    expect(text()).not.toContain("All hosts");
     expect(core.calls_to("GET", "/api/cluster/hosts")).toEqual([]);
   });
 
   it("keeps_the_local_table_and_says_so_in_one_line_when_core_does_not_answer", async () => {
     await core.stop();
     await host.status(target(), { hosts: cluster.hostsSection });
-    expect(text()).toContain("這台電腦:this-pc");
-    expect(text()).toContain("core 的管理 API 沒有回應");
-    expect(text()).not.toContain("所有電腦");
+    expect(text()).toContain("This machine: this-pc");
+    expect(text()).toContain("Core's admin API is not responding");
+    expect(text()).not.toContain("All hosts");
     core = new FakeCore();
     await core.start();
   });
@@ -750,8 +758,8 @@ describe("status --all", () => {
   it("says_when_the_cluster_module_is_not_running_and_still_shows_core", async () => {
     core.replies.set("GET /api/cluster/hosts", { status: 503, body: { error: "not running" } });
     await host.status(target(), { hosts: cluster.hostsSection });
-    expect(text()).toContain("查不到各台電腦");
-    expect(text()).toContain("cluster 模組沒有在執行");
+    expect(text()).toContain("Could not list the hosts");
+    expect(text()).toContain("cluster module is not running");
     expect(text()).toContain("core 9.9.9");
   });
 
@@ -762,7 +770,7 @@ describe("status --all", () => {
       body: { error: "host `main-pc` is not connected" },
     });
     await host.status(target(), { hosts: cluster.hostsSection });
-    expect(text()).toContain("查不到服務");
+    expect(text()).toContain("Could not list the services");
     expect(text()).toContain("laptop");
   });
 });

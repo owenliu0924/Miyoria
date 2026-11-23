@@ -9,6 +9,7 @@ import { loadCatalog } from "@miyoria/hostd";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as host from "../src/commands/host.js";
 import * as services from "../src/commands/services.js";
+import { t } from "../src/i18n/index.js";
 import { type Output, setOutput } from "../src/ui.js";
 
 // The simulated package folder, and the folders that are declared to have no source checkout
@@ -120,8 +121,8 @@ describe("the voice node on a package", () => {
     const target = host.hostTarget(join(workspace, "miyoria.toml"));
     await expect(
       services.add(target, { services: ["asr", "voice-node"], noInstall: true }),
-    ).rejects.toThrow(services.VOICE_NODE_NEEDS_REPOSITORY);
-    expect(services.VOICE_NODE_NEEDS_REPOSITORY).toContain("repository");
+    ).rejects.toThrow(t.services.voiceNodeNeedsRepository);
+    expect(t.services.voiceNodeNeedsRepository).toContain("repository");
     expect(existsSync(target.hostToml)).toBe(false);
   });
 
@@ -135,7 +136,7 @@ describe("the voice node on a package", () => {
   it("an unknown name still lists the catalog", async () => {
     const target = host.hostTarget(join(workspace, "miyoria.toml"));
     await expect(services.add(target, { services: ["nope"], noInstall: true })).rejects.toThrow(
-      /沒有叫 nope 的服務/,
+      /No service named nope/,
     );
   });
 });

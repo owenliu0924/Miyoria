@@ -174,7 +174,7 @@ function coreToml(options: { token?: boolean; bind?: string } = {}): void {
 const target = (): host.HostTarget => host.hostTarget(join(dir, "miyoria.toml"));
 const loaded = () => loadHostConfig(target().hostToml);
 const text = () => out.join("");
-const linkLines = () => out.filter((l) => /本機的 Core|自動連上|重新核准/.test(l));
+const linkLines = () => out.filter((l) => /local Core|Re-approved/.test(l));
 
 async function startDaemon(): Promise<Daemon> {
   const t = target();
@@ -209,8 +209,10 @@ describe("up links this machine to its own Core", () => {
     expect(JSON.parse(read("data/host/host.key"))).toEqual({ id: "h-1", key: KEY, local: true });
     expect(loaded().config.cluster?.url).toBe("ws://127.0.0.1:47880/cluster-link");
     expect(linkLines()).toHaveLength(1);
-    expect(linkLines()[0]).toContain("這台電腦已連上本機的 Core(名字 test-pc,核准:core)");
-    expect(text()).toContain("全部就緒");
+    expect(linkLines()[0]).toContain(
+      "This machine is linked to the local Core (name test-pc, approved: core)",
+    );
+    expect(text()).toContain("All services are ready");
   }, 30_000);
 
   it("does nothing the second time", async () => {
@@ -234,7 +236,7 @@ describe("up links this machine to its own Core", () => {
     expect(approved).toHaveLength(1);
     expect(approved[0]?.body).toEqual({ capabilities: ["asr", "core"] });
     expect(linkLines()).toHaveLength(1);
-    expect(linkLines()[0]).toContain("已重新核准這台電腦(test-pc):asr、core");
+    expect(linkLines()[0]).toContain("Re-approved this machine (test-pc): asr, core");
   }, 30_000);
 
   it("never touches a host that joined with a code", async () => {
@@ -260,13 +262,13 @@ describe("up links this machine to its own Core", () => {
   it("says so, once, when its host is gone from Core or was revoked", async () => {
     write("data/host/host.key", JSON.stringify({ id: "h-1", key: "k", local: true }));
     await cluster.selfLink(target(), loaded());
-    expect(out.join("")).toContain("Core 裡沒有這台電腦了");
+    expect(out.join("")).toContain("Core no longer has this machine");
     expect(out).toHaveLength(1);
 
     out.length = 0;
     core.hosts = [view("h-1", "test-pc", "revoked", [])];
     await cluster.selfLink(target(), loaded());
-    expect(out.join("")).toContain("被撤銷了,沒有自動核准");
+    expect(out.join("")).toContain("was revoked in Core; it was not approved automatically");
     expect(core.of("POST", "/api/cluster/hosts/test-pc/approve")).toHaveLength(0);
   });
 });
@@ -278,34 +280,34 @@ describe("a problem is one line and `up` goes on", () => {
     const lines = linkLines();
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(expected);
-    expect(text()).toContain("全部就緒");
+    expect(text()).toContain("All services are ready");
     expect(existsSync(join(dir, "data/host/host.key"))).toBe(false);
   }
 
   it("no admin token configured", async () => {
     coreToml({ token: false });
-    await oneLine(/這台沒有自動連上本機的 Core:.*token/i);
+    await oneLine(/not linked to the local Core automatically: .*token/i);
   }, 30_000);
 
   it("the cluster module is off", async () => {
     core.fail = { status: 503, body: { error: "off" } };
-    await oneLine(/cluster 模組沒有在執行/);
+    await oneLine(/cluster module is not running/);
   }, 30_000);
 
   it("the admin API refuses the token", async () => {
     coreToml({ bind: `127.0.0.1:${core.port}` });
     write("miyoria.toml", `[modules.api]\nbind = "127.0.0.1:${core.port}"\ntoken = "wrong"\n`);
-    await oneLine(/不接受這個 token/);
+    await oneLine(/rejected the token/);
   }, 30_000);
 
   it("Core's name is taken", async () => {
     core.hosts = [view("h-5", "test-pc", "approved", [])];
-    await oneLine(/已經有叫 test-pc 的電腦/);
+    await oneLine(/already has a host named test-pc/);
   }, 30_000);
 
   it("there is no miyoria.toml", async () => {
     rmSync(join(dir, "miyoria.toml"));
-    await oneLine(/這台沒有自動連上本機的 Core:/);
+    await oneLine(/not linked to the local Core automatically:/);
   }, 30_000);
 });
 
@@ -323,7 +325,9 @@ describe("when up links", () => {
     await startDaemon();
     const selfLink = vi.fn(async () => {});
     // asr is not in host.toml: the start fails and nothing links.
-    await expect(host.up(target(), { services: ["asr"], selfLink })).rejects.toThrow(/沒有起來/);
+    await expect(host.up(target(), { services: ["asr"], selfLink })).rejects.toThrow(
+      /did not start/,
+    );
     expect(selfLink).not.toHaveBeenCalled();
     await host.up(target(), { services: ["core"], selfLink });
     expect(selfLink).toHaveBeenCalledTimes(1);

@@ -239,7 +239,7 @@ describe("on / off / status on windows", () => {
     await autostartOn(target, deps("win32", no, { yes: false, confirm: async () => false }).value);
     expect(no.calls.every((c) => c.args.includes("/query"))).toBe(true);
     expect(no.state.registered).toBe(false);
-    expect(text()).toContain("沒有登錄");
+    expect(text()).toContain("Not registered");
 
     const none = fakeSystem();
     await expect(
@@ -258,7 +258,7 @@ describe("on / off / status on windows", () => {
     expect(creates).toHaveLength(2);
     expect(creates[0]).toEqual(creates[1]);
     expect(creates[0]?.args).toContain("/f");
-    expect(text()).toContain("更新已有的登錄");
+    expect(text()).toContain("updating the existing entry");
   });
 
   it("two_workspaces_get_two_tasks", async () => {
@@ -279,7 +279,7 @@ describe("on / off / status on windows", () => {
     await autostartOff(target, value);
     expect(system.calls).toHaveLength(1);
     expect(system.calls[0]?.args[0]).toBe("/query");
-    expect(text()).toContain("沒有要取消的");
+    expect(text()).toContain("nothing to undo");
 
     out.length = 0;
     await autostartOn(target, value);
@@ -294,22 +294,22 @@ describe("on / off / status on windows", () => {
     const target = workspace("w five");
     const system = fakeSystem();
     await autostartStatus(target, deps("win32", system).value);
-    expect(text()).toContain("沒有登錄");
-    expect(text()).toContain("沒有在執行");
+    expect(text()).toContain("Not registered");
+    expect(text()).toContain("hostd now: not running");
 
     out.length = 0;
     await autostartOn(target, deps("win32", system).value);
     out.length = 0;
     await autostartStatus(target, deps("win32", system, { daemonRunning: async () => true }).value);
-    expect(text()).toContain("已登錄");
+    expect(text()).toContain("Registered: hostd starts when this account logs in");
     expect(text()).toContain("--start");
-    expect(text()).toContain("執行中");
+    expect(text()).toContain("hostd now: running");
 
     // A different Node since it was written.
     out.length = 0;
     const moved = deps("win32", system, { self: () => ["D:\\node\\node.exe", "D:\\app\\main.js"] });
     await autostartStatus(target, moved.value);
-    expect(text()).toContain("不一樣");
+    expect(text()).toContain("differs from the current settings");
   });
 
   it("a_denied_creation_says_what_to_do_and_fails", async () => {
@@ -320,7 +320,7 @@ describe("on / off / status on windows", () => {
         ? result(1, { stderr: "ERROR: Access is denied." })
         : system.runner(command, args);
     await expect(autostartOn(target, deps("win32", system, { runner }).value)).rejects.toThrow();
-    expect(text()).toContain("系統管理員");
+    expect(text()).toContain("administrator");
   });
 });
 
@@ -361,7 +361,7 @@ describe("on / off / status on linux", () => {
     const system = fakeSystem();
     await autostartOff(target, deps("linux", system).value);
     expect(system.calls).toHaveLength(1);
-    expect(text()).toContain("沒有要取消的");
+    expect(text()).toContain("nothing to undo");
   });
 });
 

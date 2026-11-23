@@ -11,6 +11,7 @@ import {
   type PullDeps,
   pullModels,
 } from "@miyoria/hostd";
+import { t } from "../i18n/index.js";
 import { dim, fail, note, ok, println, section, warn } from "../ui.js";
 import { catalogRoot, HostCommandError, type HostTarget, loadHost } from "./host.js";
 import { progressPrinter, type ServiceDeps } from "./services.js";
@@ -53,13 +54,13 @@ export async function pull(
   for (const name of names) {
     const entry = catalog.services.get(name);
     if (entry === undefined) {
-      throw new HostCommandError(`目錄裡沒有叫 ${name} 的服務`);
+      throw new HostCommandError(t.models.notInCatalog(name));
     }
     if (host.config.services[name] === undefined) {
-      throw new HostCommandError(`${name} 還不是這台的服務:先 \`miyoria add ${name}\``);
+      throw new HostCommandError(t.models.notAdded(name));
     }
     if (entry.descriptor.install.models.length === 0) continue;
-    section(`${name}:下載模型`);
+    section(t.models.pulling(name));
     const results = await pullModels(entry, host, {
       ...deps.pull,
       onLine: progressPrinter(),
@@ -69,7 +70,7 @@ export async function pull(
         pulled += 1;
         ok(`${r.repo}${r.revision !== undefined ? ` @ ${r.revision.slice(0, 8)}` : ""}`);
         if (r.unpinned) {
-          warn(`${r.repo} 的 service.toml 沒有 revision:拿的是預設分支的最新版,沒有固定`);
+          warn(t.models.unpinned(r.repo));
         }
       } else {
         failures += 1;
@@ -77,31 +78,31 @@ export async function pull(
       }
     }
   }
-  if (pulled === 0 && failures === 0) note("沒有要下載的模型");
-  if (failures > 0) throw new HostCommandError(`${failures} 個模型沒有下載`);
+  if (pulled === 0 && failures === 0) note(t.models.nothingToPull);
+  if (failures > 0) throw new HostCommandError(t.models.pullFailed(failures));
 }
 
 /** The model folder with sizes and the services that name each item. */
 export function ls(target: HostTarget): void {
   const host = loadHost(target);
   const entries = listModels(catalogOf(target), host);
-  section(`模型資料夾 ${host.state.models}`);
+  section(t.models.folder(host.state.models));
   if (entries.length === 0) {
-    note("還沒有模型(`miyoria models pull`,或 `miyoria add <服務>` 下載小檔案)");
+    note(t.models.empty);
     return;
   }
   const width = Math.max(...entries.map((e) => e.id.length));
   for (const e of entries) {
     const users =
       e.usedBy.length === 0
-        ? dim("沒有服務用到")
-        : e.usedBy.map((n) => (e.enabledBy.includes(n) ? n : `${n}(停用)`)).join("、");
+        ? dim(t.models.unused)
+        : t.common.list(e.usedBy.map((n) => (e.enabledBy.includes(n) ? n : t.models.disabled(n))));
     println(
-      `  ${e.id.padEnd(width)}  ${formatBytes(e.bytes).padStart(8)}  ${e.kind === "hf" ? "Hugging Face" : "檔案"}  ${users}`,
+      `  ${e.id.padEnd(width)}  ${formatBytes(e.bytes).padStart(8)}  ${e.kind === "hf" ? "Hugging Face" : t.models.file}  ${users}`,
     );
   }
   const total = entries.reduce((sum, e) => sum + e.bytes, 0);
-  println(dim(`\n共 ${entries.length} 項,${formatBytes(total)}`));
+  println(dim(`\n${t.models.total(t.models.items(entries.length), formatBytes(total))}`));
 }
 
 export interface GcOptions {
@@ -117,21 +118,21 @@ export async function gc(
   const host = loadHost(target);
   const catalog = catalogOf(target);
   const result = await gcModels(catalog, host, async (candidates: ModelEntry[]) => {
-    section("沒有啟用中的服務用到的模型");
+    section(t.models.gcTitle);
     for (const c of candidates) println(`  ${c.id}  ${formatBytes(c.bytes)}`);
     const total = candidates.reduce((sum, c) => sum + c.bytes, 0);
     if (options.yes === true) return true;
     if (deps.confirm === undefined) {
-      note("沒有刪除任何東西(要刪請加 --yes,或在終端機裡執行)");
+      note(t.models.gcNotConfirmed);
       return false;
     }
-    return deps.confirm(`刪除以上 ${candidates.length} 項(${formatBytes(total)}),無法復原?`);
+    return deps.confirm(t.models.gcConfirm(t.models.items(candidates.length), formatBytes(total)));
   });
   if (result.candidates.length === 0) {
-    ok("每個模型都有啟用中的服務在用");
+    ok(t.models.allUsed);
     return;
   }
   if (result.deleted.length > 0) {
-    ok(`已刪除 ${result.deleted.length} 項,釋出 ${formatBytes(result.freedBytes)}`);
+    ok(t.models.deleted(t.models.items(result.deleted.length), formatBytes(result.freedBytes)));
   }
 }

@@ -237,7 +237,7 @@ describe("miyoria add", () => {
     catalog();
     const uv = fakeUv();
     await expect(servicesCmd.add(target(), { services: ["nope"] }, deps(uv))).rejects.toThrow(
-      /沒有叫 nope[\s\S]*py[\s\S]*A fake Python worker/,
+      /No service named nope[\s\S]*py[\s\S]*A fake Python worker/,
     );
     expect(existsSync(join(dir, "host.toml"))).toBe(false);
     expect(uv.calls).toHaveLength(0);
@@ -284,7 +284,7 @@ describe("miyoria add", () => {
     catalog();
     await expect(
       servicesCmd.add(target(), { services: ["py"] }, deps(fakeUv({ missing: true }))),
-    ).rejects.toThrow(/沒有裝好/);
+    ).rejects.toThrow(/failed to install/);
     expect(text()).toMatch(/winget install|astral\.sh/);
     expect(hostToml()).toContain("[services.py]");
   });
@@ -293,7 +293,7 @@ describe("miyoria add", () => {
     catalog();
     await expect(
       servicesCmd.add(target(), { services: ["py"] }, deps(fakeUv(), "darwin")),
-    ).rejects.toThrow(/只支援/);
+    ).rejects.toThrow(/supports only/);
   });
 });
 
@@ -340,7 +340,7 @@ describe("miyoria models", () => {
     expect(text()).toContain("Org/Name");
     expect(text()).toContain("py");
     expect(text()).toContain("Other/Thing");
-    expect(text()).toContain("沒有服務用到");
+    expect(text()).toContain("not used by any service");
   });
 
   it("gc_lists_what_no_enabled_service_uses_and_deletes_it_only_with_yes_or_a_confirmation", async () => {
@@ -457,7 +457,7 @@ describe("update: the services part", () => {
     const failures = await update.updateServices(config(), {}, updateDeps(uv), null);
     expect(failures).toBe(0);
     expect(uv.calls).toHaveLength(0);
-    expect(text()).toContain("一致");
+    expect(text()).toContain("Environments match uv.lock");
   });
 
   it("syncs_a_stale_service_that_is_not_running_and_leaves_the_rest", async () => {
@@ -481,7 +481,7 @@ describe("update: the services part", () => {
     await update.updateServices(config(), { dryRun: true }, updateDeps(uv), null);
     expect(uv.calls).toHaveLength(0);
     expect(text()).toContain("py");
-    expect(text()).toContain("同步");
+    expect(text()).toContain("Would sync environments");
   });
 
   it("skips_the_part_without_a_host_toml", async () => {
