@@ -103,7 +103,7 @@ export const WAKE_LINES = {
   result: (tool: string, job: string | null, ok: boolean) =>
     `你之前開始的事${ok ? "有結果了" : "沒有成功"}(${safeName(tool, 64)}${
       job === null ? "" : `,代號 ${safeName(job, 64)}`
-    }):見參考資料「${RESULT_TITLE}」。想講就講,沒什麼好說就什麼都不寫。`,
+    }):見參考資料「${RESULT_TITLE}」。這是有人要你做的事(資料裡寫了是誰要的)時,一定要跟那個人交代:做了什麼、東西或檔案在哪,或為什麼沒做成;不能不說。只有沒有人在等的結果,才可以想講再講、沒什麼好說就不寫。`,
   timer: (note: string) =>
     `你自己設的時間到了:「${neutralize(note).replace(/\s+/g, " ").trim()}」。要不要說、怎麼說由你決定。`,
   glance: (lines: number) =>
