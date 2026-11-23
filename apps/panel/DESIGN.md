@@ -109,7 +109,8 @@ Two accents, everything else neutral. Coloured controls are always solid.
 
 **The market's red and green (owner, 2026-11-21).** 深海交易所 uses a red and a green for market up
 and down only, and nowhere else: price moves, candles, volume bars, the moving averages' direction
-arrows and the heat maps' tiles. `#ef5f5f` and `#3fc48a` for lines, text and candles; the tiles mix
+arrows and the heat maps' tiles, and (owner, 2026-11-23) the ticket's 買進 / 賣出, solid in up's
+and down's colour with dark ink (`#14090c`, about 6:1 and 9:1). `#ef5f5f` and `#3fc48a` for lines, text and candles; the tiles mix
 from a neutral `#3b3f4c` towards a deeper `#b8383d` / `#1d8a5a` (full at ±3%) so white text reads on
 them. Which is up is each member's own choice (2026-11-22: a `Segmented` above the market's table,
 each option its two colour squares and its words, 紅漲綠跌(台股) / 綠漲紅跌(國際)), else the
@@ -346,6 +347,19 @@ token form stays at `#/login`, with no link to it from the page.
   | 卡片 | `/me/cards` | 她給你的卡 (in a 22 rem column from `lg`, the width it had in the old rail), 今日籤詩, 卡冊 |
   | 遊戲 | `/me/play` | 預測, 她的懸賞, 市集 |
   | 交易所 | `/me/exchange` | The exchange block |
+  - A ticker's page leads with the price as a strip of facts, then their own position (shares, average
+    cost, worth, unrealised gain; each 2x position with its line; waiting orders with 取消), then the
+    candle chart. Buying and selling is one tap away: below `lg` a band stuck to the bottom of the
+    viewport (the module page's unsaved band) with 買進 / 賣出 opening a bottom sheet (a Radix
+    dialog: focus to the amount, Esc closes, focus back to the button); from `lg` the same ticket
+    is a sticky column beside the chart, split by a hairline. The ticket (`exchange/TradeForm.tsx`):
+    買進 / 賣出, 金額 / 股數, one large field with its unit, quick amounts, 1 倍 / 2 倍 where allowed,
+    the numbers in fixed rows (the local estimate at once, the Core's quote when it answers), one
+    button that says what it will do and stays disabled until the quote for exactly that order is
+    in; a refusal sits under the control it is about. After it goes through, the same place says
+    filled at what price or what it waits for, with 查看持股 and 再下一筆.
+  - 我的 is one strip of facts, then a row per holding (opens the ticker; 買 / 賣 beside it), the
+    waiting orders, and the latest fills folded away, at most `max-w-4xl` wide.
   - Every block is in exactly one tab (`SECTIONS` and `MEMBER_TABS`, checked by a test). A tab is a
     column of rows; a row is one block across, or columns from `lg` (two equal by default). On a
     phone the columns stack in their order, so what matters today (the check-in) comes early.

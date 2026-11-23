@@ -3,9 +3,10 @@
 // none of it) and the query asks for it. Every name and number here is made up.
 //
 // What it shows: the member page's exchange block alone, on the page's glass, with a member who has
-// an account, a few holdings (a 1× lot of 2330, a 2× AAPL position, RICE) and made-up candles for
-// every ticker in all four timeframes (real stocks with volume, the local ones without). The query
-// picks where it opens:
+// an account, a few holdings (a 1× lot of 2330, a 2× AAPL position, RICE, 0050, CUBE) and made-up
+// candles for every ticker in all four timeframes (real stocks with volume, the local ones
+// without). Quotes and orders are worked out here from what is asked (the same fee and rules as
+// the Core), so the ticket answers as it would. The query picks where it opens:
 //
 //   ?exchange-demo            the market tab
 //   ?exchange-demo=chart      2330.TW's candle chart (their cost line on it)
@@ -17,6 +18,20 @@
 //                             (收盤價, 休市中), the local stocks at their opening reference before
 //                             the first tick, a waiting order with the next open (=closed-map,
 //                             =closed-chart for its heat map and 2330.TW's page)
+//
+// The ticket (2330.TW unless it says otherwise; a phone gets the bottom sheet, a wide window the
+// panel beside the chart):
+//
+//   =buy            the buy ticket, nothing typed        =buy-estimate   1,000 coins typed
+//   =buy-2x         2 倍 with its warning                =sell           selling 0.5 of 1 share
+//   =sell-2x        closing the 2× AAPL position         =refusal        more coins than the wallet
+//   =refusal-2x     2 倍 on a ticker too cheap for it    =success        a buy placed and filled
+//   =none           NVDA, which they do not hold          =waiting        2330.TW on the closed
+//                                                                         Sunday, its order waiting
+//   =closed-buy     a buy while the market is closed (it waits for the open)
+//   =mine           我的 with several holdings
+//
+// Any of them with `-us` after it is drawn in the us convention (green up), e.g. `=buy-us`.
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
@@ -29,7 +44,10 @@ import type {
   ExchangeLine,
   ExchangeMap,
   ExchangeMarket,
+  ExchangeOrder,
+  ExchangeOrderRequest,
   ExchangePortfolio,
+  ExchangeQuote,
 } from "@miyoria/contracts/api";
 import { Backdrop } from "@/app/Backdrop";
 import { ConnectionProvider } from "@/app/connection";
@@ -39,12 +57,18 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ExchangeTab } from "@/pages/economy/ExchangeTab";
 import { Exchange } from "../Exchange";
+import { taipeiWhen } from "./common";
+import type { Ticket } from "./TradeForm";
+import { coinsForShares, feeOn, heldOf, QTY, splitBuy } from "./trade-math";
 
-const raw = new URLSearchParams(window.location.search).get("exchange-demo") ?? "";
+const asked = new URLSearchParams(window.location.search).get("exchange-demo") ?? "";
+/** `-us` on any scene: the us convention. */
+const usAsked = asked.endsWith("-us");
+const raw = usAsked && !asked.startsWith("chart") ? asked.slice(0, -3) : asked;
 /** The closed-market Sunday: the same scenes, every market closed. */
-const closed = raw.startsWith("closed");
-const scene = closed ? (raw === "closed-map" ? "map-tw" : raw === "closed-chart" ? "chart" : "") : raw;
-const colors: "tw" | "us" = scene.endsWith("-us") && scene.startsWith("chart") ? "us" : "tw";
+const closed = raw.startsWith("closed") || raw === "waiting";
+const scene = closed ? (raw === "closed-map" ? "map-tw" : raw === "closed-chart" || raw === "waiting" ? "chart" : raw === "closed-buy" ? "buy-estimate" : "") : raw;
+const colors: "tw" | "us" = usAsked ? "us" : "tw";
 
 const BASE = "魚幣是遊戲點數,沒有現金價值,不能用真錢或現實物品買賣、交換。這裡的行情只供遊戲使用,不是投資建議。";
 // Friday 13:25 Taipei: Taiwan open, the US closed; or Sunday 11:30 Taipei, everything closed.
@@ -288,6 +312,8 @@ const PORTFOLIO: ExchangePortfolio = {
     { id: "p1", code: "2330.TW", name: "示範半導體", leverage: 1, qty: 1_000_000, cost: 2_060, margin: 2_060, loan: 0, price: 2000, value: 2000, equity: 2000, ratio: null, line_price: null, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-18T02:00:00.000Z", can_sell: true },
     { id: "p2", code: "AAPL", name: "示範蘋果", leverage: 2, qty: 200_000, cost: 1_988, margin: 994, loan: 994, price: 10_276.8, value: 2_055, equity: 1_061, ratio: 1.07, line_price: 8_286, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-12T15:00:00.000Z", can_sell: true },
     { id: "p3", code: "RICE", name: "白飯食品", leverage: 1, qty: 3_000_000, cost: 293, margin: 293, loan: 0, price: 101.2, value: 303.6, equity: 303.6, ratio: null, line_price: null, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-19T05:00:00.000Z", can_sell: true },
+    { id: "p4", code: "0050.TW", name: "示範五十", leverage: 1, qty: 12_000_000, cost: 708, margin: 708, loan: 0, price: 61.2, value: 734.4, equity: 734.4, ratio: null, line_price: null, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-10T02:00:00.000Z", can_sell: true },
+    { id: "p5", code: "CUBE", name: "方塊礦業", leverage: 1, qty: 2_500_000, cost: 301, margin: 301, loan: 0, price: 119, value: 297.5, equity: 297.5, ratio: null, line_price: null, warn_half_price: null, warn_near_price: null, opened_at: "2026-11-17T05:00:00.000Z", can_sell: true },
   ],
   orders: closed
     ? [
@@ -295,10 +321,14 @@ const PORTFOLIO: ExchangePortfolio = {
         { id: "o2", code: "AAPL", side: "sell", coins: 0, qty: 100_000, leverage: 1, position: null, status: "open", why: null, at: new Date(NOW - 300_000).toISOString(), next_open: NEXT_OPEN.us },
       ]
     : [],
-  fills: [{ id: "f1", code: "RICE", side: "buy", kind: "fill", qty: 3_000_000, price: 97.5, gross: 293, fee: 3, paid: 0, shortfall: 0, leverage: 1, at: "2026-11-19T05:00:00.000Z" }],
+  fills: [
+    { id: "f1", code: "RICE", side: "buy", kind: "fill", qty: 3_000_000, price: 97.5, gross: 293, fee: 3, paid: 0, shortfall: 0, leverage: 1, at: "2026-11-19T05:00:00.000Z" },
+    { id: "f2", code: "CUBE", side: "buy", kind: "fill", qty: 2_500_000, price: 119.2, gross: 298, fee: 3, paid: 0, shortfall: 0, leverage: 1, at: "2026-11-17T05:00:00.000Z" },
+    { id: "f3", code: "0050.TW", side: "buy", kind: "fill", qty: 12_000_000, price: 58.4, gross: 701, fee: 7, paid: 0, shortfall: 0, leverage: 1, at: "2026-11-10T02:00:00.000Z" },
+  ],
   notices: [],
   bankrupt: null,
-  totals: { cost: 4_341, value: 3_364.6 },
+  totals: { cost: 5_350, value: 4_396.5 },
 };
 
 const BOARDS: ExchangeBoards = {
@@ -362,7 +392,7 @@ function listRows(kind: string) {
   if (kind === "local") return pick(["RICE", "WHLE", "NAPS", "CUBE", "DPSK"]);
   if (kind === "tw") return pick(STOCKS.filter((s) => s.market === "tw").map((s) => s.code));
   if (kind === "us") return pick(STOCKS.filter((s) => s.market === "us").map((s) => s.code));
-  if (kind === "mine") return pick(["2330.TW", "AAPL", "RICE"]);
+  if (kind === "mine") return pick(["2330.TW", "AAPL", "RICE", "0050.TW", "CUBE"]);
   if (kind === "popular") return HELD.map(([code, , people]) => ({ ...lineOf(byCode.get(code) as Stock), holders: people }));
   if (kind === "movers") return pick([...STOCKS].sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, 10).map((s) => s.code));
   return pick(["2330.TW", "NVDA"]);
@@ -399,6 +429,131 @@ const ADMIN: ExchangeAdmin = {
   positions: [{ id: "p1", name: "小魚乾", code: "2330.TW", leverage: 1, qty: 1_000_000, value: 2000 }],
 };
 
+const LEVERAGE_WARNING = "2 倍可能賠掉保證金以外的錢,最壞會賠光錢包和其他持股;跳空時可能沒有預警就被自動賣出。";
+
+/** What the Core would quote for `req` here: the same fee, split and rules, the demo's wallet and book. */
+function quoteOf(req: ExchangeOrderRequest): ExchangeQuote | { error: string; status: number } {
+  const s = byCode.get(req.code);
+  if (!s) return { error: "沒有這個標的(先查詢代號)", status: 404 };
+  const l = lineOf(s);
+  const price = l.coin_price ?? 0;
+  const rules = MARKET.rules;
+  const note = l.basis === "quote" ? null : l.price_note;
+  const when = l.open || !l.next_open ? "下一筆有效報價成交" : `現在休市,下一個開盤 ${taipeiWhen(l.next_open)}(台北時間)後第一筆有效報價成交,之前都可以取消`;
+  const est = note ? `照${note.split("・")[0]}估` : "照現價";
+  const base = { code: s.code, price, open: l.open, price_note: note, next_open: l.next_open, line_price: null, warning: null };
+  if (req.side === "buy") {
+    const lev = req.leverage === 2 ? 2 : 1;
+    if (req.coins === undefined && req.shares !== undefined && lev !== 1) return { error: "照股數買只能 1 倍、股數要大於 0", status: 409 };
+    const paid = req.coins ?? (req.shares !== undefined ? coinsForShares(req.shares, price, rules) : 0);
+    if (paid < rules.order_min) return { error: `一筆買進至少 ${rules.order_min} 魚幣`, status: 409 };
+    if (lev > 1 && s.market === "local") return { error: "新手推薦的獨家股票不開放槓桿,只能 1 倍", status: 409 };
+    if (lev > 1 && price < 50) return { error: "這檔只能 1 倍:2 倍只開放一股至少 50 魚幣、有前一天收盤價的標的", status: 409 };
+    if (paid > (ACCOUNT.balance ?? 0)) return { error: "魚幣不夠", status: 402 };
+    const split = splitBuy(paid, lev, rules);
+    if (!split) return { error: "這筆太小了", status: 409 };
+    const qty = Math.floor((split.exposure * QTY) / price);
+    const loan = split.exposure - split.margin;
+    const line = lev > 1 ? Math.round(((rules.leverage_line * split.margin + loan) * QTY) / qty) : null;
+    return {
+      ...base,
+      side: "buy",
+      coins: split.margin + split.fee,
+      margin: split.margin,
+      exposure: split.exposure,
+      fee: split.fee,
+      qty,
+      leverage: lev,
+      gross: 0,
+      net: 0,
+      line_price: line,
+      sentence:
+        lev > 1
+          ? `付 ${split.margin + split.fee} 魚幣(保證金 ${split.margin}、手續費 ${split.fee}),買 2 倍的部位 ${split.exposure};${when}。跌到約 ${(line ?? 0).toFixed(2)} 會依規則自動賣出。`
+          : `付 ${split.margin + split.fee} 魚幣(含手續費 ${split.fee}),${est}約 ${(qty / QTY).toFixed(4)} 股,${when}。買進後 ${rules.min_hold_minutes} 分鐘才能賣。`,
+      warning: lev > 1 ? LEVERAGE_WARNING : null,
+    };
+  }
+  const held = heldOf(PORTFOLIO, s.code);
+  let qty = 0;
+  let loan = 0;
+  if (req.position) {
+    const p = PORTFOLIO.holdings.find((h) => h.id === req.position);
+    if (!p) return { error: "找不到這個持股", status: 404 };
+    qty = p.qty;
+    loan = p.loan;
+  } else {
+    if (held.lots.length === 0) return { error: "沒有可以賣的持股", status: 409 };
+    qty = req.all
+      ? held.free
+      : req.coins !== undefined
+        ? Math.min(held.free, Math.floor((req.coins / price) * QTY))
+        : Math.min(held.free, Math.round((req.shares ?? 0) * QTY));
+    if (qty <= 0) return { error: "要賣多少?(四捨五入後是 0 股)", status: 409 };
+  }
+  const gross = Math.floor((qty * price) / QTY);
+  const fee = Math.max(0, Math.min(gross - loan, Math.max(rules.fee_min, Math.ceil((gross - loan) * rules.fee - 1e-9))));
+  const net = Math.max(0, gross - loan - fee);
+  return {
+    ...base,
+    side: "sell",
+    coins: 0,
+    margin: 0,
+    exposure: 0,
+    fee,
+    qty,
+    leverage: 1,
+    gross,
+    net,
+    sentence: `賣出 ${(qty / QTY).toFixed(4)} 股,${when};${est}大約拿回 ${net} 魚幣(手續費 ${fee} 燒掉)。`,
+    warning: loan > 0 && gross - loan < 0 ? LEVERAGE_WARNING : null,
+  };
+}
+
+let orderSeq = 10;
+/** An order placed here: it waits while its market is closed, else it fills at the quote's price a moment later. */
+function place(q: ExchangeQuote): ExchangeOrder {
+  orderSeq += 1;
+  const seq = orderSeq;
+  const at = new Date(NOW + seq * 1000).toISOString();
+  const order: ExchangeOrder = {
+    id: `o${seq}`,
+    code: q.code,
+    side: q.side,
+    coins: q.coins,
+    qty: q.qty,
+    leverage: q.leverage,
+    position: null,
+    status: "open",
+    why: null,
+    at,
+    next_open: q.open ? null : q.next_open,
+  };
+  PORTFOLIO.orders.unshift({ ...order });
+  if (q.open)
+    setTimeout(() => {
+      const o = PORTFOLIO.orders.find((x) => x.id === order.id);
+      if (o?.status !== "open") return;
+      o.status = "filled";
+      const gross = q.side === "buy" ? q.exposure : q.gross;
+      PORTFOLIO.fills.unshift({
+        id: `f${seq}`,
+        code: q.code,
+        side: q.side,
+        kind: "fill",
+        qty: q.qty,
+        price: q.price ?? 0,
+        gross,
+        fee: q.fee || feeOn(gross, MARKET.rules.fee, MARKET.rules.fee_min),
+        paid: 0,
+        shortfall: 0,
+        leverage: q.leverage,
+        at: new Date(NOW + seq * 1000 + 30_000).toISOString(),
+      });
+    }, 1500);
+  return order;
+}
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
@@ -434,14 +589,22 @@ export function answer(method: string, path: string, query: URLSearchParams, bod
   if (path === "/api/member/exchange/suggest") return json({ items: STOCKS.slice(0, 6).map((s) => ({ code: s.code, name: s.name })) });
   if (path === "/api/member/exchange/lookup") return json({ instrument: lineOf(STOCKS[0] as Stock) });
   if (path === "/api/member/exchange/watch") return json({ watching: true, count: 2 });
-  if (path === "/api/member/exchange/quote" && method === "POST")
-    return json(
-      closed
-        ? { side: "buy", code: "2330.TW", price: 2000, open: false, coins: 2_020, margin: 2_000, exposure: 2_000, fee: 20, qty: 1_000_000, leverage: 1, gross: 0, net: 0, line_price: null, price_note: "收盤價(11/20)・休市中", next_open: NEXT_OPEN.tw, sentence: "付 2020 魚幣(含手續費 20),照收盤價(11/20)估約 1.0000 股,現在休市,下一個開盤 11/23(一)09:00(台北時間)後第一筆有效報價成交,之前都可以取消。買進後 10 分鐘才能賣。", warning: null }
-        : { side: "buy", code: "2330.TW", price: 2000, open: true, coins: 101, margin: 100, exposure: 100, fee: 1, qty: 50_000, leverage: 1, gross: 0, net: 0, line_price: null, price_note: null, next_open: null, sentence: "付 101 魚幣(含手續費 1),照現價約 0.0500 股,下一筆有效報價成交。買進後 10 分鐘才能賣。", warning: null },
-    );
-  if (path === "/api/member/exchange/order" && method === "POST")
-    return json({ id: "o9", code: "2330.TW", side: "buy", coins: 101, qty: 50_000, leverage: 1, position: null, status: "open", why: null, at: new Date(NOW).toISOString(), next_open: closed ? NEXT_OPEN.tw : null });
+  if (path === "/api/member/exchange/quote" && method === "POST") {
+    const q = quoteOf(body as ExchangeOrderRequest);
+    return "error" in q ? json({ error: q.error }, q.status) : json(q);
+  }
+  if (path === "/api/member/exchange/order" && method === "POST") {
+    const q = quoteOf(body as ExchangeOrderRequest);
+    if ("error" in q) return json({ error: q.error }, q.status);
+    return json(place(q));
+  }
+  if (path === "/api/member/exchange/cancel" && method === "POST") {
+    const id = (body as { order?: string } | undefined)?.order;
+    const o = PORTFOLIO.orders.find((x) => x.id === id && x.status === "open");
+    if (!o) return json({ error: "沒有這筆還沒成交的委託" }, 404);
+    o.status = "cancelled";
+    return json({ refunded: o.side === "buy" ? o.coins : 0 });
+  }
   if (path.startsWith("/api/")) return json({ error: "no such endpoint" }, 404);
   return null;
 }
@@ -487,6 +650,25 @@ function Frame({ children }: { children: ReactNode }) {
   );
 }
 
+/** Each ticket scene: the ticker, the side and what is typed. */
+const TICKETS: Record<string, { code: string; ticket: Ticket }> = {
+  buy: { code: "2330.TW", ticket: { side: "buy", position: null } },
+  "buy-estimate": { code: "2330.TW", ticket: { side: "buy", position: null, mode: "coins", text: "1000" } },
+  "buy-2x": { code: "2330.TW", ticket: { side: "buy", position: null, mode: "coins", text: "1000", lev: 2 } },
+  sell: { code: "2330.TW", ticket: { side: "sell", position: null, mode: "shares", text: "0.5" } },
+  "sell-2x": { code: "AAPL", ticket: { side: "sell", position: "p2" } },
+  refusal: { code: "2330.TW", ticket: { side: "buy", position: null, mode: "coins", text: "9000" } },
+  "refusal-2x": { code: "2002.TW", ticket: { side: "buy", position: null, mode: "coins", text: "500", lev: 2 } },
+  success: { code: "2330.TW", ticket: { side: "buy", position: null, mode: "coins", text: "1000" } },
+};
+
+/** The success scene presses the ticket's button once the Core's quote has answered. */
+function pressWhenPriced(tries = 50): void {
+  const b = document.querySelector<HTMLButtonElement>("[data-confirm]");
+  if (b && !b.disabled) b.click();
+  else if (tries > 0) setTimeout(() => pressWhenPriced(tries - 1), 200);
+}
+
 /** Renders the demo into `root` in place of the app. */
 export function startExchangeDemo(root: HTMLElement): void {
   installFetch();
@@ -499,6 +681,9 @@ export function startExchangeDemo(root: HTMLElement): void {
   } catch {
     // No storage: the market tab.
   }
-  const code = scene === "chart" ? "2330.TW" : scene === "chart-us" ? "AAPL" : scene === "local" ? "RICE" : null;
-  createRoot(root).render(<Frame>{scene === "owner" ? <ExchangeTab /> : <Exchange initialCode={code} />}</Frame>);
+  const t = TICKETS[scene];
+  const code = t ? t.code : scene === "chart" ? "2330.TW" : scene === "chart-us" ? "AAPL" : scene === "local" ? "RICE" : scene === "none" ? "NVDA" : null;
+  const tab = scene === "mine" ? "mine" : undefined;
+  createRoot(root).render(<Frame>{scene === "owner" ? <ExchangeTab /> : <Exchange initialCode={code} initialTicket={t?.ticket ?? null} initialTab={tab} />}</Frame>);
+  if (scene === "success") pressWhenPriced();
 }
