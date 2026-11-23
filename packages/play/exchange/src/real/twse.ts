@@ -17,7 +17,7 @@
 //
 // The price: `z` when it is a number; else the latest trade `trade.z`; else, only when both the best
 // bid and the best ask are numbers, their midpoint rounded to the tick; else no quote. Its time: the
-// trade's when the price came from a trade and that time is known, otherwise `tlong`. A snapshot
+// snapshot's (`tlong`); the trade's own time only when the snapshot falls in a call auction. A snapshot
 // dated before today (Taipei) is the last session's: a close, never a quote. One taken before 09:00
 // (the pre-open trial matching) or in the closing call auction (13:25–13:30, nothing trades) gives
 // no price either: only its previous close is kept, to show.
@@ -194,7 +194,9 @@ export function parseTwseItem(item: unknown, now: number): TwseQuote | null {
     from = "last";
   } else if (sane(tradePrice) && (tradeAt === null || !trial(tradeAt))) {
     price = tradePrice;
-    at = tradeAt ?? snapshot;
+    // The book is live at the snapshot: the last match is still the price, however long ago it
+    // was, so a thinly traded stock does not go stale between trades.
+    at = trial(snapshot) ? (tradeAt ?? snapshot) : snapshot;
     from = "trade";
   } else if (!trial(snapshot)) {
     const bid = best(r.b);

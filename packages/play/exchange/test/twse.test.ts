@@ -54,12 +54,12 @@ const NOW = taipei(9, 13, 30);
 const FRIDAY_CLOSE = Date.UTC(2026, 10, 20, 5, 30);
 
 describe("the exchange's answer (the saved fixture)", () => {
-  it("reads the latest trade when z is '-': price, the trade's time, the previous close, both boards", () => {
+  it("reads the latest trade when z is '-': price, the snapshot's time, the previous close, both boards", () => {
     const got = parseTwse(RAW, NOW);
     expect([...got.keys()].sort()).toEqual(["0050.TW", "2330.TW", "6488.TWO"]);
     expect(got.get("2330.TW")).toMatchObject({
       price: 2010,
-      at: taipei(9, 13, 5),
+      at: taipei(9, 13, 20),
       prev_close: 2000,
       regular: true,
       prev_only: false,
@@ -68,7 +68,7 @@ describe("the exchange's answer (the saved fixture)", () => {
     });
     expect(got.get("0050.TW")).toMatchObject({
       price: 84.5,
-      at: taipei(9, 12, 29),
+      at: taipei(9, 12, 44),
       prev_close: 84.45,
     });
     expect(got.get("6488.TWO")).toMatchObject({
@@ -365,7 +365,7 @@ describe("Taiwan quotes: the exchange's feed, Yahoo behind it", () => {
     const tw = new TaiwanQuotes(new TwseProvider(CONFIG, f.fetch), y);
     const got = await tw.quotes(["2330.TW", "2317.TW"], NOW);
     // The feed's 2330; it does not know 2317 (not in its answer), so Yahoo's.
-    expect(got.get("2330.TW")).toMatchObject({ price: 2010, at: taipei(9, 13, 5) });
+    expect(got.get("2330.TW")).toMatchObject({ price: 2010, at: taipei(9, 13, 20) });
     expect(got.get("2317.TW")).toMatchObject({ price: 210 });
     expect(y.asked).toEqual([["2317.TW"]]);
     // The feed down: all of it from Yahoo (its staleness is the desk's to judge).
@@ -459,7 +459,7 @@ describe("the desk on Taiwan quotes", () => {
       stale: false,
       price_note: null,
       age_minutes: 0,
-      at: new Date(taipei(9, 13, 5)).toISOString(),
+      at: new Date(taipei(9, 13, 20)).toISOString(),
       source: "資料來源:臺灣證券交易所(備援 Yahoo Finance)",
     });
     expect(l.change).toBeCloseTo(0.005, 4);
