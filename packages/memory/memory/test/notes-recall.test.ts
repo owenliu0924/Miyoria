@@ -244,6 +244,32 @@ describe("NotesRecall", () => {
     expect(await first("always 說拉麵很好吃")).toBe("拉麵店:拉麵很好吃");
   });
 
+  it("reads a person's DM lines in their DM, never in a group DM", async () => {
+    const r = await rig();
+    r.notes.add(
+      personSubject(OWEN),
+      {
+        section: "misc",
+        text: "偷偷喜歡拉麵店的店員",
+        provenance: "observed",
+        scope: { type: "dm", person: OWEN },
+        confidence: 0.9,
+      },
+      { author: "tool" },
+      "Owen",
+    );
+    await switchOver(r, Date.now() + 60_000);
+    const DM: ContextKey = { platform: "discord", scope: null, channel: "d1", kind: "dm" };
+    const inDm = await r.recall.recollect({ ...ask("拉麵店員"), context: DM });
+    expect(inDm.memories.map((m) => m.content)).toEqual(["Owen:偷偷喜歡拉麵店的店員"]);
+    const group = await r.recall.recollect({
+      ...ask("拉麵店員"),
+      context: DM,
+      accounts: [OWEN_ACCOUNT, acct("u-cara")],
+    });
+    expect(group.memories).toEqual([]);
+  });
+
   it("says who a self line's 他 is, and leaves one nobody can tell out", async () => {
     const handles = new FakeHandles().add("Owen", OWEN, OWEN_ACCOUNT);
     const r = await rig(memoryConfig(), handles);

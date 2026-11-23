@@ -228,6 +228,30 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     expect(inside).toEqual([]);
   });
 
+  it("one member's DM memories stay out of a group DM", async () => {
+    const e = await env(backend);
+    const owen = await e.person(acct("2"), "Owen");
+    const secret = await e.add(
+      "fact",
+      { type: "dm", account: acct("2") },
+      [owen],
+      "Owen 偷偷喜歡拉麵店的店員",
+      0.8,
+      t0(-DAY),
+    );
+    const own = visibleScopes(dmCtx("d2"), [acct("2")], [owen]);
+    const got = await e.engine.recall(own, [owen], "拉麵店員", PROMPT_KINDS, 8, t0());
+    expect(got.map((r) => r.record.id)).toEqual([secret]);
+    // The same account twice is still one.
+    expect(visibleScopes(dmCtx("d2"), [acct("2"), acct("2")], [])).toContainEqual({
+      type: "dm",
+      account: acct("2"),
+    });
+    const group = visibleScopes(dmCtx("group"), [acct("2"), acct("3")], [owen]);
+    expect(group.some((s) => s.type === "dm")).toBe(false);
+    expect(await e.engine.recall(group, [owen], "拉麵店員", PROMPT_KINDS, 8, t0())).toEqual([]);
+  });
+
   it("remember_and_recall_tools_respect_scopes", async () => {
     const e = await env(backend);
     const owenAcct = acct("2");

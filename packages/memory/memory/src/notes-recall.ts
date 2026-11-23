@@ -39,7 +39,7 @@ import { attributed, lineOf, PROMPT_KINDS, turnOf } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { LINE_REF_PREFIX } from "./evidence.js";
 import { MemoryRetriever } from "./retrieval.js";
-import { barePronoun, namesIn, visibleScopes } from "./scope.js";
+import { barePronoun, namesIn, onlyAccount, visibleScopes } from "./scope.js";
 import { effectiveConfidence } from "./score.js";
 
 /** The rebuild's state, read from the settings and kept for synchronous readers. */
@@ -280,10 +280,14 @@ export class NotesRecall implements MemoryRetrieval {
     }
     const context = ask.context;
     const dm = context.kind === "dm" || context.scope === null;
+    // The DM's own person only when they are the one there: a group DM is a `dm` context too, and
+    // one member's DM with her is not the others'.
+    const one =
+      present.length === 1 && (ask.accounts.length === 0 || onlyAccount(ask.accounts) !== null);
     return {
       space: dm ? null : resolver.spaceOf(context.platform, context.scope as string),
       room: resolver.roomOf(context),
-      dm: dm ? (present[0] ?? null) : null,
+      dm: dm && one ? (present[0] ?? null) : null,
       present,
     };
   }

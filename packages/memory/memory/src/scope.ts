@@ -233,11 +233,24 @@ export function visibleScopes(
     scopes.push({ type: "guild", platform: context.platform, guild: context.scope });
   }
   scopes.push({ type: "channel", context });
+  // A DM's memories are of the one person in it: in a group DM (also a `dm` context) one member's
+  // own DM with her is not the others' to hear.
   if (isPrivate(context)) {
-    for (const account of accounts) pushUnique(scopes, { type: "dm", account });
+    const here = onlyAccount(accounts);
+    if (here !== null) scopes.push({ type: "dm", account: here });
   }
   for (const person of persons) pushUnique(scopes, { type: "person", person });
   return scopes;
+}
+
+/** The one account among `accounts` (repeats aside); `null` for none or several. */
+export function onlyAccount(accounts: Iterable<AccountRef>): AccountRef | null {
+  let only: AccountRef | null = null;
+  for (const account of accounts) {
+    if (only === null) only = account;
+    else if (!sameAccount(only, account)) return null;
+  }
+  return only;
 }
 
 /**
