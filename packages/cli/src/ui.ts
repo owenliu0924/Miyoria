@@ -1,5 +1,8 @@
 // Consistent terminal output: colored ✓ / ✗ / ! marks. Colors follow `NO_COLOR` / TTY
 // detection (`util.styleText`). Writers can be swapped for tests (`setOutput`).
+//
+// Results (`println`, `ok`, `section`) go to stdout; failures, warnings and notes go to stderr,
+// so a command's output (`--json` above all) can be piped without them.
 
 import { styleText } from "node:util";
 import type { Reporter } from "./prompt.js";
@@ -56,11 +59,11 @@ export function fail(msg: string): void {
 }
 
 export function warn(msg: string): void {
-  println(`${yellow("!")} ${msg}`);
+  eprintln(`${paint("yellow", "!", process.stderr)} ${msg}`);
 }
 
 export function note(msg: string): void {
-  println(`${dim("·")} ${msg}`);
+  eprintln(`${paint("gray", "·", process.stderr)} ${msg}`);
 }
 
 export function section(title: string): void {
