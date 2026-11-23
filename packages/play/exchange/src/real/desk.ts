@@ -702,7 +702,8 @@ export class RealDesk {
   /**
    * What the pass asks quotes for (owner 2026-11-21: polling scales with what is in use): tickers with
    * an open position, a waiting order, viewed in the last `view_minutes`, or on the watch list of
-   * someone active in the last `watch_active_days` while the ticker's market is open.
+   * someone active in the last `watch_active_days` while the ticker's market is open; and every Taiwan
+   * ticker on the exchange's own feed while that market is open.
    */
   pollSet(): RealInstrument[] {
     const book = this.#book();
@@ -717,6 +718,10 @@ export class RealDesk {
       if (i.market === "local") return this.#d.config.local_stocks;
       const st = this.#status(i.code);
       if (st === "paused" || st === "suspended") return used.has(i.code);
+      // The exchange's own feed answers a whole list in one request: every Taiwan ticker is
+      // asked while that market is open, so the list shows live prices before anyone opens one.
+      if (i.market === "tw" && this.#feedId(i) === "twse" && isOpenAt(this.sessions.tw, now))
+        return true;
       const row = this.#d.store.real.instrument(i.code);
       return (
         used.has(i.code) ||
@@ -734,7 +739,8 @@ export class RealDesk {
    */
   effectiveInterval(): number {
     const c = this.#d.config;
-    const set = this.pollSet();
+    // Only what Yahoo is asked counts against Yahoo's budget.
+    const set = this.pollSet().filter((i) => this.#feedId(i) !== "twse");
     const batches = (["tw", "us"] as const).reduce(
       (t, m) => t + Math.ceil(set.filter((i) => i.market === m).length / c.batch_size),
       0,
