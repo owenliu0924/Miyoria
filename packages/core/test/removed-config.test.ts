@@ -1,6 +1,7 @@
 import { AgentConfigSchema } from "@miyoria/brain/agent";
 import { MindConfigSchema } from "@miyoria/heart/mind";
 import { Config } from "@miyoria/runtime/kernel";
+import { WebConfigSchema } from "@miyoria/workspace/web";
 import { describe, expect, it } from "vitest";
 import { assertStartConfig } from "../src/config-schema.js";
 import { removedConfigKeys, warnRemovedKeys } from "../src/removed-config.js";
@@ -14,6 +15,26 @@ pipeline = "v2"
 [modules.agent]
 runner = "v2"
 debounce_ms = 900
+session_usd_per_hour = 2
+session_tokens_per_hour = 100000
+text_calls_per_round = 4
+text_tokens = 500000
+text_rounds = 12
+[modules.agent.delegate]
+daily_usd = 5
+daily_tokens = 1000
+reflect_daily_tokens = 1000
+reflect_daily_usd = 0.3
+[modules.agent.delegate.kinds.worker]
+calls_per_round = 3
+tokens = 9
+rounds = 7
+[modules.web]
+window_s = 300
+search_per_person = 2
+read_per_job = 5
+image_global = 9
+region = "us-en"
 [modules.mind]
 max_calls_per_hour = 7
 journal_keep = 7
@@ -55,6 +76,16 @@ plan = "high"
     const agent = AgentConfigSchema.parse(old.section("modules.agent"));
     expect(agent).not.toHaveProperty("runner");
     expect(agent.debounce_ms).toBe(900);
+    expect(agent).not.toHaveProperty("session_usd_per_hour");
+    expect(agent).not.toHaveProperty("text_tokens");
+    expect(agent.text_rounds).toBe(12);
+    expect(agent.delegate).not.toHaveProperty("daily_usd");
+    expect(agent.delegate.reflect_daily_usd).toBe(0.3);
+    expect(agent.delegate.kinds.worker).not.toHaveProperty("calls_per_round");
+    expect(agent.delegate.kinds.worker.rounds).toBe(7);
+    const web = WebConfigSchema.parse(old.section("modules.web"));
+    expect(web).not.toHaveProperty("search_per_person");
+    expect(web.region).toBe("us-en");
     const mind = MindConfigSchema.parse(old.section("modules.mind"));
     expect(mind).not.toHaveProperty("daily_posts");
     expect(mind).not.toHaveProperty("max_calls_per_hour");
@@ -78,6 +109,19 @@ plan = "high"
       "llm.thinking",
       "modules.agent.runner",
       "modules.agent.attention",
+      "modules.agent.session_usd_per_hour",
+      "modules.agent.session_tokens_per_hour",
+      "modules.agent.text_calls_per_round",
+      "modules.agent.text_tokens",
+      "modules.agent.delegate.daily_usd",
+      "modules.agent.delegate.daily_tokens",
+      "modules.agent.delegate.reflect_daily_tokens",
+      "modules.agent.delegate.kinds.worker.calls_per_round",
+      "modules.agent.delegate.kinds.worker.tokens",
+      "modules.web.window_s",
+      "modules.web.search_per_person",
+      "modules.web.image_global",
+      "modules.web.read_per_job",
       "modules.agent.voice.gray_low",
       "modules.agent.mainline.history_lines",
       "modules.agent.work.max_steps",
@@ -98,10 +142,14 @@ plan = "high"
       "journal_keep",
       "voice.debounce_ms",
       "self_chars",
-      "daily_tokens",
+      "`modules.agent.work.daily_tokens`",
       "self_talk",
       "reactions_per_hour",
       "`llm.reasoning`",
+      "text_rounds",
+      "reflect_daily_usd",
+      "kinds.worker.rounds",
+      "region",
     ]) {
       expect(lines[0]).not.toContain(kept);
     }
