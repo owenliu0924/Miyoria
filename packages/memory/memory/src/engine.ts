@@ -2254,21 +2254,15 @@ function optional<T>(value: T | null): T[] {
   return value === null ? [] : [value];
 }
 
-const charCount = (s: string) => [...s].length;
-
-/** The person a name from the summarizer refers to. */
+/**
+ * The person a name from the summarizer refers to: a speaker known by exactly that name (case
+ * aside). A part of a name is nobody: 「Ann」 is not 「Annabel」, 「小明的媽媽」 is not 小明.
+ */
 function resolveName(raw: string, speakers: readonly Speaker[]): PersonId | null {
   const name = raw.trim().replace(/^@+/, "").toLowerCase();
   if (name === "") return null;
-  const exact = speakers.find((s) => s.names.some((n) => n.toLowerCase() === name));
-  if (exact) return exact.person;
-  const partial = speakers.filter((s) =>
-    s.names.some((n) => {
-      const lower = n.toLowerCase();
-      return charCount(lower) >= 2 && (name.includes(lower) || lower.includes(name));
-    }),
-  );
-  return partial.length === 1 ? (partial[0]?.person ?? null) : null;
+  const exact = speakers.filter((s) => s.names.some((n) => n.trim().toLowerCase() === name));
+  return exact.length === 1 ? (exact[0]?.person ?? null) : null;
 }
 
 /** People whose names appear in `text`. */

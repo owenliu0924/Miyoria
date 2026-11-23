@@ -366,6 +366,29 @@ describe.each(BACKENDS)("consolidation (%s store)", (backend) => {
     expect(find(records, "沒吃過拉麵").kind).toBe("self_note");
   });
 
+  it("a fact goes to a speaker only by their whole name", async () => {
+    const json = `{
+      "facts": [
+        {"subject_name": "Ann", "statement": "Ann 下週要搬家", "importance": 0.7, "confidence": 0.9, "global": false},
+        {"subject_name": "小明的媽媽", "statement": "小明的媽媽是國小老師", "importance": 0.7, "confidence": 0.9, "global": false},
+        {"subject_name": "annabel", "statement": "Annabel 在學吉他", "importance": 0.7, "confidence": 0.9, "global": false}
+      ]
+    }`;
+    const e = await envWith(backend, memoryConfig(), new MockProvider("sum").reply(json));
+    const annabel = await e.person(acct("7"), "Annabel");
+    const ming = await e.person(acct("8"), "小明");
+    const ctx = guildCtx("g1", "c1");
+    const t = t0(-MINUTE);
+    await e.log(ctx, acct("7"), "Annabel", "Ann 下週要搬家,我在學吉他", t, false);
+    await e.log(ctx, acct("8"), "小明", "我媽媽是國小老師", plus(t, SECOND), false);
+    await e.engine.consolidate(ctx, t0());
+    const records = await e.all();
+    expect(find(records, "Ann 下週要搬家").subjects, "Ann is not Annabel").toEqual([]);
+    expect(find(records, "小明的媽媽").subjects, "his mother is not 小明").toEqual([]);
+    expect(find(records, "在學吉他").subjects).toEqual([annabel]);
+    expect(ming).not.toBe(annabel);
+  });
+
   it("an old global note about someone stays in its server before it is moved too", async () => {
     const e = await env(backend);
     const amy = await e.person(acct("3"), "Amy");
