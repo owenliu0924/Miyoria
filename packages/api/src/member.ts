@@ -46,6 +46,7 @@ import type { WalletExport } from "@miyoria/economy";
 import { ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { BLOCKED_TAG, type HeartPerson, hasTag, publicBond } from "@miyoria/heart/person";
 import {
+  aboutThem,
   FORGET_KEEPS,
   FORGET_REMOVES,
   MemoryEngineKey,
@@ -343,7 +344,7 @@ async function shownMemories(
   const engine = state.optional(MemoryEngineKey);
   const memories: MemberMemory[] = [];
   if (!who.hidden && engine) {
-    const { records } = await ownMemories(
+    const { records, person } = await ownMemories(
       engine,
       who.account,
       (r, person) => visibleToSelf(r.scope, who.account, person),
@@ -352,6 +353,10 @@ async function shownMemories(
     for (const r of records) {
       if (memories.length >= MAX_SHOWN_MEMORIES) break;
       if (r.kind !== "episode" && r.kind !== "fact") continue;
+      // A talk they only happened to be in is not a memory of them.
+      if (r.kind === "episode" && (person === null || !aboutThem(r, person, names?.own ?? []))) {
+        continue;
+      }
       const text = memoryLine(state, r, who.account, names);
       if (text !== null) memories.push(memoryView(text, r));
     }
