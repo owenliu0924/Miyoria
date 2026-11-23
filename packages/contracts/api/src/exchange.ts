@@ -457,7 +457,26 @@ export const ExchangeAdminSchema = z
         holders: z.number().int(),
       }),
     ),
-    providers: z.array(z.object({ id: z.string(), last_error: z.string().nullable() })),
+    providers: z.array(
+      z.object({
+        id: z.string(),
+        last_error: z.string().nullable(),
+        /**
+         * Yahoo's US quote stream, on Yahoo's entry while it is configured: wanted now (the US
+         * market open or about to), connected, healthy (a frame within the unhealthy time; else the
+         * poll works as without it), when the last frame came, and how many tickers it follows.
+         */
+        stream: z
+          .object({
+            active: z.boolean(),
+            connected: z.boolean(),
+            healthy: z.boolean(),
+            last_frame_at: z.string().nullable(),
+            symbols: z.number().int(),
+          })
+          .optional(),
+      }),
+    ),
     /** Seconds between refreshes the request budget allows now. */
     refresh_seconds: z.number().int(),
     positions: z.array(

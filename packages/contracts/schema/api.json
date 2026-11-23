@@ -5605,6 +5605,38 @@
                   "string",
                   "null"
                 ]
+              },
+              "stream": {
+                "type": "object",
+                "properties": {
+                  "active": {
+                    "type": "boolean"
+                  },
+                  "connected": {
+                    "type": "boolean"
+                  },
+                  "healthy": {
+                    "type": "boolean"
+                  },
+                  "last_frame_at": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "symbols": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "active",
+                  "connected",
+                  "healthy",
+                  "last_frame_at",
+                  "symbols"
+                ]
               }
             },
             "required": [

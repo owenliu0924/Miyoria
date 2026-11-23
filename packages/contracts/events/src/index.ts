@@ -268,6 +268,12 @@ export {
   EvalRun,
 } from "./eval.js";
 export {
+  EXCHANGE_BUS_EVENTS,
+  ExchangeQuotes,
+  type ExchangeQuotesData,
+  ExchangeQuotesSchema,
+} from "./exchange.js";
+export {
   EXTENSION_EVENTS,
   ExtensionEvent,
   GameAdapterEvent,

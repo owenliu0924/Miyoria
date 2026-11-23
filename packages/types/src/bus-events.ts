@@ -55,6 +55,7 @@ export {
   EconomyRoomPlaced,
   EconomyScreen,
   EvalRun,
+  ExchangeQuotes,
   ExtensionEvent,
   FeedbackSignal,
   GameAdapterEvent,
