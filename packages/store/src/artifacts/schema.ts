@@ -6,6 +6,8 @@
 //   where, who may see it, how long it is kept. Rows never change content; only retention, review
 //   and deletion are updated.
 // - `artifact_shares`: share tokens, stored as a sha256 of the token only.
+// - `artifact_pages`, `artifact_page_assets`: web pages on the file origin (`pages.ts`): an HTML
+//   artifact, the files it loads by relative path, who may open it and until when.
 //
 // §5 names these `artifact_blobs`, `artifacts` and `artifact_shares` in core. They migrate after
 // identity (they point at persons, spaces and rooms), so they are a plugin schema of their own,
@@ -33,6 +35,7 @@ import {
   check,
   index,
   integer,
+  primaryKey,
   sqliteTable,
   text,
 } from "drizzle-orm/sqlite-core";
@@ -188,6 +191,66 @@ export const artifactShares = sqliteTable(
   ],
 );
 
+/** A web page published on the file origin: its HTML artifact, who may open it, until when. */
+export const artifactPages = sqliteTable(
+  "artifact_pages",
+  {
+    /** ULID. */
+    id: text().primaryKey(),
+    /**
+     * Its address, `/p/<slug>/`: 128 random bits. Kept as it is (the page's own person may ask for
+     * the address again); a scoped page still needs the login to open.
+     */
+    slug: text().notNull().unique("artifact_pages_slug_key"),
+    /** The page itself: a text artifact that is HTML. */
+    artifact_id: text()
+      .notNull()
+      .references(() => artifactItems.id, { onDelete: "cascade" }),
+    audience: text({ enum: tuple(SHARE_AUDIENCES) }).notNull(),
+    /** The person of a `person` page. */
+    person_id: text().references(() => persons.id),
+    /** The space of a `space` page. */
+    space_id: text().references(() => spaces.id),
+    /** Whose page it is (who asked for it); `null`: hers. */
+    made_for: text().references(() => persons.id),
+    /** The HTML and its assets together, in bytes. */
+    size: integer().notNull(),
+    created_at: micros().notNull(),
+    expires_at: micros().notNull(),
+    revoked_at: micros(),
+  },
+  (t) => [
+    index("artifact_pages_person_idx").on(t.made_for, t.created_at),
+    index("artifact_pages_artifact_idx").on(t.artifact_id),
+    check("artifact_pages_audience_check", sql`${t.audience} IN (${oneOf(SHARE_AUDIENCES)})`),
+    check(
+      "artifact_pages_target_check",
+      sql`(${t.audience} <> 'person' OR ${t.person_id} IS NOT NULL) AND (${t.audience} <> 'space' OR ${t.space_id} IS NOT NULL)`,
+    ),
+    check("artifact_pages_size_check", sql`${t.size} > 0`),
+  ],
+);
+
+/** A file a page loads (style, script, image), at the relative path the page names it by. */
+export const artifactPageAssets = sqliteTable(
+  "artifact_page_assets",
+  {
+    page_id: text()
+      .notNull()
+      .references(() => artifactPages.id, { onDelete: "cascade" }),
+    path: text().notNull(),
+    artifact_id: text()
+      .notNull()
+      .references(() => artifactItems.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.page_id, t.path] }),
+    index("artifact_page_assets_artifact_idx").on(t.artifact_id),
+  ],
+);
+
 export type ArtifactBlobRow = typeof artifactBlobs.$inferSelect;
 export type ArtifactRow = typeof artifactItems.$inferSelect;
 export type ArtifactShareRow = typeof artifactShares.$inferSelect;
+export type ArtifactPageRow = typeof artifactPages.$inferSelect;
+export type ArtifactPageAssetRow = typeof artifactPageAssets.$inferSelect;

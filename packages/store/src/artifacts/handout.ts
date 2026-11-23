@@ -89,3 +89,57 @@ export interface FileLinks {
 }
 
 export const FileLinksKey = serviceKey<FileLinks>("FileLinks");
+
+/** A web page asked for: an HTML artifact and the files it loads, by relative path. */
+export interface PagePublishRequest {
+  artifact_id: string;
+  assets: readonly { path: string; artifact_id: string }[];
+  audience: ShareAudience;
+  person_id?: PersonId | null;
+  space_id?: string | null;
+  /** How many days it stays up; default and cap are the file origin's. */
+  days?: number | null;
+  /** Whose page it is (its quota), and in which turn. */
+  requested_by: PersonId | null;
+  turn?: string | null;
+  /** Its own person asked for anyone to open it (`to: anyone`). */
+  widen?: boolean;
+}
+
+/** Why no page was published. */
+export type PagePublishRefusal =
+  | "unavailable"
+  | "not_public"
+  | "no_login"
+  | "not_found"
+  | "song_cover"
+  | "not_html"
+  | "type_not_allowed"
+  | "asset_path"
+  | "too_large"
+  | "secret"
+  | "audience"
+  | "quota";
+
+export type PagePublishResult =
+  | {
+      ok: true;
+      url: string;
+      page_id: string;
+      audience: ShareAudience;
+      expires_at: string;
+      size: number;
+    }
+  /** `path`: the file of the page the refusal is about, when it is one of its files. */
+  | { ok: false; refused: PagePublishRefusal; message: string; path?: string };
+
+/** Publishes web pages on the file origin (present only while a file origin is configured). */
+export interface FilePages {
+  /** Whether a page of `audience` can be published (anyone: `pages_public`; scoped: the login). */
+  available(audience: ShareAudience): boolean;
+  publish(request: PagePublishRequest, signal?: AbortSignal): Promise<PagePublishResult>;
+  /** The address of a page by its slug. */
+  urlOf(slug: string): string;
+}
+
+export const FilePagesKey = serviceKey<FilePages>("FilePages");

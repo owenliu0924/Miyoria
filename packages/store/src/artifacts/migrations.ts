@@ -92,9 +92,50 @@ CREATE INDEX \`artifact_items_deleted_idx\` ON \`artifact_items\` (\`deleted_at\
 CREATE INDEX \`artifact_shares_artifact_idx\` ON \`artifact_shares\` (\`artifact_id\`);
 `;
 
-/** Artifacts, their blobs and their share tokens. */
+/** Web pages on the file origin (`pages.ts`): only new tables, nothing existing changes. */
+const PAGES = `CREATE TABLE \`artifact_pages\` (
+	\`id\` text PRIMARY KEY,
+	\`slug\` text NOT NULL CONSTRAINT \`artifact_pages_slug_key\` UNIQUE,
+	\`artifact_id\` text NOT NULL,
+	\`audience\` text NOT NULL,
+	\`person_id\` text,
+	\`space_id\` text,
+	\`made_for\` text,
+	\`size\` integer NOT NULL,
+	\`created_at\` integer NOT NULL,
+	\`expires_at\` integer NOT NULL,
+	\`revoked_at\` integer,
+	CONSTRAINT \`fk_artifact_pages_artifact_id_artifact_items_id_fk\` FOREIGN KEY (\`artifact_id\`) REFERENCES \`artifact_items\`(\`id\`) ON DELETE CASCADE,
+	CONSTRAINT \`fk_artifact_pages_person_id_persons_id_fk\` FOREIGN KEY (\`person_id\`) REFERENCES \`persons\`(\`id\`),
+	CONSTRAINT \`fk_artifact_pages_space_id_spaces_id_fk\` FOREIGN KEY (\`space_id\`) REFERENCES \`spaces\`(\`id\`),
+	CONSTRAINT \`fk_artifact_pages_made_for_persons_id_fk\` FOREIGN KEY (\`made_for\`) REFERENCES \`persons\`(\`id\`),
+	CONSTRAINT "artifact_pages_audience_check" CHECK("audience" IN ('person','space','link')),
+	CONSTRAINT "artifact_pages_target_check" CHECK(("audience" <> 'person' OR "person_id" IS NOT NULL) AND ("audience" <> 'space' OR "space_id" IS NOT NULL)),
+	CONSTRAINT "artifact_pages_size_check" CHECK("size" > 0)
+) STRICT;
+
+CREATE TABLE \`artifact_page_assets\` (
+	\`page_id\` text NOT NULL,
+	\`path\` text NOT NULL,
+	\`artifact_id\` text NOT NULL,
+	CONSTRAINT \`artifact_page_assets_pk\` PRIMARY KEY(\`page_id\`, \`path\`),
+	CONSTRAINT \`fk_artifact_page_assets_page_id_artifact_pages_id_fk\` FOREIGN KEY (\`page_id\`) REFERENCES \`artifact_pages\`(\`id\`) ON DELETE CASCADE,
+	CONSTRAINT \`fk_artifact_page_assets_artifact_id_artifact_items_id_fk\` FOREIGN KEY (\`artifact_id\`) REFERENCES \`artifact_items\`(\`id\`) ON DELETE CASCADE
+) STRICT;
+
+CREATE INDEX \`artifact_pages_person_idx\` ON \`artifact_pages\` (\`made_for\`,\`created_at\`);
+
+CREATE INDEX \`artifact_pages_artifact_idx\` ON \`artifact_pages\` (\`artifact_id\`);
+
+CREATE INDEX \`artifact_page_assets_artifact_idx\` ON \`artifact_page_assets\` (\`artifact_id\`);
+`;
+
+/** Artifacts, their blobs, their share tokens and the web pages made of them. */
 export const artifactSchema: PluginSchema = {
   plugin: "artifact",
   requires: ["identity"],
-  migrations: [{ version: 1, name: "init", sql: INIT }],
+  migrations: [
+    { version: 1, name: "init", sql: INIT },
+    { version: 2, name: "pages", sql: PAGES },
+  ],
 };
