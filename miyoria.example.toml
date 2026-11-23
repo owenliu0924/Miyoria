@@ -905,10 +905,18 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # emergency_step_ms = 20000      # 緊急停止每一步最多等多久,逾時就算失敗、接著做下一步
 # forbidden = ["message.dm"]     # 完全禁止的能力(也可以 "stream.*")
 # dm_strangers = false           # 不私訊不熟的人(熟悉度低於 stranger_familiarity)
+# work_min_bond = 15             # 羈絆到這裡(-100..1000;15 是朋友)的人可以叫她做真的工作:檔案、跑程式、技能、幫手。
+#                                # owner 和自己有那些權限的人不用;羈絆只決定能不能叫,做事不會讓羈絆變動
 # [modules.actions.medium]       # 中風險動作的次數上限(她自己決定或聊天請求時;指令不受限)
 # per_day = 30
 # per_person_per_day = 8
 # cooldown_ms = 20000
+# per_hour = 10                  # 可另設每小時(所有人)和 per_person_per_hour(每人);沒寫就不限
+# [modules.actions.work]         # 做事的動作(寫檔、刪檔、跑程式、存腳本、存技能)用這組,不用 medium
+# per_day = 20000                # 每 24 小時(所有人加起來)
+# per_person_per_day = 3000      # 每 24 小時同一個人
+# per_person_per_hour = 300      # 每小時同一個人(per_hour 也可以設)
+# cooldown_ms = 0                # 沒有冷卻:一件事要寫五個檔案就連著寫
 # inline_wait_ms = 8000          # 高風險工具(跑程式等)等審核多久;來不及就晚點在後續回合告訴她結果
 # [modules.actions.limits."code.run"]
 # per_day = 50
@@ -917,6 +925,8 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # max_bytes = 10485760           # 一個檔案最多幾 bytes(平台自己的上限另外算,取小的)
 # per_day = 60                   # 每 24 小時最多傳幾個(所有人加起來)
 # per_person_per_day = 10        # 每 24 小時最多傳給同一個人幾個
+# zip_max_unpacked_mb = 256      # zip / docx / xlsx / pptx 解開後合計超過這麼多(MiB)就不傳(壓縮炸彈)
+# zip_max_entries = 5000         # zip 裡的檔案超過這麼多個就不傳
 
 [modules.directive]
 # 主人規則(docs/design/v3-architecture.md §9)。規則本身存在資料庫裡,用對話、/miyo、/admin i 或面板管理,
@@ -1545,12 +1555,16 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # window_s = 600
 # cache_entries = 16             # 抽出的結果在記憶體留幾份(依附件 id;從快取讀不算額度)
 # 她自己的資料夾(v4 §8.3):檔案和腳本留得住,跨執行、跨 session。放在 <root>/profiles/<profile>/workspace,
-# 需要時以可寫入掛在 /workspace。限額管她用工具寫的;程式留在裡面的東西會在執行後檢查,超過的刪掉
+# 需要時以可寫入掛在 /workspace。替別人做的事只碰得到 people/<那個人>/ 底下(路徑從那裡算起,跑程式也只掛那個資料夾);
+# 她自己和 owner 看得到全部。限額管用工具寫的;程式留在裡面的東西會在執行後檢查,超過的刪掉
 # [modules.sandbox.workspace]
 # enabled = true
-# max_mb = 64                    # 全部檔案加起來(MiB)
-# max_files = 500
-# max_file_kb = 1024             # 單一檔案(KiB)
+# max_mb = 4096                  # 全部檔案加起來,每個人的資料夾也算(MiB)
+# max_files = 20000
+# max_file_kb = 8192             # 單一檔案(KiB)
+# person_max_mb = 256            # 一個人的資料夾(MiB)
+# person_max_files = 2000        # 一個人的資料夾最多幾個檔案
+# export_max_kb = 8192           # workspace_export 一次拿出來的檔案最大多少(KiB;之後用 share 傳)
 # read_chars = 3900              # workspace_read 一次回幾字(其餘用 offset 分段讀)
 # keep_outputs = 20              # 保留幾個輸出檔(太長被截掉的執行,完整輸出存成 outputs/<run id>.txt)
 # 網路:預設全關(allow = []),每次執行都是 --network none。列了主機,要求網路的執行才會拿到一個沒有對外路由的
@@ -1560,7 +1574,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # allow = []                     # 例如 ["pypi.org", "*.pythonhosted.org"]
 # proxy_port = 3128              # proxy 在它的容器內聽的埠
 # proxy_memory_mb = 128          # proxy 容器的記憶體(MiB)
-# 跑程式的次數上限在 [modules.actions.limits."code.run"](預設每天 30 次、冷卻 20 秒)
+# 跑程式的次數上限在 [modules.actions.work](預設沒有冷卻、每人每小時 300 次),也可以在 [modules.actions.limits."code.run"] 單獨設
 
 # 生圖(docs/design/imagegen.md):連 ComfyUI 的 API 生圖,給她的其他系統用(目前沒有指令,成員叫不到)。
 # 內建三個模型:krea2(turbo / raw)、moss_image(sft / base)、anima(base / turbo);
