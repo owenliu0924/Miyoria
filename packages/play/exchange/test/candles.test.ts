@@ -13,6 +13,7 @@ import {
   parseYahooCandles,
   periodKey,
   type Timeframe,
+  withQuote,
   YAHOO_SPAN,
 } from "../src/real/candles.js";
 import type { QuoteProvider, RawQuote } from "../src/real/provider.js";
@@ -305,7 +306,9 @@ describe("the desk's charts", () => {
       stale: false,
       zone: "Asia/Taipei",
     });
-    expect(a?.candles).toHaveLength(30);
+    // The fixture's 30 sessions, then the quote kept here, which is newer: the chart ends at the price.
+    expect(a?.candles).toHaveLength(31);
+    expect(a?.candles.at(-1)?.c).toBe(a?.line.price);
     await r.service.real.candles("2330.TW", "daily");
     expect(p.chartCalls).toBe(1);
     // Another timeframe is another key.
@@ -326,7 +329,7 @@ describe("the desk's charts", () => {
     r.clock.at += 10 * MIN;
     const stale = await r.service.real.candles("2330.TW", "daily");
     expect(stale).toMatchObject({ source: "provider", stale: true });
-    expect(stale?.candles).toHaveLength(30);
+    expect(stale?.candles).toHaveLength(31);
     const ticks = await r.service.real.candles("2330.TW", "monthly");
     expect(ticks).toMatchObject({ source: "ticks", stale: true, volume: false });
   });
@@ -342,5 +345,35 @@ describe("the desk's charts", () => {
     expect(daily?.candles.length).toBeGreaterThanOrEqual(2);
     expect(p.chartCalls).toBe(0);
     expect(await r.service.real.candles("NOPE", "daily")).toBeNull();
+  });
+});
+
+describe("a quote newer than the chart's last bar", () => {
+  const NY = "America/New_York";
+  const day = (iso: string) => Date.parse(iso);
+  const friday = { at: day("2026-11-20T14:30:00Z"), o: 143.5, h: 144, l: 125, c: 125.5, v: 10 };
+
+  it("adds today's bar when the cached bars end a session earlier", () => {
+    const out = withQuote([friday], "daily", NY, { price: 164.5, at: day("2026-11-23T14:31:00Z") });
+    expect(out).toHaveLength(2);
+    expect(out.at(-1)).toMatchObject({ o: 164.5, c: 164.5, v: null });
+    expect(out[0]).toEqual(friday);
+  });
+
+  it("moves the close, high and low of the bar the quote falls in", () => {
+    const out = withQuote([friday], "daily", NY, { price: 150, at: day("2026-11-20T20:00:00Z") });
+    expect(out).toEqual([{ ...friday, h: 150, c: 150 }]);
+  });
+
+  it("starts a five-minute bar on its step", () => {
+    const first = { ...friday, at: day("2026-11-23T14:30:00Z") };
+    const out = withQuote([first], "intraday", NY, { price: 160, at: day("2026-11-23T14:37:10Z") });
+    expect(out.at(-1)?.at).toBe(day("2026-11-23T14:35:00Z"));
+  });
+
+  it("leaves the bars alone without a newer quote", () => {
+    expect(withQuote([friday], "daily", NY, null)).toEqual([friday]);
+    expect(withQuote([friday], "daily", NY, { price: 1, at: friday.at })).toEqual([friday]);
+    expect(withQuote([], "daily", NY, { price: 1, at: 5 })).toEqual([]);
   });
 });
