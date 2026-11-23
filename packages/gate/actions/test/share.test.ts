@@ -394,7 +394,47 @@ describe("share: what may leave", () => {
       const a = await make(text(body), ROOM, OWEN, { filename: name });
       expect((await exec(OWEN, ROOM, { artifact: a.id })).data, name).toMatchObject({ ok: true });
     }
-    expect(sink.sent.map((s) => s.files[0]?.filename)).toEqual(files.map(([name]) => name));
+    // In a channel, what a double-click or a browser would run goes with `.txt` added.
+    expect(sink.sent.map((s) => s.files[0]?.filename)).toEqual([
+      "index.php.txt",
+      "run.sh.txt",
+      "page.html.txt",
+      "notes.md",
+      "data.csv",
+      "data.json",
+      "main.py",
+    ]);
+  });
+
+  it("names a file that runs when opened as text anywhere but a DM with the asker, and says so", async () => {
+    for (const [name, body] of [
+      ["setup.bat", "@echo off\r\necho hi\r\n"],
+      ["tool.ps1", "Write-Host hi\n"],
+      ["page.htm", "<p>hi</p>\n"],
+      ["app.js", "console.log(1)\n"],
+    ] as const) {
+      const a = await make(text(body), ROOM, OWEN, { filename: name });
+      const result = await exec(OWEN, ROOM, { artifact: a.id });
+      expect(result.data, name).toMatchObject({ ok: true, filename: name, sent_as: `${name}.txt` });
+      expect(result.text).toContain(`${name}.txt`);
+      expect(result.text).toContain("文字檔");
+      expect(sink.sent.at(-1)?.files[0]?.filename).toBe(`${name}.txt`);
+      expect(sink.sent.at(-1)?.files[0]?.content_type).toBe("text/plain");
+    }
+    // Source code of an ordinary language keeps its name, an interpreter line or not.
+    const py = await make(text("#!/usr/bin/env python3\nprint(1)\n"), ROOM, OWEN, {
+      filename: "tool.py",
+    });
+    const kept = await exec(OWEN, ROOM, { artifact: py.id });
+    expect(kept.data).not.toHaveProperty("sent_as");
+    expect(sink.sent.at(-1)?.files[0]?.filename).toBe("tool.py");
+    // In a DM with the asker, the original name.
+    const bat = await make(text("@echo off\r\n"), OWEN_DM, OWEN, { filename: "setup.bat" });
+    const dm = await exec(OWEN, OWEN_DM, { artifact: bat.id });
+    expect(dm.data).toMatchObject({ ok: true });
+    expect(dm.data).not.toHaveProperty("sent_as");
+    expect(dm.text).not.toContain("文字檔");
+    expect(sink.sent.at(-1)?.files[0]?.filename).toBe("setup.bat");
   });
 
   it("a source file with a key in it is refused like any other text", async () => {
@@ -426,38 +466,97 @@ describe("share: what may leave", () => {
     expect(sink.sent).toHaveLength(1);
   });
 
-  it("checks content, not names: types, zip and executables", () => {
-    expect(checkContent(PNG, false)).toEqual({ ok: true, mime: "image/png" });
-    expect(checkContent(text("plain words\n"), false)).toEqual({ ok: true, mime: "text/plain" });
+  it("scans every text entry of a zip and the XML of an Office file for secrets", async () => {
+    const key = `sk-ant-api03-${"a".repeat(90)}`;
+    const zip = buildZip([
+      { name: "a.md", data: text("# fine\n") },
+      { name: "src/config.py", data: text(`KEY = "${key}"\n`), deflate: true },
+    ]);
+    const a = await make(zip, ROOM, OWEN, { filename: "code.zip" });
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(refusal(result)).toBe("secret");
+    expect(result.data).toMatchObject({ entry: "src/config.py" });
+    expect(result.text).toContain("src/config.py");
+    // A Word document keeps its text in runs: the key is split over two.
+    const xml = `<w:p><w:r><w:t>KEY ${key.slice(0, 20)}</w:t></w:r><w:r><w:t>${key.slice(20)}</w:t></w:r></w:p>`;
+    const docx = await make(
+      buildZip([{ name: "word/document.xml", data: text(xml), deflate: true }]),
+      ROOM,
+      OWEN,
+      {
+        filename: "notes.docx",
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      },
+    );
+    expect(refusal(await exec(OWEN, ROOM, { artifact: docx.id }))).toBe("secret");
+    moderation = {
+      screen: (c: { visible: string }) => ({
+        blocked: c.visible.includes("forbidden") ? [{ category: "hate", rule: "hate.x" }] : [],
+      }),
+    } as unknown as ModerationService;
+    const rude = await make(buildZip([{ name: "a.txt", data: text("forbidden\n") }]), ROOM, OWEN, {
+      filename: "rude.zip",
+    });
+    expect(refusal(await exec(OWEN, ROOM, { artifact: rude.id }))).toBe("moderation");
+    expect(sink.sent).toEqual([]);
+  });
+
+  it("refuses a zip whose directory hides a local entry, or understates a deflate entry", async () => {
+    const hidden = buildZip([
+      { name: "ok.txt", data: text("ok\n") },
+      { name: "../Startup/run.bat", data: text("calc\r\n"), hidden: true },
+    ]);
+    const a = await make(hidden, ROOM, OWEN, { filename: "a.zip" });
+    expect(refusal(await exec(OWEN, ROOM, { artifact: a.id }))).toBe("type_not_allowed");
+    const bomb = buildZip([
+      { name: "a.txt", data: new Uint8Array(64 * 1024 * 1024), deflate: true, claimedSize: 10 },
+    ]);
+    const b = await make(bomb, ROOM, OWEN, { filename: "b.zip" });
+    expect(refusal(await exec(OWEN, ROOM, { artifact: b.id }))).toBe("type_not_allowed");
+    expect(sink.sent).toEqual([]);
+  });
+
+  it("checks content, not names: types, zip and executables", async () => {
+    expect(await checkContent(PNG, false)).toEqual({ ok: true, mime: "image/png" });
+    expect(await checkContent(text("plain words\n"), false)).toEqual({
+      ok: true,
+      mime: "text/plain",
+    });
     // Plain text that happens to begin with `MZ` is text.
-    expect(checkContent(text("MZ-100 notes\n"), false)).toEqual({ ok: true, mime: "text/plain" });
+    expect(await checkContent(text("MZ-100 notes\n"), false)).toEqual({
+      ok: true,
+      mime: "text/plain",
+    });
     const exe = Uint8Array.from([0x4d, 0x5a, 0x90, 0x00, 0x03, 0x00]);
-    expect(checkContent(exe, true)).toEqual({
+    expect(await checkContent(exe, true)).toEqual({
       ok: false,
       code: "type_not_allowed",
       what: "executable",
     });
     const elf = Uint8Array.from([0x7f, 0x45, 0x4c, 0x46, 0x02, 0x01]);
-    expect(checkContent(elf, true)).toMatchObject({ ok: false, what: "executable" });
-    expect(checkContent(Uint8Array.from([0, 1, 2, 3, 4]), true)).toMatchObject({
+    expect(await checkContent(elf, true)).toMatchObject({ ok: false, what: "executable" });
+    expect(await checkContent(Uint8Array.from([0, 1, 2, 3, 4]), true)).toMatchObject({
       ok: false,
       what: "binary",
     });
     const zip = buildZip([{ name: "a.txt", data: text("a") }]);
-    expect(checkContent(zip, true)).toEqual({ ok: true, mime: "application/zip" });
-    expect(checkContent(zip, false)).toMatchObject({ ok: false, code: "type_not_allowed" });
+    expect(await checkContent(zip, true)).toEqual({ ok: true, mime: "application/zip" });
+    expect(await checkContent(zip, false)).toMatchObject({ ok: false, code: "type_not_allowed" });
     const xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-    expect(checkContent(zip, true, { mime: xlsx })).toEqual({ ok: true, mime: xlsx });
+    expect(await checkContent(zip, true, { mime: xlsx })).toEqual({ ok: true, mime: xlsx });
     // HTML goes as an attachment only; a page that would open it still refuses it.
     const page = text("<!doctype html><html><body>hi</body></html>");
-    expect(checkContent(page, true)).toMatchObject({ ok: false, what: "HTML" });
-    expect(checkContent(page, true, { attachment: true })).toEqual({
+    expect(await checkContent(page, true)).toMatchObject({ ok: false, what: "HTML" });
+    expect(await checkContent(page, true, { attachment: true })).toEqual({
       ok: true,
       mime: "text/plain",
     });
     // A zip header without a directory is not a zip she hands out.
     const header = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
-    expect(checkContent(header, true)).toMatchObject({ ok: false, what: "zip: no zip directory" });
+    expect(await checkContent(header, true)).toMatchObject({
+      ok: false,
+      what: "zip: no zip directory",
+    });
     expect(activeText("<HTML><body>")).toBe("HTML");
     expect(activeText("\uFEFF<svg></svg>")).toBe("SVG");
     expect(activeText("just <b>text</b>")).toBeNull();
@@ -670,6 +769,29 @@ describe("share: with a file origin and the image cleaner", () => {
     const d = await make(text("私訊裡做的。\n"), OWEN_DM, OWEN);
     const fromDm = await exec(OWEN, OWEN_DM, { artifact: d.id, to: "here" });
     expect(refusal(fromDm)).toBe("wider_than_origin");
+  });
+
+  it("checks the content and the share limit before a link goes where no attachment fits", async () => {
+    const asked = links();
+    const key = `sk-ant-api03-${"a".repeat(90)}`;
+    const leaky = await make(text(`KEY = "${key}"\n${"x".repeat(500)}`), ROOM, OWEN);
+    sink.limit = 100;
+    expect(refusal(await exec(OWEN, ROOM, { artifact: leaky.id }))).toBe("secret");
+    // A zip in a channel for someone else's artifact never reaches the link either.
+    const zip = await make(buildZip([{ name: "a.txt", data: text("x".repeat(400)) }]), ROOM, null, {
+      filename: "theirs.zip",
+    });
+    expect(refusal(await exec(OWEN, ROOM, { artifact: zip.id }))).toBe("type_not_allowed");
+    expect(asked).toEqual([]);
+    expect(sink.sent).toEqual([]);
+    // The per-person limit counts a link alone like an attachment.
+    config = ShareConfigSchema.parse({ per_person_per_day: 1, per_day: 100 });
+    const big = await make(text("y".repeat(500)), ROOM, OWEN);
+    expect(await exec(OWEN, ROOM, { artifact: big.id })).toMatchObject({ data: { ok: true } });
+    expect(sink.sent[0]?.message.attachments).toEqual([]);
+    expect(refusal(await exec(OWEN, ROOM, { artifact: big.id }))).toBe("limit");
+    expect(asked).toHaveLength(1);
+    expect(sink.sent).toHaveLength(1);
   });
 
   it("sends the link alone where no attachment fits", async () => {

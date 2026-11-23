@@ -148,6 +148,69 @@ export function textExtension(filename: string | null | undefined): string {
   return TEXT_EXTENSIONS.has(ext) ? ext : "txt";
 }
 
+/**
+ * Extensions a double-click or a browser runs rather than shows (Windows Script Host, batch and
+ * PowerShell files, HTML and SVG, shell scripts, installers, shortcuts, registry files, jars).
+ * Most cannot even be stored under their name; the ones in `TEXT_EXTENSIONS` can.
+ */
+const RUNS_WHEN_OPENED = new Set([
+  "bat",
+  "cmd",
+  "ps1",
+  "vbs",
+  "vbe",
+  "js",
+  "jse",
+  "wsf",
+  "wsh",
+  "hta",
+  "html",
+  "htm",
+  "xhtml",
+  "svg",
+  "php",
+  "sh",
+  "bash",
+  "zsh",
+  "command",
+  "scr",
+  "lnk",
+  "reg",
+  "msi",
+  "jar",
+]);
+
+/**
+ * Whether a file named `filename` runs when opened: by its extension, or (`head`, its first
+ * bytes) a script with an interpreter line under a name the store does not know as text (no
+ * extension, or an odd one). Source code of ordinary languages (`.py`, `.ts`, `.c`, `.rs`, ...),
+ * data (`.json`, `.md`, `.csv`) and `.txt` do not count.
+ */
+export function runsWhenOpened(filename: string, head: Uint8Array | null = null): boolean {
+  const name = filename.split(/[/\\]/).pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (RUNS_WHEN_OPENED.has(ext)) return true;
+  if (head === null || TEXT_EXTENSIONS.has(ext)) return false;
+  let at = 0;
+  if (head[0] === 0xef && head[1] === 0xbb && head[2] === 0xbf) at = 3;
+  return head[at] === 0x23 && head[at + 1] === 0x21; // "#!"
+}
+
+/**
+ * The name a file goes out under. Where others may download it (anything but a DM with the
+ * person who asked, `privateToAsker`), a file that runs when opened gets `.txt` added, so a
+ * double-click shows it instead of running it.
+ */
+export function outgoingFilename(
+  filename: string,
+  head: Uint8Array | null,
+  privateToAsker: boolean,
+): string {
+  if (privateToAsker || !runsWhenOpened(filename, head)) return filename;
+  return `${filename}.txt`;
+}
+
 /** Every type the store stores, by mime. */
 export const MEDIA_TYPES: readonly MediaType[] = Object.values(TYPES);
 

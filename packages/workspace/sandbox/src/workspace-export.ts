@@ -122,7 +122,7 @@ export function workspaceExportCapability(
       if (isZip(bytes)) {
         // The limits `share` will apply; told now, before a copy is made.
         const share = ctx.services.get(ActuatorRegistryKey)?.config.share;
-        const listing = inspectZip(bytes, zipLimits(share ?? ShareConfigSchema.parse({})));
+        const listing = await inspectZip(bytes, zipLimits(share ?? ShareConfigSchema.parse({})));
         if (!listing.ok) {
           return refused(
             `這個壓縮檔不能匯出(${listing.why}):裡面的檔名不能跑出資料夾,解開也不能大得離譜。`,

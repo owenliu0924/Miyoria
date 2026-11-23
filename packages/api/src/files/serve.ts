@@ -14,12 +14,20 @@
 // and `X-Robots-Tag: noindex`; no answer ever sets a cookie, and no request's cookies are read.
 // A file has its stored type (sniffed from its bytes when it came in) and a `Content-Disposition`
 // with the cleaned name: `attachment` for a PDF, for `?dl=1` and for a member's own download,
-// else `inline`. Song covers are never served. A text passes the secret check again, an image is
+// else `inline`. A file that runs when opened (`runsWhenOpened`: .bat, .html, .sh, ...) is named
+// with `.txt` added, unless only its own person can open the link (a member's own download, or a
+// link for that one person). Song covers are never served. A text passes the secret check again, an image is
 // served as its cleaned copy. A link anyone may open may be kept by a CDN for a few minutes; every
 // other answer is `no-store`. Each address and each link have a rate limit. A use is counted once
 // per request that starts at the first byte (a video's later ranges are not new uses).
 
-import type { ArtifactCleaner, ArtifactStore, Artifact as StoredArtifact } from "@miyoria/store";
+import type { ZipLimits } from "@miyoria/gate/actions";
+import {
+  type ArtifactCleaner,
+  type ArtifactStore,
+  outgoingFilename,
+  type Artifact as StoredArtifact,
+} from "@miyoria/store";
 import type { ModerationService, PersonId } from "@miyoria/types";
 import { Hono } from "hono";
 import { byteRange } from "../panel.js";
@@ -60,6 +68,8 @@ export interface FileOriginOptions {
   publicCacheSecs: number;
   /** The header the proxy on this machine names the visitor in (`client_ip_header`). */
   clientIpHeader: string;
+  /** The zip limits `share` applies (`[modules.actions.share]`); default: its defaults. */
+  zip?: () => ZipLimits | undefined;
 }
 
 /** A plain-text page (an error, a refusal), with the security headers and no cache. */
@@ -97,6 +107,18 @@ interface Serving {
   artifact: StoredArtifact;
   download: boolean;
   cache: string;
+  /** Only the artifact's own person can open this (a file that runs keeps its name). */
+  private: boolean;
+}
+
+/** The first bytes of a text (for an interpreter line); `null` for anything else. */
+async function headOf(store: ArtifactStore, artifact: StoredArtifact): Promise<Uint8Array | null> {
+  if (artifact.kind !== "text") return null;
+  try {
+    return (await store.readContent(artifact)).subarray(0, 4);
+  } catch {
+    return null;
+  }
 }
 
 /** The file origin's app. */
@@ -113,7 +135,12 @@ export function fileOriginApp(options: FileOriginOptions): Hono<ApiEnv> {
     if (artifact.source === "sing" || !artifact.downloadable) {
       return page(403, "翻唱的成品不開放下載,只在語音和直播裡聽。");
     }
-    const refusal = await contentRefusal(store, artifact, options.moderation());
+    // Who may open it was checked when the link was made; the zip is read again all the same.
+    const zip = options.zip?.();
+    const refusal = await contentRefusal(store, artifact, options.moderation(), {
+      owner: true,
+      ...(zip === undefined ? {} : { zip }),
+    });
     if (refusal !== null) return page(403, "這個檔案不能從這裡送出。");
     try {
       artifact = (await options.cleaner.handOut(artifact)).artifact;
@@ -132,7 +159,10 @@ export function fileOriginApp(options: FileOriginOptions): Hono<ApiEnv> {
     const headers = new Headers({
       ...SECURITY_HEADERS,
       "content-type": contentType(artifact.mime),
-      "content-disposition": disposition(download ? "attachment" : "inline", artifact.filename),
+      "content-disposition": disposition(
+        download ? "attachment" : "inline",
+        outgoingFilename(artifact.filename, await headOf(store, artifact), serving.private),
+      ),
       "cache-control": serving.cache,
       "accept-ranges": "bytes",
       etag: `"${artifact.sha256}"`,
@@ -223,7 +253,12 @@ export function fileOriginApp(options: FileOriginOptions): Hono<ApiEnv> {
         : "private, no-store";
     return send(
       c.req.raw,
-      { artifact, download: share.mode === "download" && c.req.query("dl") === "1", cache },
+      {
+        artifact,
+        download: share.mode === "download" && c.req.query("dl") === "1",
+        cache,
+        private: share.audience === "person",
+      },
       () => store.shares.use(token).ok,
     );
   });
@@ -238,7 +273,11 @@ export function fileOriginApp(options: FileOriginOptions): Hono<ApiEnv> {
     if (artifact === null || artifact.made_for !== person || !store.isLive(artifact)) {
       return NOT_FOUND();
     }
-    return send(c.req.raw, { artifact, download: true, cache: "private, no-store" }, () => true);
+    return send(
+      c.req.raw,
+      { artifact, download: true, cache: "private, no-store", private: true },
+      () => true,
+    );
   });
 
   app.notFound(() => NOT_FOUND());

@@ -10,6 +10,9 @@
 //   (and its threads), a space's to that space (`visibility.ts`);
 // - it fits what the platform takes there;
 // - its bytes are the ones recorded (size and sha256).
+//
+// A file that runs when opened (`runsWhenOpened`: .bat, .ps1, .html, .sh, ...) is named with `.txt`
+// added anywhere but a DM, where only the person who asked sees it.
 
 import { createHash } from "node:crypto";
 import {
@@ -19,6 +22,7 @@ import {
   type AttachmentSource,
   type ContextKey,
 } from "@miyoria/types";
+import { outgoingFilename } from "./media.js";
 import { ArtifactBlobMissingError, type ArtifactStore } from "./store.js";
 
 /** The `AttachmentSource` over an artifact store. */
@@ -73,7 +77,7 @@ export class ArtifactAttachments implements AttachmentSource {
     }
     return {
       artifact_id: artifact.id,
-      filename: artifact.filename,
+      filename: outgoingFilename(artifact.filename, data.subarray(0, 4), site.dm),
       content_type: artifact.mime,
       size: artifact.size,
       data,

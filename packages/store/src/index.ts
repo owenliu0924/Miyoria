@@ -20,6 +20,8 @@ export {
   MEDIA_TYPES,
   type MediaType,
   normalizeMime,
+  outgoingFilename,
+  runsWhenOpened,
   SNIFF_BYTES,
   sniff,
   TextCheck,
