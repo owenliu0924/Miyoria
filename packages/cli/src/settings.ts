@@ -311,7 +311,8 @@ export async function ask(p: Prompter, ws: Workspace, field: Field): Promise<boo
   let next: string;
   const kind = field.kind;
   if (kind.type === "secret") {
-    const typed = (await p.secret(secretLabel(field.label, cur.value !== ""))).trim();
+    const label = secretLabel(field.label, cur.value !== "");
+    const typed = (await p.secret(label, field.env ?? undefined)).trim();
     if (typed === "") return false;
     next = typed;
   } else if (kind.type === "choice") {

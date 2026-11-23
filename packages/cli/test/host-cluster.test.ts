@@ -577,6 +577,16 @@ describe("host ls", () => {
     expect(text()).toMatch(/old\s+revoked\s+not connected\s+-\s+-\s+-\s+2 d ago/);
   });
 
+  it("prints_core_s_views_as_json", async () => {
+    core.hosts = [view("main-pc", { capabilities: ["asr"], connected: true })];
+    await cluster.ls(target(), true);
+    expect(JSON.parse(text())).toEqual({ schema: "miyoria.hosts/1", hosts: core.hosts });
+    core.hosts = [];
+    out.length = 0;
+    await cluster.ls(target(), true);
+    expect(JSON.parse(text())).toEqual({ schema: "miyoria.hosts/1", hosts: [] });
+  });
+
   it("says_what_to_do_when_core_has_no_hosts", async () => {
     await cluster.ls(target());
     expect(text()).toContain("host invite");
@@ -728,7 +738,9 @@ describe("status --all", () => {
     expect(all).toContain("This machine: this-pc");
     expect(all).toContain("All hosts (Core)");
     expect(all).toMatch(/main-pc\s+approved\s+connected/);
-    expect(all).toMatch(/\n {2}Service\s+State\s+Health\s+Port\s+PID\s+Restarts\s+Since\s+Reason/);
+    expect(all).toMatch(
+      /\n {2}Service\s+State\s+Health\s+Port\s+PID\s+Restarts\s+Changed\s+Reason/,
+    );
     expect(all).toMatch(/ {2}asr\s+running\s+✓\s+8003\s+42\s+0\s+2 min ago/);
     expect(all).toMatch(/ {2}tts\s+failed/);
     // a host that is not connected is one line, and its services are not asked for

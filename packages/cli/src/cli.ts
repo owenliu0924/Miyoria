@@ -130,6 +130,10 @@ function hostConfigOption(): OptionSpec {
   return { name: "host-config", value: "PATH", help: t.cli.options.hostConfig };
 }
 
+function jsonOption(): OptionSpec {
+  return { name: "json", help: t.cli.options.json };
+}
+
 function forceOption(): OptionSpec {
   return { name: "force", help: t.cli.options.force };
 }
@@ -210,14 +214,27 @@ export function commands(): CommandSpec {
             value: "LIST",
             help: t.cli.cmd.init.services,
           },
+          { name: "non-interactive", help: t.cli.cmd.init.nonInteractive },
+          { name: "llm-key-stdin", help: t.cli.cmd.init.llmKeyStdin },
+          { name: "discord-token-stdin", help: t.cli.cmd.init.discordTokenStdin },
         ],
         run: async (ctx) => {
+          const sources = {
+            llmKeyStdin: flag(ctx, "llm-key-stdin"),
+            discordTokenStdin: flag(ctx, "discord-token-stdin"),
+          };
+          // `--yes` keeps its old meaning for init: no questions at all.
+          const unattended =
+            flag(ctx, "non-interactive") ||
+            ctx.yes ||
+            sources.llmKeyStdin ||
+            sources.discordTokenStdin;
           let p: Prompter;
-          if (isInteractive()) p = interactivePrompter();
-          else if (ctx.yes) p = new DefaultsPrompter(plainReporter);
-          else {
-            throw new NotTtyError(t.cli.cmd.init.notTty);
-          }
+          if (unattended) {
+            const secrets = await init.initSecrets(sources, process.env, init.readAllStdin);
+            p = new DefaultsPrompter(plainReporter, secrets);
+          } else if (isInteractive()) p = interactivePrompter();
+          else throw new NotTtyError(t.cli.cmd.init.notTty);
           const mode = str(ctx, "mode");
           if (mode !== undefined && !(init.INIT_MODES as readonly string[]).includes(mode)) {
             throw new Error(t.cli.cmd.init.modeChoice(t.common.list(init.INIT_MODES)));
@@ -227,7 +244,7 @@ export function commands(): CommandSpec {
             throw new Error(t.cli.cmd.init.servicesNeedMode);
           }
           await init.run(ctx.config, p, {
-            yes: ctx.yes,
+            yes: unattended,
             ...(mode !== undefined ? { mode: mode as init.InitMode } : {}),
             ...(services !== undefined
               ? {
@@ -248,8 +265,8 @@ export function commands(): CommandSpec {
           {
             name: "list",
             help: t.cli.cmd.config.list,
-            options: [{ name: "reveal", help: t.cli.cmd.config.reveal }],
-            run: async (ctx) => configCmd.list(ctx.config, flag(ctx, "reveal")),
+            options: [{ name: "reveal", help: t.cli.cmd.config.reveal }, jsonOption()],
+            run: async (ctx) => configCmd.list(ctx.config, flag(ctx, "reveal"), flag(ctx, "json")),
           },
           {
             name: "get",
@@ -344,6 +361,7 @@ export function commands(): CommandSpec {
             value: "SERVICE",
             help: t.cli.cmd.doctor.printHashes,
           },
+          jsonOption(),
           hostConfigOption(),
         ],
         run: (ctx) =>
@@ -351,6 +369,7 @@ export function commands(): CommandSpec {
             deep: flag(ctx, "deep"),
             stackOnly: flag(ctx, "deep-only"),
             fix: flag(ctx, "fix"),
+            json: flag(ctx, "json"),
             ...optionalString("hostConfig", str(ctx, "host-config")),
             ...optionalString("printHashes", str(ctx, "print-hashes")),
             services: serviceDepsOf(ctx),
@@ -601,9 +620,12 @@ export function commands(): CommandSpec {
       {
         name: "status",
         help: t.cli.cmd.status.help,
-        options: [hostConfigOption(), { name: "all", help: t.cli.cmd.status.all }],
+        options: [hostConfigOption(), { name: "all", help: t.cli.cmd.status.all }, jsonOption()],
         run: (ctx) =>
-          host.status(hostTargetOf(ctx), flag(ctx, "all") ? { hosts: cluster.hostsSection } : {}),
+          host.status(hostTargetOf(ctx), {
+            ...(flag(ctx, "all") ? { hosts: cluster.hostsSection, all: true } : {}),
+            json: flag(ctx, "json"),
+          }),
       },
       {
         name: "logs",
@@ -684,7 +706,8 @@ export function commands(): CommandSpec {
           {
             name: "ls",
             help: t.cli.cmd.host.ls,
-            run: (ctx) => cluster.ls(hostTargetOf(ctx)),
+            options: [jsonOption()],
+            run: (ctx) => cluster.ls(hostTargetOf(ctx), flag(ctx, "json")),
           },
           {
             name: "approve",
@@ -1155,7 +1178,7 @@ export function helpText(path: CommandSpec[]): string {
     .join(" ");
   const sub = cmd.subcommands ? ` ${cmd.run ? t.cli.commandOptional : t.cli.commandRequired}` : "";
   lines.push(
-    `${bold(t.cli.usage)} ${name} ${t.cli.optionsWord}${sub}${argsUsage ? ` ${argsUsage}` : ""}`,
+    `${bold(t.cli.usage)}${name} ${t.cli.optionsWord}${sub}${argsUsage ? ` ${argsUsage}` : ""}`,
   );
   const table = (title: string, rows: Array<[string, string]>) => {
     if (rows.length === 0) return;

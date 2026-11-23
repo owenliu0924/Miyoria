@@ -636,9 +636,20 @@ export function hostTable(hosts: readonly ClusterHostView[], now = Date.now()): 
   });
 }
 
-export async function ls(target: HostTarget): Promise<void> {
+/** `host ls --json`: schema `miyoria.hosts/1`; `hosts` are Core's own views (`ClusterHostView`). */
+export interface HostsJson {
+  schema: "miyoria.hosts/1";
+  hosts: ClusterHostView[];
+}
+
+export async function ls(target: HostTarget, json = false): Promise<void> {
   const { client } = await coreOf(target);
   const hosts = await viaCore(() => client.rpc.cluster.hosts());
+  if (json) {
+    const out: HostsJson = { schema: "miyoria.hosts/1", hosts };
+    println(JSON.stringify(out, null, 2));
+    return;
+  }
   if (hosts.length === 0) {
     println(t.cluster.noHosts);
     return;

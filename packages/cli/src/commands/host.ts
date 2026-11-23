@@ -686,9 +686,10 @@ export function displayWidth(text: string): number {
 export function serviceTable(services: readonly HostServiceStatus[], now = Date.now()): string[] {
   const c = t.host.columns;
   const head = [c.service, c.state, c.health, c.port, c.pid, c.restarts, c.since, c.reason];
+  const states: Record<string, string> = t.host.states;
   const rows = services.map((s) => [
     s.name,
-    s.state,
+    states[s.state] ?? s.state,
     s.state === "running" || s.state === "external" || s.state === "foreign"
       ? s.healthy
         ? "✓"
@@ -757,9 +758,179 @@ export function hostStatus(
 export interface StatusOptions {
   /** `--all`: after this machine's table, what shows every host of Core (`cluster.hostsSection`). */
   hosts?: (core: remote.Remote) => Promise<void>;
+  /** `--json`: print `StatusJson` and nothing else on stdout. */
+  json?: boolean;
+  /** With `json`: include every host of Core (`--all`). */
+  all?: boolean;
+}
+
+/** One service of this machine in `status --json`. */
+export interface StatusServiceJson {
+  name: string;
+  kind: string;
+  provides: string[];
+  /** hostd's state: stopped, starting, running, stopping, backoff, failed, external, foreign, disabled. */
+  state: string;
+  healthy: boolean;
+  port: number | null;
+  pid: number | null;
+  url: string | null;
+  restarts: number;
+  /** When the state last changed (ISO 8601). */
+  since: string;
+  /** hostd's reason for a failed, backoff or disabled state (hostd's own text). */
+  reason: string | null;
+}
+
+/** `status --json`: schema `miyoria.status/1`. */
+export interface StatusJson {
+  schema: "miyoria.status/1";
+  host_toml: string;
+  /** This machine; `null` without host.toml. */
+  machine: {
+    name: string;
+    /** The services host.toml enables. */
+    enabled: string[];
+    /** The running hostd; `null` when it is not running. */
+    hostd: {
+      pid: number;
+      started_at: string;
+      workspace: string;
+      version: string;
+      /** The link to Core: connected, connecting, unauthorized, stopped or none. */
+      link: string;
+    } | null;
+    gpu: {
+      name: string | null;
+      total_mb: number;
+      used_mb: number;
+      free_mb: number | null;
+      reserve_mb: number;
+    } | null;
+    /** As hostd reports them; empty when hostd is not running. */
+    services: StatusServiceJson[];
+  } | null;
+  /** The running Core; `null` when it does not answer or its config cannot be read. */
+  core: {
+    version: string;
+    status: string;
+    modules: Array<{ id: string; state: string; reason: string | null }>;
+    llm_usage: Record<
+      string,
+      {
+        calls: number;
+        prompt_tokens: number;
+        cached_prompt_tokens: number;
+        completion_tokens: number;
+      }
+    >;
+  } | null;
+  /** With `--all`: every host Core knows (`ClusterHostView`); `null` when Core cannot list them. */
+  hosts?: unknown[] | null;
+}
+
+/** This machine's part of `status --json`. */
+export function machineJson(
+  name: string,
+  enabled: string[],
+  info: HostInfo | null,
+  daemon: { pid: number; started_at: string; workspace: string } | null,
+): NonNullable<StatusJson["machine"]> {
+  return {
+    name: info?.name ?? name,
+    enabled,
+    hostd:
+      info === null || daemon === null
+        ? null
+        : {
+            pid: daemon.pid,
+            started_at: daemon.started_at,
+            workspace: daemon.workspace,
+            version: info.version,
+            link: info.link ?? "none",
+          },
+    gpu:
+      info?.gpu == null
+        ? null
+        : {
+            name: info.gpu.name ?? null,
+            total_mb: info.gpu.total_mb,
+            used_mb: info.gpu.used_mb,
+            free_mb: info.gpu.free_mb ?? null,
+            reserve_mb: info.gpu.reserve_mb,
+          },
+    services: (info?.services ?? []).map((s) => ({
+      name: s.name,
+      kind: s.kind,
+      provides: s.provides,
+      state: s.state,
+      healthy: s.healthy,
+      port: s.port ?? null,
+      pid: s.pid ?? null,
+      url: s.url ?? null,
+      restarts: s.restarts,
+      since: new Date(s.since).toISOString(),
+      reason: s.reason ?? null,
+    })),
+  };
+}
+
+async function statusJson(target: HostTarget, options: StatusOptions): Promise<void> {
+  const out: StatusJson = {
+    schema: "miyoria.status/1",
+    host_toml: target.hostToml,
+    machine: null,
+    core: null,
+  };
+  const host = existsSync(target.hostToml) ? loadHostConfig(target.hostToml) : null;
+  if (host !== null) {
+    const enabled = Object.entries(host.config.services)
+      .filter(([, s]) => s.enabled)
+      .map(([name]) => name);
+    const client = await HostdClient.connect(host.state.root);
+    const info = client === null ? null : await client.call<HostInfo>("host.info");
+    out.machine = machineJson(host.config.name, enabled, info, client?.info ?? null);
+  }
+  let core: remote.Remote | null = null;
+  try {
+    core = remote.clientFor(await loadConfig(target.configPath));
+  } catch (error) {
+    if (host === null) throw error;
+  }
+  if (core !== null && (await remote.isRunning(core))) {
+    const health = await core.rpc.health();
+    const modules = await core.rpc.modules.list();
+    const usage = await core.rpc.llm.usage();
+    out.core = {
+      version: health.version,
+      status: health.status,
+      modules: modules.map((m) => ({ id: m.id, state: m.state, reason: m.reason ?? null })),
+      llm_usage: Object.fromEntries(
+        Object.entries(usage)
+          .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+          .map(([model, u]) => [
+            model,
+            {
+              calls: u.calls,
+              prompt_tokens: u.prompt_tokens,
+              cached_prompt_tokens: u.cached_prompt_tokens,
+              completion_tokens: u.completion_tokens,
+            },
+          ]),
+      ),
+    };
+    if (options.all) out.hosts = await core.rpc.cluster.hosts().catch(() => null);
+  } else if (options.all) {
+    out.hosts = null;
+  }
+  println(JSON.stringify(out, null, 2));
 }
 
 export async function status(target: HostTarget, options: StatusOptions = {}): Promise<void> {
+  if (options.json) {
+    await statusJson(target, options);
+    return;
+  }
   const host = existsSync(target.hostToml) ? loadHostConfig(target.hostToml) : null;
   if (host === null) {
     note(t.host.noHostTomlNote(target.hostToml));

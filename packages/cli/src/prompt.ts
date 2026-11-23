@@ -49,8 +49,11 @@ export interface Reporter {
 export interface Prompter extends Reporter {
   /** Free text; Enter on an empty line returns `defaultValue`. */
   text(message: string, defaultValue: string, check?: Check): Promise<string>;
-  /** Hidden input; `""` means "nothing typed". */
-  secret(message: string): Promise<string>;
+  /**
+   * Hidden input; `""` means "nothing typed". `variable`: the `.env` variable the answer goes to,
+   * for a prompter that answers from given values (`DefaultsPrompter`).
+   */
+  secret(message: string, variable?: string): Promise<string>;
   select(message: string, options: string[], initial: number): Promise<number>;
   multiSelect(message: string, options: string[], initial: number[]): Promise<number[]>;
   confirm(message: string, initial: boolean): Promise<boolean>;
@@ -153,11 +156,15 @@ export class ClackPrompter implements Prompter {
 }
 
 /**
- * Answers every question with its default (secrets: nothing typed). Used by `init --yes` when
- * there is no terminal; output goes to `reporter`.
+ * Answers every question with its default. A secret is answered from `secrets` by the `.env`
+ * variable it goes to, else left as it is. Used by `init --non-interactive`; output goes to
+ * `reporter`. Secrets are never printed.
  */
 export class DefaultsPrompter implements Prompter {
-  constructor(readonly reporter: Reporter) {}
+  constructor(
+    readonly reporter: Reporter,
+    readonly secrets: Readonly<Record<string, string>> = {},
+  ) {}
 
   intro(title: string): void {
     this.reporter.intro(title);
@@ -185,8 +192,8 @@ export class DefaultsPrompter implements Prompter {
   async text(_message: string, defaultValue: string): Promise<string> {
     return defaultValue;
   }
-  async secret(): Promise<string> {
-    return "";
+  async secret(_message: string, variable?: string): Promise<string> {
+    return variable === undefined ? "" : (this.secrets[variable] ?? "");
   }
   async select(_message: string, _options: string[], initial: number): Promise<number> {
     return initial;

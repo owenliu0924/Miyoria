@@ -79,18 +79,21 @@ export async function isRunning(client: Remote, timeoutMs = 2000): Promise<boole
   }
 }
 
+/** A module's state in the active language, colored; an unknown state prints as it is. */
 export function stateLabel(state: ModuleStateKind): string {
+  const words: Record<string, string> = t.remote.moduleStates;
+  const word = words[state] ?? state;
   switch (state) {
     case "running":
-      return green("running");
+      return green(word);
     case "degraded":
-      return yellow("degraded");
+      return yellow(word);
     case "failed":
-      return red("failed");
+      return red(word);
     case "disabled":
-      return dim("disabled");
+      return dim(word);
     default:
-      return state;
+      return word;
   }
 }
 

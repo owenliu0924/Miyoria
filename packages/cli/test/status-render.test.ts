@@ -67,25 +67,28 @@ describe("status of this machine", () => {
       "GPU      RTX 4070 SUPER  5,120 / 12,282 MB used, 7,162 MB free, 1,500 MB reserved",
     );
     expect(lines[2]).toBe("");
-    expect(lines[3]).toBe("Service  State    Health  Port  PID   Restarts  Since      Reason");
+    expect(lines[3]).toBe("Service  State    Health  Port  PID   Restarts  Changed    Reason");
     expect(lines[4]).toBe("asr      running  ✓       8003  4242  0         2 min ago");
     expect(lines[5]?.indexOf("failed")).toBe(lines[4]?.indexOf("running"));
-    expect(lines[5]?.indexOf("30 s ago")).toBe(lines[3]?.indexOf("Since"));
+    expect(lines[5]?.indexOf("30 s ago")).toBe(lines[3]?.indexOf("Changed"));
+    expect(lines[5]).toBe(
+      "tts      failed   -       -     -     3         30 s ago   exited with code 1",
+    );
   });
 
   it("renders_in_traditional_chinese", () => {
     setLang("zh-TW");
     const { title, lines } = hostStatus(INFO, DAEMON, NOW);
-    expect(title).toBe("本機:main-pc");
-    expect(lines[0]).toBe("hostd   PID 1000  已執行 3 小時  Core 連線:已連線  /srv/miyoria");
+    expect(title).toBe("本機：main-pc");
+    expect(lines[0]).toBe("hostd   PID 1000  已執行 3 小時  Core 連線：已連線  /srv/miyoria");
     expect(lines[1]).toBe(
-      "顯示卡  RTX 4070 SUPER  已用 5,120 / 12,282 MB,可用 7,162 MB,保留 1,500 MB",
+      "顯示卡  RTX 4070 SUPER  已用 5,120 / 12,282 MB，可用 7,162 MB，保留 1,500 MB",
     );
-    expect(lines[3]).toBe("服務  狀態     健康  埠    PID   重啟  自從      原因");
-    expect(lines[4]).toBe("asr   running  ✓     8003  4242  0     2 分鐘前");
-    // The state column is hostd's own word in both languages, and the columns still line up.
-    expect(lines[5]).toMatch(
-      /^tts {3}failed {3}- {5}- {5}- {5}3 {5}30 秒前 {3}exited with code 1$/,
+    expect(lines[3]).toBe("服務  狀態    健康狀態  埠    PID   重啟次數  變更時間  原因");
+    expect(lines[4]).toBe("asr   執行中  ✓         8003  4242  0         2 分鐘前");
+    // The state column is translated, and the columns line up by East Asian width.
+    expect(lines[5]).toBe(
+      "tts   失敗    -         -     -     3         30 秒前   exited with code 1",
     );
   });
 });

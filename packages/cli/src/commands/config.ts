@@ -398,25 +398,52 @@ function sources(used: ReadonlyArray<[string, Source]>): string {
   return used.map(([v, src]) => `${v}: ${sourceLabel(src)}`).join(", ");
 }
 
-export function list(configPath: string, reveal: boolean): void {
+/** One setting of `config list`; secrets are masked unless `--reveal`. */
+export interface ListedSetting {
+  key: string;
+  /** The value as the file writes it (TOML; a secret written in the file is masked). */
+  raw: string;
+  /** The effective value after `${VAR}` references, when it differs from `raw`; else `null`. */
+  value: string | null;
+  /** The variables it references and where each value came from. */
+  sources: Array<{ variable: string; source: Source }>;
+  /** A secret written into miyoria.toml itself instead of `.env`. */
+  plain_secret: boolean;
+}
+
+/** `config list --json`: schema `miyoria.config-list/1`. */
+export interface ConfigListJson {
+  schema: "miyoria.config-list/1";
+  config: string;
+  settings: ListedSetting[];
+  env_file: string;
+  env: Array<{ name: string; value: string; referenced: boolean }>;
+}
+
+/** What `config list` shows, as data. */
+export function listData(configPath: string, reveal: boolean): ConfigListJson {
   const ws = Workspace.open(configPath);
-  println(bold(ws.shown(configPath)));
   const referenced = new Set<string>();
+  const settings: ListedSetting[] = [];
+  const sourced = (used: ReadonlyArray<[string, Source]>) =>
+    used.map(([variable, source]) => ({ variable, source }));
   for (const leaf of leaves(ws.doc.data)) {
     const key = formatKey(leaf.path);
     const last = leaf.path.at(-1) ?? "";
     const raw = showValue(leaf.value);
     const v = leaf.value;
+    const row: ListedSetting = { key, raw, value: null, sources: [], plain_secret: false };
     if (typeof v === "string" && v.includes("${")) {
       const [value, used] = ws.resolve(v);
       const secret = isSecret(last) || used.some(([name]) => isSecret(name));
       for (const [name] of used) referenced.add(name);
-      const shown = secret && !reveal ? mask(value) : display("", value, reveal);
-      println(`${key} = ${raw}  ${dim("→")} ${shown}  ${dim(`[${sources(used)}]`)}`);
+      row.value = secret && !reveal ? mask(value) : display("", value, reveal);
+      row.sources = sourced(used);
     } else if (typeof v === "string" && isSecret(last) && !reveal) {
-      println(`${key} = "${mask(v)}"  ${yellow(t.config.plainSecret)}`);
+      row.raw = `"${mask(v)}"`;
+      row.plain_secret = true;
     } else if (typeof v === "string" && !reveal && v.includes("@")) {
-      println(`${key} = "${maskUrl(v)}"`);
+      row.raw = `"${maskUrl(v)}"`;
     } else if (Array.isArray(v) && raw.includes("${")) {
       const used: Array<[string, Source]> = [];
       const resolved = v.map((item) => {
@@ -426,19 +453,46 @@ export function list(configPath: string, reveal: boolean): void {
         return value;
       });
       for (const [name] of used) referenced.add(name);
-      println(
-        `${key} = ${raw}  ${dim("→")} [${resolved.join(", ")}]  ${dim(`[${sources(used)}]`)}`,
-      );
+      row.value = `[${resolved.join(", ")}]`;
+      row.sources = sourced(used);
+    }
+    settings.push(row);
+  }
+  return {
+    schema: "miyoria.config-list/1",
+    config: ws.shown(configPath),
+    settings,
+    env_file: ws.shown(ws.envPath),
+    env: ws.env.entries().map(([name, value]) => ({
+      name,
+      value: display(name, value, reveal),
+      referenced: referenced.has(name),
+    })),
+  };
+}
+
+export function list(configPath: string, reveal: boolean, json = false): void {
+  const data = listData(configPath, reveal);
+  if (json) {
+    println(JSON.stringify(data, null, 2));
+    return;
+  }
+  println(bold(data.config));
+  for (const s of data.settings) {
+    const used = s.sources.map((u): [string, Source] => [u.variable, u.source]);
+    if (s.value !== null) {
+      println(`${s.key} = ${s.raw}  ${dim("→")} ${s.value}  ${dim(`[${sources(used)}]`)}`);
+    } else if (s.plain_secret) {
+      println(`${s.key} = ${s.raw}  ${yellow(t.config.plainSecret)}`);
     } else {
-      println(`${key} = ${raw}`);
+      println(`${s.key} = ${s.raw}`);
     }
   }
-  const env = ws.env.entries();
-  if (env.length > 0) {
-    println(`\n${bold(ws.shown(ws.envPath))}`);
-    for (const [name, value] of env) {
-      const note = referenced.has(name) ? "" : `  ${dim(t.config.unreferenced)}`;
-      println(`${name} = ${display(name, value, reveal)}${note}`);
+  if (data.env.length > 0) {
+    println(`\n${bold(data.env_file)}`);
+    for (const e of data.env) {
+      const note = e.referenced ? "" : `  ${dim(t.config.unreferenced)}`;
+      println(`${e.name} = ${e.value}${note}`);
     }
   }
 }
