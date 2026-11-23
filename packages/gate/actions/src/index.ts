@@ -124,6 +124,8 @@ export {
   activeText,
   type ContentVerdict,
   checkContent,
+  type ReplyReferences,
+  ReplyReferencesKey,
   SHARE,
   type ShareOptions,
   type ShareRefusalCode,
