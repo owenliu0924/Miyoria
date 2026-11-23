@@ -120,10 +120,12 @@ function wakeQuote(text: string): string {
  * (lines that came in while she waited or worked), so it is never "the last line".
  */
 function theirLines(said: readonly string[]): string {
-  const first = wakeQuote(said[0] ?? "");
-  return said.length <= 1
-    ? `這句「${first}」`
-    : `從「${first}」到「${wakeQuote(said.at(-1) ?? "")}」這幾句`;
+  // A picture or a sticker has no words to quote; an empty 「」 would point at nothing.
+  const worded = said.map(wakeQuote).filter((t) => t !== "");
+  const first = worded[0];
+  if (first === undefined) return "剛傳的那則(沒有文字)";
+  const last = worded.at(-1) ?? first;
+  return worded.length <= 1 ? `這句「${first}」` : `從「${first}」到「${last}」這幾句`;
 }
 
 /** After them, where others talk too: people who called her get a run of their own after this one. */
