@@ -102,6 +102,11 @@ export class SandboxModule implements Module {
       toolTimeoutMs: config.tool_timeout_ms,
       readChars: config.workspace.read_chars,
       keepOutputs: config.workspace.keep_outputs,
+      people: {
+        maxBytes: config.workspace.person_max_mb * 1024 * 1024,
+        maxFiles: config.workspace.person_max_files,
+      },
+      exportMaxBytes: config.workspace.export_max_kb * 1024,
     });
     this.#gate = gate;
     gate.offerWorkspace();

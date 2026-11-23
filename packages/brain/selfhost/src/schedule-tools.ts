@@ -3,8 +3,15 @@
 // them (`next`); `schedule` is always offered (core), the other two are found with `find_tools`.
 
 import { defineTool, type Tool, type ToolContext, type ToolResult } from "@miyoria/llm/tools";
-import { type ContextKey, contextKeyString, type JsonValue } from "@miyoria/types";
+import {
+  type AccountRef,
+  type ContextKey,
+  contextKeyString,
+  type JsonValue,
+  sameAccount,
+} from "@miyoria/types";
 import { z } from "zod";
+import type { ScheduleRow } from "./initiative-store.js";
 import { SCHEDULE_CANCEL_TOOL, SCHEDULE_LIST_TOOL, SCHEDULE_TOOL } from "./initiative-texts.js";
 import { type ScheduleBook, ScheduleError, scheduleKey, scheduleLine } from "./schedule.js";
 
@@ -37,6 +44,14 @@ const CancelParams = z.object({
 
 const failed = (text: string): ToolResult => ({ ok: false, code: "failed", stage: null, text });
 
+/**
+ * Whether someone asking (`asker`) may see or cancel `row`: only what they asked for; her own
+ * calls with nobody behind them, all of them.
+ */
+function theirs(row: ScheduleRow, asker: AccountRef | null): boolean {
+  return asker === null || (row.for_account !== null && sameAccount(row.for_account, asker));
+}
+
 /** A tool whose `result` is the call; `call` throws its refusal, as `ToolRegistry` expects. */
 function withResult(
   tool: Tool,
@@ -65,7 +80,13 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
       }
     }
     try {
-      const row = book.set({ when, note: args.data.note, context: place });
+      // Whoever asked is kept with it: when it comes, the run acts for them, not as her own.
+      const row = book.set({
+        when,
+        note: args.data.note,
+        context: place,
+        asker: ctx.principal.requester,
+      });
       const at = when.daily ?? args.data.when.trim();
       return { ok: true, text: SCHEDULE_TOOL.set(scheduleKey(row), at, when.daily !== null) };
     } catch (error) {
@@ -76,9 +97,11 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
 
   const list = async (ctx: ToolContext): Promise<ToolResult> => {
     const space = deps.spaceOf?.(ctx.context) ?? null;
+    const asker = ctx.principal.requester;
     const rows = book
       .open()
-      .filter((r) => deps.spaceOf === undefined || r.space_id === null || r.space_id === space);
+      .filter((r) => deps.spaceOf === undefined || r.space_id === null || r.space_id === space)
+      .filter((r) => theirs(r, asker));
     if (rows.length === 0) return { ok: true, text: SCHEDULE_LIST_TOOL.none };
     const here = contextKeyString(ctx.context);
     const lines: string[] = [];
@@ -94,10 +117,14 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
     return { ok: true, text: lines.join("\n") };
   };
 
-  const cancel = async (_ctx: ToolContext, raw: JsonValue): Promise<ToolResult> => {
+  const cancel = async (ctx: ToolContext, raw: JsonValue): Promise<ToolResult> => {
     const args = CancelParams.safeParse(raw);
     if (!args.success) return failed(SCHEDULE_CANCEL_TOOL.notFound);
-    const row = book.cancel(args.data.id);
+    const found = book.find(args.data.id);
+    if (found === null || !theirs(found, ctx.principal.requester)) {
+      return failed(SCHEDULE_CANCEL_TOOL.notFound);
+    }
+    const row = book.cancel(found.id);
     if (row === null) return failed(SCHEDULE_CANCEL_TOOL.notFound);
     return { ok: true, text: SCHEDULE_CANCEL_TOOL.cancelled(scheduleKey(row), row.note) };
   };

@@ -1,4 +1,9 @@
-import { ActionDeniedError, APPROVE_ROUTE, RESULT_PENDING } from "@miyoria/gate/actions";
+import {
+  ActionDeniedError,
+  APPROVE_ROUTE,
+  RESULT_PENDING,
+  WORKSPACE_ALL,
+} from "@miyoria/gate/actions";
 import { DATA_CLOSE, DATA_OPEN, Events, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
@@ -122,6 +127,8 @@ describe("code.run through the gate", () => {
   it("review_deny_does_not_run", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
+    // on_own for Amy is still work for Amy: she needs the node (or the bond).
+    h.grants.grant(AMY, NODE_CODE_RUN);
     h.router.verdict("deny", "tries to find docker.sock");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
@@ -141,6 +148,7 @@ describe("code.run through the gate", () => {
   it("uncertain_asks_the_owner_with_the_code_attached", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
+    h.grants.grant(AMY, NODE_CODE_RUN);
     h.router.verdict("uncertain", "not sure");
     const sent = h.cards.next();
     const outcome = h.registry.invoke({
@@ -170,6 +178,7 @@ describe("code.run through the gate", () => {
     h.registry.configure({ ...h.registry.config, inline_wait_ms: 10 });
     h.router.delayMs = 50;
     await h.gate.setAvailable(true);
+    h.grants.grant(AMY, NODE_CODE_RUN);
     h.router.verdict("allow");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
@@ -195,7 +204,8 @@ describe("sessions through the gate", () => {
   it("code_run_takes_her_session_choice_and_explains_a_gone_session", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
-    h.grants.grant(AMY, NODE_CODE_RUN);
+    // Asked by someone who sees all of her sessions (an owner).
+    h.grants.grant(AMY, NODE_CODE_RUN).grant(AMY, WORKSPACE_ALL);
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
     const spec = JSON.stringify(tool.spec);
@@ -243,7 +253,7 @@ describe("sessions through the gate", () => {
   it("code_session_lists_and_closes_without_a_review", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
-    h.grants.grant(AMY, NODE_CODE_RUN);
+    h.grants.grant(AMY, NODE_CODE_RUN).grant(AMY, WORKSPACE_ALL);
     h.sandbox.sessions = ["weather-tool"];
     const tool = h.tools.get("code_session");
     if (!tool) throw new Error("no tool");

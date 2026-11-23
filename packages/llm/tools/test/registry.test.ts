@@ -254,6 +254,36 @@ describe("searching tools", () => {
     expect(names("沒有這種東西xyz")).toEqual([]);
   });
 
+  it("finds the work tools by the words she uses for them", () => {
+    const work: ToolListing[] = [
+      ["workspace_delete", "刪掉工作區裡的一個檔案。", "workspace", "act"],
+      ["code_session", "開一個可以接著用的 Python 工作階段。", "code", "external"],
+      ["schedule_list", "列出你設的時間。", "schedule", "read"],
+      ["github_issue", "在 GitHub 開一個 issue。", "mcp", "external"],
+      ["give_coins", "送魚幣給一個人。", "economy", "spend"],
+    ].map(([name, description, group, effect]) => ({
+      name: name as string,
+      description: description as string,
+      group: group as string,
+      effect: effect as ToolListing["effect"],
+      risk: "medium",
+      core: false,
+    }));
+    const found = (query: string) => searchTools(work, query).map((t) => t.name);
+    expect(found("檔案")).toEqual(["workspace_delete"]);
+    expect(found("跑程式")).toEqual(["code_session"]);
+    expect(found("排程")).toEqual(["schedule_list"]);
+    expect(found("插件")).toEqual(["github_issue"]);
+    expect(found("外部服務")).toEqual(["github_issue"]);
+  });
+
+  it("find_tools says what is behind it, the work tools too", () => {
+    const description = new ToolRegistry().entry(FIND_TOOLS)?.description ?? "";
+    for (const word of ["檔案", "工作區", "程式", "排程", "插件", "外部服務", "金幣"]) {
+      expect(description).toContain(word);
+    }
+  });
+
   it("shows a match by name, first sentence, effect and risk", () => {
     expect(searchTools(CATALOG, "give")).toEqual([
       {

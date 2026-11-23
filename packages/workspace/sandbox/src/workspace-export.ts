@@ -5,10 +5,22 @@
 // links), and what comes out is a copy in the artifact store, made in this turn, for the person
 // who asked, where the turn happens: a file made in a DM is seen in that DM only, one made in a
 // channel in that channel only (the store never makes it wider). Whatever a program wrote there is
-// untrusted: the store decides the type from the bytes and takes plain text, images, audio, video
-// and PDF only; HTML, SVG and scripts come in as plain text and `share` refuses them again.
+// untrusted: the store decides the type from the bytes and takes text, images, audio, video, PDF
+// and zips (docx, xlsx and pptx are zips: the file's extension only says which); HTML, scripts
+// and the rest of text come in as `text/plain` under their own extension. A zip whose listing
+// climbs out of its folder or unpacks to too much is refused here already (`inspectZip`). A
+// member's export comes from their own folder only (`people.ts`).
 
-import { type ActionResult, type Capability, defineCapability } from "@miyoria/gate/actions";
+import {
+  type ActionResult,
+  ActuatorRegistryKey,
+  type Capability,
+  defineCapability,
+  inspectZip,
+  isZip,
+  ShareConfigSchema,
+  zipLimits,
+} from "@miyoria/gate/actions";
 import {
   ArtifactInputError,
   type ArtifactStore,
@@ -22,14 +34,29 @@ import {
   type WorkspaceExportArgs,
   WorkspaceExportArgsSchema,
 } from "./capabilities.js";
+import { NODE_WORKSPACE } from "./nodes.js";
+import { type PersonLimits, workspaceFor } from "./people.js";
 import { SandboxError } from "./types.js";
 import type { WorkspaceApi } from "./workspace-store.js";
 
-/** Permission node a `user` principal needs (the same as the other workspace tools). */
-const NODE = "sandbox.workspace";
+/** The default of `[modules.sandbox.workspace] export_max_kb`, in bytes. */
+const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
 
-/** The largest file taken out of the workspace; the artifact kinds' own limits apply as well. */
-const MAX_EXPORT_BYTES = 64 * 1024 * 1024;
+/** The Office types, by extension: a zip with one of these names is stored as that type. */
+const OFFICE: Readonly<Record<string, string>> = {
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+function officeType(path: string): string | null {
+  const ext = baseName(path).split(".").at(-1)?.toLowerCase() ?? "";
+  return OFFICE[ext] ?? null;
+}
+
+function sized(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toFixed(bytes < 1024 * 1024 ? 2 : 1)} MB`;
+}
 
 function refused(text: string, code: string, path: string): ActionResult {
   return { text, data: { ok: false, refused: code, path } };
@@ -41,26 +68,31 @@ function baseName(path: string): string {
 
 export interface WorkspaceExportOptions {
   workspace: WorkspaceApi;
+  /** The caps of one person's folder (default `DEFAULT_PERSON_LIMITS`). */
+  people?: PersonLimits;
+  /** The largest file taken out, in bytes (default 8 MiB). */
+  maxBytes?: number;
 }
 
 /** `workspace.export`, over her workspace and the app's artifact store. */
 export function workspaceExportCapability(
   options: WorkspaceExportOptions,
 ): Capability<WorkspaceExportArgs> {
-  const ws = options.workspace;
+  const maxBytes = options.maxBytes ?? MAX_EXPORT_BYTES;
   return defineCapability<WorkspaceExportArgs>({
     name: WORKSPACE_EXPORT,
     summary: "把她工作區的一個檔案存成產物(之後才能用 share 傳給人)",
     risk: "low",
     args: WorkspaceExportArgsSchema,
-    permission: NODE,
+    permission: NODE_WORKSPACE,
     tool: {
       name: "workspace_export",
-      meta: { effect: "act", speed: "instant", group: "files" },
+      meta: { effect: "act", speed: "instant", group: "files", core: true },
       description:
         "把工作區裡的一個檔案存成產物,回給你它的 id;要把檔案交給人,就用這個 id 呼叫 share。" +
         "產物是給現在開口要的人做的,只在現在這個頻道或私訊裡看得到。" +
-        "只收圖片、音訊、影片、PDF 和純文字;其他東西(程式、壓縮檔、網頁)存不進去。",
+        "收圖片、音訊、影片、PDF、文字檔(markdown、CSV、JSON、程式碼、網頁原始檔)、zip 和 docx / xlsx / pptx;" +
+        `一個檔案最多 ${sized(maxBytes)}。替別人做事時只能匯出那個人自己資料夾裡的檔案。`,
       properties: { path: { type: "string", description: "工作區裡的檔案路徑,例如 report.txt" } },
       required: ["path"],
     },
@@ -72,22 +104,39 @@ export function workspaceExportCapability(
       if (context !== null && site === null) {
         return refused("我認不出這個地方或這個人,所以不匯出。", "unknown_place", args.path);
       }
+      const ws = workspaceFor(options.workspace, ctx.principal, ctx.services, options.people);
       let bytes: Uint8Array;
       try {
-        bytes = await ws.readBytes(args.path, MAX_EXPORT_BYTES);
+        bytes = await ws.workspace.readBytes(args.path, maxBytes);
       } catch (error) {
         if (!(error instanceof SandboxError)) throw error;
         return refused(
-          `沒辦法匯出 ${escapeData(args.path)}:${escapeData(error.message)}`,
+          error.kind === "limit"
+            ? `沒辦法匯出 ${escapeData(args.path)}:檔案超過 ${sized(maxBytes)}。`
+            : `沒辦法匯出 ${escapeData(args.path)}:${escapeData(error.message)}`,
           error.kind,
           args.path,
         );
+      }
+      const office = officeType(args.path);
+      if (isZip(bytes)) {
+        // The limits `share` will apply; told now, before a copy is made.
+        const share = ctx.services.get(ActuatorRegistryKey)?.config.share;
+        const listing = await inspectZip(bytes, zipLimits(share ?? ShareConfigSchema.parse({})));
+        if (!listing.ok) {
+          return refused(
+            `這個壓縮檔不能匯出(${listing.why}):裡面的檔名不能跑出資料夾,解開也不能大得離譜。`,
+            "zip_refused",
+            args.path,
+          );
+        }
       }
       try {
         const artifact = await store.ingest(bytes, {
           source: "sandbox",
           plugin: "sandbox",
           filename: baseName(args.path),
+          ...(office === null ? {} : { mime: office }),
           place: site?.place ?? null,
           made_for: site?.person_id ?? null,
           turn: ctx.request.turn,
@@ -109,7 +158,7 @@ export function workspaceExportCapability(
       } catch (error) {
         if (error instanceof ArtifactTypeError) {
           return refused(
-            "這個檔案的內容不是能存的類型(只收圖片、音訊、影片、PDF、純文字)。",
+            "這個檔案的內容不是能存的類型(收圖片、音訊、影片、PDF、文字檔、zip 和 Office 文件;docx / xlsx / pptx 要真的是那種檔案)。",
             "type_not_allowed",
             args.path,
           );

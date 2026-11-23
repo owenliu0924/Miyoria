@@ -10,13 +10,26 @@ import { ParseError } from "./config.js";
  */
 export const EXHAUSTED_LINE = "今天的能量用完了……伺服器繁忙,明天再陪你們聊。";
 
+/** "N 分鐘" up to an hour, then whole hours, rounded up: how long a wait is, roughly. */
+export function roughWait(minutes: number): string {
+  const m = Math.max(1, Math.ceil(minutes));
+  return m <= 60 ? `${m} 分鐘` : `${Math.ceil(m / 60)} 個小時`;
+}
+
 /**
- * What she says to someone waiting when the conversation's hourly cap is reached
- * (`[modules.agent]` `session_usd_per_hour`): once per capped stretch, with the whole minutes until
- * she is under it again. Constant but for the minutes: no model is involved.
+ * What she says to someone at their AI quota (`[modules.agent.quota]`), before any model call:
+ * once per capped stretch, with about how long until it frees up. Constant but for the time.
  */
-export const HOUR_CAP_LINE = (minutes: number): string =>
-  `這一個小時話講太多了,先休息一下……大概 ${minutes} 分鐘後回來。`;
+export const QUOTA_HOUR_LINE = (minutes: number): string =>
+  `你這個小時找我做的事有點多,大概 ${roughWait(minutes)}後再來。`;
+
+/** The same for the day's limit. */
+export const QUOTA_DAY_LINE = (minutes: number): string =>
+  `你今天找我做的事有點多了,大概 ${roughWait(minutes)}後再來。`;
+
+/** The line of a capped person, by which limit they are at. */
+export const quotaLine = (which: "hour" | "day", minutes: number): string =>
+  which === "day" ? QUOTA_DAY_LINE(minutes) : QUOTA_HOUR_LINE(minutes);
 
 /**
  * State of the LLM budget as reported on `llm.budget`.

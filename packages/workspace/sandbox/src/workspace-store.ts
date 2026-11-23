@@ -21,7 +21,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { MAX_PATH_DEPTH, normalizeRelativePath, pathKey, safeJoin } from "./paths.js";
+import {
+  MAX_PATH_DEPTH,
+  normalizeRelativePath,
+  normalizeWorkspacePath,
+  pathKey,
+  safeJoin,
+  workspaceDepth,
+} from "./paths.js";
 import { type Language, SandboxError } from "./types.js";
 import { signatures, type WorkWalk, walkWork } from "./workspace.js";
 
@@ -89,7 +96,7 @@ export interface WorkspaceApi {
 }
 
 const MAX_ENTRIES_FLOOR = 100;
-/** Most entries `enforce` looks at (more are left and make `usage` report overflow). */
+/** Fewest entries `enforce` looks at; it looks at twice the file cap when that is more. */
 const ENFORCE_ENTRIES = 20_000;
 
 function invalid(path: string, why: string): SandboxError {
@@ -118,6 +125,8 @@ function sha256(text: string): string {
 
 export class PersistentWorkspace implements WorkspaceApi {
   #ledger: Map<string, string> | null = null;
+  /** One person's folder of it (`subdir`): plain path limits, no extra room under `people/`. */
+  #nested = false;
 
   /**
    * `ledgerFile`: where the approved scripts' hashes are kept. It must be outside `dir`, which a
@@ -142,7 +151,10 @@ export class PersistentWorkspace implements WorkspaceApi {
 
   /** Walks the whole workspace (links and special files are not counted). */
   async #walk(): Promise<WorkWalk> {
-    return walkWork(this.dir, this.#maxEntries());
+    // Not made yet: empty, not unreadable.
+    const stat = await lstat(this.dir).catch(() => null);
+    if (stat === null) return { files: [], truncated: false, entries: 0, bytes: 0 };
+    return walkWork(this.dir, this.#maxEntries(), (dir) => this.#depth(dir));
   }
 
   async usage(): Promise<WorkspaceUsage> {
@@ -155,13 +167,23 @@ export class PersistentWorkspace implements WorkspaceApi {
     return signatures(await this.#walk());
   }
 
+  /** A path of this workspace, checked (`normalizeWorkspacePath`; a folder of one: plain). */
+  #normalize(path: string): string {
+    return this.#nested ? normalizeRelativePath(path) : normalizeWorkspacePath(path);
+  }
+
+  /** How deep a directory at `dir` may hold. */
+  #depth(dir: string): number {
+    return this.#nested ? MAX_PATH_DEPTH : workspaceDepth(dir);
+  }
+
   /**
    * Checks that no existing component of `path` is a link and returns the host path. With
    * `parents`, missing parent directories are created (world-writable). Throws `invalid_path`.
    */
   async #resolve(path: string, parents: boolean): Promise<string> {
-    const normalized = normalizeRelativePath(path);
-    const full = safeJoin(this.dir, normalized);
+    const normalized = this.#normalize(path);
+    const full = safeJoin(this.dir, normalized, (p) => this.#normalize(p));
     const parts = normalized.split("/");
     let current = this.dir;
     for (const [i, part] of parts.entries()) {
@@ -186,10 +208,31 @@ export class PersistentWorkspace implements WorkspaceApi {
     return full;
   }
 
+  /**
+   * The directory `path` of this workspace as a workspace of its own with `limits` (a person's
+   * folder, for a run that mounts only it). Missing directories are created; none of its
+   * components may be a link, so the mount cannot be sent elsewhere. Its scripts are not approved
+   * through it (no ledger).
+   */
+  async subdir(path: string, limits: WorkspaceLimits): Promise<PersistentWorkspace> {
+    await this.ensure();
+    const normalized = this.#normalize(path);
+    const full = await this.#resolve(`${normalized}/.dir`, true);
+    const dir = join(full, "..");
+    const stat = await lstat(dir).catch(() => null);
+    if (stat === null || stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw invalid(path, "is not a directory");
+    }
+    const sub = new PersistentWorkspace(dir, limits);
+    sub.#nested = true;
+    await sub.ensure();
+    return sub;
+  }
+
   async list(prefix?: string): Promise<{ entries: WorkspaceEntry[]; truncated: boolean }> {
     let base = "";
     if (prefix !== undefined && prefix !== "") {
-      base = normalizeRelativePath(prefix.replace(/\/+$/, ""));
+      base = this.#normalize(prefix.replace(/\/+$/, ""));
       await this.#resolve(base, false);
     }
     const walked = await this.#walk();
@@ -197,7 +240,7 @@ export class PersistentWorkspace implements WorkspaceApi {
     for (const f of walked.files) {
       if (base !== "" && f.path !== base && !f.path.startsWith(`${base}/`)) continue;
       try {
-        normalizeRelativePath(f.path);
+        this.#normalize(f.path);
       } catch {
         // A name a program made that the tools cannot address; `enforce` leaves it, list hides it.
         continue;
@@ -334,7 +377,7 @@ export class PersistentWorkspace implements WorkspaceApi {
       await unlink(temp).catch(() => undefined);
       throw error;
     }
-    return { path: normalizeRelativePath(path), size: data.length };
+    return { path: this.#normalize(path), size: data.length };
   }
 
   async #loadLedger(): Promise<Map<string, string>> {
@@ -375,7 +418,7 @@ export class PersistentWorkspace implements WorkspaceApi {
   async approvedScript(path: string): Promise<{ language: Language; text: string } | null> {
     let normalized: string;
     try {
-      normalized = normalizeRelativePath(path);
+      normalized = this.#normalize(path);
     } catch {
       return null;
     }
@@ -443,7 +486,7 @@ export class PersistentWorkspace implements WorkspaceApi {
         return;
       }
       for (const name of names) {
-        if (++seen > ENFORCE_ENTRIES) return;
+        if (++seen > Math.max(ENFORCE_ENTRIES, this.limits.maxFiles * 2)) return;
         const full = join(dir, name);
         const path = prefix === "" ? name : `${prefix}/${name}`;
         let stat: Awaited<ReturnType<typeof lstat>>;
@@ -455,7 +498,7 @@ export class PersistentWorkspace implements WorkspaceApi {
         }
         if (stat.isSymbolicLink()) await drop(full, path, "link");
         else if (stat.isDirectory()) {
-          if (depth >= MAX_PATH_DEPTH) await drop(full, path, "too_deep");
+          if (depth >= this.#depth(path)) await drop(full, path, "too_deep");
           else await walk(full, path, depth + 1);
         } else if (stat.isFile()) {
           if (stat.size > this.limits.maxFileBytes) await drop(full, path, "file_too_large");

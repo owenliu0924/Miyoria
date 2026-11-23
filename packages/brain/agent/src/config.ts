@@ -418,31 +418,114 @@ export const WorkConfigSchema = z.object({
 });
 export type WorkConfig = z.output<typeof WorkConfigSchema>;
 
+/** What one job of a kind may use when the config says nothing (`DelegateKindSchema`). */
+interface KindDefaults {
+  rounds: number;
+  minutes: number;
+  tool_seconds: number;
+  usd_default: number;
+  usd_max: number;
+}
+
 /**
- * `[modules.agent.delegate]`: the sub-agents of the phase-3 runner (docs/design/v5-brain.md). The
- * per-kind limits are in `packages/brain/self/src/subagents.ts`.
+ * `[modules.agent.delegate.kinds.<kind>]`: what one job of a kind may use. The defaults are the
+ * kinds' own (`KINDS` in `packages/brain/self/src/subagents.ts`; a test holds them equal). Calls
+ * per step and the token ceiling are fixed there, not settings.
  */
+function delegateKind(d: KindDefaults) {
+  return z.object({
+    /** Model steps that may call tools; one more without tools writes the result. */
+    rounds: z.number().int().min(1).max(500).default(d.rounds),
+    /** Wall time of the whole job; the gap of a restart is not counted. */
+    minutes: z
+      .number()
+      .positive()
+      .max(24 * 60)
+      .default(d.minutes),
+    /** One tool call may take this long. */
+    tool_seconds: z.number().int().min(1).max(3600).default(d.tool_seconds),
+    /** USD a job may spend when she does not say: the size of one task, hers to pick. */
+    usd_default: z.number().positive().default(d.usd_default),
+    /** USD a job may spend at most, whatever she asks for. */
+    usd_max: z.number().positive().default(d.usd_max),
+  });
+}
+
+export const DelegateKindsSchema = z.object({
+  research: delegateKind({
+    rounds: 16,
+    minutes: 8,
+    tool_seconds: 45,
+    usd_default: 0.25,
+    usd_max: 1,
+  }).prefault({}),
+  curator: delegateKind({
+    rounds: 20,
+    minutes: 8,
+    tool_seconds: 30,
+    usd_default: 0.25,
+    usd_max: 0.75,
+  }).prefault({}),
+  worker: delegateKind({
+    rounds: 60,
+    minutes: 30,
+    tool_seconds: 180,
+    usd_default: 1,
+    usd_max: 3,
+  })
+    .extend({
+      /**
+       * MCP and plugin tools a worker may call besides its own list, by exact name. Such a tool
+       * says nothing of what it does; naming it here is the owner vouching for it.
+       */
+      extra_tools: z.array(z.string().trim().min(1).max(128)).max(200).default([]),
+    })
+    .prefault({}),
+});
+export type DelegateKindsConfig = z.output<typeof DelegateKindsSchema>;
+
+/** `[modules.agent.delegate]`: the sub-agents of the runner (docs/design/v5-brain.md, v6-agent.md). */
 export const DelegateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Jobs running at once; more wait in the queue. */
-  max_running: z.number().int().min(1).max(4).default(2),
+  max_running: z.number().int().min(1).max(8).default(3),
   /** Jobs waiting at most; a start past it is refused (she hears so). */
-  max_queued: z.number().int().nonnegative().default(4),
-  /** What all sub-agents together may spend in a day, from the router's price table (USD). */
-  daily_usd: z.number().positive().default(3),
-  /** The same cap in tokens, for calls of a model that has no price. */
-  daily_tokens: z.number().int().positive().default(9_000_000),
-  /** What the nightly reflection may spend in a day (USD). */
+  max_queued: z.number().int().nonnegative().default(8),
+  /** Jobs of one person (who asked) running at once; more of theirs wait. Owners are not held. */
+  per_person_running: z.number().int().min(1).max(8).default(2),
+  /** Jobs of one person waiting at most; past it their start is refused (she hears so). */
+  per_person_queued: z.number().int().nonnegative().default(2),
+  /**
+   * What the nightly reflection may spend in a day (USD; a model without a price at
+   * `[modules.agent.quota] unpriced_usd_per_mtok`), so one night cannot use up the day's budget.
+   */
   reflect_daily_usd: z.number().positive().default(0.5),
-  reflect_daily_tokens: z.number().int().positive().default(1_500_000),
   /** Characters of a job's summary she is told when it ends; the rest is for `delegate_read`. */
   result_chars: z.number().int().positive().default(1500),
   /** Characters one `delegate_read` gives. */
   read_chars: z.number().int().positive().default(8000),
   /** Ended jobs kept for the lists and `delegate_read`. */
   keep_ended: z.number().int().nonnegative().default(20),
+  /** Each kind's limits: `[modules.agent.delegate.kinds.research|curator|worker]`. */
+  kinds: DelegateKindsSchema.prefault({}),
 });
 export type DelegateConfig = z.output<typeof DelegateConfigSchema>;
+
+/**
+ * `[modules.agent.quota]`: each person's AI quota (docs/design/v6-agent.md 「上限收成三種」), the
+ * model cost she spends for one person: the runs that answer them, text or voice, and the helper
+ * jobs they asked for. Her own initiative is charged to nobody. The owner is never capped. At a
+ * limit she answers with one fixed line, once per stretch, and makes no model call.
+ */
+export const QuotaConfigSchema = z.object({
+  /** USD per person in a rolling hour; 0: no hourly limit. */
+  person_usd_per_hour: z.number().nonnegative().default(3),
+  /** USD per person in her local day; 0: no daily limit. */
+  person_usd_per_day: z.number().nonnegative().default(10),
+  /** What a million tokens of a model with no price in `[llm.pricing]` count as (USD). */
+  unpriced_usd_per_mtok: z.number().nonnegative().default(1),
+});
+export type QuotaConfig = z.output<typeof QuotaConfigSchema>;
 
 /**
  * `[modules.agent.corrections]`: the six checks of her output the runner keeps (numbered as in
@@ -553,43 +636,56 @@ export const AgentConfigSchema = z
         }),
       ),
     /**
-     * What one conversation (a session: a channel, thread, DM or voice room) may spend on models
-     * in a rolling hour, in USD from `[llm.pricing]` (the runner's `sessionUsdPerHour`). At the cap
-     * she does not answer there until enough of the hour has aged out; someone waiting is told
-     * once when she is back. `0`: no hourly cap per conversation (the daily `[llm.budget]` still
-     * applies). May differ per Space or room.
+     * One text run (the runner's `RunLimits` of the text profile): model steps that may call tools.
+     * At the end one more step runs that may only hand the rest to a helper. Voice keeps its own.
      */
-    session_usd_per_hour: z
-      .number()
-      .nonnegative()
-      .default(1)
-      .meta(
-        setting({
-          kind: "number",
-          scope: "room",
-          label: "每個對話每小時花費上限（美元）",
-          help: "一個頻道、討論串、私訊或語音頻道一小時內最多花多少；到了她會說大概幾分鐘後回來。0 = 不限（每天的預算照算）",
-          step: 0.1,
-          group: "spend",
-        }),
-      ),
-    /**
-     * The same cap in prompt and completion tokens, for an hour in which a model without a price
-     * was used (its cost cannot be counted). `0`: no such cap.
-     */
-    session_tokens_per_hour: z
+    text_rounds: z
       .number()
       .int()
-      .nonnegative()
-      .default(3_000_000)
+      .positive()
+      .default(20)
       .meta(
         setting({
           kind: "number",
           scope: "room",
-          label: "每個對話每小時 token 上限",
-          help: "模型沒有價格時改用 token 算的同一個上限。0 = 不限",
-          step: 100_000,
-          group: "spend",
+          label: "一次最多幾步",
+          help: "文字頻道裡她一次能連續用工具幾步;到了可以把剩下的交給小幫手。語音另外算",
+          step: 1,
+          group: "run",
+        }),
+      ),
+    /** Wall time of one text run, checked between steps. */
+    text_seconds: z
+      .number()
+      .int()
+      .positive()
+      .default(300)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "一次最長幾秒",
+          help: "她一次做事最多花多久;更久的事她會交給小幫手",
+          unit: "s",
+          step: 10,
+          group: "run",
+        }),
+      ),
+    /** One tool call of a text run may take this long. */
+    text_tool_seconds: z
+      .number()
+      .int()
+      .positive()
+      .default(60)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "一個工具最長幾秒",
+          help: "一個工具多久沒回就不等了",
+          unit: "s",
+          step: 5,
+          group: "run",
         }),
       ),
     /** Treat messages from other bots as input (they are always recorded). */
@@ -616,6 +712,8 @@ export const AgentConfigSchema = z
     work: WorkConfigSchema.prefault({}),
     /** The sub-agents. */
     delegate: DelegateConfigSchema.prefault({}),
+    /** Each person's AI quota. */
+    quota: QuotaConfigSchema.prefault({}),
     /** The after-the-fact corrections that may be switched off once measured (v4 §4.5). */
     corrections: CorrectionsConfigSchema.prefault({}),
     temperature: z.number().nullable().default(null),
@@ -637,7 +735,7 @@ export const AgentConfigSchema = z
   .meta(
     settingGroups([
       { id: "levels", label: "每個地方的聊天等級" },
-      { id: "spend", label: "每個對話的花費上限" },
+      { id: "run", label: "她一次做事的上限" },
     ]),
   );
 export type AgentConfig = z.output<typeof AgentConfigSchema>;

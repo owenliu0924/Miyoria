@@ -93,6 +93,7 @@ import { walletPlayRpc } from "./play-routes.js";
 import { outcomesRpc, promptsRpc } from "./prompts.js";
 import { limitMember, publicRpc } from "./public.js";
 import { pushRpc } from "./push/routes.js";
+import { quotaRpc } from "./quota.js";
 import { reportsRpc } from "./reports.js";
 import { roleRpc } from "./roles.js";
 import type { Method, Route, RouteGroup } from "./route.js";
@@ -155,7 +156,7 @@ export const router = os.router({
   modules: { list: coreRpc.modules.list, ...settingsRpc, action: coreRpc.modules.action },
   places: { ...placesRpc, ...placesSpacesRpc },
   events: eventsRpc,
-  llm: { ...coreRpc.llm, ...llmCallsRpc },
+  llm: { ...coreRpc.llm, ...llmCallsRpc, ...quotaRpc },
   economy: economyRpc,
   channels: channelRpc,
   cluster: clusterRpc,

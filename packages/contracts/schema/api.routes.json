@@ -577,6 +577,20 @@
           }
         }
       },
+      "quota": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": null
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/quota"
+          }
+        }
+      },
       "calls": {
         "~orpc": {
           "errorMap": {},

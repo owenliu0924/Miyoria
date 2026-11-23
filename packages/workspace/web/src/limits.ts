@@ -1,6 +1,6 @@
-// Sliding-window rate limits and a small TTL cache, both in memory.
+// A sliding-window rate limit and a small TTL cache, both in memory.
 
-/** At most `max` hits per `windowMs` for each key. */
+/** At most `max` hits per `windowMs` for each key; a `max` of 0 is no limit. */
 export class WindowLimit {
   readonly #hits = new Map<string, number[]>();
   constructor(
@@ -17,27 +17,18 @@ export class WindowLimit {
 
   /** Whether one more hit fits (not recorded). */
   has(key: string, now: number): boolean {
-    return this.#fresh(key, now).length < this.max;
+    return this.max <= 0 || this.#fresh(key, now).length < this.max;
+  }
+
+  /** Records the hit and returns `true`, or returns `false` without recording when over. */
+  take(key: string, now: number): boolean {
+    if (!this.has(key, now)) return false;
+    if (this.max > 0) this.record(key, now);
+    return true;
   }
 
   record(key: string, now: number): void {
     this.#hits.set(key, [...this.#fresh(key, now), now]);
-  }
-}
-
-/** Both limits of one kind of call: per person and for everyone. */
-export class Limits {
-  constructor(
-    readonly person: WindowLimit,
-    readonly global: WindowLimit,
-  ) {}
-
-  /** Records the call and returns `true`, or returns `false` without recording when over. */
-  take(who: string, now: number): boolean {
-    if (!this.person.has(who, now) || !this.global.has("*", now)) return false;
-    this.person.record(who, now);
-    this.global.record("*", now);
-    return true;
   }
 }
 

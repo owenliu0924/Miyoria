@@ -16,13 +16,21 @@
 //    artifact made for one person does not go to another.
 // 4. Song covers are never shared (source `sing`, `downloadable = false`).
 // 5. Nothing withdrawn: deleted, expired, blocked or taken down.
-// 6. A type allow-list by content, read again from the bytes: images, audio, video, PDF and plain
-//    text; a zip only for the person it was made for. Text that is HTML, SVG, PHP or a script
-//    with an interpreter line is refused, as are executables and anything unrecognised.
-// 7. A size cap (`[modules.actions.share] max_bytes`, and what the platform takes there).
-// 8. Text passes the outgoing checks first: a credential in it (a known format, or a protected
-//    value such as the admin token) or any other moderation block refuses the share.
-// 9. A limit per person and for everyone, per rolling 24 hours.
+// 6. A type allow-list by content, read again from the bytes: images, audio, video, PDF, text
+//    (markdown, CSV, JSON, source code and HTML too: it goes as a file and is only ever served as
+//    `text/plain`, never rendered) and the zip family (zip, docx, xlsx, pptx) only for the person
+//    it was made for, read whole (`zip.ts`). SVG, executables and anything unrecognised are
+//    refused.
+// 7. Text passes the outgoing checks first, and so does every text entry of a zip and the XML
+//    parts of an Office file: a credential in it (a known format, or a protected value such as
+//    the admin token) or any other moderation block refuses the share.
+// 8. A limit per person and for everyone, per rolling 24 hours.
+// 9. A size cap (`[modules.actions.share] max_bytes`, and what the platform takes there); over it,
+//    the link alone goes, when there is one. Rules 6 to 8 hold for the link the same.
+//
+// A text a double-click or a browser would run (`runsWhenOpened`: .bat, .ps1, .html, .sh, ...)
+// goes out with `.txt` added to its name anywhere but a DM with the asker (the attachment source
+// names it so), and her result says so, so she can tell the person.
 //
 // Images go out as their cleaned copy (`ArtifactCleanerKey`, provided by the `api` module: decoded
 // and encoded again, so EXIF, text chunks and anything else hidden in the file are gone). Without
@@ -46,6 +54,7 @@ import {
   ArtifactStoreKey,
   type FileLinkResult,
   FileLinksKey,
+  outgoingFilename,
   SNIFF_BYTES,
   sniff,
   TextCheck,
@@ -76,10 +85,16 @@ import { handleLookup, type NameLookup, recipient } from "./builtin.js";
 import { type ActionResult, type Capability, defineCapability } from "./capability.js";
 import type { ShareConfig } from "./config.js";
 import { RateLimiter } from "./rate.js";
+import { inspectZip, isZip, ZIP_MIMES, type ZipLimits } from "./zip.js";
 
 const log = getLogger("actions.share");
 
 export const SHARE = "share";
+
+/** What can go out, for her. */
+const SHAREABLE =
+  "可以傳的是圖片、音訊、影片、PDF、文字檔(markdown、CSV、JSON、程式碼、網頁原始檔都算)," +
+  "以及壓縮檔和 Word / Excel / PowerPoint 檔(這兩種只給做給的那個人,而且不能是會解壓出超大檔案的)。";
 
 /** Why a share was refused (`data.refused`). */
 export type ShareRefusalCode =
@@ -110,9 +125,13 @@ type ShareArgs = z.output<typeof ShareArgs>;
 /** What a content check found. */
 export type ContentVerdict =
   | { ok: true; mime: string }
-  | { ok: false; code: "type_not_allowed"; what: string };
+  | { ok: false; code: "type_not_allowed"; what: string }
+  /** The outgoing checks block a text, or a text entry of a zip (`entry`). */
+  | { ok: false; code: "secret" | "moderation"; rule: string; entry: string | null };
 
-const ZIP = [0x50, 0x4b, 0x03, 0x04];
+/** The outgoing checks of one text: the rule it trips, `null` when it may go. */
+export type TextScreen = (text: string) => { code: "secret" | "moderation"; rule: string } | null;
+
 const EXECUTABLES: readonly (readonly number[])[] = [
   [0x4d, 0x5a], // MZ: Windows PE
   [0x7f, 0x45, 0x4c, 0x46], // ELF
@@ -145,14 +164,55 @@ export function activeText(text: string): string | null {
   return null;
 }
 
+/** What the zip limits of `[modules.actions.share]` allow. */
+export function zipLimits(config: ShareConfig): ZipLimits {
+  return {
+    maxUnpackedBytes: config.zip_max_unpacked_mb * 1024 * 1024,
+    maxEntries: config.zip_max_entries,
+  };
+}
+
+const DEFAULT_ZIP: ZipLimits = { maxUnpackedBytes: 256 * 1024 * 1024, maxEntries: 5000 };
+
 /**
  * The type of `bytes` by content, against the allow-list. `owner`: the share goes to the person
- * the artifact was made for (a zip goes to nobody else).
+ * the artifact was made for (the zip family goes to nobody else). `mime`: the type the artifact
+ * was stored as, which names which member of the zip family it is. `attachment`: it leaves as a
+ * file attachment, so HTML, PHP and scripts are text files like any other (SVG is still refused);
+ * otherwise (a page that opens it) they are refused too. `screen`: the outgoing checks, run on a
+ * text and on every text entry of a zip (inflated under the zip limits).
  */
-export function checkContent(bytes: Uint8Array, owner: boolean): ContentVerdict {
+export async function checkContent(
+  bytes: Uint8Array,
+  owner: boolean,
+  options: {
+    mime?: string | null;
+    zip?: ZipLimits;
+    attachment?: boolean;
+    screen?: TextScreen;
+  } = {},
+): Promise<ContentVerdict> {
   const refuse = (what: string): ContentVerdict => ({ ok: false, code: "type_not_allowed", what });
-  if (startsWith(bytes, ZIP)) {
-    return owner ? { ok: true, mime: "application/zip" } : refuse("zip (only for its own person)");
+  const screen = options.screen;
+  if (isZip(bytes)) {
+    if (!owner) return refuse("zip (only for its own person)");
+    const listing = await inspectZip(
+      bytes,
+      options.zip ?? DEFAULT_ZIP,
+      screen === undefined ? undefined : (text) => screen(text),
+    );
+    if (!listing.ok) {
+      const block = listing.block;
+      if (block === undefined) return refuse(`zip: ${listing.why}`);
+      return {
+        ok: false,
+        code: block.code === "secret" ? "secret" : "moderation",
+        rule: block.rule,
+        entry: listing.entry ?? null,
+      };
+    }
+    const mime = options.mime ?? null;
+    return { ok: true, mime: mime !== null && ZIP_MIMES.includes(mime) ? mime : "application/zip" };
   }
   const known = sniff(bytes.subarray(0, SNIFF_BYTES));
   if (known !== null) return { ok: true, mime: known.mime };
@@ -161,8 +221,12 @@ export function checkContent(bytes: Uint8Array, owner: boolean): ContentVerdict 
   if (!check.end()) {
     return refuse(EXECUTABLES.some((magic) => startsWith(bytes, magic)) ? "executable" : "binary");
   }
-  const active = activeText(new TextDecoder("utf-8").decode(bytes));
-  return active === null ? { ok: true, mime: "text/plain" } : refuse(active);
+  const text = new TextDecoder("utf-8").decode(bytes);
+  const active = activeText(text);
+  if (active !== null && (options.attachment !== true || active === "SVG")) return refuse(active);
+  const block = screen?.(text) ?? null;
+  if (block !== null) return { ok: false, ...block, entry: null };
+  return { ok: true, mime: "text/plain" };
 }
 
 export interface ShareOptions {
@@ -182,6 +246,17 @@ function refused(code: ShareRefusalCode, text: string, extra: Record<string, Jso
 
 function personKey(account: AccountRef): string {
   return `${account.platform}:${account.id}`;
+}
+
+/** The share limits of `[modules.actions.share]`, per rolling day. */
+function shareLimits(config: ShareConfig) {
+  return {
+    perDay: config.per_day,
+    perPersonPerDay: config.per_person_per_day,
+    cooldownMs: 0,
+    perHour: Infinity,
+    perPersonPerHour: Infinity,
+  };
 }
 
 /** The secret or moderation rule a text trips, if any. */
@@ -207,11 +282,68 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
   const names = options.names === undefined ? handleLookup(services) : options.names;
   const limiter = new RateLimiter();
 
-  const send = async (
+  /**
+   * The checks of the bytes and the share limit (rules 6 to 8), before anything goes out, as an
+   * attachment or as a link. Returns the bytes, or the refusal.
+   */
+  const vet = async (
     store: ArtifactStore,
     artifact: Artifact,
     where: ContextKey,
     who: AccountRef,
+    owner: boolean,
+    signal: AbortSignal,
+  ): Promise<ActionResult | { bytes: Uint8Array }> => {
+    const config = options.config();
+    let bytes: Uint8Array;
+    try {
+      bytes = await store.readContent(artifact, signal);
+    } catch (error) {
+      if (!(error instanceof ArtifactBlobMissingError)) throw error;
+      return refused("not_found", "這個檔案的內容已經不在了。");
+    }
+    const moderation = services.get(ModerationKey);
+    const content = await checkContent(bytes, owner, {
+      mime: artifact.mime,
+      zip: zipLimits(config),
+      attachment: true,
+      screen: (text) => textBlock(moderation, text, where, null),
+    });
+    if (!content.ok) {
+      if (content.code === "type_not_allowed") {
+        return refused(
+          "type_not_allowed",
+          `這種內容不能當附件傳出去(${content.what})。${SHAREABLE}`,
+          { what: content.what },
+        );
+      }
+      const inside = content.entry === null ? "" : `(在壓縮檔裡的 ${escapeData(content.entry)})`;
+      return refused(
+        content.code,
+        content.code === "secret"
+          ? `這個檔案裡${inside}有看起來像密鑰或密碼的內容,不能傳出去。先把那段拿掉再重新匯出。`
+          : `這個檔案的內容${inside}沒有通過輸出檢查,不能傳出去。`,
+        { rule: content.rule, ...(content.entry === null ? {} : { entry: content.entry }) },
+      );
+    }
+    if (content.mime !== artifact.mime) {
+      return refused("type_not_allowed", "這個檔案的內容和它登記的型別不一樣,不能傳。", {
+        what: "mismatch",
+      });
+    }
+    const exceeded = limiter.check(SHARE, personKey(who), shareLimits(config), clock.now());
+    if (exceeded !== null) {
+      return refused("limit", "今天傳給這個人(或大家)的檔案已經到上限了,明天再傳。", {
+        reason: exceeded,
+      });
+    }
+    return { bytes };
+  };
+
+  /** The attachment, once `vet` passed it: what the platform takes there, then the send. */
+  const send = async (
+    artifact: Artifact,
+    where: ContextKey,
     reply: MessageRef | null,
     signal: AbortSignal,
     text = "",
@@ -221,8 +353,7 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
     if (!sink || platformLimit === null) {
       return refused("platform", "這個地方收不了附件,所以沒辦法把檔案傳過去。");
     }
-    const config = options.config();
-    const cap = Math.min(config.max_bytes, platformLimit);
+    const cap = Math.min(options.config().max_bytes, platformLimit);
     if (artifact.size > cap) {
       return refused(
         "too_large",
@@ -230,68 +361,12 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         { size: artifact.size, max_bytes: cap },
       );
     }
-    let bytes: Uint8Array;
-    try {
-      bytes = await store.readContent(artifact, signal);
-    } catch (error) {
-      if (!(error instanceof ArtifactBlobMissingError)) throw error;
-      return refused("not_found", "這個檔案的內容已經不在了。");
-    }
-    const site = store.places.at(where, who);
-    const owner = artifact.made_for !== null && artifact.made_for === site?.person_id;
-    const content = checkContent(bytes, owner);
-    if (!content.ok) {
-      return refused(
-        "type_not_allowed",
-        `這種內容不能當附件傳出去(${content.what})。可以傳的是圖片、音訊、影片、PDF 和純文字。`,
-        { what: content.what },
-      );
-    }
-    if (content.mime !== artifact.mime) {
-      return refused("type_not_allowed", "這個檔案的內容和它登記的型別不一樣,不能傳。", {
-        what: "mismatch",
-      });
-    }
-    if (content.mime === "text/plain") {
-      const block = textBlock(
-        services.get(ModerationKey),
-        new TextDecoder("utf-8").decode(bytes),
-        where,
-        null,
-      );
-      if (block !== null) {
-        return refused(
-          block.code,
-          block.code === "secret"
-            ? "這個檔案裡有看起來像密鑰或密碼的內容,不能傳出去。先把那段拿掉再重新匯出。"
-            : "這個檔案的內容沒有通過輸出檢查,不能傳出去。",
-          { rule: block.rule },
-        );
-      }
-    }
-    const person = personKey(who);
-    const exceeded = limiter.check(
-      SHARE,
-      person,
-      {
-        perDay: config.per_day,
-        perPersonPerDay: config.per_person_per_day,
-        cooldownMs: 0,
-      },
-      clock.now(),
-    );
-    if (exceeded !== null) {
-      return refused("limit", "今天傳給這個人(或大家)的檔案已經到上限了,明天再傳。", {
-        reason: exceeded,
-      });
-    }
     try {
       const sent = await sink.send(
         where,
         { text, reply_to: reply, attachments: [{ artifact_id: artifact.id }] },
         signal,
       );
-      limiter.record(SHARE, person, clock.now());
       return { context: sent.context, id: sent.id };
     } catch (error) {
       const attachment = attachmentErrorOf(error);
@@ -393,12 +468,12 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
     permission: null,
     tool: {
       name: "share",
-      meta: { effect: "say", speed: "instant", group: "files" },
+      meta: { effect: "say", speed: "instant", group: "files", core: true },
       description:
         "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。" +
         "artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。" +
         "只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;" +
-        "翻唱的成品不能傳;只收圖片、音訊、影片、PDF、純文字。不行的時候會告訴你原因,照原因跟對方說就好。" +
+        "翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。" +
         "有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。",
       properties: {
         artifact: { type: "string", description: "產物的 id" },
@@ -476,8 +551,17 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
           return refused("type_not_allowed", "這張圖沒辦法清掉藏在檔案裡的資料,所以不傳。");
         }
       }
+      // Content, outgoing checks and the share limit come first, for an attachment and a link.
+      const owner = artifact.made_for !== null && artifact.made_for === site.person_id;
+      const vetted = await vet(store, handed, where, who, owner, ctx.signal);
+      if ("text" in vetted) return vetted;
+      // Named as the attachment source and the file origin name it: a file that runs when
+      // opened goes as text where others may download it.
+      const filename = outgoingFilename(handed.filename, vetted.bytes, false);
+      let asText = filename !== handed.filename && !site.dm;
+      const person = personKey(who);
       const link = await issueLink(artifact, here, site, ctx.request.turn, args.hours ?? null);
-      let sent = await send(store, handed, where, who, reply, ctx.signal, link?.url ?? "");
+      let sent = await send(handed, where, reply, ctx.signal, link?.url ?? "");
       if ("text" in sent) {
         const code = (sent.data as { refused?: string }).refused;
         // Where no attachment fits, the link alone goes; any other refusal stops the link too.
@@ -486,9 +570,13 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
           if (link !== null) revokeLink(store, link.share_id, site.person_id);
           return sent;
         }
+        asText = filename !== handed.filename && link.audience !== "person";
         const posted = await postLink(where, reply, link.url, ctx.signal);
+        limiter.record(SHARE, person, clock.now());
         if (posted === null) return { text: `連結:${link.url}`, data: linkData(artifact, link) };
         sent = posted;
+      } else {
+        limiter.record(SHARE, person, clock.now());
       }
       try {
         publish(
@@ -516,8 +604,11 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         link === null
           ? ""
           : ` 也附了一條連結(${link.audience === "space" ? "這個伺服器的成員" : "只有對方"}打得開):${link.url}`;
+      const textNote = asText
+        ? ` 這種檔案一打開就會執行,所以在這裡是當成文字檔傳的,檔名是 ${escapeData(filename)}:跟對方說一聲,要用的話下載後自己把最後的 .txt 拿掉。`
+        : "";
       return {
-        text: `已經把 ${escapeData(artifact.filename)} 傳給對方了。${linkText}`,
+        text: `已經把 ${escapeData(artifact.filename)} 傳給對方了。${textNote}${linkText}`,
         data: {
           ok: true,
           artifact_id: artifact.id,
@@ -526,6 +617,7 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
           size: artifact.size,
           message_id: sent.id,
           metadata_stripped: stripped,
+          ...(asText ? { sent_as: filename } : {}),
           ...(link === null ? {} : { url: link.url, link_expires_at: link.expires_at }),
         },
       };

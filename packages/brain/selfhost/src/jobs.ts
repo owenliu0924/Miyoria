@@ -5,27 +5,37 @@
 // and `work_steer`; the lane itself stays only for the game director's driven tasks.
 //
 // Results. A job that ends wakes the place that started it as a `result`, with the job's id,
-// kind, goal and summary as the data of the wake (the runner frames it); one a restart cut is told
-// the same way once the host is up. A job she cancelled herself is not told: she knows.
+// kind, goal, who asked and summary as the data of the wake (the runner frames it). A job a
+// restart cut goes on once the host is up (`Delegator.recover`); one that cannot is told the same
+// way. A job she cancelled herself is not told: she knows.
+//
+// Progress. Her prompt has the section 「進行中的工作」 (`JobsPrompt`): the jobs of the place she
+// answers, with their plans.
 //
 // Events. A job publishes the work lane's task events under the owner `delegate`
 // (`delegate.task.started|progress|done|failed`), so the fact layer and the panel's task list show
 // it like any task; its transcript is the session `delegate:<id>`.
 //
-// Keeping. Jobs and the days' spending are rows of the settings store (`delegate:job:<id>`,
-// `delegate:day:<pool>`), the store the work lane keeps its task rows in.
+// Keeping. Jobs and the reflection's day are rows of the settings store (`delegate:job:<id>`,
+// `delegate:day:reflect`), the store the work lane keeps its task rows in.
+//
+// Money. A job is charged to whoever asked (their AI quota, `quota.ts`), never to the owner's cap;
+// one she started herself to nobody.
 
+import { WORKSPACE_ALL } from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import type { Tool } from "@miyoria/llm/tools";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { errorMessage, SerialQueue, sleep } from "@miyoria/runtime/kernel";
 import { type SettingsStore, SettingsStoreKey, StoreKey } from "@miyoria/store";
 import {
+  AuthorizerKey,
   type ContextKey,
   DirectivesKey,
   isJsonObject,
   type JsonValue,
   type ProfileId,
+  PromptContributorsKey,
   publishTaskEvent,
   ReflectGuardKey,
   type TaskEvent,
@@ -37,18 +47,23 @@ import type { LocalTime } from "../../arbiter/src/index.js";
 import {
   type DayState,
   type DelegateEvent,
-  type DelegateLimits,
+  type DelegateLimitsInput,
   Delegator,
   delegateTexts,
   delegateTools,
   isSubagentKind,
+  JOBS_PROMPT_KEY,
   type JobRow,
   type JobState,
   type JobStore,
+  JobsPrompt,
+  kindLimitsOf,
+  type PersonQuota,
   type RunModel,
   serviceGuard,
   type Wake,
 } from "../../self/src/index.js";
+import { payerOfAuthor } from "./quota.js";
 
 /** The owner of the jobs' task events: `delegate.task.started|progress|done|failed`. */
 export const DELEGATE_OWNER = "delegate";
@@ -118,7 +133,6 @@ export function settingsJobStore(
       }
       return {
         jobs,
-        day: parseDay(await store.get(profile, `${DAY_PREFIX}delegate`)),
         reflectDay: parseDay(await store.get(profile, `${DAY_PREFIX}reflect`)),
       };
     },
@@ -192,7 +206,8 @@ export interface RunReflectDeps<T> {
 
 /**
  * Runs the nightly reflection under the sub-agents' accounting, as a job of kind `reflect`: its
- * calls count against the nightly figure (`[modules.agent.delegate] reflect_daily_usd`), a call
+ * calls count against the nightly figure (`[modules.agent.delegate] reflect_daily_usd`; a model
+ * without a price at the quota's fallback rate), a call
  * that takes the figure past its cap cuts the run, and nothing runs once the day's figure is used
  * up. The reflection itself is not changed: it still calls the router with its own prompt and no
  * tools, so it does not run on `SelfRunner` yet.
@@ -211,7 +226,7 @@ export function runReflect<T>(deps: RunReflectDeps<T>) {
 
 export interface JobsHostOptions {
   /** Jobs at once, the queue, caps and so on: over `[modules.agent.delegate]`. */
-  limits?: Partial<DelegateLimits>;
+  limits?: DelegateLimitsInput;
   /** Where jobs are kept; default: the settings store, else nowhere. */
   store?: JobStore;
   /** Wait before jobs a restart cut are told (ms). */
@@ -225,6 +240,8 @@ export interface JobsHostDeps {
   quiet: LocalTime | null;
   /** Wakes `context`'s lane. */
   wake: (context: ContextKey, wake: Wake) => void;
+  /** Each person's AI quota: a job is charged to whoever asked. `null` or unset: nobody's. */
+  quota?: PersonQuota | null;
 }
 
 export class JobsHost {
@@ -258,16 +275,22 @@ export class JobsHost {
       limits: {
         maxRunning: cfg.max_running,
         maxQueued: cfg.max_queued,
-        dailyUsd: cfg.daily_usd,
-        dailyTokens: cfg.daily_tokens,
+        perPersonRunning: cfg.per_person_running,
+        perPersonQueued: cfg.per_person_queued,
         reflectDailyUsd: cfg.reflect_daily_usd,
-        reflectDailyTokens: cfg.reflect_daily_tokens,
         resultChars: cfg.result_chars,
         readChars: cfg.read_chars,
         keepEnded: cfg.keep_ended,
+        kinds: {
+          research: kindLimitsOf("research", cfg.kinds.research),
+          curator: kindLimitsOf("curator", cfg.kinds.curator),
+          worker: kindLimitsOf("worker", cfg.kinds.worker),
+        },
         ...options.limits,
       },
       dayKey: (now) => new Date(now - dayStart * 3_600_000).toISOString().slice(0, 10),
+      quota: deps.quota ?? null,
+      payerOf: (from) => payerOfAuthor(agent, from),
       rules: (context) =>
         pinnedSection(agent.mainline.ownerRules(context), [], agent.ctx.clock.now(), 0),
       forbids: (goal, context) =>
@@ -282,8 +305,11 @@ export class JobsHost {
     this.#tools = delegateTools({
       delegator: this.delegator,
       nameOf: (account) => agent.handleOf(account, account.id),
+      // Owners see everyone's jobs, as they see everyone's folders.
+      seesAll: (account) => services.get(AuthorizerKey)?.allows(account, WORKSPACE_ALL) === true,
     });
     for (const tool of this.#tools) agent.tools.register(tool);
+    services.get(PromptContributorsKey)?.register(new JobsPrompt(this.delegator));
     // The `reflect` module runs its daily reflection through this, under the nightly figure.
     agent.ctx.provide(ReflectGuardKey, {
       run: async (run, signal, options) => {
@@ -339,6 +365,7 @@ export class JobsHost {
   stop(): void {
     this.#stopped = true;
     this.delegator.close();
+    this.#agent.ctx.services.get(PromptContributorsKey)?.unregister(JOBS_PROMPT_KEY);
     const registry = this.#agent.tools;
     for (const tool of this.#tools) registry.unregister(tool.spec.name);
   }
@@ -346,7 +373,7 @@ export class JobsHost {
 
 function emptyStore(): JobStore {
   return {
-    load: async () => ({ jobs: [], day: null, reflectDay: null }),
+    load: async () => ({ jobs: [], reflectDay: null }),
     saveJob: () => undefined,
     removeJob: () => undefined,
     saveDay: () => undefined,

@@ -201,6 +201,7 @@ const ANSWERS = {
     activity: [{ date: "2026-11-08", text: 1, voice: 0 }],
     can_request_song: false,
     forget: { removes: "a", keeps: "b" },
+    quota: null,
   } satisfies ApiOutputs["member"]["me"],
   "member.forget": {
     deleted: 0,

@@ -1,16 +1,23 @@
-// Rate limits and cooldowns of medium / high risk capabilities: rolling 24-hour windows per
-// capability and per capability and person, plus a minimum gap between runs.
+// Rate limits and cooldowns of medium / high risk capabilities: rolling 24-hour and one-hour
+// windows per capability and per capability and person, plus a minimum gap between runs.
 
 import type { Limit, TierLimit } from "./config.js";
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 /** Effective limits of one capability (tier defaults filled in). */
 export interface Limits {
   perDay: number;
   perPersonPerDay: number;
   cooldownMs: number;
+  /** `Infinity`: no hourly limit. */
+  perHour: number;
+  perPersonPerHour: number;
 }
+
+const orNone = (n: number | null | undefined): number | undefined =>
+  n === null || n === undefined ? undefined : n;
 
 /** Configured limits first, then the capability's own defaults, then the tier's. */
 export function effectiveLimits(
@@ -23,6 +30,13 @@ export function effectiveLimits(
     perPersonPerDay:
       own?.per_person_per_day ?? defaults?.per_person_per_day ?? tier.per_person_per_day,
     cooldownMs: own?.cooldown_ms ?? defaults?.cooldown_ms ?? tier.cooldown_ms,
+    perHour:
+      orNone(own?.per_hour) ?? orNone(defaults?.per_hour) ?? orNone(tier.per_hour) ?? Infinity,
+    perPersonPerHour:
+      orNone(own?.per_person_per_hour) ??
+      orNone(defaults?.per_person_per_hour) ??
+      orNone(tier.per_person_per_hour) ??
+      Infinity,
   };
 }
 
@@ -33,6 +47,8 @@ export function tightened(limits: Limits): Limits {
     perDay: half(limits.perDay),
     perPersonPerDay: half(limits.perPersonPerDay),
     cooldownMs: limits.cooldownMs * 2,
+    perHour: half(limits.perHour),
+    perPersonPerHour: half(limits.perPersonPerHour),
   };
 }
 
@@ -66,10 +82,16 @@ export class RateLimiter {
       return `cooling down (${wait} s left)`;
     }
     if (runs.length >= limits.perDay) return `daily limit reached (${limits.perDay} per day)`;
+    const hour = runs.filter((r) => now - r.at < HOUR_MS);
+    if (hour.length >= limits.perHour) return `hourly limit reached (${limits.perHour} per hour)`;
     if (person !== null) {
       const theirs = runs.filter((r) => r.person === person).length;
       if (theirs >= limits.perPersonPerDay) {
         return `daily limit for this person reached (${limits.perPersonPerDay} per day)`;
+      }
+      const theirHour = hour.filter((r) => r.person === person).length;
+      if (theirHour >= limits.perPersonPerHour) {
+        return `hourly limit for this person reached (${limits.perPersonPerHour} per hour)`;
       }
     }
     return null;

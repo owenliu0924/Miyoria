@@ -95,6 +95,20 @@ export const MemberBondSchema = z
   .meta({ id: "ApiMemberBond" });
 export type MemberBond = z.output<typeof MemberBondSchema>;
 
+/** What she spent on models for this person (their AI quota), USD. */
+export const MemberQuotaSchema = z
+  .object({
+    hour_usd: z.number(),
+    day_usd: z.number(),
+    /** The limits (0: none). */
+    hour_limit_usd: z.number(),
+    day_limit_usd: z.number(),
+    /** The owner: never held to them. */
+    exempt: z.boolean(),
+  })
+  .meta({ id: "ApiMemberQuota" });
+export type MemberQuota = z.output<typeof MemberQuotaSchema>;
+
 /** `GET /api/member/me`. */
 export const MemberViewSchema = z
   .object({
@@ -108,6 +122,11 @@ export const MemberViewSchema = z
     can_request_song: z.boolean(),
     /** What forgetting takes and leaves, in the words `/me memory forget` uses. */
     forget: z.object({ removes: z.string(), keeps: z.string() }),
+    /**
+     * Their AI quota; `null`: not kept here, or someone she will not show anything. Optional for
+     * clients older than it.
+     */
+    quota: MemberQuotaSchema.nullable().optional(),
   })
   .meta({ id: "ApiMemberView" });
 export type MemberView = z.output<typeof MemberViewSchema>;

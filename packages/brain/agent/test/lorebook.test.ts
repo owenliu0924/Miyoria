@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import {
   KAOMOJI_LINE,
   MAX_ENTRIES,
+  MOOD_STYLE,
   pickKaomoji,
   STYLE_LINES,
   styleNote,
@@ -192,5 +193,14 @@ describe("the shipped lorebook", () => {
     expect(of("又當機了")).toEqual(["server_busy"]);
     expect(of("又在摸魚")).toEqual(["slacker"]);
     expect(of("主人來了")).toEqual(["owner"]);
+  });
+});
+
+describe("the style note is for chatting", () => {
+  it("does not hold a piece of work or its result to a short reply", () => {
+    expect(STYLE_LINES.text[1]).toMatch(/^- 聊天時短短的/);
+    expect(STYLE_LINES.text[1]).toContain("有人要你做事");
+    expect(MOOD_STYLE.react).toContain("聊天時");
+    expect(MOOD_STYLE.shorter).toContain("做事和交代結果照常");
   });
 });

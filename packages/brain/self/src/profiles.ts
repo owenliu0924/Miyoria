@@ -14,7 +14,10 @@ export const PROFILE_NAMES: readonly ProfileName[] = ["text", "voice", "subagent
 export type LimitName = "rounds" | "time" | "tokens" | "spend";
 
 export interface RunLimits {
-  /** Model steps that may call tools; one more step, without tools, follows when they are used up. */
+  /**
+   * Model steps that may call tools; one more step follows when they are used up, in which only
+   * `HANDOFF_TOOL` runs (the rest of the work to a helper).
+   */
   rounds: number;
   /** Tool calls run of one step; the rest are refused. */
   callsPerRound: number;
@@ -27,19 +30,17 @@ export interface RunLimits {
    * run; unset: 10,000,000. The host sets the vision cap.
    */
   pictureBytes?: number;
-  /** Prompt and completion tokens of a run, all steps together. */
+  /**
+   * Prompt and completion tokens of a run, all steps together: a fixed safety ceiling per profile,
+   * not a setting. What stops a broken loop on a model whose cost cannot be read.
+   */
   tokens: number;
   /**
-   * What a session may spend on models in a rolling hour (USD); 0: no such cap (the router's daily
-   * budget still holds). The text and voice runs take `[modules.agent]` `session_usd_per_hour` of
-   * their place; the profile's value (owner decision Q6: 1) is the default.
+   * What the run may spend in all (USD; a model without a price at the quota's fallback rate):
+   * a helper job's own budget. Unset or 0: none of its own; the person's quota and the router's
+   * daily budget still hold.
    */
-  sessionUsdPerHour: number;
-  /**
-   * The same cap in tokens, for a session whose model has no price in `[llm.pricing]`: its cost
-   * cannot be counted, so its tokens are. 0: no such cap. `session_tokens_per_hour`.
-   */
-  sessionTokensPerHour: number;
+  usd?: number;
 }
 
 export interface RunProfile {
@@ -125,13 +126,29 @@ export const VOICE_TOOLS: ReadonlySet<string> = new Set([
  */
 export const SILENT_WAIT_MS = 1_000;
 
-/** The default of `[modules.agent]` `session_usd_per_hour`, and the cap of runs that do not read it. */
-export const HOUR_USD = 1;
 /**
- * About what 1 USD buys of a flash model's cached input; only used when no price is known. The
- * default of `session_tokens_per_hour`.
+ * The one tool the last step at a limit may call: the rest of the work goes to a helper. Every
+ * other call of that step is refused.
  */
-export const HOUR_TOKENS = 3_000_000;
+export const HANDOFF_TOOL = "delegate";
+
+/** Tool calls one step may make (text runs and helpers); the rest are refused. Not a setting. */
+export const CALLS_PER_ROUND = 8;
+
+/**
+ * A text run's limits when its place sets none (`[modules.agent]` `text_rounds`, `text_seconds`,
+ * `text_tool_seconds` have these defaults; calls and tokens are fixed). Tokens: every step resends
+ * the prompt, so 20 steps over a prompt of about 30,000 tokens that grows by six pages or files of
+ * 12,000 characters (up to 12,000 tokens each) come to about 1.9 million; the ceiling leaves room
+ * above that.
+ */
+export const TEXT_LIMITS = {
+  rounds: 20,
+  callsPerRound: CALLS_PER_ROUND,
+  wallMs: 300_000,
+  toolMs: 60_000,
+  tokens: 3_000_000,
+} as const satisfies Partial<RunLimits>;
 
 export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
   text: {
@@ -140,15 +157,7 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
     reasoningPurpose: "chat_text",
     reasoning: null,
     speaks: true,
-    limits: {
-      rounds: 10,
-      callsPerRound: 6,
-      wallMs: 120_000,
-      toolMs: 30_000,
-      tokens: 400_000,
-      sessionUsdPerHour: HOUR_USD,
-      sessionTokensPerHour: HOUR_TOKENS,
-    },
+    limits: { ...TEXT_LIMITS },
     maxStepTokens: null,
     offers: everything,
     unit: "line",
@@ -166,8 +175,6 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
       wallMs: 12_000,
       toolMs: 6_000,
       tokens: 60_000,
-      sessionUsdPerHour: HOUR_USD,
-      sessionTokensPerHour: HOUR_TOKENS,
     },
     maxStepTokens: 600,
     offers: everything,
@@ -182,12 +189,10 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
     speaks: false,
     limits: {
       rounds: 40,
-      callsPerRound: 8,
+      callsPerRound: CALLS_PER_ROUND,
       wallMs: 10 * 60_000,
       toolMs: 60_000,
       tokens: 1_500_000,
-      sessionUsdPerHour: HOUR_USD,
-      sessionTokensPerHour: HOUR_TOKENS,
     },
     maxStepTokens: null,
     offers: quiet,
@@ -206,8 +211,6 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
       wallMs: 5 * 60_000,
       toolMs: 60_000,
       tokens: 600_000,
-      sessionUsdPerHour: HOUR_USD,
-      sessionTokensPerHour: HOUR_TOKENS,
     },
     maxStepTokens: null,
     offers: quiet,

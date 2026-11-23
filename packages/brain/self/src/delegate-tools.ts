@@ -1,7 +1,8 @@
-// Her tools for the sub-agents: `delegate` (core: it starts a job and answers at once with its id)
-// and `delegate_list`, `delegate_cancel`, `delegate_read` (found with `find_tools`). All are for
-// the new runner only (`next`), so the current turn's tool list does not change.
+// Her tools for the sub-agents: `delegate` (core: it starts a job and answers at once with its id),
+// `delegate_list` and `delegate_read` (core too), `delegate_cancel` (found with `find_tools`).
+// All are for the new runner only (`next`), so the current turn's tool list does not change.
 
+import { WORK_DELEGATE } from "@miyoria/gate/actions";
 import {
   defineTool,
   type Tool,
@@ -9,9 +10,9 @@ import {
   type ToolDefinition,
   type ToolResult,
 } from "@miyoria/llm/tools";
-import type { AccountRef, JsonValue } from "@miyoria/types";
+import { type AccountRef, isJsonObject, type JsonValue } from "@miyoria/types";
 import { z } from "zod";
-import type { Delegator } from "./delegate.js";
+import type { Delegator, JobViewer } from "./delegate.js";
 import {
   DELEGATE_CANCEL_TOOL,
   DELEGATE_LIST_TOOL,
@@ -38,6 +39,21 @@ export interface DelegateToolDeps {
   delegator: Delegator;
   /** The name shown for an account in a job's wake (`WakeAuthor.name`). Default: its id. */
   nameOf?: (account: AccountRef) => string;
+  /** Whether `account` sees everyone's jobs (an owner). Unset: nobody does. */
+  seesAll?: (account: AccountRef) => boolean;
+}
+
+/**
+ * Whose jobs a call may see and cancel: the asker's own; every job for her own calls (nobody
+ * behind them) and for someone who sees all (an owner).
+ */
+export function jobViewerOf(
+  ctx: ToolContext,
+  seesAll?: (account: AccountRef) => boolean,
+): JobViewer {
+  const account = ctx.principal.requester;
+  if (account === null || seesAll?.(account) === true) return null;
+  return account;
 }
 
 /** Who a tool call acts for: the person who asked, when someone did. */
@@ -79,6 +95,15 @@ const StartArgs = z.object({
   budget: z.number().positive().describe(DELEGATE_TOOL.budget).optional(),
 });
 
+/**
+ * The node a `delegate` call needs: a `worker` does real work for the asker (files, code), so it
+ * is a work node a bond can stand for; `research` and `curator` need none.
+ */
+export function delegateNode(args: JsonValue): string | null {
+  const kind = isJsonObject(args) && typeof args.kind === "string" ? args.kind : "";
+  return kind.trim().toLowerCase() === "worker" ? WORK_DELEGATE : null;
+}
+
 /** What a call may say: looser than the spec, so a kind she should not use gets a clear refusal. */
 const LooseStart = z.object({ kind: z.string(), goal: z.string(), budget: z.number().optional() });
 
@@ -104,6 +129,7 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         speed: "long",
         core: true,
         actsFor: true,
+        permissionFor: delegateNode,
       },
       async (ctx, raw) => {
         const args = LooseStart.safeParse(raw);
@@ -126,10 +152,11 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         ...common,
         effect: "read",
         speed: "instant",
+        core: true,
         readOnly: true,
       },
-      async () => {
-        const lines = delegator.lines();
+      async (ctx) => {
+        const lines = delegator.lines(10, jobViewerOf(ctx, deps.seesAll));
         return { ok: true, text: lines.length === 0 ? "沒有交給小幫手的工作。" : lines.join("\n") };
       },
     ),
@@ -142,12 +169,12 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         effect: "act",
         speed: "instant",
       },
-      async (_ctx, raw) => {
+      async (ctx, raw) => {
         const args = CancelArgs.safeParse(raw);
         if (!args.success || args.data.job.trim() === "") {
           return denied("args", DELEGATE_REFUSALS.empty);
         }
-        const out = delegator.cancel(args.data.job);
+        const out = delegator.cancel(args.data.job, jobViewerOf(ctx, deps.seesAll));
         return out.ok ? { ok: true, text: out.text } : denied("job", out.text);
       },
     ),
@@ -159,15 +186,21 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         ...common,
         effect: "read",
         speed: "instant",
+        core: true,
         readOnly: true,
         framed: true,
       },
-      async (_ctx, raw) => {
+      async (ctx, raw) => {
         const args = ReadArgs.safeParse(raw);
         if (!args.success || args.data.job.trim() === "") {
           return denied("args", DELEGATE_REFUSALS.empty);
         }
-        const out = delegator.read(args.data.job, args.data.what ?? "result", args.data.from ?? 0);
+        const out = delegator.read(
+          args.data.job,
+          args.data.what ?? "result",
+          args.data.from ?? 0,
+          jobViewerOf(ctx, deps.seesAll),
+        );
         return out.ok ? { ok: true, text: out.text } : denied("job", out.text);
       },
     ),

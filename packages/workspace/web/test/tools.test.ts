@@ -58,10 +58,15 @@ function rig(
     if (!found) throw new Error(`no tool ${name}`);
     return found as CapabilityTool;
   };
-  const call = (name: string, who: AccountRef, args: Record<string, unknown>) =>
+  const call = (
+    name: string,
+    who: AccountRef,
+    args: Record<string, unknown>,
+    turn = `t${message}`,
+  ) =>
     tool(name).call(
       {
-        turn: `t${message}`,
+        turn,
         context: ctx,
         account: who,
         principal: Principals.user(who, ctx),
@@ -161,15 +166,28 @@ describe("the gate", () => {
     await expect(r.call("web_read", ALICE, { url: "file:///etc/passwd" })).rejects.toThrow(/http/);
   });
 
-  it("counts limits per person", async () => {
+  it("counts searches per person", async () => {
     const r = rig();
-    for (let i = 0; i < 6; i++) await r.call("web_search", ALICE, { query: `q${i}` });
-    await expect(r.call("web_search", ALICE, { query: "q6" })).rejects.toThrow(/查太多次/);
+    for (let i = 0; i < 60; i++) await r.call("web_search", ALICE, { query: `q${i}` });
+    await expect(r.call("web_search", ALICE, { query: "q60" })).rejects.toThrow(/查太多次/);
   });
 
-  it("keys the limits on the asker, else on her own", () => {
+  it("keys the count on the asker, else on her own", () => {
     expect(whoKey(Principals.user(ALICE, ctx))).toBe("discord:1");
     expect(whoKey(Principals.self(ctx))).toBe("self");
+  });
+
+  it("counts a helper's job's searches as the asker's: one number for both", async () => {
+    const r = rig();
+    const job = "delegate-ab12cd34";
+    for (let i = 0; i < 40; i++) await r.call("web_search", ALICE, { query: `j${i}` }, job);
+    for (let i = 0; i < 20; i++) await r.call("web_search", ALICE, { query: `q${i}` });
+    await expect(r.call("web_search", ALICE, { query: "q20" })).rejects.toThrow(/查太多次/);
+    await expect(r.call("web_search", ALICE, { query: "j40" }, job)).rejects.toThrow(/查太多次/);
+    // The gate still checks the asker: someone without tools.web gets nothing through a job.
+    await expect(r.call("web_search", BOB, { query: "x" }, job)).rejects.toBeInstanceOf(
+      ActionDeniedError,
+    );
   });
 });
 
@@ -182,11 +200,7 @@ describe("module", () => {
       read_chars: 12_000,
       result_chars: 12_000,
       search_chars: 3900,
-      search_per_person: 6,
-      read_per_person: 10,
-      search_global: 30,
-      read_global: 60,
-      window_s: 600,
+      search_per_person_hour: 60,
       cache_ttl_s: 600,
       max_redirects: 3,
       max_download_bytes: 2_000_000,

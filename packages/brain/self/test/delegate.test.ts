@@ -8,15 +8,23 @@ import {
   Delegator,
   type DelegatorPorts,
   type JobRow,
+  MAX_RESUMES,
   MemoryJobStore,
   noUsage,
 } from "../src/delegate.js";
-import { DELEGATE_REFUSALS, RESTART_NOTE } from "../src/delegate-texts.js";
+import {
+  DELEGATE_REFUSALS,
+  RESTART_NOTE,
+  RESUME_AUTHOR,
+  RESUME_FAILED_NOTE,
+  RESUME_SPENT_NOTE,
+} from "../src/delegate-texts.js";
 import { DELEGATE, DELEGATE_READ, delegateTools } from "../src/delegate-tools.js";
 import { permissiveGuard } from "../src/guard.js";
+import { PersonQuota } from "../src/quota.js";
 import { REFUSALS } from "../src/rules.js";
 import { helperGuard, jobTools, KINDS } from "../src/subagents.js";
-import { CTX, calls, fakeTool, MODEL, OTHER, OWEN, rig, say } from "./harness.js";
+import { CTX, calls, fakeTool, MODEL, OTHER, OWEN, promptText, rig, say } from "./harness.js";
 
 /** Records a call of a tool that should not run, and answers like a tool that did. */
 function mark<T>(into: T[], what: T, answer = "sent"): string {
@@ -166,14 +174,15 @@ describe("delegate", () => {
     for (const kind of ["coder", "game", "nonsense"]) {
       const out = await s.start({ kind, goal: "寫程式" });
       expect(out.ok).toBe(false);
-      expect(out.text).toContain("research、curator");
+      expect(out.text).toContain("worker、research、curator");
+      expect(out.text).not.toContain("還沒有");
     }
     expect(s.delegator.jobs()).toEqual([]);
-    // The tool says what exists: the kinds she may name are two.
+    // The tool says what exists: the kinds she may name are three.
     const spec = (s.tools.get(DELEGATE) as Tool).spec.parameters as {
       properties: { kind: { enum: string[] } };
     };
-    expect(spec.properties.kind.enum).toEqual(["research", "curator"]);
+    expect(spec.properties.kind.enum).toEqual(["research", "curator", "worker"]);
     expect((s.tools.get(DELEGATE) as Tool).meta).toMatchObject({
       effect: "act",
       speed: "long",
@@ -244,7 +253,7 @@ describe("what a helper cannot do", () => {
     ]);
     // Its tool list was the kind's, and had nothing that writes or speaks.
     const offered = s.r.model.requests[0]?.tools?.map((t) => t.name);
-    expect(offered).toEqual(["web_search", "notebook_read"]);
+    expect(offered).toEqual(["plan", "web_search", "notebook_read"]);
   });
 
   it("is refused by its own guard even if a say or spend tool were offered", async () => {
@@ -325,7 +334,8 @@ describe("limits", () => {
     const s = await setup(
       [(request) => (afterTool(request) ? say("好了") : calls([{ name: "web_search" }]))],
       [web],
-      { limits: { maxRunning: 2, maxQueued: 2 } },
+      // One person's share is not what this is about.
+      { limits: { maxRunning: 2, maxQueued: 2, perPersonRunning: 8, perPersonQueued: 8 } },
     );
     const outs = [];
     for (let i = 0; i < 5; i++) outs.push(await s.start({ kind: "research", goal: `查 ${i}` }));
@@ -368,39 +378,74 @@ describe("limits", () => {
     expect(s.delegator.jobs().find((j) => j.goal === "查")?.budget_usd).toBe(1);
   });
 
-  it("stops all jobs at the day's budget and refuses new ones until tomorrow", async () => {
-    const s = await setup([loop], [fakeTool("web_search")], {
-      limits: { dailyUsd: 0.001 },
+  it("charges a job to whoever asked, and refuses one they ask for past their quota", async () => {
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 0.001, usdPerDay: 0, unpricedUsdPerMtok: 1 }),
     });
-    await s.start({ kind: "research", goal: "一直查", budget: 1 });
+    const s = await setup([loop], [fakeTool("web_search")], {
+      quota,
+      payerOf: (from) => ({ person: `p-${from.account.id}` }),
+    });
+    expect((await s.start({ kind: "research", goal: "一直查", budget: 1 })).ok).toBe(true);
     await s.delegator.idle();
     const job = s.woke[0] as JobRow;
+    // The step that took Owen past the hour's limit is the last with tools; one writes the report.
     expect(job.state).toBe("out_of_budget");
-    expect(job.note).toContain("今天");
-    expect(s.delegator.spentToday().usd).toBeGreaterThanOrEqual(0.001);
+    expect(job.note).toContain("這個小時");
+    expect(job.summary).toBe("做到這裡:查了幾個來源。");
+    expect(job.rounds).toBe(4);
+    expect(quota.used("p-u1", s.r.clock.now()).hour).toBeCloseTo(4 * 0.00048, 6);
+    // A new job for Owen is refused at once, with a reason she can pass on.
     const more = await s.start({ kind: "research", goal: "再查" });
-    expect(more).toEqual({ ok: false, text: DELEGATE_REFUSALS.dayBudget });
-    // The next day the pool is empty again.
-    s.r.clock.tick(24 * 3_600_000);
+    expect(more).toEqual({ ok: false, text: DELEGATE_REFUSALS.quota("u1", "hour", "60 分鐘") });
+    expect(more.text).toBe(
+      "u1這個小時找你做的事已經到額度了,這件現在不能交給小幫手,大概 60 分鐘後才行。用你自己的話跟對方說一聲。",
+    );
+    // A job she starts herself is charged to nobody, and starts.
+    const start = (s.tools.get(DELEGATE) as Tool).result as NonNullable<Tool["result"]>;
+    const own = await start(
+      { ...ctxOf(), principal: Principals.self(CTX, null) },
+      { kind: "research", goal: "我自己想查" },
+    );
+    expect(own.ok).toBe(true);
+    await s.delegator.idle();
+    expect(s.woke.at(-1)?.from).toBeNull();
+    expect(quota.used("p-u1", s.r.clock.now()).hour).toBeCloseTo(4 * 0.00048, 6);
+    // An hour later Owen may ask again.
+    s.r.clock.tick(3_600_000);
     expect((await s.start({ kind: "research", goal: "再查" })).ok).toBe(true);
     await s.delegator.idle();
   });
 
-  it("counts tokens when a model has no price", async () => {
-    const s = await setup([loop], [fakeTool("web_search")], {
-      limits: { dailyUsd: 100, dailyTokens: 2_000 },
+  it("never caps the owner", async () => {
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 0.001, usdPerDay: 0.001, unpricedUsdPerMtok: 1 }),
     });
+    const s = await setup([loop], [fakeTool("web_search")], {
+      quota,
+      payerOf: (from) => ({ person: from.account.id, exempt: true }),
+    });
+    await s.start({ kind: "research", goal: "一直查" });
+    await s.delegator.idle();
+    expect(s.woke[0]?.state).toBe("done");
+    expect(quota.used("u1", s.r.clock.now()).hour).toBeGreaterThan(0.001);
+    expect((await s.start({ kind: "research", goal: "再查" })).ok).toBe(true);
+    await s.delegator.idle();
+  });
+
+  it("charges a model without a price at the fallback rate, against the job's budget", async () => {
+    const s = await setup([loop], [fakeTool("web_search")]);
     delete s.r.model.prices_[MODEL];
-    await s.start({ kind: "research", goal: "一直查", budget: 1 });
+    await s.start({ kind: "research", goal: "一直查", budget: 0.002 });
     await s.delegator.idle();
     const job = s.woke[0] as JobRow;
+    // 1,100 tokens a step at 1 USD a million: the second step passes 0.002.
     expect(job.state).toBe("out_of_budget");
+    expect(job.note).toContain("預算上限");
+    expect(job.rounds).toBe(3);
     expect(job.usage.cost_usd).toBe(0);
-    expect(job.usage.unpriced_tokens).toBeGreaterThanOrEqual(2_000);
-    expect(s.delegator.spentToday().unpriced_tokens).toBeGreaterThanOrEqual(2_000);
-    expect((await s.start({ kind: "research", goal: "再查" })).text).toBe(
-      DELEGATE_REFUSALS.dayBudget,
-    );
+    expect(job.usage.unpriced_tokens).toBe(3 * 1100);
+    expect(s.delegator.charged(job)).toBeCloseTo(0.0033, 6);
   });
 
   it("ends a job at its rounds as a result, with a note", async () => {
@@ -455,50 +500,160 @@ describe("cancel", () => {
 });
 
 describe("restart", () => {
-  it("reports jobs that were running or queued as failed by the restart, once", async () => {
+  const row = (id: string, state: JobRow["state"], over: Partial<JobRow> = {}): JobRow => ({
+    id,
+    kind: "research",
+    goal: `工作 ${id}`,
+    context: OTHER,
+    from: OWEN,
+    state,
+    budget_usd: 0.25,
+    rounds: 3,
+    usage: noUsage(),
+    created_at: 1_000 + Number(id.length),
+    started_at: state === "queued" ? null : 1_000,
+    ended_at: state === "done" ? 2_000 : null,
+    summary: state === "done" ? "之前的結果" : null,
+    note: null,
+    session: `delegate:${id}`,
+    told: true,
+    plan: [],
+    last_step: null,
+    ran_ms: 0,
+    resumes: 0,
+    ...over,
+  });
+
+  /** What a kept transcript of a job that ran three steps holds. */
+  const ranBefore = (s: Setup, id: string) =>
+    s.r.transcript.append(`delegate:${id}`, [
+      { kind: "other", author: "她交代的工作", content: `工作 ${id}` },
+      {
+        kind: "tool_calls",
+        content: "",
+        tool_calls: [{ id: `old-${id}`, name: "web_search", arguments: "{}" }],
+      },
+      { kind: "tool_result", content: "之前查到的", tool_call_id: `old-${id}` },
+    ]);
+
+  it("goes on with a running job from its transcript, and starts a queued one", async () => {
     const store = new MemoryJobStore();
-    const row = (id: string, state: JobRow["state"], over: Partial<JobRow> = {}): JobRow => ({
-      id,
-      kind: "research",
-      goal: `工作 ${id}`,
-      context: OTHER,
-      from: OWEN,
-      state,
-      budget_usd: 0.25,
-      rounds: 3,
-      usage: noUsage(),
-      created_at: 1_000 + Number(id.length),
-      started_at: null,
-      ended_at: state === "done" ? 2_000 : null,
-      summary: state === "done" ? "之前的結果" : null,
-      note: null,
-      session: `delegate:${id}`,
-      told: true,
-      ...over,
-    });
-    store.saveJob(row("running1", "running"));
-    store.saveJob(row("queued01", "queued"));
+    store.saveJob(row("running1", "running", { plan: [{ text: "查 A", state: "in_progress" }] }));
+    store.saveJob(row("queued01", "queued", { rounds: 0 }));
     store.saveJob(row("finished", "done"));
-    store.saveDay("delegate", { date: "2026-11-16", usd: 2.9, tokens: 5, unpriced_tokens: 0 });
-    const s = await setup([say("x")], [fakeTool("web_search")], {
+    const s = await setup([say("接著做完了:A 比較好。")], [fakeTool("web_search")], {
       store,
-      limits: { dailyUsd: 3 },
+      limits: { maxRunning: 1 },
       dayKey: () => "2026-11-16",
     });
-    expect(await s.delegator.recover()).toBe(2);
-    expect(s.woke.map((j) => [j.id, j.state, j.note, j.context])).toEqual([
-      ["running1", "failed", RESTART_NOTE, OTHER],
-      ["queued01", "failed", RESTART_NOTE, OTHER],
+    ranBefore(s, "running1");
+    expect(await s.delegator.recover()).toBe(0);
+    await s.delegator.idle();
+    expect(s.woke.map((j) => [j.id, j.state, j.context])).toEqual([
+      ["running1", "done", OTHER],
+      ["queued01", "done", OTHER],
     ]);
-    expect(store.jobs.get("running1")?.state).toBe("failed");
-    expect(s.delegator.resultFor(s.woke[0] as JobRow)).toContain(RESTART_NOTE);
-    // What ended before is still there to list and read; the day's spending came back.
+    const resumed = s.woke[0] as JobRow;
+    expect(resumed.summary).toBe("接著做完了:A 比較好。");
+    expect(resumed.resumes).toBe(1);
+    // It read what it did before, and a note that says it goes on and with how much.
+    const first = promptText(s.r.model.requests[0]);
+    expect(first).toContain("之前查到的");
+    expect(first).toContain("系統重啟過");
+    expect(first).toContain("還剩 13 輪");
+    // Its plan is in its <now>.
+    expect(first).toContain("1. [進行中] 查 A");
+    const entries = transcriptOf(s, resumed);
+    expect(entries.filter((e) => e.kind === "other").map((e) => e.author)).toEqual([
+      "她交代的工作",
+      RESUME_AUTHOR,
+    ]);
+    // The queued one started as if new: its goal opens its transcript, no note.
+    const fresh = transcriptOf(s, s.woke[1] as JobRow);
+    expect(fresh.filter((e) => e.kind === "other").map((e) => e.author)).toEqual(["她交代的工作"]);
+    // What ended before is still there to list and read.
     expect(s.delegator.find("finished")?.summary).toBe("之前的結果");
-    expect(s.delegator.spentToday().usd).toBe(2.9);
-    // A second restart does not tell her again.
+    // A second restart finds nothing to go on with.
     const again = await setup([say("x")], [fakeTool("web_search")], { store });
     expect(await again.delegator.recover()).toBe(0);
     expect(again.woke).toEqual([]);
+  });
+
+  it("gives a resumed job only what is left of its rounds", async () => {
+    const store = new MemoryJobStore();
+    store.saveJob(row("running1", "running", { rounds: 12 }));
+    const s = await setup(
+      [(request) => (atLimit(request) ? say("做到這裡。") : calls([{ name: "web_search" }]))],
+      [fakeTool("web_search")],
+      { store },
+    );
+    ranBefore(s, "running1");
+    await s.delegator.recover();
+    await s.delegator.idle();
+    const job = s.woke[0] as JobRow;
+    expect(job.state).toBe("done");
+    expect(job.note).toContain("輪數上限");
+    // 16 rounds for research: 12 before, 4 now, and the step that closes it.
+    expect(job.rounds).toBe(KINDS.research.limits.rounds + 1);
+    expect(s.r.model.requests).toHaveLength(5);
+  });
+
+  it("counts the time a job ran before, and one with nothing left only writes what it has", async () => {
+    const store = new MemoryJobStore();
+    store.saveJob(row("running1", "running", { ran_ms: KINDS.research.limits.wallMs }));
+    const s = await setup([say("之前查到 A 比較好,還差 B 的價格。")], [fakeTool("web_search")], {
+      store,
+    });
+    ranBefore(s, "running1");
+    await s.delegator.recover();
+    await s.delegator.idle();
+    const job = s.woke[0] as JobRow;
+    expect(job.state).toBe("done");
+    expect(job.summary).toContain("還差 B 的價格");
+    expect(job.note).toContain("重啟前就用完了");
+    // No tools were offered, and it was told why.
+    expect(s.r.model.requests[0]?.tools ?? []).toEqual([]);
+    expect(promptText(s.r.model.requests[0])).toContain(RESUME_SPENT_NOTE);
+    // The same for a job whose budget was spent.
+    const spentStore = new MemoryJobStore();
+    spentStore.saveJob(
+      row("running2", "running", { usage: { ...noUsage(), cost_usd: 0.25, calls: 3 } }),
+    );
+    const t = await setup([say("做到一半。")], [fakeTool("web_search")], { store: spentStore });
+    await t.delegator.recover();
+    await t.delegator.idle();
+    expect(t.r.model.requests[0]?.tools ?? []).toEqual([]);
+    expect((t.woke[0] as JobRow).summary).toBe("做到一半。");
+  });
+
+  it("ends as failed a job a restart cut twice after resuming, and the reflection", async () => {
+    const store = new MemoryJobStore();
+    store.saveJob(row("running1", "running", { resumes: MAX_RESUMES }));
+    store.saveJob(row("reflect1", "running", { kind: "reflect", context: null, told: false }));
+    const s = await setup([say("x")], [fakeTool("web_search")], { store });
+    expect(await s.delegator.recover()).toBe(2);
+    expect(s.woke.map((j) => [j.id, j.state, j.note])).toEqual([
+      ["running1", "failed", RESUME_FAILED_NOTE(RESTART_NOTE)],
+    ]);
+    expect(store.jobs.get("reflect1")).toMatchObject({ state: "failed", note: RESTART_NOTE });
+    expect(s.delegator.resultFor(s.woke[0] as JobRow)).toContain("兩次都沒做成");
+    expect(s.r.model.requests).toHaveLength(0);
+  });
+
+  it("tries a resumed run that failed once more, then ends it as failed with the reason", async () => {
+    const store = new MemoryJobStore();
+    store.saveJob(row("running1", "running"));
+    const s = await setup([new Error("provider down")], [fakeTool("web_search")], { store });
+    ranBefore(s, "running1");
+    await s.delegator.recover();
+    await s.delegator.idle();
+    const job = s.woke[0] as JobRow;
+    expect(job.state).toBe("failed");
+    expect(job.resumes).toBe(MAX_RESUMES);
+    expect(job.note).toContain("兩次都沒做成");
+    // Two resumed runs, each one step that failed.
+    expect(s.r.model.requests).toHaveLength(2);
+    expect(store.jobs.get("running1")?.state).toBe("failed");
   });
 });
 
@@ -563,6 +718,7 @@ describe("the curator", () => {
     const job = s.woke[0] as JobRow;
     expect(job.summary).toContain("合併");
     expect(s.r.model.requests[0]?.tools?.map((t) => t.name)).toEqual([
+      "plan",
       "notebook_read",
       "notebook_write",
       "recall",
@@ -604,8 +760,7 @@ describe("the nightly reflection", () => {
     });
     expect(ok.job?.usage.cost_usd).toBeCloseTo(0.2, 6);
     expect(s.delegator.reflectSpentToday().usd).toBeCloseTo(0.2, 6);
-    // Nothing of the day's job pool was touched, and nobody is told.
-    expect(s.delegator.spentToday().usd).toBe(0);
+    // Nobody is told.
     expect(s.woke).toEqual([]);
 
     // The next run goes past the cap on its second call: the third never starts.
@@ -618,5 +773,89 @@ describe("the nightly reflection", () => {
     expect(none).toMatchObject({ ran: false, job: null });
     expect(s.delegator.jobs().filter((j) => j.kind === "reflect")).toHaveLength(2);
     expect(s.events.map((e) => e.type)).toEqual(["started", "ended", "started", "ended"]);
+  });
+});
+
+describe("whose jobs", () => {
+  const AMY = { platform: "discord", id: "amy" };
+  const amy = (context: ContextKey = CTX): ToolContext => ({
+    ...ctxOf(context),
+    account: AMY,
+    principal: Principals.user(AMY, context),
+  });
+  const hers = (): ToolContext => ({ ...ctxOf(), principal: Principals.self(CTX, null) });
+
+  it("someone sees, reads and cancels only the jobs they asked for", async () => {
+    const g = gate();
+    const web = fakeTool("web_search", "Owen 的祕密", { call: () => g.opened.then(() => "r") });
+    const s = await setup(
+      [(request) => (afterTool(request) ? say("Owen 的結果") : calls([{ name: "web_search" }]))],
+      [web],
+    );
+    const tools = new Map(
+      delegateTools({ delegator: s.delegator, seesAll: (a) => a.id === "owner" }).map((t) => [
+        t.spec.name,
+        t,
+      ]),
+    );
+    const run = (name: string, ctx: ToolContext, args: Record<string, JsonValue> = {}) =>
+      ((tools.get(name) as Tool).result as NonNullable<Tool["result"]>)(ctx, args);
+    expect((await s.start({ kind: "research", goal: "Owen 要查的" })).ok).toBe(true);
+    await sleep(20);
+    const [job] = s.delegator.jobs() as [JobRow];
+    // Amy: nothing of Owen's, not even that it exists.
+    expect((await run("delegate_list", amy())).text).not.toContain("Owen 要查的");
+    for (const what of ["result", "transcript"]) {
+      const read = await run("delegate_read", amy(), { job: job.id, what });
+      expect(read).toMatchObject({ ok: false, text: DELEGATE_REFUSALS.noJob(job.id) });
+    }
+    expect(await run("delegate_cancel", amy(), { job: job.id })).toMatchObject({ ok: false });
+    expect(s.delegator.find(job.id)?.state).toBe("running");
+    // Owen, her own calls and an owner see it.
+    expect((await run("delegate_list", ctxOf())).text).toContain("Owen 要查的");
+    expect((await run("delegate_list", hers())).text).toContain("Owen 要查的");
+    const owner = {
+      ...amy(),
+      principal: Principals.user({ platform: "discord", id: "owner" }, CTX),
+    };
+    expect((await run("delegate_read", owner, { job: job.id })).ok).toBe(true);
+    g.open();
+    await s.delegator.idle();
+    expect((await run("delegate_read", amy(), { job: job.id })).ok).toBe(false);
+    expect((await run("delegate_read", ctxOf(), { job: job.id })).text).toContain("Owen 的結果");
+    expect((await run("delegate_cancel", ctxOf(), { job: "zzzzzzzz" })).ok).toBe(false);
+  });
+
+  it("one person holds at most their share of the slots; others still get theirs", async () => {
+    const g = gate();
+    const web = fakeTool("web_search", "r", { call: () => g.opened.then(() => "r") });
+    const s = await setup(
+      [(request) => (afterTool(request) ? say("好了") : calls([{ name: "web_search" }]))],
+      [web],
+      { limits: { maxRunning: 3, maxQueued: 8, perPersonRunning: 2, perPersonQueued: 2 } },
+    );
+    const outs = [];
+    for (let i = 0; i < 5; i++) outs.push(await s.start({ kind: "research", goal: `Owen ${i}` }));
+    expect(outs.map((o) => o.ok)).toEqual([true, true, true, true, false]);
+    expect(outs[4]?.text).toBe(DELEGATE_REFUSALS.personFull("u1", 2, 2));
+    expect(outs[4]?.text).toContain("用你自己的話跟對方說一聲");
+    await sleep(20);
+    // A free slot is not Owen's third: Amy's job takes it.
+    const start = (s.tools.get(DELEGATE) as Tool).result as NonNullable<Tool["result"]>;
+    expect((await start(amy(), { kind: "research", goal: "Amy 的" })).ok).toBe(true);
+    await sleep(20);
+    const state = (goal: string) => s.delegator.jobs().find((j) => j.goal === goal)?.state;
+    expect(["Owen 0", "Owen 1", "Owen 2", "Owen 3", "Amy 的"].map(state)).toEqual([
+      "running",
+      "running",
+      "queued",
+      "queued",
+      "running",
+    ]);
+    // Her own jobs are nobody's share.
+    expect((await start(hers(), { kind: "research", goal: "我的" })).ok).toBe(true);
+    g.open();
+    await s.delegator.idle();
+    expect(s.woke.filter((j) => j.state === "done")).toHaveLength(6);
   });
 });

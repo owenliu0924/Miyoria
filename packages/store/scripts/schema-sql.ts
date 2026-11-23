@@ -22,6 +22,8 @@ import { reportSchema } from "../../brain/report/src/migrations.js";
 import * as reportTables from "../../brain/report/src/schema.js";
 import { initiativeSchema } from "../../brain/selfhost/src/initiative-migrations.js";
 import * as initiativeTables from "../../brain/selfhost/src/initiative-schema.js";
+import { quotaSchema } from "../../brain/selfhost/src/quota-migrations.js";
+import * as quotaTables from "../../brain/selfhost/src/quota-schema.js";
 import { clusterSchema } from "../../cluster/src/migrations.js";
 import * as clusterTables from "../../cluster/src/schema.js";
 import { giftSchema } from "../../economy/src/gift-migrations.js";
@@ -123,6 +125,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   market: { tables: marketTables, schema: marketSchema },
   memory: { tables: memoryTables, schema: memorySchema, handWritten: MEMORY_SEARCH_SQL },
   notes: { tables: notesTables, schema: notesSchema },
+  quota: { tables: quotaTables, schema: quotaSchema },
   report: { tables: reportTables, schema: reportSchema },
   transcript: { tables: transcriptTables, schema: transcriptSchema },
 };

@@ -1,6 +1,7 @@
 // Capabilities as model tools. A tool call in a reactive turn is a request on behalf of the
 // person she is talking to (principal `user`); with `on_own` she does it as herself (principal
-// `self`, her own limits, no permission of the person needed). Either way the gate decides.
+// `self`, her own limits), still for the person who asked: real work (a work node) needs their
+// bond all the same. Either way the gate decides.
 
 import type { Tool, ToolContext, ToolMeta, ToolResult, ToolSpec } from "@miyoria/llm/tools";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
@@ -124,11 +125,10 @@ export class CapabilityTool implements Tool {
     const onOwn = args.on_own === true;
     delete args.why;
     delete args.on_own;
+    // Whoever asked stays the requester; a turn with nobody behind it stays requester-less (its
+    // `account` is her own, which is nobody asking).
     const principal = onOwn
-      ? Principals.self(
-          ctx.principal.context ?? ctx.context,
-          ctx.principal.requester ?? ctx.account,
-        )
+      ? Principals.self(ctx.principal.context ?? ctx.context, ctx.principal.requester)
       : ctx.principal;
     const request: ActionRequest = {
       principal,

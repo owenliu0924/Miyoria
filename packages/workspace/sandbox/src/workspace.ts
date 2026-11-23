@@ -215,9 +215,14 @@ export interface WorkWalk {
 /**
  * Regular files under `workDir` in path order. Symlinks, devices, FIFOs and sockets are skipped,
  * unreadable entries too (both set `truncated`); the walk never follows links and stops at
- * `MAX_PATH_DEPTH` levels and `maxEntries` entries.
+ * `MAX_PATH_DEPTH` levels (`maxDepth` of a directory's path: her workspace gives people's folders
+ * more) and `maxEntries` entries.
  */
-export async function walkWork(workDir: string, maxEntries = MAX_WALK_ENTRIES): Promise<WorkWalk> {
+export async function walkWork(
+  workDir: string,
+  maxEntries = MAX_WALK_ENTRIES,
+  maxDepth: (dir: string) => number = () => MAX_PATH_DEPTH,
+): Promise<WorkWalk> {
   const files: WalkEntry[] = [];
   let truncated = false;
   let entries = 0;
@@ -246,7 +251,7 @@ export async function walkWork(workDir: string, maxEntries = MAX_WALK_ENTRIES): 
         continue;
       }
       if (stat.isDirectory()) {
-        if (depth >= MAX_PATH_DEPTH) truncated = true;
+        if (depth >= maxDepth(path)) truncated = true;
         else await walk(full, path, depth + 1);
       } else if (stat.isFile()) {
         bytes += stat.size;

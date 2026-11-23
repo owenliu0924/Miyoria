@@ -72,6 +72,8 @@ export {
   PromptConfigSchema,
   parseActiveness,
   parseChannelMode,
+  type QuotaConfig,
+  QuotaConfigSchema,
   typingRefreshMs,
   type VisionConfig,
   VisionConfigSchema,
@@ -204,9 +206,12 @@ export {
 export {
   type BudgetState,
   EXHAUSTED_LINE,
-  HOUR_CAP_LINE,
   herStatusHint,
   parseBudgetState,
+  QUOTA_DAY_LINE,
+  QUOTA_HOUR_LINE,
+  quotaLine,
+  roughWait,
   shownHint,
   unansweredHint,
 } from "./signals.js";

@@ -100,6 +100,7 @@ it("covers identity, config, the artifact store and the plugins that own their t
     "market",
     "memory",
     "notes",
+    "quota",
     "report",
     "transcript",
   ]);

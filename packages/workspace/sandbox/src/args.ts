@@ -87,6 +87,12 @@ export interface ContainerSpec {
   /** Host directory mounted read-write at `/workspace` (her persistent workspace), or `null`. */
   workspaceDir?: string | null;
   /**
+   * Directories of `/workspace` covered by an empty tmpfs only root may write, so the run neither
+   * sees nor writes them (`people` when the whole workspace is mounted: the people's folders are
+   * theirs). Plain names only.
+   */
+  hiddenInWorkspace?: readonly string[];
+  /**
    * Docker network. Default `"none"` (no interfaces but loopback). Only the egress network
    * (an `--internal` one whose only neighbour is the allowlist proxy) is ever passed here.
    */
@@ -113,6 +119,7 @@ const LABEL_KEY = /^[a-z0-9][a-z0-9._-]{0,127}$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
 const NETWORK_NAME = /^[a-z0-9][a-z0-9_.-]{0,127}$/;
 const USER = /^[1-9][0-9]*(:[1-9][0-9]*)?$/;
+const HIDDEN_NAME = /^[a-z][a-z0-9_-]{0,63}$/;
 
 /**
  * One `--mount` value. Docker parses it as a CSV record, so a field with `,` or `"` is quoted
@@ -185,7 +192,18 @@ export function buildRunArgs(spec: ContainerSpec): string[] {
     bind(spec.codeDir, CODE_DIR, true),
   );
   if (spec.toolsDir !== null) args.push("--mount", bind(spec.toolsDir, TOOLS_DIR, true));
-  if (spec.workspaceDir) args.push("--mount", bind(spec.workspaceDir, WORKSPACE_DIR, false));
+  if (spec.workspaceDir) {
+    args.push("--mount", bind(spec.workspaceDir, WORKSPACE_DIR, false));
+    for (const name of spec.hiddenInWorkspace ?? []) {
+      if (!HIDDEN_NAME.test(name)) throw new InvalidSpecError(`bad hidden directory \`${name}\``);
+      // Root's and 0555: the run's non-root user can neither write it nor see what is beneath.
+      const target = `${WORKSPACE_DIR}/${name}`;
+      args.push(
+        "--mount",
+        mountArg(["type=tmpfs", `target=${target}`, "tmpfs-size=4k", "tmpfs-mode=0555"]),
+      );
+    }
+  }
   args.push(
     "--workdir",
     WORK_DIR,

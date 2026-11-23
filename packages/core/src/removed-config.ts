@@ -23,7 +23,35 @@ export const REMOVED_CONFIG_KEYS: readonly string[] = [
     "seed",
     "budget_notice_interval_ms",
     "attention",
+    // The per-conversation hourly cap and the duplicate run caps: each person's AI quota
+    // (`[modules.agent.quota]`) and the profile's fixed ceilings took over (v6-agent.md 「上限收成三種」).
+    "session_usd_per_hour",
+    "session_tokens_per_hour",
+    "text_calls_per_round",
+    "text_tokens",
   ].map((key) => `modules.agent.${key}`),
+  // [modules.agent.delegate]: the day's cap of all jobs (the daily budget and the quota cover it),
+  // the token twins of the USD caps, and per kind the fixed calls per step and token ceiling.
+  ...["daily_usd", "daily_tokens", "reflect_daily_tokens"].map(
+    (key) => `modules.agent.delegate.${key}`,
+  ),
+  ...["research", "curator", "worker"].flatMap((kind) =>
+    ["calls_per_round", "tokens"].map((key) => `modules.agent.delegate.kinds.${kind}.${key}`),
+  ),
+  // [modules.web]: the per-person, per-job and everyone's windows, replaced by one per-person
+  // hourly number for searches (`search_per_person_hour`).
+  ...[
+    "window_s",
+    "search_per_person",
+    "read_per_person",
+    "image_per_person",
+    "search_global",
+    "read_global",
+    "image_global",
+    "search_per_job",
+    "read_per_job",
+    "image_per_job",
+  ].map((key) => `modules.web.${key}`),
   ...["gray_low", "max_share_of_recent"].map((key) => `modules.agent.voice.${key}`),
   ...[
     "prompt_tokens",

@@ -20,11 +20,13 @@ import {
   type HeartView,
   type LedgerEntry,
   type PersonId,
+  type Principal,
+  Principals,
   SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { initiativeSettings, initiativeTables, type SelfHost } from "../src/index.js";
+import { initiativeSettings, initiativeTables, type SelfHost, scheduleKey } from "../src/index.js";
 import {
   account,
   calls,
@@ -118,7 +120,8 @@ describe("schedule", () => {
     await tick(again);
     await until(() => again.sink.texts().length === 1, 3_000, "the timer's run");
     expect(again.sink.sent()).toEqual([["c1", "amy,蛋糕好了嗎?"]]);
-    expect(textOf(again.model.requests[0])).toContain("你自己設的時間到了:「問 amy 蛋糕烤好了沒」");
+    // Amy asked for it: it wakes her for Amy.
+    expect(textOf(again.model.requests[0])).toContain("amy 請你設的時間到了:「問 amy 蛋糕烤好了沒");
     // Recorded: accepted, and her run as a ledger entry that waits for an answer.
     const timers = decisions(again).filter((d) => d.impulse.startsWith("timer:"));
     expect(timers.map((d) => [d.source, d.verdict])).toEqual([["agenda", "accepted"]]);
@@ -128,6 +131,76 @@ describe("schedule", () => {
     await tick(again);
     expect(again.model.requests).toHaveLength(1);
     await db.close();
+  });
+
+  it("a time someone asked for wakes her for them: their tools, not hers", async () => {
+    const rig = await Rig.create();
+    const seen: unknown[] = [];
+    rig.tools.register({
+      spec: { name: "probe", description: "probe", parameters: { type: "object" } },
+      permission: null,
+      meta: { effect: "read", speed: "instant", group: "test", core: true, next: true },
+      async call(ctx: { principal: unknown }) {
+        seen.push(ctx.principal);
+        return "ok";
+      },
+    } as never);
+    rig.model.push(
+      calls("schedule", { when: "30m", note: "讀 people/someone/notes.md" }),
+      says("好"),
+    );
+    rig.say(mention(C1, "amy", "@她 三十分鐘後讀別人的筆記"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    const [row] = host(rig).initiative.book.open();
+    expect(row?.for_account).toEqual(account("amy"));
+    // Hers stays hers.
+    const book = host(rig).initiative.book;
+    const own = book.set({
+      when: { due: Date.now() + HOUR, daily: null },
+      note: "我自己的",
+      context: C1,
+    });
+    expect(own.for_account).toBeNull();
+
+    rig.model.push(calls("probe", {}), says("amy,時間到了"));
+    rig.shift = 31 * MIN;
+    await tick(rig);
+    await until(() => rig.sink.texts().length === 2, 3_000, "the timer's run");
+    expect(textOf(rig.model.requests[2])).toContain("請你設的時間到了");
+    expect(seen).toEqual([expect.objectContaining({ kind: "user", requester: account("amy") })]);
+  });
+
+  it("schedule_list and schedule_cancel show a person only what they asked for", async () => {
+    const rig = await Rig.create();
+    const book = host(rig).initiative.book;
+    const due = { due: Date.now() + HOUR, daily: null };
+    book.set({ when: due, note: "amy 的", context: C1, asker: account("amy") });
+    const bob = book.set({ when: due, note: "bob 的", context: C1, asker: account("bob") });
+    const as = (principal: Principal) => ({
+      turn: "t1",
+      context: C1,
+      account: principal.requester ?? account("her"),
+      principal,
+      message: { context: C1, id: "m1" },
+      priority: "direct" as const,
+      signal: new AbortController().signal,
+    });
+    const amy = as(Principals.user(account("amy"), C1));
+    const tool = (name: string) => {
+      const t = rig.tools.entry(name)?.tool;
+      if (t === undefined) throw new Error(`no ${name}`);
+      return t;
+    };
+    const listed = await tool("schedule_list").call(amy, {});
+    expect(listed).toContain("amy 的");
+    expect(listed).not.toContain("bob 的");
+    await expect(tool("schedule_cancel").call(amy, { id: scheduleKey(bob) })).rejects.toThrow();
+    expect(book.open().map((r) => r.note)).toEqual(["amy 的", "bob 的"]);
+    // Her own call sees and cancels all of them.
+    const hers = as(Principals.self(C1, null));
+    expect(await tool("schedule_list").call(hers, {})).toContain("bob 的");
+    await tool("schedule_cancel").call(hers, { id: scheduleKey(bob) });
+    expect(book.open().map((r) => r.note)).toEqual(["amy 的"]);
   });
 
   it("a daily time wakes her each day; schedule_list shows it", async () => {

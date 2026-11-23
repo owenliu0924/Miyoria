@@ -1,6 +1,6 @@
 // Her three web tools behind the gate (search, read a page, look at a picture). Low risk: the gate checks `tools.web` for the person who
-// asked (or lets her own `on_own` call through), and the module's own limits (limits.ts) bound
-// what anyone, and everyone together, can make her fetch. The text tools answer with an untrusted
+// asked (or lets her own `on_own` call through), and the module counts each person's searches in
+// an hour (limits.ts). The text tools answer with an untrusted
 // data block (web.ts), so what a page says is something she read, never something she was told;
 // `web_image` hands the picture to the model as a picture (`ActionResult.images`).
 
@@ -30,7 +30,10 @@ type ReadArgs = z.output<typeof ReadArgs>;
 const ImageArgs = z.object({ url: z.string().trim().min(1).max(2000) });
 type ImageArgs = z.output<typeof ImageArgs>;
 
-/** A stable key of whoever the call is for: the asker, else her own. */
+/**
+ * A stable key of whoever the call is for: the asker (a helper's job acts for whoever asked, so
+ * its searches are theirs), else her own.
+ */
 export function whoKey(principal: Principal): string {
   return principal.requester === null ? "self" : accountRefString(principal.requester);
 }

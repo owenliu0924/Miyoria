@@ -93,6 +93,7 @@ describe("config", () => {
       mainline: MainLineConfigSchema.parse({}),
       work: WorkConfigSchema.parse({}),
       delegate: DelegateConfigSchema.parse({}),
+      quota: { person_usd_per_hour: 3, person_usd_per_day: 10, unpriced_usd_per_mtok: 1 },
       history_limit: 240,
       prompt_history: 30,
       mention_users: true,
@@ -103,8 +104,9 @@ describe("config", () => {
       mode: null,
       activeness_level: null,
       language: null,
-      session_usd_per_hour: 1,
-      session_tokens_per_hour: 3_000_000,
+      text_rounds: 20,
+      text_seconds: 300,
+      text_tool_seconds: 60,
       respond_to_bots: false,
       reply_ttl_ms: 120_000,
       max_message_chars: 1900,
@@ -201,8 +203,9 @@ describe("config", () => {
       ["language", "room"],
       ["voice.mode", "room"],
       ["voice.activeness_level", "room"],
-      ["session_usd_per_hour", "room"],
-      ["session_tokens_per_hour", "room"],
+      ["text_rounds", "room"],
+      ["text_seconds", "room"],
+      ["text_tool_seconds", "room"],
     ]);
   });
 });

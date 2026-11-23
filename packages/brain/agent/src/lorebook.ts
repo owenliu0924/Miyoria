@@ -97,7 +97,7 @@ export function pickKaomoji(
 export const STYLE_LINES = {
   text: [
     "- 回覆開頭先放這一刻的 <emo:名稱>(不想開口就只輸出 <silence/>)。",
-    "- 短短的、口語,想到什麼說什麼;一句吐槽或一聲驚呼就可以是整個回覆。",
+    "- 聊天時短短的、口語,想到什麼說什麼;一句吐槽或一聲驚呼就可以是整個回覆。有人要你做事、或你在交代做出來的結果時不是這樣:該多長就多長,把結果本身寫出來。",
     "- 顏文字只在情緒特別滿的時候用(大約四則一個,一則最多一個),一般回話不用;伺服器表情(:名字:)不算顏文字。",
   ],
   voice: [
@@ -115,8 +115,8 @@ const MOOD_LEAN = 0.25;
 /** `<style_note>`'s sentences from her feelings now (docs/design/v5-heart.md §2.5). */
 export const MOOD_STYLE = {
   longer: "- 你現在話比較多,想多講幾句也可以。",
-  shorter: "- 你現在不太想多說,回短一點就好。",
-  react: "- 心情不錯,看到喜歡的訊息可以用 react 回個表情。",
+  shorter: "- 你現在不太想多說,聊天回短一點就好(做事和交代結果照常)。",
+  react: "- 心情不錯,聊天時看到喜歡的訊息可以用 react 回個表情;有人要你做事時,表情代替不了回答。",
   noReact: "- 心情不太好,不用特地 react。",
 } as const;
 

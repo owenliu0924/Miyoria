@@ -10,8 +10,18 @@
 // cancelled or fails leaves every call paired with its answer. Each line of hers that went out is
 // an entry of its own, with the platform id it went out under.
 //
-// When a limit is reached one more step runs, told that no tool runs any more; the tools stay in
-// the request (the prefix cache) and a call made anyway is refused.
+// When a limit is reached one more step runs, told that only `delegate` runs any more (the rest of
+// the work to a helper; for a run that speaks and is not at a money limit) or that no tool does.
+// The tools stay in the request (the prefix cache) and any other call is refused. A hand-off made
+// without a word gets one more step, without tools, to tell the person.
+//
+// Money. Every step is charged in USD (`chargeOf`: a model without a price at the quota's fallback
+// rate) to the run's own budget (`RunLimits.usd`, a helper job's) and to the people the run is for
+// (`RunInput.payerOf`: every caller of the run, their quota). A model step answers all of them, so
+// it is shared evenly among them; a model call a tool makes goes to the one the call is for. A run
+// whose people are all at their quota gives one fixed line and makes no model call; one that gets
+// there during the run gets the last step at a limit. While some still have quota left, a call
+// for one who has none is refused (she tells them), so nobody gets work done on another's.
 
 import {
   BudgetExhaustedError,
@@ -24,6 +34,7 @@ import {
   toolResultMessage,
   type Usage,
   userMessage,
+  withLlmTag,
 } from "@miyoria/llm/llm";
 import {
   LoadedToolsSchema,
@@ -52,6 +63,7 @@ import {
   newId,
   Principals,
   type Priority,
+  sameAccount,
   toTimestamp,
 } from "@miyoria/types";
 import {
@@ -59,25 +71,37 @@ import {
   EXHAUSTED_LINE,
   FALLBACK_LINES,
   FOR_ARG,
-  HOUR_CAP_LINE,
+  quotaLine,
+  roughWait,
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
-import type { LimitName, RunLimits, RunProfile } from "./profiles.js";
+import { HANDOFF_TOOL, type LimitName, type RunLimits, type RunProfile } from "./profiles.js";
 import { gatherBlocks, type RunMessages, runMessages, toolSpecs } from "./prompt.js";
+import {
+  capMinutes,
+  chargeOf,
+  type Payer,
+  type PersonQuota,
+  QUOTA_DEFAULTS,
+  type QuotaCap,
+  stepCost,
+} from "./quota.js";
 import {
   BLOCKED_LABEL,
   blockedNote,
+  HANDED_OFF_NOTE,
+  HANDOFF_NOTES,
   LIMIT_NOTE_QUIET,
   LIMIT_NOTES,
   LINE_REFUSALS,
   longReceipt,
   NO_MORE_CALLS,
+  ONLY_HANDOFF,
   REFUSALS,
 } from "./rules.js";
 import type { Spoken } from "./say.js";
 import { ALL_CHECKS, type OutputChecks, type ScreenedLine, StepText } from "./screens.js";
-import { type Capped, SpendLedger, stepCost } from "./spend.js";
 import { modelSummarise } from "./summarise.js";
 import {
   type CallRecord,
@@ -105,8 +129,13 @@ export const DEFAULT_COMPACTION: CompactionBudget = { thresholdTokens: 32_000, k
 export const STATE_VERSION = 1;
 
 export interface RunnerOptions {
-  /** What sessions spent in the last hour; shared by every run of the runner. Default: its own. */
-  spend?: SpendLedger;
+  /** Each person's AI quota, shared by every run; `null` or unset: nobody is capped. */
+  quota?: PersonQuota | null;
+  /**
+   * USD per million tokens of a model without a price; default the quota's rate, else
+   * `QUOTA_DEFAULTS`.
+   */
+  unpricedUsdPerMtok?: () => number;
   /** When to compact a transcript after a run; `null`: never. Default `DEFAULT_COMPACTION`. */
   compaction?: CompactionBudget | null;
   /** A new turn id. Default `newId`. */
@@ -118,7 +147,7 @@ export interface RunnerOptions {
 /** Runs her turns. One per process; runs of different sessions may go on at the same time. */
 export class SelfRunner {
   readonly #ports: RunPorts;
-  readonly #spend: SpendLedger;
+  readonly #money: Money;
   readonly #compaction: CompactionBudget | null;
   readonly #newId: () => string;
   readonly #checks: OutputChecks;
@@ -127,14 +156,21 @@ export class SelfRunner {
 
   constructor(ports: RunPorts, options: RunnerOptions = {}) {
     this.#ports = ports;
-    this.#spend = options.spend ?? new SpendLedger();
+    const quota = options.quota ?? null;
+    this.#money = {
+      quota,
+      rate:
+        options.unpricedUsdPerMtok ??
+        (() => quota?.rules().unpricedUsdPerMtok ?? QUOTA_DEFAULTS.unpricedUsdPerMtok),
+    };
     this.#compaction = options.compaction === undefined ? DEFAULT_COMPACTION : options.compaction;
     this.#newId = options.newId ?? newId;
     this.#checks = { ...ALL_CHECKS, ...options.checks };
   }
 
-  get spend(): SpendLedger {
-    return this.#spend;
+  /** Each person's AI quota; `null`: none. */
+  get quota(): PersonQuota | null {
+    return this.#money.quota;
   }
 
   /**
@@ -145,7 +181,7 @@ export class SelfRunner {
     (await this.#active.get(turn)?.speakElsewhere(place, text)) ?? null;
 
   async run(input: RunInput): Promise<RunResult> {
-    const run = new Run(this.#ports, input, input.turn ?? this.#newId(), this.#spend, this.#checks);
+    const run = new Run(this.#ports, input, input.turn ?? this.#newId(), this.#money, this.#checks);
     this.#active.set(run.turn, run);
     try {
       return await run.execute(this.#compaction);
@@ -155,8 +191,42 @@ export class SelfRunner {
   }
 }
 
+/** What a run charges its steps to. */
+interface Money {
+  quota: PersonQuota | null;
+  /** USD per million tokens of a model without a price. */
+  rate: () => number;
+}
+
 /** One of the people a run answers, with their line. */
 type Caller = { from: WakeAuthor; message: MessageRef };
+
+/** One person a run works for and whom their share is charged to. */
+type RunPayer = { author: WakeAuthor | null; payer: Payer };
+
+/**
+ * The people a run works for, each once by payer: with `payerOf`, every caller of an addressed
+ * run (else the wake's author); otherwise the one `payer`.
+ */
+function runPayers(input: RunInput): RunPayer[] {
+  if (input.payerOf === undefined) {
+    const payer = input.payer ?? null;
+    return payer === null ? [] : [{ author: wakeAuthor(input.wake), payer }];
+  }
+  const wake = input.wake;
+  const authors =
+    wake.kind === "addressed" && wake.callers !== undefined && wake.callers.length > 0
+      ? wake.callers.map((c) => c.from)
+      : [wakeAuthor(wake)].filter((a): a is WakeAuthor => a !== null);
+  const out: RunPayer[] = [];
+  for (const author of authors) {
+    const payer = input.payerOf(author);
+    if (payer !== null && !out.some((p) => p.payer.person === payer.person)) {
+      out.push({ author, payer });
+    }
+  }
+  return out;
+}
 
 /** A step's stream, folded. */
 interface Step {
@@ -237,14 +307,6 @@ function reportedJob(data: JsonValue): string | null {
   return null;
 }
 
-/**
- * The whole minutes from `now` until a capped session is under its cap again, rounded up and at
- * least one: never a time already past.
- */
-export function capMinutes(capped: Pick<Capped, "until">, now: number): number {
-  return Math.max(1, Math.ceil((capped.until - now) / 60_000));
-}
-
 /** Pictures of her tools one step offers the model (the rest are said to be left out). */
 const PICTURES_PER_STEP = 2;
 /** What `RunLimits.pictureBytes` is when a profile does not say (the vision cap). */
@@ -262,7 +324,9 @@ class Run {
   readonly #in: RunInput;
   readonly #profile: RunProfile;
   readonly #limits: RunLimits;
-  readonly #spend: SpendLedger;
+  readonly #money: Money;
+  /** The people the run works for, and whom each one's share is charged to. */
+  readonly #payers: RunPayer[];
   readonly #wake: Wake;
   /** Where `find_tools` loads what it finds (`toolSession`). */
   readonly #offerKey: string;
@@ -273,6 +337,8 @@ class Run {
   readonly #entries: EntryInput[] = [];
   #usage: RunUsage = { ...ZERO_USAGE };
   #cost = 0;
+  /** What the run's steps were charged (USD, unpriced ones at the fallback rate). */
+  #charged = 0;
   #basis: "usd" | "tokens" = "usd";
   #rounds = 0;
   /** The `speaking` event went out. */
@@ -298,20 +364,15 @@ class Run {
   /** Bytes of the pictures her tools fetched in this run (they count against `pictureBytes`). */
   #pictureBytes = 0;
 
-  constructor(
-    ports: RunPorts,
-    input: RunInput,
-    turn: string,
-    spend: SpendLedger,
-    checks: OutputChecks,
-  ) {
+  constructor(ports: RunPorts, input: RunInput, turn: string, money: Money, checks: OutputChecks) {
     this.turn = turn;
     this.#checks = checks;
     this.#p = ports;
     this.#in = input;
     this.#profile = input.profile;
     this.#limits = input.profile.limits;
-    this.#spend = spend;
+    this.#money = money;
+    this.#payers = runPayers(input);
     this.#wake = input.wake;
     this.#offerKey = toolSession(input.session.context);
     this.#startedAt = ports.clock.now();
@@ -443,9 +504,10 @@ class Run {
   async #loop(): Promise<RunOutcome> {
     this.#signal.throwIfAborted();
     const session = this.#session;
-    if (this.#spend.over(session.id, this.#now(), this.#limits)) {
+    const capped = this.#capped();
+    if (capped !== null) {
       this.#hit.push("spend");
-      await this.#capNotice(this.#capped());
+      await this.#capNotice(capped);
       return "over_budget";
     }
     const input = {
@@ -468,13 +530,23 @@ class Run {
     let failure: unknown = null;
     let empty = false;
     let retriedBlocked = false;
+    /** The limit that ended the loop, once one did. */
+    let ended: LimitName | null = null;
+    /** The last step tried to hand the rest off and said nothing: one more step, without tools. */
+    let handed: "ok" | "failed" | null = null;
     for (;;) {
-      const limit = this.#rounds === 0 ? null : this.#limitReached();
-      if (limit !== null) this.#hit.push(limit);
+      const limit: LimitName | null = ended ?? (this.#rounds === 0 ? null : this.#limitReached());
+      if (limit !== null && ended === null) {
+        this.#hit.push(limit);
+        ended = limit;
+      }
       const offered = this.#offered();
+      const handoff: boolean =
+        limit !== null && handed === null && this.#mayHandOff(limit, offered);
       this.#rounds += 1;
       this.#stepPictures = [];
-      const step = await this.#step(this.#request(base, offered, limit), limit !== null);
+      const note = limit === null ? null : this.#limitNote(limit, handoff, handed);
+      const step = await this.#step(this.#request(base, offered, note), limit !== null);
       if (step.error !== null) {
         failure = step.error;
         break;
@@ -492,12 +564,14 @@ class Run {
       if (step.calls.length > 0) {
         const quiet = this.#lines.length === 0 && !this.#spokeViaTool;
         const callsAt = this.#now();
-        const records =
-          limit !== null
-            ? step.calls.map((call) =>
-                this.#refused(call, "refused", "no_more_calls", NO_MORE_CALLS),
-              )
-            : await this.#runCalls(step.calls, offered);
+        const records: CallRecord[] =
+          limit === null
+            ? await this.#runCalls(step.calls, offered)
+            : handoff
+              ? await this.#handOff(step.calls, offered)
+              : step.calls.map((call) =>
+                  this.#refused(call, "refused", "no_more_calls", NO_MORE_CALLS),
+                );
         const wait = this.#profile.silentWaitMs;
         if (wait !== null && quiet && this.#now() - callsAt >= wait) this.#silentWaits += 1;
         this.#record(assistant, records, step.blocked, step);
@@ -508,8 +582,16 @@ class Run {
           ]);
         }
         if (this.#signal.aborted) throw new Cancelled();
-        if (limit !== null) break;
-        continue;
+        if (limit === null) continue;
+        const tried: CallRecord | undefined = handoff
+          ? records.find((r) => r.name === HANDOFF_TOOL)
+          : undefined;
+        // She handed off (or tried) without a word: one more step tells the person.
+        if (tried !== undefined && step.lines.length === 0) {
+          handed = tried.ok ? "ok" : "failed";
+          continue;
+        }
+        break;
       }
       this.#record(assistant, [], step.blocked, step);
       // A line that did not go out is hers to know about: one more step reads the note.
@@ -540,55 +622,67 @@ class Run {
     if (this.#rounds >= l.rounds) return "rounds";
     if (this.#now() - this.#startedAt >= l.wallMs) return "time";
     if (this.#usage.prompt_tokens + this.#usage.completion_tokens >= l.tokens) return "tokens";
-    if (this.#spend.over(this.#session.id, this.#now(), l)) {
-      // She is told in the last step; the stretch starts here (the warning, and a later notice).
-      this.#capped();
-      return "spend";
-    }
+    if (l.usd !== undefined && l.usd > 0 && this.#charged >= l.usd) return "spend";
+    // She is told in the last step; the stretch starts here (the warning, and a later notice).
+    if (this.#capped() !== null) return "spend";
     return null;
   }
 
   /**
-   * The session's hourly cap as the ledger counts it (`null`: not its own cap that stopped the
-   * run, e.g. a sub-agent's day pool). The first refusal of a stretch of a conversation is a
-   * warning for the owner; a sub-agent's job budget (its own `sessionUsdPerHour`) is reported by
-   * its job instead.
+   * The cap of the run when every person it works for is at their quota (the first one's), or
+   * `null` (nobody to charge, someone exempt or under it). The first refusal of a stretch of a run
+   * that speaks is a warning for the owner; a helper's job reports its own end.
    */
-  #capped(): Capped | null {
+  #capped(): (QuotaCap & { person: string }) | null {
+    if (this.#money.quota === null || this.#payers.length === 0) return null;
+    let first: (QuotaCap & { person: string }) | null = null;
+    for (const { payer } of this.#payers) {
+      const capped = this.#cappedOne(payer);
+      if (capped === null) return null;
+      first ??= { ...capped, person: payer.person };
+    }
+    return first;
+  }
+
+  /** `payer` at their quota, or `null`; warns once a stretch for a run that speaks. */
+  #cappedOne(payer: Payer): QuotaCap | null {
+    const quota = this.#money.quota;
+    if (quota === null) return null;
     const now = this.#now();
-    const capped = this.#spend.capped(this.#session.id, now, this.#limits);
+    const capped = quota.capped(payer, now);
     if (capped?.first === true && this.#profile.speaks) {
-      const usd = capped.spent.basis === "usd";
       this.#p.log.warn(
         {
           turn: this.turn,
           session: this.#session.id,
-          basis: capped.spent.basis,
-          spent: usd ? capped.spent.usd : capped.spent.tokens,
-          cap: capped.cap,
+          person: payer.person,
+          which: capped.which,
+          spent: capped.which === "day" ? capped.used.day : capped.used.hour,
+          cap: capped.limit,
           minutes: capMinutes(capped, now),
         },
-        "a conversation reached its hourly cap: she does not answer here until it is under it",
+        "a person reached their AI quota: she answers them with a fixed line until it frees up",
       );
     }
     return capped;
   }
 
   /**
-   * The one fixed line of a capped stretch for someone waiting: when she is back. Said once per
-   * stretch of the session (`SpendLedger.claimNotice`), never for a run nobody waits on, and
+   * The one fixed line of a capped stretch for someone waiting: about when it frees up. Said once
+   * per stretch of the person (`PersonQuota.claimNotice`), never for a run nobody waits on, and
    * without a model call.
    */
-  async #capNotice(capped: Capped | null): Promise<void> {
+  async #capNotice(capped: QuotaCap & { person: string }): Promise<void> {
     const owed =
       this.#profile.speaks &&
       someoneWaits(this.#wake) &&
       this.#lines.length === 0 &&
       !this.#signal.aborted;
-    if (capped === null || !owed) return;
-    const session = this.#session.id;
-    if (!this.#spend.claimNotice(session)) return;
-    const line = HOUR_CAP_LINE(capMinutes(capped, this.#now()));
+    const quota = this.#money.quota;
+    const person = capped.person;
+    if (!owed || quota === null) return;
+    if (!quota.claimNotice(person)) return;
+    const line = quotaLine(capped.which, capMinutes(capped, this.#now()));
     let said = false;
     try {
       const out = await this.#deliver(this.#session.context, line, null, "fixed");
@@ -607,11 +701,55 @@ class Run {
       if (error instanceof Cancelled || this.#signal.aborted) throw error;
       this.#p.log.warn({ turn: this.turn, err: errorMessage(error) }, "no cap notice either");
     } finally {
-      if (!said) this.#spend.releaseNotice(session);
+      if (!said) quota.releaseNotice(person);
     }
   }
 
-  #request(base: RunMessages, offered: readonly ToolEntry[], limit: LimitName | null): ChatRequest {
+  /**
+   * Whether the last step at `limit` may hand the rest of the work to a helper: a run that speaks
+   * and is offered `HANDOFF_TOOL`, unless a money limit is what ended it (a helper would spend
+   * past it).
+   */
+  #mayHandOff(limit: LimitName, offered: readonly ToolEntry[]): boolean {
+    return (
+      this.#profile.speaks && limit !== "spend" && offered.some((e) => e.name === HANDOFF_TOOL)
+    );
+  }
+
+  /** The system note of a step after `limit` was reached. */
+  #limitNote(limit: LimitName, handoff: boolean, handed: "ok" | "failed" | null): string {
+    if (!this.#profile.speaks) return LIMIT_NOTE_QUIET;
+    if (handed === "ok") return HANDED_OFF_NOTE;
+    if (handoff && limit !== "spend") return HANDOFF_NOTES[limit];
+    return LIMIT_NOTES[limit];
+  }
+
+  /**
+   * The calls of the last step at a limit: the first `HANDOFF_TOOL` call runs, every other call is
+   * refused. On a cancel the calls not answered yet are answered as cancelled.
+   */
+  async #handOff(calls: readonly ToolCall[], offered: readonly ToolEntry[]): Promise<CallRecord[]> {
+    const shown = new Map(offered.map((e) => [e.name, e]));
+    const out: (CallRecord | null)[] = calls.map(() => null);
+    let used = false;
+    try {
+      for (const [i, call] of calls.entries()) {
+        if (!used && call.name === HANDOFF_TOOL) {
+          used = true;
+          out[i] = await this.#call(call, shown);
+        } else {
+          out[i] = this.#refused(call, "refused", "no_more_calls", ONLY_HANDOFF);
+        }
+      }
+    } catch (error) {
+      if (!this.#signal.aborted && !(error instanceof Cancelled)) throw error;
+    }
+    return calls.map(
+      (call, i) => out[i] ?? this.#refused(call, "dropped", "cancelled", REFUSALS.cancelled),
+    );
+  }
+
+  #request(base: RunMessages, offered: readonly ToolEntry[], note: string | null): ChatRequest {
     const own = toMessages(
       {
         session: this.#session.id,
@@ -625,9 +763,7 @@ class Run {
       messages.push(this.#pictures);
       this.#pictures = null;
     }
-    if (limit !== null) {
-      messages.push(systemMessage(this.#profile.speaks ? LIMIT_NOTES[limit] : LIMIT_NOTE_QUIET));
-    }
+    if (note !== null) messages.push(systemMessage(note));
     const tools: ToolSpec[] = toolSpecs(offered);
     return {
       messages,
@@ -849,7 +985,7 @@ class Run {
     return step;
   }
 
-  /** Counts a step's tokens and cost, for the run and for the session's hour; returns the cost. */
+  /** Counts a step's tokens and cost, for the run and for its person's quota; returns the cost. */
   #account(model: string | null, usage: Usage | null): number | null {
     this.#usage = { ...this.#usage, calls: this.#usage.calls + 1 };
     if (usage === null) return null;
@@ -863,8 +999,47 @@ class Run {
     const cost = stepCost(this.#p.model.prices?.(), model, usage);
     if (cost === null) this.#basis = "tokens";
     else this.#cost += cost;
-    this.#spend.add(this.#session.id, this.#now(), cost, usage);
+    const charged = chargeOf(cost, usage, this.#money.rate());
+    this.#charged += charged;
+    // The step answers everyone the run works for: each pays an even share.
+    const share = this.#payers.length === 0 ? 0 : charged / this.#payers.length;
+    for (const { payer } of this.#payers) this.#money.quota?.add(payer.person, this.#now(), share);
     return cost;
+  }
+
+  /** The payer of the person a call is for (`author`); `null`: nobody of the run's. */
+  #payerFor(author: WakeAuthor | null): Payer | null {
+    if (author === null) return this.#payers.length === 1 ? (this.#payers[0]?.payer ?? null) : null;
+    const byAccount = this.#payers.find(
+      (p) => p.author !== null && sameAccount(p.author.account, author.account),
+    );
+    if (byAccount !== undefined) return byAccount.payer;
+    const person = this.#in.payerOf?.(author)?.person;
+    const byPerson = this.#payers.find((p) => p.payer.person === person);
+    if (byPerson !== undefined) return byPerson.payer;
+    return this.#payers.length === 1 ? (this.#payers[0]?.payer ?? null) : null;
+  }
+
+  /** Charges a model call one of the run's tools made for `author`, once it ended. */
+  #chargeToolCall(author: WakeAuthor | null) {
+    return (call: {
+      cost_usd: number | null;
+      status: string;
+      usage?: { prompt_tokens: number; completion_tokens: number } | null;
+    }): void => {
+      if (call.status === "streaming") return;
+      const usage = call.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
+      const charged = chargeOf(call.cost_usd, usage, this.#money.rate());
+      this.#charged += charged;
+      const payer = this.#payerFor(author);
+      if (payer !== null) {
+        this.#money.quota?.add(payer.person, this.#now(), charged);
+        return;
+      }
+      // Nobody in particular: shared like a step.
+      const share = this.#payers.length === 0 ? 0 : charged / this.#payers.length;
+      for (const p of this.#payers) this.#money.quota?.add(p.payer.person, this.#now(), share);
+    };
   }
 
   // ---- lines ------------------------------------------------------------------------------
@@ -1084,6 +1259,18 @@ class Run {
     // Whom it is for, before anything runs: never silently the wrong one of several askers.
     const target = this.#forWhom(entry, args);
     if (!target.ok) return this.#refused(call, "refused", "for_whom", target.error);
+    // Never work for someone at their quota on the share of someone who is not. A tool that acts
+    // for nobody in particular (a search) is for all of them: shared, and not refused.
+    const forWhom =
+      entry.tool.actsFor === true || this.#payers.length <= 1
+        ? (target.caller?.from ?? wakeAuthor(this.#wake))
+        : null;
+    const theirs = this.#payerFor(forWhom);
+    const capped = theirs === null ? null : this.#cappedOne(theirs);
+    if (capped !== null) {
+      const wait = roughWait(capMinutes(capped, this.#now()));
+      return this.#refused(call, "refused", "quota", REFUSALS.quota(capped.which, wait));
+    }
     const ctx = this.#guardContext();
     let result: ToolResult;
     let job: string | null = null;
@@ -1092,16 +1279,19 @@ class Run {
       if (!verdict.allow) return this.#refused(call, "refused", verdict.code, verdict.text);
       this.#emit({ type: "tool_start", turn: this.turn, name: call.name });
       result = await timeout(this.#limits.toolMs, this.#signal, (signal) =>
-        this.#p.tools.run(
-          call.name,
-          this.#toolContext(
-            signal,
-            (data) => {
-              job = reportedJob(data) ?? job;
-            },
-            target.caller,
+        // A model call a tool makes for the run's person (a look at a stream) is theirs too.
+        withLlmTag({ onCall: this.#chargeToolCall(forWhom) }, () =>
+          this.#p.tools.run(
+            call.name,
+            this.#toolContext(
+              signal,
+              (data) => {
+                job = reportedJob(data) ?? job;
+              },
+              target.caller,
+            ),
+            args,
           ),
-          args,
         ),
       );
     } catch (error) {

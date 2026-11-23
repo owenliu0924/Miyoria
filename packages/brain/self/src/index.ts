@@ -8,8 +8,10 @@ export {
   DEFAULT_DELEGATE_LIMITS,
   type DelegateEvent,
   type DelegateLimits,
+  type DelegateLimitsInput,
   Delegator,
   type DelegatorPorts,
+  delegateLimits,
   ENDED_STATES,
   isEnded,
   type JobRow,
@@ -17,9 +19,10 @@ export {
   type JobStore,
   type JobUsage,
   MAX_GOAL_CHARS,
+  MAX_RESUMES,
   MemoryJobStore,
+  normaliseRow,
   noUsage,
-  PoolLedger,
   type StartOutcome,
   type StartSpec,
 } from "./delegate.js";
@@ -32,6 +35,7 @@ export {
   DELEGATE_READ,
   DELEGATE_TOOLS,
   type DelegateToolDeps,
+  delegateNode,
   delegateTools,
 } from "./delegate-tools.js";
 export {
@@ -46,9 +50,19 @@ export {
   parseFeel,
 } from "./feel.js";
 export { composeGuards, permissiveGuard } from "./guard.js";
+export { JOBS_PROMPT_KEY, JobsPrompt, jobsBody } from "./jobs-prompt.js";
 export {
-  HOUR_TOKENS,
-  HOUR_USD,
+  MAX_PLAN_STEPS,
+  PLAN_TOOL,
+  type PlanStep,
+  parsePlan,
+  planLines,
+  planOf,
+  type StepState,
+} from "./plan.js";
+export {
+  CALLS_PER_ROUND,
+  HANDOFF_TOOL,
   type LimitName,
   PREFIX_PROFILE,
   PROFILE_NAMES,
@@ -57,6 +71,7 @@ export {
   type RunLimits,
   type RunProfile,
   SILENT_WAIT_MS,
+  TEXT_LIMITS,
   VOICE_TOOLS,
   withLimits,
 } from "./profiles.js";
@@ -70,9 +85,24 @@ export {
   toolSpecs,
   wakeLine,
 } from "./prompt.js";
-export * as rules from "./rules.js";
 export {
   capMinutes,
+  chargeOf,
+  type Payer,
+  PersonQuota,
+  PersonQuotaKey,
+  type PersonQuotaOptions,
+  QUOTA_DEFAULTS,
+  type QuotaBook,
+  type QuotaCap,
+  type QuotaDay,
+  type QuotaRules,
+  type QuotaUse,
+  stepCost,
+  utcQuotaDay,
+} from "./quota.js";
+export * as rules from "./rules.js";
+export {
   DEFAULT_COMPACTION,
   type RunnerOptions,
   SelfRunner,
@@ -88,23 +118,34 @@ export {
   type TextUnit,
 } from "./screens.js";
 export { floorKind, type ServiceGuardOptions, sayKind, serviceGuard } from "./service-guard.js";
-export { type Capped, type HourCap, type HourSpend, SpendLedger, stepCost } from "./spend.js";
 export {
   CALLABLE_KINDS,
+  type CallableKind,
+  CODE_TOOLS,
+  defaultKindLimits,
   fixedTools,
   helperGuard,
   helperPrompt,
   isolatedTranscript,
   isSubagentKind,
+  type JobRegistry,
   jobBudget,
   jobTools,
   KINDS,
+  type KindLimits,
+  type KindLimitsConfig,
   type KindSpec,
+  kindLimitsOf,
   noMouth,
   profileOf,
+  type RunAllowance,
   SUBAGENT_KINDS,
   type SubagentKind,
-  TOKENS_PER_USD,
+  setWorkerExtraTools,
+  WORKER_EXTRA_GROUPS,
+  WORKER_TOOLS,
+  workerAllows,
+  workerExtraTools,
 } from "./subagents.js";
 export { modelSummarise, summaryText } from "./summarise.js";
 export {

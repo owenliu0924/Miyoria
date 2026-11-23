@@ -3,6 +3,7 @@
 
 import { REQUEST_RULE } from "@miyoria/gate/actions";
 import type { ToolSpec } from "@miyoria/llm/llm";
+import type { ToolRisk } from "@miyoria/llm/tools";
 import { isJsonObject, type JsonObject, type JsonValue } from "@miyoria/types";
 
 /** How much of a tool's text is offered. */
@@ -44,22 +45,40 @@ function slimProperty(value: JsonValue, max: number): JsonValue {
  * what `why` and `on_own` mean, about 150 characters each, 2000 over the tools of a run: the fixed
  * rules say it once. The rest of what a tool says is offered whole, each part within `limits`.
  *
+ * `why` stays on a tool of `risk` high: its request goes to the review, which reads her reason
+ * and refuses one that is not clear. Without a risk, it stays where the spec requires it.
+ *
  * A registered spec does not change (a tool that changes registers a new one), so the slim one is
  * kept per spec and limits instead of being rebuilt for every tool on every run. Treat the result
  * as read-only: it is shared.
  */
-export function slimTool(spec: ToolSpec, limits: ToolLimits = DEFAULT_TOOL_LIMITS): ToolSpec {
-  const key = `${limits.description}:${limits.argument}`;
+export function slimTool(
+  spec: ToolSpec,
+  limits: ToolLimits = DEFAULT_TOOL_LIMITS,
+  risk?: ToolRisk,
+): ToolSpec {
+  const why = risk === undefined ? requires(spec, "why") : risk === "high";
+  const key = `${limits.description}:${limits.argument}:${why}`;
   const kept = SLIM.get(spec);
   if (kept?.key === key) return kept.slim;
-  const slim = slimNow(spec, limits);
+  const slim = slimNow(spec, limits, why);
   SLIM.set(spec, { key, slim });
   return slim;
 }
 
 const SLIM = new WeakMap<ToolSpec, { key: string; slim: ToolSpec }>();
 
-function slimNow(spec: ToolSpec, limits: ToolLimits): ToolSpec {
+/** Whether `spec` lists `name` among its required arguments. */
+function requires(spec: ToolSpec, name: string): boolean {
+  const parameters = spec.parameters;
+  return (
+    isJsonObject(parameters) &&
+    Array.isArray(parameters.required) &&
+    parameters.required.includes(name)
+  );
+}
+
+function slimNow(spec: ToolSpec, limits: ToolLimits, why: boolean): ToolSpec {
   const description = upToSentence(
     spec.description.replace(REQUEST_RULE, "").trim(),
     limits.description,
@@ -72,8 +91,8 @@ function slimNow(spec: ToolSpec, limits: ToolLimits): ToolSpec {
   for (const [name, value] of Object.entries(parameters.properties)) {
     properties[name] = slimProperty(value, limits.argument);
   }
-  // Her reasons are in the decision she logs; `why` would only say them twice.
-  delete properties.why;
+  // Her reasons are in the decision she logs; `why` would only say them twice, but for the review.
+  if (!why) delete properties.why;
   if (properties.on_own !== undefined) properties.on_own = { type: "boolean" };
   return { ...spec, description, parameters: { ...parameters, properties } };
 }

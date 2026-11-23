@@ -912,10 +912,18 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # emergency_step_ms = 20000      # 緊急停止每一步最多等多久,逾時就算失敗、接著做下一步
 # forbidden = ["message.dm"]     # 完全禁止的能力(也可以 "stream.*")
 # dm_strangers = false           # 不私訊不熟的人(熟悉度低於 stranger_familiarity)
+# work_min_bond = 15             # 羈絆到這裡(-100..1000;15 是朋友)的人可以叫她做真的工作:檔案、跑程式、技能、幫手。
+#                                # owner 和自己有那些權限的人不用;羈絆只決定能不能叫,做事不會讓羈絆變動
 # [modules.actions.medium]       # 中風險動作的次數上限(她自己決定或聊天請求時;指令不受限)
 # per_day = 30
 # per_person_per_day = 8
 # cooldown_ms = 20000
+# per_hour = 10                  # 可另設每小時(所有人)和 per_person_per_hour(每人);沒寫就不限
+# [modules.actions.work]         # 做事的動作(寫檔、刪檔、跑程式、存腳本、存技能)用這組,不用 medium
+# per_day = 20000                # 每 24 小時(所有人加起來)
+# per_person_per_day = 3000      # 每 24 小時同一個人
+# per_person_per_hour = 300      # 每小時同一個人(per_hour 也可以設)
+# cooldown_ms = 0                # 沒有冷卻:一件事要寫五個檔案就連著寫
 # inline_wait_ms = 8000          # 高風險工具(跑程式等)等審核多久;來不及就晚點在後續回合告訴她結果
 # [modules.actions.limits."code.run"]
 # per_day = 50
@@ -924,6 +932,8 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # max_bytes = 10485760           # 一個檔案最多幾 bytes(平台自己的上限另外算,取小的)
 # per_day = 60                   # 每 24 小時最多傳幾個(所有人加起來)
 # per_person_per_day = 10        # 每 24 小時最多傳給同一個人幾個
+# zip_max_unpacked_mb = 256      # zip / docx / xlsx / pptx 解開後合計超過這麼多(MiB)就不傳(壓縮炸彈)
+# zip_max_entries = 5000         # zip 裡的檔案超過這麼多個就不傳
 
 [modules.directive]
 # 主人規則(docs/design/v3-architecture.md §9)。規則本身存在資料庫裡,用對話、/miyo、/admin i 或面板管理,
@@ -972,12 +982,22 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # 回合:最後一則訊息後等多久才開始回(打字中會延長);回覆會引用叫她的那則訊息
 # debounce_ms = 800
 # reply_reference = true
-# 每個對話(一個頻道、討論串、私訊或語音頻道)最近一小時內最多花多少在模型上,照 [llm.pricing] 算;
-# 那一小時用過沒有價格的模型時改用 token 算。到了她在那裡先不回,有人叫她時說一次大概幾分鐘後回來
-# (同一段時間只說一次),記錄裡有一行警告。0 = 不設這個上限(每天的 [llm.budget] 照樣算)。
-# 也可以在面板替某個伺服器或頻道另外設;私訊用這裡的值
-# session_usd_per_hour = 1
-# session_tokens_per_hour = 3000000
+# 文字頻道裡她一次做事的上限:能連續用工具幾步、最長幾秒、一個工具最長幾秒(擋停不下來的迴圈)。
+# 到了上限,最後一步可以用 delegate 把剩下的交給小幫手。每步最多 8 個工具和整次的 token 上限是固定的,
+# 不是設定;錢由下面的每人 AI 額度和 [llm.budget] 管。語音另外算(兩步、12 秒)。也可以在面板替某個伺服器或頻道另外設
+# text_rounds = 20
+# text_seconds = 300
+# text_tool_seconds = 60
+
+# 每人的 AI 額度:她為一個人花的模型費用(回他的話,文字或語音,和他要的小幫手工作),照 [llm.pricing] 算;
+# 沒有價目的模型照 unpriced_usd_per_mtok 換成美元。她自己主動的事(看一眼、提醒、反思、她自己開的工作)
+# 不算在任何人身上,只受 [llm.budget] 管。owner 不受限。到了上限,她回那個人一句固定的話(說大概多久後
+# 再來,同一段時間只說一次,不呼叫模型);他要開小幫手會被拒絕,做到一半的工作做完這一步就交代結果。
+# 重啟不會歸零。0 = 不設那個上限
+# [modules.agent.quota]
+# person_usd_per_hour = 3        # 每人最近一小時
+# person_usd_per_day = 10        # 每人她的一天(照 [modules.arbiter] 的換日時間)
+# unpriced_usd_per_mtok = 1      # 沒有價目的模型,每一百萬 token 算多少美元
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
 # × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
@@ -1010,20 +1030,45 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # did_lines = 6                  # 「做了什麼」告訴主線幾行
 # keep_ended = 20                # 結束的任務留幾個給 work_list 和面板
 
-# 小幫手:她用 delegate 交代出去的工作(research 上網查、curator 整理筆記本)。
-# 語音頻道裡也可以交代,結果回到她還在的那個語音頻道。
-# 小幫手不會講話、不花錢、不寫工作區;結果回到交代的那個地方叫她。額度都在這裡,和她自己的額度分開記
+# 小幫手:她用 delegate 交代出去的工作。worker 什麼都能做(上網、工作區的檔案、筆記本、沙箱開著時跑程式,
+# 會先寫計畫);research 只上網查;curator 只整理筆記本。語音頻道裡也可以交代,結果回到她還在的那個語音頻道。
+# 小幫手不會講話、不私訊、不花魚幣、不在 Discord 上做事;結果回到交代的那個地方叫她,有人在等的她一定要交代。
+# 進行中的工作和它們的計畫在她的提示詞「進行中的工作」裡;重啟後沒做完的工作從自己的紀錄接著做。
+# 一件工作的花費算在要它的人的 AI 額度([modules.agent.quota])裡;她自己開的不算在任何人身上
 # [modules.agent.delegate]
 # enabled = true
-# max_running = 2                # 同時跑幾個(1 到 4);多的排隊
-# max_queued = 4                 # 最多排幾個,更多的 delegate 被拒絕(她會知道)
-# daily_usd = 3                  # 所有小幫手一天(以一天的開始算)加起來最多花多少美元,依模型價目表;用完就不再開
-# daily_tokens = 9000000         # 模型沒有價目時改用 token 算的一天上限
-# reflect_daily_usd = 0.5        # 每晚的反思一天最多花多少美元,另外記
-# reflect_daily_tokens = 1500000 # 反思在模型沒有價目時的 token 上限
+# max_running = 3                # 同時跑幾個(1 到 8);多的排隊
+# max_queued = 8                 # 最多排幾個,更多的 delegate 被拒絕(她會知道)
+# per_person_running = 2         # 一個人要的工作同時跑幾個(1 到 8);他多的排隊,讓位子給別人。她自己開的和 owner 的不算
+# per_person_queued = 2          # 一個人要的工作最多排幾個,更多的 delegate 被拒絕(她會跟對方說)
+# reflect_daily_usd = 0.5        # 每晚的反思一天最多花多少美元,另外記(沒有價目的模型照 unpriced_usd_per_mtok 換算)
 # result_chars = 1500            # 結果叫醒她時放進去的字數;更長的用 delegate_read 讀
 # read_chars = 8000              # delegate_read 一次給她的字數
 # keep_ended = 20                # 結束的工作留幾個給 delegate_list 和面板
+
+# 每種小幫手一件工作能用多少(下面都是預設值)。輪數、時間、預算是整件工作的,重啟前用掉的也算;
+# 時間不算重啟停下來的那段。預算是一件工作的大小:usd_default 是她沒說時給的,她說了也不會超過 usd_max。
+# 每步最多 8 個工具和 token 上限是固定的,不是設定
+# [modules.agent.delegate.kinds.worker]
+# rounds = 60                    # 能呼叫工具的步數;用完再多一步寫結果
+# minutes = 30                   # 整件工作最多跑幾分鐘
+# tool_seconds = 180             # 一次工具呼叫最多等幾秒(跑程式要的時間)
+# usd_default = 1                # 預設的預算(美元)
+# usd_max = 3                    # 她能要的最多預算(美元)
+# extra_tools = []               # worker 另外能叫的 MCP 和插件工具,寫完整的工具名(例如 "mcp_github_search");預設一個都沒有
+#                                # 這些工具沒說自己會做什麼,寫進來就是你替它們擔保:網頁上的字也可能叫小幫手用它們
+# [modules.agent.delegate.kinds.research]
+# rounds = 16
+# minutes = 8
+# tool_seconds = 45
+# usd_default = 0.25
+# usd_max = 1
+# [modules.agent.delegate.kinds.curator]
+# rounds = 20
+# minutes = 8
+# tool_seconds = 30
+# usd_default = 0.25
+# usd_max = 0.75
 
 # 輸出檢查:新跑者留下的六個對她輸出的檢查(編號見 docs/design/v5-brain.md Q8)。預設都開;
 # 這些開關是除錯用的,關掉一個只是拿掉那一個檢查,外層的牆(主人規則、行動閘門、送達帳本、輸出審查、
@@ -1515,12 +1560,17 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # window_s = 600
 # cache_entries = 16             # 抽出的結果在記憶體留幾份(依附件 id;從快取讀不算額度)
 # 她自己的資料夾(v4 §8.3):檔案和腳本留得住,跨執行、跨 session。放在 <root>/profiles/<profile>/workspace,
-# 需要時以可寫入掛在 /workspace。限額管她用工具寫的;程式留在裡面的東西會在執行後檢查,超過的刪掉
+# 需要時以可寫入掛在 /workspace。替別人做的事只碰得到 people/<那個人>/ 底下(路徑從那裡算起,跑程式也只掛那個資料夾);
+# owner 和面板看得到全部;她自己的動作看得到 people/ 以外的全部。限額管用工具寫的;程式留在裡面的東西會在執行後檢查,超過的只從那次執行自己的資料夾刪,
+# 不動別人的檔案。整個工作區滿了就不能再寫新的
 # [modules.sandbox.workspace]
 # enabled = true
-# max_mb = 64                    # 全部檔案加起來(MiB)
-# max_files = 500
-# max_file_kb = 1024             # 單一檔案(KiB)
+# max_mb = 32768                 # 全部檔案加起來,每個人的資料夾也算(MiB);是上限,不是先佔好的空間
+# max_files = 200000             # 預設放得下 100 個人各用到自己的上限
+# max_file_kb = 8192             # 單一檔案(KiB)
+# person_max_mb = 256            # 一個人的資料夾(MiB)
+# person_max_files = 2000        # 一個人的資料夾最多幾個檔案
+# export_max_kb = 8192           # workspace_export 一次拿出來的檔案最大多少(KiB;之後用 share 傳)
 # read_chars = 3900              # workspace_read 一次回幾字(其餘用 offset 分段讀)
 # keep_outputs = 20              # 保留幾個輸出檔(太長被截掉的執行,完整輸出存成 outputs/<run id>.txt)
 # 網路:預設全關(allow = []),每次執行都是 --network none。列了主機,要求網路的執行才會拿到一個沒有對外路由的
@@ -1530,7 +1580,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # allow = []                     # 例如 ["pypi.org", "*.pythonhosted.org"]
 # proxy_port = 3128              # proxy 在它的容器內聽的埠
 # proxy_memory_mb = 128          # proxy 容器的記憶體(MiB)
-# 跑程式的次數上限在 [modules.actions.limits."code.run"](預設每天 30 次、冷卻 20 秒)
+# 跑程式的次數上限在 [modules.actions.work](預設沒有冷卻、每人每小時 300 次),也可以在 [modules.actions.limits."code.run"] 單獨設
 
 # 生圖(docs/design/imagegen.md):連 ComfyUI 的 API 生圖,給她的其他系統用(目前沒有指令,成員叫不到)。
 # 內建三個模型:krea2(turbo / raw)、moss_image(sft / base)、anima(base / turbo);
@@ -1675,13 +1725,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # max_redirects = 3
 # allow_ports = []               # 80 和 443 以外還要允許的連接埠
 # cache_ttl_s = 600              # 同一個搜尋或網頁這段時間內不重查
-# window_s = 600                 # 以下次數都是這段時間內
-# search_per_person = 6
-# read_per_person = 10
-# search_global = 30
-# read_global = 60
-# image_per_person = 10          # web_image 每人在 window_s 內最多看幾張
-# image_global = 40
+# search_per_person_hour = 60    # 每人一小時最多查幾次(付費的搜尋每次都花點數;她自己算一個人);0 = 不限。
+#                                # 讀網頁和看圖不另外計次,由她一次做事的步數和每人的 AI 額度管
 
 # ---- Stage 節點(在直播機執行 `miyoria stage`)-------------------------------
 [stage]

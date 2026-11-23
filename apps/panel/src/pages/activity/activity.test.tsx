@@ -286,7 +286,7 @@ describe("Activity: the reasons in words", () => {
   });
 
   it("names a conversation held to its hourly cap, and shows other errors as they are", () => {
-    expect(outcomeText({ type: "error", error: "over_budget" })).toBe("這個對話這一小時的花費到上限了");
+    expect(outcomeText({ type: "error", error: "over_budget" })).toBe("對方的 AI 額度到上限了");
     expect(outcomeText({ type: "error", error: "failed" })).toBe("出錯:failed");
   });
 });

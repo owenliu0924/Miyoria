@@ -4,7 +4,12 @@
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ActuatorRegistry, ActuatorRegistryKey, type Capability } from "@miyoria/gate/actions";
+import {
+  ActuatorRegistry,
+  ActuatorRegistryKey,
+  type Capability,
+  WORK_BOND,
+} from "@miyoria/gate/actions";
 import {
   defineTool,
   type ToolContext,
@@ -13,11 +18,12 @@ import {
   toolSession,
 } from "@miyoria/llm/tools";
 import { ServiceRegistry, Supervisor } from "@miyoria/runtime/kernel";
-import { DATA_OPEN } from "@miyoria/types";
+import { AuthorizerKey, DATA_OPEN, Principals, SocialSignalsKey } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { PersistentWorkspace, type Sandbox, SandboxKey } from "../../sandbox/src/index.js";
 import {
+  SKILL_DELETE,
   SKILL_READ,
   SKILL_TOOL,
   SKILL_WRITE,
@@ -235,5 +241,49 @@ describe("skill", () => {
     expect(tools.names()).toContain("skill_read");
     await sup.stopAll();
     expect(tools.entry(SKILL_TOOL)).toBeUndefined();
+  });
+});
+
+describe("who may have her use or change her skills", () => {
+  it("a bond opens reading them; changing them stays the owners'", async () => {
+    const skills = new SkillStore(workspace, SkillsConfigSchema.parse({}));
+    await skills.write("greet", "打招呼", "叫名字");
+    const services = new ServiceRegistry();
+    const amy = { platform: "discord", id: "200" };
+    const owner = { platform: "discord", id: "900" };
+    services.provide("test", AuthorizerKey, {
+      allows: (a: { id: string }, node: string) =>
+        a.id === "900" || (a.id === "200" && node === WORK_BOND),
+      allowsSubject: () => false,
+    });
+    services.provide("test", SocialSignalsKey, {
+      attitude: () => ({
+        person: "p200",
+        affinity: 30,
+        trust: 50,
+        familiarity: 50,
+        blocked: false,
+        label: "朋友",
+        call_name: null,
+      }),
+    });
+    const gate = new ActuatorRegistry({ services, builtins: false });
+    for (const c of skillCapabilities(skills)) gate.register(c as Capability);
+    const ask = (who: typeof amy, capability: string, args: object) =>
+      gate.invoke({
+        principal: Principals.user(who, CONTEXT),
+        capability,
+        args: args as never,
+        why: null,
+        turn: null,
+      });
+    expect((await ask(amy, SKILL_READ, { name: "greet" })).status).toBe("done");
+    const write = await ask(amy, SKILL_WRITE, { name: "x", description: "d", body: "b" });
+    expect(write.decision.stage).toBe("permission");
+    expect((await ask(amy, SKILL_DELETE, { name: "greet" })).decision.stage).toBe("permission");
+    expect((await skills.list()).skills.map((s) => s.name)).toEqual(["greet"]);
+    expect((await ask(owner, SKILL_WRITE, { name: "x", description: "d", body: "b" })).status).toBe(
+      "done",
+    );
   });
 });

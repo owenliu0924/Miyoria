@@ -52,7 +52,7 @@ import { MemoryFailureLimiter } from "./admin-limit.js";
 import { CardFaceService } from "./card-faces.js";
 import { ImageCleaner } from "./files/clean.js";
 import { FilesConfigSchema, parseOrigin } from "./files/config.js";
-import { FileLinkService } from "./files/links.js";
+import { FileLinkService, shareZip } from "./files/links.js";
 import { fileOriginApp } from "./files/serve.js";
 import type { FilesSide } from "./files/side.js";
 import { Tickets } from "./files/tickets.js";
@@ -416,6 +416,7 @@ export class ApiModule implements Module {
           perLinkPerMinute: config.files.per_link_per_minute,
           publicCacheSecs: config.files.public_cache_secs,
           clientIpHeader: config.public.client_ip_header,
+          zip: () => shareZip(ctx.services),
         });
         const fileServer = createAdaptorServer({ fetch: fileApp.fetch });
         servers.push(fileServer);
@@ -520,6 +521,7 @@ export class ApiModule implements Module {
             perPersonPerDay: config.files.links_per_person_per_day,
             moderation: () => ctx.services.get(ModerationKey),
             now: () => ctx.clock.now(),
+            zip: () => shareZip(ctx.services),
           });
     if (origin === null)
       ctx.log.debug("no file origin: share links are off, attachments still work");

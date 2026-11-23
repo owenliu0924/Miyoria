@@ -167,7 +167,7 @@ describe("her home and the other places", () => {
     expect(textOf(rig.model.requests[0])).not.toContain("伺服器F");
     // Four places are left: C is listed now, and nothing is "more".
     expect(textOf(rig.model.requests[0])).toContain("- 伺服器C:1 件(回來的結果 1)");
-    expect(textOf(rig.model.requests[0])).not.toContain("還有");
+    expect(textOf(rig.model.requests[0])).not.toContain("- 還有");
     expect(lookResult(rig, 1)).toContain("你已經不在那裡了");
   });
 

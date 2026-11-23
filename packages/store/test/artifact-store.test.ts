@@ -227,6 +227,44 @@ describe("ingest", () => {
     expect(events[0]?.envelope.data).toMatchObject({ artifact_id: a.id, sha256: a.sha256 });
   });
 
+  it("keeps a text's own text extension and a zip's Office type, never a type the bytes are not", async () => {
+    const md = await f.store.ingest(new TextEncoder().encode("# notes\n"), {
+      ...input(),
+      filename: "notes.md",
+    });
+    expect(md).toMatchObject({ mime: "text/plain", kind: "text", filename: "notes.md" });
+    const page = await f.store.ingest(new TextEncoder().encode("<html><body>hi</body></html>"), {
+      ...input(),
+      filename: "page.html",
+      mime: "text/html",
+    });
+    // Named for what it is, stored as text so nothing renders it.
+    expect(page).toMatchObject({ mime: "text/plain", filename: "page.html" });
+    const odd = await f.store.ingest(new TextEncoder().encode("text\n"), {
+      ...input(),
+      filename: "picture.exe",
+    });
+    expect(odd.filename).toBe("picture.txt");
+    // A zip by its local header; declared as docx it is stored as one.
+    const zip = bytes("PK\x03\x04\x14\x00\x00\x00\x00\x00rest of a zip");
+    const plain = await f.store.ingest(zip, { ...input(), filename: "bundle.zip" });
+    expect(plain).toMatchObject({ mime: "application/zip", kind: "document" });
+    const docx = await f.store.ingest(zip, {
+      ...input(),
+      filename: "report.docx",
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    expect(docx.filename).toBe("report.docx");
+    expect(docx.mime).toContain("wordprocessingml");
+    // An Office type is never taken for bytes that are not a zip.
+    await expect(
+      f.store.ingest(new TextEncoder().encode("not a zip\n"), {
+        ...input(),
+        mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    ).rejects.toThrow(ArtifactTypeError);
+  });
+
   it("stores the same bytes once, and every sample type", async () => {
     for (const [mime, data] of Object.entries(SAMPLES)) {
       const one = await f.store.ingest(data, { ...input(), mime });

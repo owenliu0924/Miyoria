@@ -9,6 +9,7 @@ import type { AnyRouter } from "@orpc/server";
 import { Hono } from "hono";
 import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { buildZip } from "../../gate/actions/test/zip-fixture.js";
 import { ApiError } from "../src/errors.js";
 import { ImageCleaner, reencode } from "../src/files/clean.js";
 import { FilesConfigSchema, parseOrigin } from "../src/files/config.js";
@@ -221,6 +222,57 @@ describe("share links", () => {
     });
   });
 
+  it("take a zip only for its own person, read whole, with its text entries checked", async () => {
+    const { links } = rig();
+    const enc = new TextEncoder();
+    const zipOf = (entries: Parameters<typeof buildZip>[0]) =>
+      f.store.ingest(buildZip(entries), {
+        source: "sandbox",
+        plugin: "sandbox",
+        place: f.room,
+        made_for: f.person,
+        filename: "a.zip",
+      });
+    const fine = await zipOf([{ name: "notes.md", data: enc.encode("# hi\n"), deflate: true }]);
+    const issue = (id: string, requested_by: PersonId | undefined, audience = "person") =>
+      links.issue({
+        artifact_id: id,
+        audience: audience as "person",
+        person_id: audience === "person" ? f.person : null,
+        space_id: audience === "space" ? f.room.space_id : null,
+        ...(requested_by === undefined ? {} : { requested_by }),
+      });
+    expect(await issue(fine.id, f.person)).toMatchObject({ ok: true });
+    expect(await issue(fine.id, f.person, "space")).toMatchObject({ ok: true });
+    // Not asked by the person it was made for: no link, like no attachment.
+    expect(await issue(fine.id, f.other, "space")).toMatchObject({
+      ok: false,
+      refused: "type_not_allowed",
+    });
+    expect(await issue(fine.id, undefined, "space")).toMatchObject({
+      ok: false,
+      refused: "type_not_allowed",
+    });
+    const hidden = await zipOf([
+      { name: "ok.txt", data: enc.encode("ok\n") },
+      { name: "../run.bat", data: enc.encode("calc\r\n"), hidden: true },
+    ]);
+    expect(await issue(hidden.id, f.person)).toMatchObject({
+      ok: false,
+      refused: "type_not_allowed",
+    });
+    const leaky = await zipOf([
+      {
+        name: "word/document.xml",
+        data: enc.encode(
+          "<w:t>token = sk-ant-api03-AAAAAAAAAAAA</w:t><w:t>AAAAAAAAAAAAAAAAAAAAAAAAAAAA</w:t>",
+        ),
+        deflate: true,
+      },
+    ]);
+    expect(await issue(leaky.id, f.person)).toMatchObject({ ok: false, refused: "secret" });
+  });
+
   it("never open a song cover", async () => {
     const { links, app } = rig();
     const cover = await f.store.ingest(Buffer.from("ID3\x04\x00\x00\x00\x00\x00\x00", "latin1"), {
@@ -386,6 +438,37 @@ describe("the file origin", () => {
     expect(contains(new Uint8Array(await res.arrayBuffer()), HIDDEN)).toBe(false);
     const other = encodeURIComponent(tickets.issue("d", room.id, f.other));
     expect((await get(app, `/d/${room.id}?k=${other}`)).status).toBe(404);
+  });
+
+  it("names a file that runs when opened with .txt, unless only its own person can open it", async () => {
+    const { links, app, tickets } = rig();
+    const bat = await f.store.ingest(new TextEncoder().encode("@echo off\r\necho hi\r\n"), {
+      source: "sandbox",
+      plugin: "sandbox",
+      place: f.room,
+      made_for: f.person,
+      filename: "setup.bat",
+    });
+    expect(bat.filename).toBe("setup.bat");
+    const nameOf = (res: Response) =>
+      /filename="([^"]*)"/.exec(res.headers.get("content-disposition") ?? "")?.[1];
+    const space = await links.issue({
+      artifact_id: bat.id,
+      audience: "space",
+      space_id: f.room.space_id,
+    });
+    if (!space.ok) throw new Error(space.message);
+    const member = encodeURIComponent(tickets.issue("s", space.share_id, f.other));
+    const shared = await get(app, `/f/${tokenOf(space.url)}?k=${member}&dl=1`);
+    expect(shared.status).toBe(200);
+    expect(nameOf(shared)).toBe("setup.bat.txt");
+    expect(shared.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    const own = await links.issue({ artifact_id: bat.id, audience: "person", person_id: f.person });
+    if (!own.ok) throw new Error(own.message);
+    const mine = encodeURIComponent(tickets.issue("s", own.share_id, f.person));
+    expect(nameOf(await get(app, `/f/${tokenOf(own.url)}?k=${mine}`))).toBe("setup.bat");
+    const download = encodeURIComponent(tickets.issue("d", bat.id, f.person));
+    expect(nameOf(await get(app, `/d/${bat.id}?k=${download}`))).toBe("setup.bat");
   });
 
   it("names files safely and limits each address", async () => {

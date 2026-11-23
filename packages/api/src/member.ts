@@ -83,6 +83,7 @@ import { ApiError } from "./errors.js";
 import { deleteFortunes, fortunesOf } from "./fortune.js";
 import { heartRows } from "./heart-rows.js";
 import { dateOf, localDay, tooMany } from "./public.js";
+import { memberQuota } from "./quota.js";
 import type { Route } from "./route.js";
 import type { SessionRecord } from "./session.js";
 import { memberSpace } from "./space-param.js";
@@ -370,6 +371,7 @@ async function memberView(state: ApiState, c: ApiContext): Promise<MemberView> {
     activity: await activity(state, who),
     can_request_song: canRequest(state, who),
     forget: { removes: FORGET_REMOVES, keeps: FORGET_KEEPS },
+    quota: who.hidden ? null : memberQuota(state, who.account, who.person?.id ?? null),
   };
 }
 

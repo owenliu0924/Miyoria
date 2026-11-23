@@ -4,8 +4,11 @@
 //
 // - only what is in the artifact store, by id: never a path;
 // - live (not expired, deleted, blocked or taken down); never a song cover;
-// - a type of the allow-list (`allowedType`): images, audio, video, PDF, plain text, read again
-//   from the bytes for text, which also passes the secret check (a credential refuses it);
+// - a type of the allow-list (`allowedType`): images, audio, video, PDF, plain text and the zip
+//   family, read again from the bytes for text and zips (`checkContent`, the same check `share`
+//   makes): a text, and every text entry of a zip or Office file, passes the secret check (a
+//   credential refuses it), and a zip is read whole under the zip limits and goes only to the
+//   person it was made for;
 // - an audience no wider than where it was made (`share-policy.ts` in the store);
 // - a per-person quota of links in any rolling 24 hours;
 // - an image is linked as its cleaned copy (`clean.ts`), never with its metadata.
@@ -14,7 +17,14 @@
 // only links anyone may open are issued.
 
 import type { ShareAudience } from "@miyoria/contracts/events";
-import { checkContent } from "@miyoria/gate/actions";
+import {
+  ActuatorRegistryKey,
+  checkContent,
+  ZIP_MIMES,
+  type ZipLimits,
+  zipLimits,
+} from "@miyoria/gate/actions";
+import type { ServiceLookup } from "@miyoria/runtime/kernel";
 import {
   type Artifact,
   type ArtifactCleaner,
@@ -57,22 +67,70 @@ export function textBlocked(
   return maskSecrets(text) === text ? null : "secrets.known-format";
 }
 
+/** The zip limits `share` applies, while the actions module is there. */
+export function shareZip(services: ServiceLookup): ZipLimits | undefined {
+  const share = services.get(ActuatorRegistryKey)?.config.share;
+  return share === undefined ? undefined : zipLimits(share);
+}
+
+export type ContentRefusal = "type_not_allowed" | "secret";
+
+export interface ContentCheckOptions {
+  /** The link goes to the person the artifact was made for (a zip goes to nobody else). */
+  owner: boolean;
+  /** The zip limits (`[modules.actions.share]`); default: its defaults. */
+  zip?: ZipLimits;
+  signal?: AbortSignal;
+}
+
+/** Zips read whole are judged once per content for a while: every request opens them again. */
+const ZIP_VERDICTS = new Map<string, { at: number; refusal: ContentRefusal | null }>();
+const ZIP_VERDICT_MS = 10 * 60_000;
+const ZIP_VERDICTS_KEPT = 64;
+
 /**
- * Checks an artifact's own bytes before they leave: the type again from the content, and a text
- * through the secret check. `null`: fine; else why not.
+ * Checks an artifact's own bytes before they leave: the type again from the content, a text
+ * through the secret check, a zip (or Office file) read whole with its text entries through the
+ * secret check, and only for its own person. `null`: fine; else why not.
  */
 export async function contentRefusal(
   store: ArtifactStore,
   artifact: Artifact,
   moderation: ModerationService | undefined,
-  signal?: AbortSignal,
-): Promise<"type_not_allowed" | "secret" | null> {
+  options: ContentCheckOptions,
+): Promise<ContentRefusal | null> {
   if (!allowedType(artifact.mime)) return "type_not_allowed";
-  if (artifact.kind !== "text") return null;
-  const bytes = await store.readContent(artifact, signal);
-  const verdict = checkContent(bytes, false);
-  if (!verdict.ok || verdict.mime !== "text/plain") return "type_not_allowed";
-  return textBlocked(new TextDecoder("utf-8").decode(bytes), moderation) === null ? null : "secret";
+  const zip = ZIP_MIMES.includes(artifact.mime);
+  if (artifact.kind !== "text" && !zip) return null;
+  if (zip && !options.owner) return "type_not_allowed";
+  const key = `${artifact.sha256}:${artifact.mime}:${options.zip?.maxUnpackedBytes ?? 0}:${options.zip?.maxEntries ?? 0}`;
+  const now = Date.now();
+  const known = zip ? ZIP_VERDICTS.get(key) : undefined;
+  if (known !== undefined && now - known.at < ZIP_VERDICT_MS) return known.refusal;
+  const bytes = await store.readContent(artifact, options.signal);
+  const verdict = await checkContent(bytes, true, {
+    mime: artifact.mime,
+    ...(options.zip === undefined ? {} : { zip: options.zip }),
+    screen: (text) => {
+      const rule = textBlocked(text, moderation);
+      return rule === null ? null : { code: "secret", rule };
+    },
+  });
+  const refusal: ContentRefusal | null = verdict.ok
+    ? verdict.mime === artifact.mime
+      ? null
+      : "type_not_allowed"
+    : verdict.code === "type_not_allowed"
+      ? "type_not_allowed"
+      : "secret";
+  if (zip) {
+    if (ZIP_VERDICTS.size >= ZIP_VERDICTS_KEPT) {
+      const oldest = ZIP_VERDICTS.keys().next().value;
+      if (oldest !== undefined) ZIP_VERDICTS.delete(oldest);
+    }
+    ZIP_VERDICTS.set(key, { at: now, refusal });
+  }
+  return refusal;
 }
 
 export interface FileLinkOptions {
@@ -86,6 +144,8 @@ export interface FileLinkOptions {
   perPersonPerDay: number;
   moderation: () => ModerationService | undefined;
   now: () => number;
+  /** The zip limits `share` applies (`[modules.actions.share]`); default: its defaults. */
+  zip?: () => ZipLimits | undefined;
 }
 
 const refuse = (
@@ -132,7 +192,14 @@ export class FileLinkService implements FileLinks {
     if (artifact.source === "sing" || !artifact.downloadable) {
       return refuse("song_cover", "song covers are never downloadable");
     }
-    const content = await contentRefusal(store, artifact, this.#o.moderation(), signal);
+    // A zip goes only to the person it was made for, as an attachment does.
+    const owner = artifact.made_for !== null && request.requested_by === artifact.made_for;
+    const zip = this.#o.zip?.();
+    const content = await contentRefusal(store, artifact, this.#o.moderation(), {
+      owner,
+      ...(zip === undefined ? {} : { zip }),
+      ...(signal === undefined ? {} : { signal }),
+    });
     if (content === "type_not_allowed") {
       return refuse("type_not_allowed", "this type is not handed out");
     }

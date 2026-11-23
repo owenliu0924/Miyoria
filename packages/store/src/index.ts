@@ -20,9 +20,12 @@ export {
   MEDIA_TYPES,
   type MediaType,
   normalizeMime,
+  outgoingFilename,
+  runsWhenOpened,
   SNIFF_BYTES,
   sniff,
   TextCheck,
+  textExtension,
 } from "./artifacts/media.js";
 export { isSpaceMember, type SpaceMembership, spaceMembership } from "./artifacts/membership.js";
 export { artifactSchema } from "./artifacts/migrations.js";

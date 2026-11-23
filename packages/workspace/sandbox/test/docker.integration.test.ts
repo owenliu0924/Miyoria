@@ -16,12 +16,13 @@ import {
   LABEL,
   LABEL_INSTANCE,
   LABEL_KIND,
+  NODE_CODE_RUN,
   ProcessDockerRunner,
   SandboxConfigSchema,
   SandboxError,
   SessionClosedError,
 } from "../src/index.js";
-import { CTX, harness, toolContext } from "./gate-helpers.js";
+import { AMY, CTX, harness, toolContext } from "./gate-helpers.js";
 
 function dockerAvailable(): boolean {
   if (process.env.MIYORIA_SKIP_DOCKER_TESTS === "1") return false;
@@ -229,6 +230,8 @@ open("/work/real.txt", "w").write("ok")
     h.registry.configure({ ...h.registry.config, inline_wait_ms: 60_000 });
     await h.gate.setAvailable(true);
     h.router.verdict("allow");
+    // on_own for Amy is still work for Amy: she needs the node (or the bond).
+    h.grants.grant(AMY, NODE_CODE_RUN);
     const run = h.tools.get("code_run");
     if (!run) throw new Error("no code_run");
     // The model asks for a network; it gets none, and the output comes back as data.

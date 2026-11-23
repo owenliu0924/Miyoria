@@ -1,4 +1,10 @@
-import { ActuatorRegistryKey } from "@miyoria/gate/actions";
+import {
+  ActuatorRegistryKey,
+  permit,
+  SKILLS_USE,
+  WORK_BELOW_BOND,
+  WORK_BOND,
+} from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import type { ToolEntry } from "@miyoria/llm/tools";
 import {
@@ -11,6 +17,7 @@ import {
   type ServiceKey,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+import { delegateNode } from "../src/delegate-tools.js";
 import { composeGuards, permissiveGuard } from "../src/guard.js";
 import { LINE_REFUSALS, REFUSALS } from "../src/rules.js";
 import { floorKind, serviceGuard } from "../src/service-guard.js";
@@ -79,6 +86,87 @@ describe("the service guard", () => {
     expect(await g.checkCall(needs, ctx(other))).toEqual(
       refuse("permission", REFUSALS.permissionAsker),
     );
+  });
+
+  describe("a work node through the gate's permit", () => {
+    const OWNER = { platform: "discord", id: "u0" };
+    const bonds: Record<string, number> = { u1: 15, u2: 14 };
+    const authorizer = {
+      allows: (account: { id: string }, node: string) =>
+        account.id === "u0" || (node === WORK_BOND && account.id in bonds),
+    };
+    const social = {
+      attitude: (account: { id: string }) =>
+        account.id in bonds ? { affinity: bonds[account.id], blocked: false } : null,
+    };
+    const gate = {
+      permit: (account: { platform: string; id: string }, node: string) =>
+        permit(
+          { authorizer: authorizer as never, social: social as never, minBond: 15 },
+          account,
+          node,
+        ),
+    };
+    const g = serviceGuard({
+      services: services([
+        [AuthorizerKey, authorizer],
+        [ActuatorRegistryKey, gate],
+      ]),
+    });
+    const asker = (id: string): Wake => ({
+      kind: "addressed",
+      reason: "mention",
+      from: { account: id === "u0" ? OWNER : { platform: "discord", id }, name: id },
+      message: { context: CTX, id: "m1" },
+    });
+    const delegate = (kind: string) => ({
+      ...call("delegate", {
+        tool: { permission: null, permissionFor: delegateNode },
+      } as unknown as Partial<ToolEntry>),
+      args: { kind, goal: "做一份表" },
+    });
+    const skill = call("skill", { tool: { permission: SKILLS_USE } } as Partial<ToolEntry>);
+
+    it("a bond at work_min_bond opens a worker and a skill", async () => {
+      expect(await g.checkCall(delegate("worker"), ctx(asker("u1")))).toEqual(ALLOW);
+      expect(await g.checkCall(skill, ctx(asker("u1")))).toEqual(ALLOW);
+    });
+
+    it("one below it is told so, with the gate's text", async () => {
+      expect(await g.checkCall(delegate("worker"), ctx(asker("u2")))).toEqual(
+        refuse("permission", WORK_BELOW_BOND),
+      );
+      expect(await g.checkCall(skill, ctx(asker("u2")))).toEqual(
+        refuse("permission", WORK_BELOW_BOND),
+      );
+      // Someone with no way to the node at all is refused as before.
+      expect(await g.checkCall(skill, ctx(asker("u9")))).toEqual(
+        refuse("permission", REFUSALS.permissionAsker),
+      );
+    });
+
+    it("her own run may do her own work, nothing else that needs a node", async () => {
+      const own = ctx({ kind: "self", note: null });
+      expect(await g.checkCall(skill, own)).toEqual(ALLOW);
+      expect(await g.checkCall(delegate("worker"), own)).toEqual(ALLOW);
+      const ban = call("ban", { tool: { permission: "mod.ban" } } as Partial<ToolEntry>);
+      expect(await g.checkCall(ban, own)).toEqual(refuse("permission", REFUSALS.permissionNobody));
+    });
+
+    it("the owner holds every node", async () => {
+      expect(await g.checkCall(delegate("worker"), ctx(asker("u0")))).toEqual(ALLOW);
+      expect(await g.checkCall(skill, ctx(asker("u0")))).toEqual(ALLOW);
+    });
+
+    it("research and curator stay open to anyone", async () => {
+      for (const kind of ["research", "curator", "Research"]) {
+        expect(await g.checkCall(delegate(kind), ctx(asker("u2")))).toEqual(ALLOW);
+        expect(await g.checkCall(delegate(kind), ctx(asker("u9")))).toEqual(ALLOW);
+      }
+      expect(delegateNode({ kind: " Worker " })).toBe("work.delegate");
+      expect(delegateNode({ kind: "research" })).toBeNull();
+      expect(delegateNode("worker")).toBeNull();
+    });
   });
 
   it("paused: only looking; the budget gone: nothing outside or long", async () => {
