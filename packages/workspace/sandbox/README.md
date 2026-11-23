@@ -26,7 +26,8 @@ await sandbox.listSessions(); // → [{ name, language, created_at, last_used_at
 await sandbox.closeSession("weather-tool"); // → true(關掉並刪掉檔案)/ false(沒有這個名字)
 ```
 
-- `network` 只支援 `"none"`。型別接受 `{ allow: [...] }`,但目前一律回 `SandboxError("network_unsupported")`(見「網路白名單」)。
+- `network` 預設 `"none"`。`{ allow: [...] }` 要 `[modules.sandbox.network] allow` 列了每一個主機才行,否則回 `SandboxError("network_unsupported")`(沒有設定任何主機)或 `invalid_request`(有主機不在清單裡);只有 fresh 執行可以(見「網路白名單」)。
+- `mount_workspace: true` 把工作區讀寫掛到 `/workspace`;再加 `workspace_folder`(`people/` 底下的資料夾名,`^[a-z0-9_][a-z0-9_-]{0,64}$`)就只掛那個人的資料夾,用那個資料夾的額度(見「工作區」)。
 - 無法執行時丟 `SandboxError`(`kind`:`unavailable`、`busy`、`invalid_request`、`invalid_path`、`network_unsupported`、`image_unavailable`、`docker_failed`、`closed`、`limit`(工作階段開滿)、`session_closed`(`SessionClosedError`,帶 `session` 與 `reason`)…)。程式自己的錯誤不是例外,看 `exit_code` / `stderr`。
 - `health()` 用 `docker version` 檢查 daemon;Docker 沒開時模組是 **degraded**(不會 crash),`run()` 丟 `unavailable`,下次使用時重新檢查(`health_ttl_ms`)。
 
@@ -149,12 +150,16 @@ approvedSpecs()                        已核准的工具 { name, description, p
 
 1. 容器的環境變數是程式裡寫死的三個值(`CONTAINER_ENV`),沒有 `--env-file`、沒有不帶值的 `-e NAME`(那會從 CLI 環境複製)。
 2. Docker CLI 程序本身用過濾後的環境啟動(`dockerCliEnv`),Miyoria 的 `LLM_API_KEY`、`DISCORD_BOT_TOKEN`、`MIYORIA_API_TOKEN` 等根本不在它的環境裡,即使未來誤加 `-e` 也帶不過去(單元測試與整合測試都驗證)。
-3. 唯一的讀寫掛載是全新的 `runs/<id>/work`;設定檔、`.env`、資料庫都不在任何掛載的目錄下。
+3. 讀寫掛載只有全新的 `runs/<id>/work`,和有要求時的工作區(替別人時只有那個人的資料夾);設定檔、`.env`、資料庫都不在任何掛載的目錄下。
 4. 程式碼與參數不經過 shell,所以不會被展開成 `$(cat .env)` 之類的東西。
 
 ### 工作區(`[modules.sandbox.workspace]`)
 
-她自己的持久資料夾 `<root>/profiles/<profile>/workspace`,以 bind mount 掛到容器的 `/workspace`。額度:`max_mb`(64)、`max_files`(500)、`max_file_kb`(1024);每次執行後由主機端檢查,超過額度或出現連結(symlink / junction)就移除並回報。路徑一律在主機端逐段 lstat 檢查,拒絕 `..`、絕對路徑與連結,開檔用 `O_NOFOLLOW`,寫入先寫暫存檔再 rename。工具:`workspace_list / read / write / delete`(不需要 Docker)、`workspace_save_script`(高風險,內容過 LLM 審查,雜湊記在容器寫不到的 `workspace-scripts.json`)、`workspace_run`(只跑核可過、內容沒變的腳本)。工具輸出以 `read_chars`(700)為限,較長的執行輸出存成 `outputs/<run_id>.txt` 並回報路徑,只保留最近 `keep_outputs`(20)個。
+她的持久資料夾 `<root>/profiles/<profile>/workspace`,以 bind mount 掛到容器的 `/workspace`。額度:`max_mb`(4096)、`max_files`(20 000)、`max_file_kb`(8192),都含每個人的資料夾;每次執行後由主機端檢查,超過額度或出現連結(symlink / junction)就移除並回報。路徑一律在主機端逐段 lstat 檢查,拒絕 `..`、絕對路徑、磁碟代號、反斜線與連結,開檔用 `O_NOFOLLOW`,寫入先寫暫存檔再 rename。工具:`workspace_list / read / write / delete`(不需要 Docker)、`workspace_export`(把一個檔案存成產物,之後用 `share` 交給人)、`workspace_save_script`(高風險,內容過 LLM 審查,雜湊記在容器寫不到的 `workspace-scripts.json`)、`workspace_run`(只跑核可過、內容沒變的腳本)。`workspace_read` 一次回 `read_chars`(3900)字,其餘用 `offset` 分段讀;較長的執行輸出存成 `outputs/<run_id>.txt` 並回報路徑,只保留最近 `keep_outputs`(20)個。
+
+- **每個人一個資料夾**(`src/people.ts`):替別人做的呼叫(對方開口,或幫手替對方做)只碰得到 `people/<資料夾>/`:路徑從那裡算起,列出只有那裡,讀、寫、刪、匯出、掛進執行(`workspace_folder`)都出不去;太長的輸出也存在那裡。資料夾名是那個人在 heart 的 person id(小寫);heart 不認得的帳號用 `<platform>-<id>`;帶路徑字元或是保留名稱的 id 用 `_` 加雜湊。不看 principal 的種類只看 `requester`:成員叫她 `on_own` 也一樣只有自己的資料夾。沒有人在背後的呼叫(她自己的、排程的、面板的)和有 `sandbox.workspace.all` 的人(沒有角色列,只有 owner 透過 `*` 有)看得到整個工作區,路徑跟以前一樣。每個人的額度:`person_max_mb`(256)、`person_max_files`(2000);單檔上限跟整個工作區一樣。工作階段也分人:替別人開的工作階段名字前面加一段那個人的標記,列出與關閉只看得到自己的。
+- **寫檔就是寫檔**:`workspace_write` 收任何文字檔,`.py`、`.mjs` 等程式碼也是(要交給人、或用 `code_run` 加 `use_workspace` 現在跑)。審核只留給之後沒人看著就會跑的腳本:`workspace_save_script` 存的(`workspace_run` 和排程跑的)與 `tool_propose` 的工具。
+- **匯出**(`workspace_export`):一個檔案最多 `export_max_kb`(8192);收文字(markdown、CSV、JSON、HTML、程式碼都存成 `text/plain`、保留自己的副檔名,永遠不會被當網頁打開)、圖片、音訊、影片、PDF、zip 和 docx / xlsx / pptx(副檔名只決定是哪一種,內容必須是 zip)。zip 只看目錄、不解開:檔名跑出資料夾(`..`、絕對路徑、磁碟代號,兩種分隔符號)、連結、項目互相重疊、項目超過 `[modules.actions.share] zip_max_entries` 或解開後合計超過 `zip_max_unpacked_mb` 都拒絕。
 
 ### 網路白名單(`[modules.sandbox.network]`)
 
@@ -162,12 +167,17 @@ approvedSpecs()                        已核准的工具 { name, description, p
 
 ## 閘門與工具(`src/gate.ts`)
 
-Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 app 的 `ActuatorRegistry` 註冊下面的能力;Docker 不見了就全部撤下,module 停止時也撤下。所有呼叫都經過閘門(暫停、禁止清單、權限、預算、次數限制、審核、稽核紀錄),沒有綁定特定 principal:反應回合是 `user`(或 `on_own` 的 `self`),之後她自己的回合是 `self`。
+Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 app 的 `ActuatorRegistry` 註冊下面的能力;Docker 不見了就全部撤下,module 停止時也撤下。所有呼叫都經過閘門(暫停、禁止清單、權限、預算、次數限制、審核、稽核紀錄):反應回合是 `user`(或 `on_own` 的 `self`),她自己的回合是 `self`。替誰做,就只用那個人的資料夾和工作階段(見「工作區」)。
+
+**誰能叫**:`sandbox.workspace`、`sandbox.code.run`、`skills.use`、`work.delegate` 是做事的節點(`WORK_NODES`)。有 `work.bond` 的人(成員以上都有)羈絆到 `[modules.actions] work_min_bond`(預設 15,朋友)就算有這些節點;不夠時她看到的是一段可以轉告對方的說明(`WORK_BELOW_BOND`),不是「沒有權限」。owner 和本來就有節點的人(`sandbox.code.run` 是 trusted 以上)不看羈絆。羈絆只讀不寫。
 
 | 能力 | 工具 | 風險 | 權限節點(`user` 要有;她可以 `on_own`) | 內容 |
 |---|---|---|---|---|
-| `code.run` | `code_run` | 高 | `sandbox.code.run`(預設只有擁有者) | 跑一段 Python / Node。參數 `language`、`code`、`stdin`、`files`、`timeout_ms`、`session`(`"fresh"` 預設 / 工作階段名稱);**沒有 network**,多給的欄位會被丟掉,執行時強制 `network: "none"` |
-| `code.session` | `code_session` | 低 | `sandbox.code.run` | `action: "list"` 列出她開著的工作階段(名稱、語言、次數、佔用空間、多久後關掉);`action: "close", name` 關掉一個並刪掉檔案 |
+| `code.run` | `code_run` | 高 | `sandbox.code.run`(trusted 以上,或羈絆到 `work_min_bond`) | 跑一段 Python / Node。參數 `language`、`code`、`stdin`、`files`、`timeout_ms`、`session`(`"fresh"` 預設 / 工作階段名稱)、`use_workspace`、`use_network`(只有設定了主機時才出現,只能連那些主機);模型給不了別的網路 |
+| `code.session` | `code_session` | 低 | `sandbox.code.run` | `action: "list"` 列出開著的工作階段(名稱、語言、次數、佔用空間、多久後關掉);`action: "close", name` 關掉一個並刪掉檔案。替別人時只有那個人的工作階段 |
+| `workspace.list` / `.read` / `.export` | `workspace_list` / `_read` / `_export` | 低 | `sandbox.workspace`(羈絆到 `work_min_bond`) | 見「工作區」 |
+| `workspace.write` / `.delete` | `workspace_write` / `_delete` | 中 | `sandbox.workspace` | 見「工作區」;次數上限用 `[modules.actions.work]` |
+| `workspace.save_script` / `.run` | `workspace_save_script` / `_run` | 高 / 中 | `sandbox.code.run` | 存核准的腳本 / 跑核准過的腳本 |
 | `tool.propose` | `tool_propose` | 高 | `sandbox.tool.propose`(預設只有擁有者) | 提出自寫工具;閘門放行 = **核准這個版本** |
 | `sbx.<name>` | `sbx_<name>` | 中 | `tools.sandbox.<name>`(trusted 以上透過 `tools.*`) | 已核准的自寫工具;參數在閘門依 `args_schema` 驗證,`ProposedTools.invoke` 再驗一次並比對 sha256,在沙箱裡跑(逾時 `tool_timeout_ms`) |
 
@@ -176,6 +186,7 @@ Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 ap
 - **結果怎麼回來**:`code_run` / `tool_propose` 是 `followup` 工具:審核加執行在 `[modules.actions] inline_wait_ms`(預設 8 秒)內完成就直接回結果;否則先回「還沒有結果」,完成後用後續回合(`agent_initiative`,reason `action_result`)告訴她結果或拒絕原因。結果文字由 `formatRun` 產生:exit code、時間、被殺原因、stdout / stderr(stderr 最多佔三分之一)、輸出檔名與大小,全部在不可信資料區塊裡,總長約 `result_chars`。`ActionResult.data` 只有 `summarizeRun` 的位元組數與狀態,不含輸出。
 - **自寫工具的生命週期**:`tool.propose` 被放行 → `propose` + `approve(name, { reviewer, version })`,`reviewer` 是 `self`(她的審核)或回覆確認卡的擁有者帳號;被她的審核或擁有者拒絕 → 存成 `rejected`(附理由);沒有人決定(擁有者沒回、聯絡不到、審核失敗)→ 存成 `pending`,擁有者之後可以從 API 核准。已經核准的工具,新版本被拒絕時**保留舊版**(不會因為一次失敗的提案讓她失去工具)。同名再提出且被放行 → 版本 +1。`sandbox.tool.*` 事件一來就重新同步 `sbx_<name>` 的註冊。
 - **中風險的理由**:程式碼在核准時已經審過(綁定版本與 sha256),每次呼叫只差參數(已驗證 schema)而且仍在離線沙箱裡;再對每次呼叫做審核既貴又慢,等於讓核准沒有意義。剩下的風險是資源用量,交給次數限制(預設中風險上限:每天 30 次、每人 8 次、冷卻 20 秒;`[modules.actions.limits."sbx.<name>"]` 可調,`forbidden = ["sbx.*"]` 可全部關掉)。
+- **做事的次數上限**:`code.run`、`workspace.write / delete / save_script / run`、`skill.write / delete` 是做事的能力(`Capability.work`),用 `[modules.actions.work]` 而不是中風險那組:沒有冷卻、每人每小時 300 次、每人每天 3000 次、所有人每天 20 000 次。一件事要寫好幾個檔案、跑好幾次程式是正常的;每個人的 AI 額度和資料夾額度擋其他的。
 - 參數名稱 `why`、`on_own` 是工具保留的,`args_schema` 不能用(閘門的參數檢查就擋下)。
 - **擁有者看得到的地方**:`/admin autonomy status`(Docker 狀態、能力是否開放、已核准 / 待審 / 已拒絕的工具);API `GET /api/sandbox/tools`(清單與 Docker 狀態,不含程式碼)、`GET /api/sandbox/tools/:name`(含程式碼)、`POST /api/sandbox/tools/:name/approve|reject`(body `{ "version": n, "note"?: "..." }`;版本不是目前版本 → 409;需要 token,或面板帳號有 `owner.autonomy.approve` 與寫入權限)。面板頁面尚未做。
 - 工具工作區(`sandbox.tools.save` 等)沒有開放給模型;`code_run` 的工具說明沒有列出 `mount_tools`(schema 仍接受,掛載是唯讀的)。
