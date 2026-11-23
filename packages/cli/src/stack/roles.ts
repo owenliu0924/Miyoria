@@ -20,7 +20,7 @@ export interface RoleInfo {
   services: readonly string[];
 }
 
-/** The roles; their label and help text are messages (`roleLabel`, `roleHelp`). */
+/** The roles, by the services each brings up. */
 export const ROLES = {
   broadcast: { services: ["voice-node", "stage"] },
   core: { services: ["core", "turn"] },
@@ -29,16 +29,6 @@ export const ROLES = {
 
 export type Role = keyof typeof ROLES;
 export const ROLE_NAMES = Object.keys(ROLES) as Role[];
-
-/** Short label of a role for prompts and summaries. */
-export function roleLabel(role: Role): string {
-  return t.stack.roles.label[role];
-}
-
-/** What a role's machine runs, in one line. */
-export function roleHelp(role: Role): string {
-  return t.stack.roles.help[role];
-}
 
 /** Every service, in the order the old launcher brought them up (models, core, broadcast). */
 export const SERVICE_ORDER = ["asr", "tts", "sing", "turn", "core", "voice-node", "stage"] as const;
@@ -146,11 +136,4 @@ export function isLoopback(host: string): boolean {
 /** Roles whose services are all present in `services` (a custom pick can fill several). */
 export function rolesCovered(services: readonly string[]): Role[] {
   return ROLE_NAMES.filter((r) => ROLES[r].services.every((s) => services.includes(s)));
-}
-
-/** Compact description for summaries: `core (Bot server)`, or the service list for a custom pick. */
-export function describeMachine(m: Machine): string {
-  if (m.custom) return t.stack.roles.custom(t.common.list(m.services));
-  if (m.roles.length === 0) return t.stack.roles.noRoles;
-  return m.roles.map((r) => t.stack.roles.withLabel(r, roleLabel(r))).join(" + ");
 }
