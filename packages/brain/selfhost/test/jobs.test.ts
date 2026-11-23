@@ -192,7 +192,7 @@ describe("the jobs going on", () => {
                 ? says("我請小幫手去查了")
                 : text.includes("狀態:做完了")
                   ? says("查好了")
-                  : calls("delegate", { kind: "worker", goal: "整理一份清單" }),
+                  : calls("delegate", { kind: "research", goal: "整理一份清單" }),
           helper: (text) =>
             text.includes("查到的清單") ? says("好了") : calls("web_search", { q: "清單" }),
         }),

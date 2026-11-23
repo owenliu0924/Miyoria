@@ -6,7 +6,10 @@
 // A call:
 //   1. the emergency stop: while autonomy is paused nothing but a look runs;
 //   2. the owner's directives: a tool a `deny` forbids is refused (`Directives.filterTools`);
-//   3. the tool's permission node, held by whoever she acts for (`#tryTool` today);
+//   3. the tool's permission node (its own, or the one its arguments ask for), held by whoever she
+//      acts for, through the action gate's `permit`: a bond at `work_min_bond` stands for a work
+//      node, and a bond below it is told so (`WORK_BELOW_BOND`); a work node of her own run (nobody
+//      asked) is hers;
 //   4. the LLM budget: once it is used up, nothing that starts more work outside or runs long;
 //   5. a tool that speaks is held to the caps of a line (below), in the place of the run.
 // Then the call runs, and a capability's tool passes the action gate inside `ToolRegistry.run`
@@ -24,7 +27,13 @@
 //
 // What a tool brought back is shown to the input defence, which may put a warning in front.
 
-import { ActuatorRegistryKey } from "@miyoria/gate/actions";
+import {
+  ActuatorRegistryKey,
+  isWorkNode,
+  type Permit,
+  permitted,
+  WORK_BELOW_BOND,
+} from "@miyoria/gate/actions";
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import {
   AuthorizerKey,
@@ -112,26 +121,38 @@ export function serviceGuard(options: ServiceGuardOptions): Guard {
   };
 
   return {
-    async checkCall({ entry }: GuardCall, ctx: GuardContext): Promise<GuardVerdict> {
+    async checkCall({ entry, args }: GuardCall, ctx: GuardContext): Promise<GuardVerdict> {
       const context = ctx.session.context;
       if (entry.effect !== "read" && paused()) return refuse("pause", REFUSALS.paused);
       const directives = services.get(DirectivesKey);
       if (directives && directives.filterTools([{ name: entry.name }], context).length === 0) {
         return refuse("directive", REFUSALS.directive);
       }
-      const node = entry.tool.permission ?? null;
+      const node = entry.tool.permission ?? entry.tool.permissionFor?.(args) ?? null;
       if (node !== null) {
         const asker = wakeAuthor(ctx.wake);
-        if (asker === null) return refuse("permission", REFUSALS.permissionNobody);
+        // Her own work (her skills, a worker she starts herself) is hers; anything else needs
+        // someone allowed to ask.
+        if (asker === null && !isWorkNode(node)) {
+          return refuse("permission", REFUSALS.permissionNobody);
+        }
         // Several people asking at once: the weakest of them decides (the old turn's rule).
         const askers =
-          ctx.wake.kind === "addressed" && ctx.wake.callers !== undefined
-            ? ctx.wake.callers.map((c) => c.from.account)
-            : [asker.account];
+          asker === null
+            ? []
+            : ctx.wake.kind === "addressed" && ctx.wake.callers !== undefined
+              ? ctx.wake.callers.map((c) => c.from.account)
+              : [asker.account];
+        const gate = services.get(ActuatorRegistryKey);
         const authorizer = services.get(AuthorizerKey);
-        if (authorizer === undefined || !askers.every((a) => authorizer.allows(a, node))) {
-          return refuse("permission", REFUSALS.permissionAsker);
-        }
+        const may = (account: (typeof askers)[number]): Permit => {
+          if (gate !== undefined) return gate.permit(account, node);
+          return authorizer?.allows(account, node) === true ? "node" : "no";
+        };
+        const verdicts = askers.map(may);
+        if (verdicts.includes("no")) return refuse("permission", REFUSALS.permissionAsker);
+        if (verdicts.includes("below_bond")) return refuse("permission", WORK_BELOW_BOND);
+        if (!verdicts.every(permitted)) return refuse("permission", REFUSALS.permissionAsker);
       }
       if (
         (entry.effect === "external" || entry.speed === "long") &&

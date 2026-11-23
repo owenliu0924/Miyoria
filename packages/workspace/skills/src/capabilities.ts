@@ -6,7 +6,8 @@
 // at `skills/<name>/<file>` and run with `workspace_run`: only reviewed text ever runs.
 //
 // `skill` (`skillTool`) is the new turn runner's way in: it opens a skill like `skill.read` and
-// loads the tools its `tools:` line names into the session. The current turn is not offered it.
+// loads the tools its `tools:` line names into the session; it needs `skills.use` of whoever she
+// acts for, like `skill.read`. The current turn is not offered it.
 
 import {
   type ActionResult,
@@ -244,6 +245,8 @@ export function skillTool(store: SkillStore, registry: ToolRegistry): Tool {
     core: true,
     next: true,
     framed: true,
+    // A work node: a bond at `work_min_bond` stands for it (the runner's guard asks the gate).
+    permission: NODE_SKILLS,
     async call(ctx, raw): Promise<string> {
       const args = SkillParams.safeParse(raw);
       if (!args.success) return "要給 name(技能名稱)。";

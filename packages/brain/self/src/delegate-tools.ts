@@ -2,6 +2,7 @@
 // `delegate_list` and `delegate_read` (core too), `delegate_cancel` (found with `find_tools`).
 // All are for the new runner only (`next`), so the current turn's tool list does not change.
 
+import { WORK_DELEGATE } from "@miyoria/gate/actions";
 import {
   defineTool,
   type Tool,
@@ -9,7 +10,7 @@ import {
   type ToolDefinition,
   type ToolResult,
 } from "@miyoria/llm/tools";
-import type { AccountRef, JsonValue } from "@miyoria/types";
+import { type AccountRef, isJsonObject, type JsonValue } from "@miyoria/types";
 import { z } from "zod";
 import type { Delegator } from "./delegate.js";
 import {
@@ -79,6 +80,15 @@ const StartArgs = z.object({
   budget: z.number().positive().describe(DELEGATE_TOOL.budget).optional(),
 });
 
+/**
+ * The node a `delegate` call needs: a `worker` does real work for the asker (files, code), so it
+ * is a work node a bond can stand for; `research` and `curator` need none.
+ */
+export function delegateNode(args: JsonValue): string | null {
+  const kind = isJsonObject(args) && typeof args.kind === "string" ? args.kind : "";
+  return kind.trim().toLowerCase() === "worker" ? WORK_DELEGATE : null;
+}
+
 /** What a call may say: looser than the spec, so a kind she should not use gets a clear refusal. */
 const LooseStart = z.object({ kind: z.string(), goal: z.string(), budget: z.number().optional() });
 
@@ -104,6 +114,7 @@ export function delegateTools(deps: DelegateToolDeps): Tool[] {
         speed: "long",
         core: true,
         actsFor: true,
+        permissionFor: delegateNode,
       },
       async (ctx, raw) => {
         const args = LooseStart.safeParse(raw);

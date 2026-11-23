@@ -35,6 +35,7 @@ export {
   DELEGATE_READ,
   DELEGATE_TOOLS,
   type DelegateToolDeps,
+  delegateNode,
   delegateTools,
 } from "./delegate-tools.js";
 export {
