@@ -16,9 +16,12 @@
 // without a word gets one more step, without tools, to tell the person.
 //
 // Money. Every step is charged in USD (`chargeOf`: a model without a price at the quota's fallback
-// rate) to the run's own budget (`RunLimits.usd`, a helper job's) and to the person the run is
-// for (`RunInput.payer`, their quota). A person already at their quota gets one fixed line and no
-// model call; one who reaches it during a run gets the last step at a limit.
+// rate) to the run's own budget (`RunLimits.usd`, a helper job's) and to the people the run is for
+// (`RunInput.payerOf`: every caller of the run, their quota). A model step answers all of them, so
+// it is shared evenly among them; a model call a tool makes goes to the one the call is for. A run
+// whose people are all at their quota gives one fixed line and makes no model call; one that gets
+// there during the run gets the last step at a limit. While some still have quota left, a call
+// for one who has none is refused (she tells them), so nobody gets work done on another's.
 
 import {
   BudgetExhaustedError,
@@ -60,6 +63,7 @@ import {
   newId,
   Principals,
   type Priority,
+  sameAccount,
   toTimestamp,
 } from "@miyoria/types";
 import {
@@ -68,6 +72,7 @@ import {
   FALLBACK_LINES,
   FOR_ARG,
   quotaLine,
+  roughWait,
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
@@ -196,6 +201,33 @@ interface Money {
 /** One of the people a run answers, with their line. */
 type Caller = { from: WakeAuthor; message: MessageRef };
 
+/** One person a run works for and whom their share is charged to. */
+type RunPayer = { author: WakeAuthor | null; payer: Payer };
+
+/**
+ * The people a run works for, each once by payer: with `payerOf`, every caller of an addressed
+ * run (else the wake's author); otherwise the one `payer`.
+ */
+function runPayers(input: RunInput): RunPayer[] {
+  if (input.payerOf === undefined) {
+    const payer = input.payer ?? null;
+    return payer === null ? [] : [{ author: wakeAuthor(input.wake), payer }];
+  }
+  const wake = input.wake;
+  const authors =
+    wake.kind === "addressed" && wake.callers !== undefined && wake.callers.length > 0
+      ? wake.callers.map((c) => c.from)
+      : [wakeAuthor(wake)].filter((a): a is WakeAuthor => a !== null);
+  const out: RunPayer[] = [];
+  for (const author of authors) {
+    const payer = input.payerOf(author);
+    if (payer !== null && !out.some((p) => p.payer.person === payer.person)) {
+      out.push({ author, payer });
+    }
+  }
+  return out;
+}
+
 /** A step's stream, folded. */
 interface Step {
   /** The lines that reached people (a speaking profile) or the screened lines (a quiet one). */
@@ -293,7 +325,8 @@ class Run {
   readonly #profile: RunProfile;
   readonly #limits: RunLimits;
   readonly #money: Money;
-  readonly #payer: Payer | null;
+  /** The people the run works for, and whom each one's share is charged to. */
+  readonly #payers: RunPayer[];
   readonly #wake: Wake;
   /** Where `find_tools` loads what it finds (`toolSession`). */
   readonly #offerKey: string;
@@ -339,7 +372,7 @@ class Run {
     this.#profile = input.profile;
     this.#limits = input.profile.limits;
     this.#money = money;
-    this.#payer = input.payer ?? null;
+    this.#payers = runPayers(input);
     this.#wake = input.wake;
     this.#offerKey = toolSession(input.session.context);
     this.#startedAt = ports.clock.now();
@@ -596,21 +629,33 @@ class Run {
   }
 
   /**
-   * The run's person at their quota, or `null` (nobody to charge, exempt, or under it). The first
-   * refusal of a stretch of a run that speaks is a warning for the owner; a helper's job reports
-   * its own end.
+   * The cap of the run when every person it works for is at their quota (the first one's), or
+   * `null` (nobody to charge, someone exempt or under it). The first refusal of a stretch of a run
+   * that speaks is a warning for the owner; a helper's job reports its own end.
    */
-  #capped(): QuotaCap | null {
+  #capped(): (QuotaCap & { person: string }) | null {
+    if (this.#money.quota === null || this.#payers.length === 0) return null;
+    let first: (QuotaCap & { person: string }) | null = null;
+    for (const { payer } of this.#payers) {
+      const capped = this.#cappedOne(payer);
+      if (capped === null) return null;
+      first ??= { ...capped, person: payer.person };
+    }
+    return first;
+  }
+
+  /** `payer` at their quota, or `null`; warns once a stretch for a run that speaks. */
+  #cappedOne(payer: Payer): QuotaCap | null {
     const quota = this.#money.quota;
-    if (quota === null || this.#payer === null) return null;
+    if (quota === null) return null;
     const now = this.#now();
-    const capped = quota.capped(this.#payer, now);
+    const capped = quota.capped(payer, now);
     if (capped?.first === true && this.#profile.speaks) {
       this.#p.log.warn(
         {
           turn: this.turn,
           session: this.#session.id,
-          person: this.#payer.person,
+          person: payer.person,
           which: capped.which,
           spent: capped.which === "day" ? capped.used.day : capped.used.hour,
           cap: capped.limit,
@@ -627,15 +672,15 @@ class Run {
    * per stretch of the person (`PersonQuota.claimNotice`), never for a run nobody waits on, and
    * without a model call.
    */
-  async #capNotice(capped: QuotaCap): Promise<void> {
+  async #capNotice(capped: QuotaCap & { person: string }): Promise<void> {
     const owed =
       this.#profile.speaks &&
       someoneWaits(this.#wake) &&
       this.#lines.length === 0 &&
       !this.#signal.aborted;
     const quota = this.#money.quota;
-    const person = this.#payer?.person;
-    if (!owed || quota === null || person === undefined) return;
+    const person = capped.person;
+    if (!owed || quota === null) return;
     if (!quota.claimNotice(person)) return;
     const line = quotaLine(capped.which, capMinutes(capped, this.#now()));
     let said = false;
@@ -956,22 +1001,46 @@ class Run {
     else this.#cost += cost;
     const charged = chargeOf(cost, usage, this.#money.rate());
     this.#charged += charged;
-    if (this.#payer !== null) this.#money.quota?.add(this.#payer.person, this.#now(), charged);
+    // The step answers everyone the run works for: each pays an even share.
+    const share = this.#payers.length === 0 ? 0 : charged / this.#payers.length;
+    for (const { payer } of this.#payers) this.#money.quota?.add(payer.person, this.#now(), share);
     return cost;
   }
 
-  /** Charges a model call one of the run's tools made, once it ended. */
-  readonly #chargeToolCall = (call: {
-    cost_usd: number | null;
-    status: string;
-    usage?: { prompt_tokens: number; completion_tokens: number } | null;
-  }): void => {
-    if (call.status === "streaming") return;
-    const usage = call.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
-    const charged = chargeOf(call.cost_usd, usage, this.#money.rate());
-    this.#charged += charged;
-    if (this.#payer !== null) this.#money.quota?.add(this.#payer.person, this.#now(), charged);
-  };
+  /** The payer of the person a call is for (`author`); `null`: nobody of the run's. */
+  #payerFor(author: WakeAuthor | null): Payer | null {
+    if (author === null) return this.#payers.length === 1 ? (this.#payers[0]?.payer ?? null) : null;
+    const byAccount = this.#payers.find(
+      (p) => p.author !== null && sameAccount(p.author.account, author.account),
+    );
+    if (byAccount !== undefined) return byAccount.payer;
+    const person = this.#in.payerOf?.(author)?.person;
+    const byPerson = this.#payers.find((p) => p.payer.person === person);
+    if (byPerson !== undefined) return byPerson.payer;
+    return this.#payers.length === 1 ? (this.#payers[0]?.payer ?? null) : null;
+  }
+
+  /** Charges a model call one of the run's tools made for `author`, once it ended. */
+  #chargeToolCall(author: WakeAuthor | null) {
+    return (call: {
+      cost_usd: number | null;
+      status: string;
+      usage?: { prompt_tokens: number; completion_tokens: number } | null;
+    }): void => {
+      if (call.status === "streaming") return;
+      const usage = call.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
+      const charged = chargeOf(call.cost_usd, usage, this.#money.rate());
+      this.#charged += charged;
+      const payer = this.#payerFor(author);
+      if (payer !== null) {
+        this.#money.quota?.add(payer.person, this.#now(), charged);
+        return;
+      }
+      // Nobody in particular: shared like a step.
+      const share = this.#payers.length === 0 ? 0 : charged / this.#payers.length;
+      for (const p of this.#payers) this.#money.quota?.add(p.payer.person, this.#now(), share);
+    };
+  }
 
   // ---- lines ------------------------------------------------------------------------------
 
@@ -1190,6 +1259,18 @@ class Run {
     // Whom it is for, before anything runs: never silently the wrong one of several askers.
     const target = this.#forWhom(entry, args);
     if (!target.ok) return this.#refused(call, "refused", "for_whom", target.error);
+    // Never work for someone at their quota on the share of someone who is not. A tool that acts
+    // for nobody in particular (a search) is for all of them: shared, and not refused.
+    const forWhom =
+      entry.tool.actsFor === true || this.#payers.length <= 1
+        ? (target.caller?.from ?? wakeAuthor(this.#wake))
+        : null;
+    const theirs = this.#payerFor(forWhom);
+    const capped = theirs === null ? null : this.#cappedOne(theirs);
+    if (capped !== null) {
+      const wait = roughWait(capMinutes(capped, this.#now()));
+      return this.#refused(call, "refused", "quota", REFUSALS.quota(capped.which, wait));
+    }
     const ctx = this.#guardContext();
     let result: ToolResult;
     let job: string | null = null;
@@ -1199,7 +1280,7 @@ class Run {
       this.#emit({ type: "tool_start", turn: this.turn, name: call.name });
       result = await timeout(this.#limits.toolMs, this.#signal, (signal) =>
         // A model call a tool makes for the run's person (a look at a stream) is theirs too.
-        withLlmTag({ onCall: this.#chargeToolCall }, () =>
+        withLlmTag({ onCall: this.#chargeToolCall(forWhom) }, () =>
           this.#p.tools.run(
             call.name,
             this.#toolContext(

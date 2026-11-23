@@ -21,6 +21,7 @@ import {
   type QuotaRules,
   utcQuotaDay,
 } from "../src/quota.js";
+import type { Wake } from "../src/types.js";
 import { addressed, calls, fakeTool, rig, SESSION, say, T0 } from "./harness.js";
 
 const MIN = 60_000;
@@ -310,5 +311,104 @@ describe("runs and the quota", () => {
     r.line("Owen", "今天好熱");
     expect((await r.run({ kind: "glance", lines: 1 }, { payer: null })).outcome).toBe("said");
     expect(r.model.requests).toHaveLength(1);
+  });
+});
+
+describe("a run that works for several people", () => {
+  const AMY = { account: { platform: "discord", id: "amy" }, name: "Amy" };
+  const BOB = { account: { platform: "discord", id: "bob" }, name: "Bob" };
+  const BOSS = { account: { platform: "discord", id: "boss" }, name: "主人" };
+  const payerOf = (from: { account: { id: string } }): Payer =>
+    from.account.id === "boss"
+      ? { person: "p-boss", exempt: true }
+      : { person: `p-${from.account.id}` };
+  /** Amy's line, then the other's, answered in one run. */
+  const both = (other = BOB): Wake => ({
+    kind: "addressed",
+    reason: "mention",
+    from: AMY,
+    message: { context: SESSION.context, id: "m1" },
+    callers: [
+      { from: AMY, message: { context: SESSION.context, id: "m1" } },
+      { from: other, message: { context: SESSION.context, id: "m2" } },
+    ],
+  });
+
+  it("shares each step among them: the first caller does not pay for the second", async () => {
+    const quota = new PersonQuota({ rules: () => RULES });
+    const r = await rig([say("嗨嗨")], { runner: { compaction: null, quota } });
+    const result = await r.run(both(), { payerOf });
+    const now = r.clock.now();
+    expect(quota.used("p-amy", now).hour).toBeCloseTo(result.cost_usd / 2, 9);
+    expect(quota.used("p-bob", now).hour).toBeCloseTo(result.cost_usd / 2, 9);
+  });
+
+  it("someone beside the owner still pays their share", async () => {
+    const quota = new PersonQuota({ rules: () => RULES });
+    const r = await rig([say("嗨嗨")], { runner: { compaction: null, quota } });
+    const result = await r.run(both(BOSS), { payerOf });
+    expect(quota.used("p-amy", r.clock.now()).hour).toBeCloseTo(result.cost_usd / 2, 9);
+  });
+
+  it("a tool's own model calls go to the one it is for", async () => {
+    const quota = new PersonQuota({ rules: () => RULES });
+    const r = await rig([calls([{ name: "look", args: { for_whom: "2" } }]), say("看到了")], {
+      runner: { compaction: null, quota },
+    });
+    r.tools.register(
+      fakeTool("look", "貓", {
+        actsFor: true,
+        call: () => {
+          currentLlmTag()?.onCall?.({ id: "v1", cost_usd: 0.2, status: "ok" });
+          return "貓";
+        },
+      }),
+    );
+    const result = await r.run(both(), { payerOf });
+    const now = r.clock.now();
+    expect(quota.used("p-bob", now).hour).toBeCloseTo(result.cost_usd / 2 + 0.2, 9);
+    expect(quota.used("p-amy", now).hour).toBeCloseTo(result.cost_usd / 2, 9);
+  });
+
+  it("a call for someone at their quota is refused while the run goes on for the other", async () => {
+    const quota = new PersonQuota({ rules: () => RULES });
+    quota.add("p-amy", T0 - 10 * MIN, 1.5);
+    const seen: string[] = [];
+    const r = await rig(
+      [
+        calls([
+          { name: "write", args: { for_whom: "1" }, id: "c1" },
+          { name: "write", args: { for_whom: "2" }, id: "c2" },
+        ]),
+        say("Bob 的好了,Amy 的晚點"),
+      ],
+      { runner: { compaction: null, quota } },
+    );
+    r.tools.register(
+      fakeTool("write", "寫好了", {
+        effect: "act",
+        actsFor: true,
+        call: (_args, ctx) => {
+          seen.push(ctx.account.id);
+          return "寫好了";
+        },
+      }),
+    );
+    const result = await r.run(both(), { payerOf });
+    expect(result.outcome).toBe("said");
+    expect(seen).toEqual(["bob"]);
+    const refused = result.calls.find((c) => c.id === "c1");
+    expect(refused).toMatchObject({ ok: false, code: "refused" });
+    expect(refused?.text).toContain("到額度了");
+  });
+
+  it("everyone at their quota: the fixed line and no model call", async () => {
+    const quota = new PersonQuota({ rules: () => RULES });
+    quota.add("p-amy", T0 - 10 * MIN, 1.5);
+    quota.add("p-bob", T0 - 10 * MIN, 1.5);
+    const r = await rig([say("嗨嗨")], { runner: { compaction: null, quota } });
+    const result = await r.run(both(), { payerOf });
+    expect(result.outcome).toBe("over_budget");
+    expect(r.model.requests).toHaveLength(0);
   });
 });

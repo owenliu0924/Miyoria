@@ -197,6 +197,9 @@ export const REFUSALS = {
   directive: "主人規則不准用這個工具,所以沒有執行。",
   paused: "現在是暫停狀態(緊急停止),只有主人的指令能動作,所以沒有執行。",
   budget: "今天的預算用完了,這種要花錢或花時間的事現在不能做。",
+  /** The person this call is for is at their AI quota (`[modules.agent.quota]`). */
+  quota: (which: "hour" | "day", wait: string) =>
+    `這件要替他做的人${which === "day" ? "今天" : "這個小時"}找你做的事已經到額度了,所以沒有執行,大概 ${wait}後才行。用你自己的話跟他說一聲;別人要的事照常做。`,
   failed: (detail: string) => `工具出錯了,沒有做成:${detail}`,
 } as const;
 

@@ -419,9 +419,15 @@ export interface RunInput {
   turn?: string;
   /**
    * Whom its model calls are charged to (their AI quota): the person it answers or works for.
-   * `null` or unset: nobody (her own initiative).
+   * `null` or unset: nobody (her own initiative). `payerOf` takes its place when given.
    */
   payer?: Payer | null;
+  /**
+   * The payer of each person the run works for (every caller of an addressed run, else
+   * `wakeAuthor`): a model step is shared among them, a tool's own model calls go to the one the
+   * call is for, and a call for someone at their quota is refused. `null`: nobody to charge.
+   */
+  payerOf?: (from: WakeAuthor) => Payer | null;
 }
 
 /** One tool call of a run and how it ended. */

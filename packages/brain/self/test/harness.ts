@@ -185,6 +185,8 @@ export interface FakeToolOptions {
   group?: string;
   speed?: "instant" | "long";
   description?: string;
+  /** It acts for one of the callers (`for_whom` when several call her). */
+  actsFor?: boolean;
   call?: (args: JsonValue, ctx: Parameters<Tool["call"]>[0]) => Promise<string> | string;
 }
 
@@ -201,6 +203,7 @@ export function fakeTool(name: string, answer = `${name} 的結果`, o: FakeTool
     core: o.core ?? true,
     next: true,
     readOnly: (o.effect ?? "read") === "read",
+    ...(o.actsFor === true ? { actsFor: true } : {}),
     async call(ctx, args) {
       return o.call ? await o.call(args, ctx) : answer;
     },
@@ -221,7 +224,12 @@ export interface Rig {
   /** One run of the text profile (or `profile`) for `wake`. */
   run(
     wake?: Wake,
-    options?: { profile?: RunProfile; signal?: AbortSignal; payer?: Payer | null },
+    options?: {
+      profile?: RunProfile;
+      signal?: AbortSignal;
+      payer?: Payer | null;
+      payerOf?: (from: WakeAuthor) => Payer | null;
+    },
   ): Promise<RunResult>;
   /** Appends someone's line to the session's transcript. */
   line(author: string, content: string, extra?: Partial<EntryInput>): void;
@@ -295,6 +303,7 @@ export async function rig(script: readonly ScriptStep[], options: RigOptions = {
         signal: o.signal ?? new AbortController().signal,
         turn: `t${++turns}`,
         ...(o.payer === undefined ? {} : { payer: o.payer }),
+        ...(o.payerOf === undefined ? {} : { payerOf: o.payerOf }),
       }),
     line: (author, content, extra = {}) => {
       transcript.append(

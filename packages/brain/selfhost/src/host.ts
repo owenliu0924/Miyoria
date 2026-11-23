@@ -139,7 +139,7 @@ import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
-import { hostQuota, payerOf } from "./quota.js";
+import { hostQuota, payerOfAuthor } from "./quota.js";
 import { knownPeople, outletClaims } from "./repeat.js";
 import { PromptKeeper } from "./saved.js";
 import { askedLine, SAY_DM } from "./texts.js";
@@ -1126,7 +1126,7 @@ export class SelfHost implements TextRunner {
           }),
           signal: run.controller.signal,
           turn,
-          payer: payerOf(agent, run.wake),
+          payerOf: (from) => payerOfAuthor(agent, from),
         }),
       );
     } catch (e) {

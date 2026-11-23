@@ -92,7 +92,7 @@ import {
 import { answeredLine, applyFeel, feelDeps } from "./feel.js";
 import type { AdmittedInput } from "./lane.js";
 import type { HostPrompt, SlowReads } from "./prompt.js";
-import { payerOf } from "./quota.js";
+import { payerOfAuthor } from "./quota.js";
 import { knownPeople } from "./repeat.js";
 import type { PromptKeeper } from "./saved.js";
 import { VoiceLane, type VoiceLaneHost, type VoiceRun } from "./voice-lane.js";
@@ -912,7 +912,7 @@ export class VoiceHost implements VoiceRunner {
           profile: PROFILES.voice,
           signal: run.controller.signal,
           turn,
-          payer: payerOf(agent, run.wake),
+          payerOf: (from) => payerOfAuthor(agent, from),
         }),
       );
     } catch (e) {

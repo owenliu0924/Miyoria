@@ -1,8 +1,9 @@
 // Each person's AI quota on today's services (`PersonQuota` of `@miyoria/brain/self`): the rules
 // are `[modules.agent.quota]`, her day is the Arbiter's local day, the book is the store's `quota`
-// table, and the owner is never capped. A run is charged to the person its tools act for
-// (`wakeAuthor`: the one who called her, or who asked for what came back); her own initiative to
-// nobody.
+// table, and the owner is never capped. A run is charged to the people it works for
+// (`payerOfAuthor` of every caller, or of who asked for what came back or for a time she set: the
+// runner shares a step among them and gives a tool's own calls to the one it is for); her own
+// initiative to nobody.
 
 import { StoreKey } from "@miyoria/store";
 import { type AccountRef, AuthorizerKey, accountRefString, isOwnerAccount } from "@miyoria/types";
