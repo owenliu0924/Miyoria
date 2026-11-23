@@ -6,7 +6,7 @@ import { AuthorizerKey } from "@miyoria/types";
 import { Hono } from "hono";
 import { dataRoutes } from "./data.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
-import { filesPassRoute } from "./files/routes.js";
+import { filesPagePassRoute, filesPassRoute } from "./files/routes.js";
 import { githubLinkRoutes } from "./github-link.js";
 import { karaokeRoutes } from "./karaoke-routes.js";
 import { landingRoutes } from "./landing.js";
@@ -178,7 +178,10 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...liveRoutes(state),
     ...githubLinkRoutes(state),
     ...(state.publicSide.config.enabled
-      ? [filesPassRoute(state, { session: (c) => sessionOf(state, c) })]
+      ? [
+          filesPassRoute(state, { session: (c) => sessionOf(state, c) }),
+          filesPagePassRoute(state, { session: (c) => sessionOf(state, c) }),
+        ]
       : []),
 
     ...metricsRoutes(state, { public: options.metricsPublic ?? false }),

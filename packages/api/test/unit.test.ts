@@ -380,6 +380,11 @@ describe("config and helpers", () => {
         per_ip_per_minute: 60,
         per_link_per_minute: 120,
         public_cache_secs: 300,
+        pages_public: false,
+        page_max_kb: 2048,
+        page_total_max_kb: 8192,
+        page_days: 30,
+        page_max_days: 90,
       },
     });
   });

@@ -1,5 +1,6 @@
 // The routes of what she made (contracts `files.ts`): the member page 「她做給我的」, the owner's list,
-// audit trail and take-down, and the pass the file origin sends a scoped link's visitor through.
+// audit trail and take-down, and the passes the file origin sends a scoped link's or page's visitor
+// through.
 //
 // A member only ever reaches what was made for them: every route looks the item up by id and
 // answers `404` for anything else, gone or not theirs alike.
@@ -387,6 +388,65 @@ export function filesPassRoute(state: ApiState, deps: PassDeps): Route {
         status: 302,
         headers: {
           location: `${back}?k=${encodeURIComponent(ticket)}`,
+          "cache-control": "no-store",
+          "referrer-policy": "no-referrer",
+        },
+      });
+    },
+  };
+}
+
+const PAGE_PASS_PATH = "/api/member/files/page";
+
+/**
+ * `GET /api/member/files/page/{slug}`: the file origin sends the visitor of a page for one person
+ * or a server's members here. Like the pass of a link: to the Discord login and back when not
+ * logged in; then back to the page with a ticket in its path (`/p/<slug>/~<ticket>/`), which the
+ * page's own files carry too. A page anyone may open goes straight back.
+ */
+export function filesPagePassRoute(state: ApiState, deps: PassDeps): Route {
+  return {
+    method: "GET",
+    path: `${PAGE_PASS_PATH}/:slug`,
+    public: true,
+    group: "public",
+    handler: async (c) => {
+      const side = state.files;
+      if (side === null || side.origin === null) return text(404, "這裡沒有開網頁。");
+      const store = state.optional(ArtifactStoreKey);
+      if (store === undefined) return text(503, "現在拿不到網頁,晚點再試。");
+      const slug = c.req.param("slug") ?? "";
+      const found = store.pages.bySlug(slug);
+      if (!found.ok) return text(404, "這個網頁打不開:可能已經過期、被收回,或是網址不完整。");
+      const page = found.page;
+      const back = `${side.origin}/p/${encodeURIComponent(slug)}/`;
+      if (page.audience === "link") return Response.redirect(back, 302);
+      const session = await deps.session(c);
+      if (session === null) {
+        const next = `${PAGE_PASS_PATH}/${encodeURIComponent(slug)}`;
+        return new Response(null, {
+          status: 302,
+          headers: {
+            location: `/api/auth/oauth/login?next=${encodeURIComponent(next)}`,
+            "cache-control": "no-store",
+            "referrer-policy": "no-referrer",
+          },
+        });
+      }
+      const person = (await state.optional(PeopleStoreKey)?.personByAccount(session.account))?.id as
+        | PersonId
+        | undefined;
+      const allowed =
+        person !== undefined &&
+        (page.audience === "person"
+          ? page.person_id === person
+          : page.space_id !== null && store.shares.isMember(person, page.space_id));
+      if (!allowed || person === undefined) return text(403, "這個網頁不是給你看的。");
+      const ticket = side.tickets.issue("p", page.id, person);
+      return new Response(null, {
+        status: 302,
+        headers: {
+          location: `${back}~${ticket}/`,
           "cache-control": "no-store",
           "referrer-policy": "no-referrer",
         },

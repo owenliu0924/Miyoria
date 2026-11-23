@@ -10,7 +10,7 @@
 //   credential refuses it), and a zip is read whole under the zip limits and goes only to the
 //   person it was made for;
 // - an audience no wider than where it was made (`share-policy.ts` in the store);
-// - a per-person quota of links in any rolling 24 hours;
+// - a per-person quota of links in any rolling 24 hours (web pages count toward it too);
 // - an image is linked as its cleaned copy (`clean.ts`), never with its metadata.
 //
 // A link for one person or a server's members needs the Discord login to be opened, so without it
@@ -44,6 +44,12 @@ import {
 } from "@miyoria/types";
 
 const DAY_MS = 86_400_000;
+
+/** Links and pages made for `person` in the last 24 hours: one quota for both. */
+export function handedToday(store: ArtifactStore, person: PersonId, nowMs: number): number {
+  const since = toTimestamp(nowMs - DAY_MS);
+  return store.shares.countFor(person, since) + store.pages.countFor(person, since);
+}
 
 /** The types a link may open: what the store accepts, all of the allow-list. */
 const ALLOWED = new Set(MEDIA_TYPES.map((t) => t.mime));
@@ -169,12 +175,11 @@ export class FileLinkService implements FileLinks {
     return audience === "link" || this.#o.scoped();
   }
 
-  /** How many links were issued for `person` in the last 24 hours, and the quota. */
+  /** How many links and pages were made for `person` in the last 24 hours, and the quota. */
   quota(person: PersonId): { used: number; per_day: number } {
     const store = this.#o.store();
-    const since = toTimestamp(this.#o.now() - DAY_MS);
     return {
-      used: store === undefined ? 0 : store.shares.countFor(person, since),
+      used: store === undefined ? 0 : handedToday(store, person, this.#o.now()),
       per_day: this.#o.perPersonPerDay,
     };
   }

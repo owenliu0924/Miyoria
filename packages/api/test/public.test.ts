@@ -711,6 +711,7 @@ describe("the route table", () => {
       "GET /api/auth/oauth/callback",
       "GET /api/auth/oauth/login",
       "GET /api/health",
+      "GET /api/member/files/page/:slug",
       "GET /api/member/files/pass/:token",
       "GET /api/public/board",
       "GET /api/public/card-art/:file",

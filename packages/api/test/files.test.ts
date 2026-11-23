@@ -76,6 +76,7 @@ function rig(options: { scoped?: boolean; perDay?: number } = {}) {
     site: SITE,
     tickets,
     links,
+    pages: null,
     cleaner,
   };
   return { cleaner, tickets, links, app, files };

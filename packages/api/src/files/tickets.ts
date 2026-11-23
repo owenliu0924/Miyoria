@@ -1,21 +1,26 @@
 // Short tickets the member site hands to the file origin. The file origin has no cookies, so it
 // cannot see who is logged in; for a link that is for one person or a server's members, the member
 // site checks the session and sends the browser on with a ticket naming who they are, for this
-// one share and for two minutes. A member's own download is a ticket for one artifact.
+// one share and for two minutes. A member's own download is a ticket for one artifact. A web page
+// (`p`) is a ticket for one page that lives longer (`PAGE_TICKET_TTL_MS`): it rides in the page's
+// address, so the files the page loads after it opened carry it too.
 //
 // A ticket is `<payload>.<mac>`, both base64url: the payload names the kind (`s`: a share,
-// `d`: an artifact), its id, the person and the expiry; the mac is HMAC-SHA256 under a key made
+// `d`: an artifact, `p`: a page), its id, the person and the expiry; the mac is HMAC-SHA256 under a key made
 // when the module starts (a restart only voids tickets of the last two minutes). Verifying compares
 // the mac in constant time and refuses another kind, another id, an expired or a malformed ticket.
 
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { PersonId } from "@miyoria/types";
 
-/** What a ticket opens: one share (`s`), or one of the person's own artifacts (`d`). */
-export type TicketKind = "s" | "d";
+/** What a ticket opens: one share (`s`), one of the person's own artifacts (`d`), a page (`p`). */
+export type TicketKind = "s" | "d" | "p";
 
 /** How long a ticket opens its file. */
 export const TICKET_TTL_MS = 120_000;
+
+/** How long a page's ticket opens it and the files it loads (a copied address works this long). */
+export const PAGE_TICKET_TTL_MS = 30 * 60_000;
 
 const PART = /^[A-Za-z0-9_-]{1,512}$/;
 
@@ -42,9 +47,10 @@ export class Tickets {
     return createHmac("sha256", this.#key).update(payload, "utf8").digest();
   }
 
-  /** A ticket for `person` to open `id` of `kind`. */
+  /** A ticket for `person` to open `id` of `kind`; a page's lives `PAGE_TICKET_TTL_MS`. */
   issue(kind: TicketKind, id: string, person: PersonId): string {
-    const payload: Payload = { k: kind, i: id, p: person, x: this.#now() + this.#ttlMs };
+    const ttl = kind === "p" ? Math.max(this.#ttlMs, PAGE_TICKET_TTL_MS) : this.#ttlMs;
+    const payload: Payload = { k: kind, i: id, p: person, x: this.#now() + ttl };
     const body = Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
     return `${body}.${this.#mac(body).toString("base64url")}`;
   }
