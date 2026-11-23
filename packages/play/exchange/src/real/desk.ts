@@ -129,7 +129,11 @@ import type {
   RealNoticeRecord,
   RealOrderRecord,
 } from "./store.js";
+import type { TwseQuote } from "./twse.js";
 import { CHART_SHARE, type YahooQuote } from "./yahoo.js";
+
+/** A provider's answer about one ticker outside the poll (a lookup, a close asked for). */
+type Absorbed = RawQuote | YahooQuote | TwseQuote;
 
 /** A ticker's candles for one timeframe, and where they came from. */
 export interface CandleSet {
@@ -188,6 +192,8 @@ export const LEVERAGE_WARNING =
   "可能賠掉保證金以外的錢,最壞會賠光錢包和其他持股。價格跳空時,可能沒有先通知就被自動賣出。";
 
 const DAY_MS = 86_400_000;
+/** A real ticker's last known price shown in session without a fresh quote: not traded at. */
+const STALE_NOTE = "報價沒有更新,暫停成交";
 /** One chart point per instrument at most this often. */
 const TICK_EVERY_MS = 5 * 60_000;
 
@@ -760,6 +766,27 @@ export class RealDesk {
   }
 
   /**
+   * Which provider `inst`'s quotes and closes are asked of: a Taiwan ticker of Yahoo's goes to the
+   * exchange's own feed (`twse`, Yahoo behind it) unless `quotes_tw_provider` says `yahoo`; every
+   * other ticker to its own provider. Lookups and charts always use the ticker's own provider.
+   */
+  #feedId(inst: RealInstrument): string {
+    return inst.market === "tw" &&
+      inst.provider === "yahoo" &&
+      this.#d.config.quotes_tw_provider === "twse" &&
+      this.#d.providers.has("twse")
+      ? "twse"
+      : inst.provider;
+  }
+
+  /** Symbols per request for a provider: the exchange's feed takes its own, larger lists. */
+  #batchOf(id: string): number {
+    return id === "twse"
+      ? Math.max(this.#d.config.batch_size, this.#d.config.twse.max_symbols)
+      : this.#d.config.batch_size;
+  }
+
+  /**
    * Keeps a local stock's new ticks before they are used: the current and previous Taipei day as
    * ticks (the 當日 chart), an older day (a downtime caught up) straight as its day's bar.
    */
@@ -890,10 +917,13 @@ export class RealDesk {
     const inst = this.#inst(code);
     if (!inst) return null;
     const q = this.#guard(inst).last(code);
-    if (!q || !this.#inSession(inst, q.at)) return null;
-    if (this.#mode(inst.market) === "intraday" && this.#now() - q.at > this.#maxAge(inst.market))
-      return null;
-    return this.#coins(inst, q);
+    return q && this.#fresh(inst, q, this.#now()) ? this.#coins(inst, q) : null;
+  }
+
+  /** `q` may be traded at now: inside its session and, intraday, no older than the maximum age. */
+  #fresh(inst: RealInstrument, q: Quote | null, now: number): q is Quote {
+    if (!q || !this.#inSession(inst, q.at)) return false;
+    return this.#mode(inst.market) !== "intraday" || now - q.at <= this.#maxAge(inst.market);
   }
 
   /** The last accepted quote in coins, however old (what a holding is valued at). */
@@ -1006,7 +1036,8 @@ export class RealDesk {
         (this.#mode(inst.market) === "close" &&
           isOpenAt(s, now - this.#d.config.close_grace_minutes * 60_000));
       if (!due) continue;
-      byProvider.set(inst.provider, [...(byProvider.get(inst.provider) ?? []), inst]);
+      const feed = this.#feedId(inst);
+      byProvider.set(feed, [...(byProvider.get(feed) ?? []), inst]);
     }
     for (const [id, list] of byProvider) {
       const provider = this.#provider(id);
@@ -1020,10 +1051,11 @@ export class RealDesk {
         string,
         { symbol: string; price: number; at: number; prev_close?: number }
       >();
+      const size = this.#batchOf(id);
       try {
-        for (let i = 0; i < list.length; i += this.#d.config.batch_size) {
+        for (let i = 0; i < list.length; i += size) {
           for (const [k, v] of await provider.quotes(
-            list.slice(i, i + this.#d.config.batch_size).map((x) => x.symbol),
+            list.slice(i, i + size).map((x) => x.symbol),
             now,
           ))
             quotes.set(k, v);
@@ -1136,7 +1168,6 @@ export class RealDesk {
    */
   async #refreshCloses(now: number): Promise<void> {
     const quotes = this.#d.store.real.quotes();
-    const polled = new Set(this.pollSet().map((i) => i.code));
     const byProvider = new Map<string, { inst: RealInstrument; last: number }[]>();
     for (const row of this.#rows()) {
       if (row.market !== "tw" && row.market !== "us") continue;
@@ -1144,27 +1175,30 @@ export class RealDesk {
       const inst = this.#instOf(row);
       const s = this.sessions[inst.market];
       const open = isOpenAt(s, now);
-      if (open && polled.has(inst.code)) continue;
       const last = lastCloseAt(s, now);
       if (last === null || now < last + CLOSE_SETTLE_MS) continue;
       const known = this.#known(row, quotes);
-      if (known && known.at >= last - 60_000) continue;
+      // In session the poll keeps what is known fresh; a ticker with nothing known at all (a
+      // restart, a first session) is still asked once, so its list never shows no price.
       if (open && known) continue;
+      if (known && known.at >= last - 60_000) continue;
       if (this.#closeAnswered.get(inst.code) === last) continue;
       if (now - (this.#closeAsked.get(inst.code) ?? 0) < CLOSE_RETRY_MS) continue;
-      byProvider.set(inst.provider, [...(byProvider.get(inst.provider) ?? []), { inst, last }]);
+      const feed = this.#feedId(inst);
+      byProvider.set(feed, [...(byProvider.get(feed) ?? []), { inst, last }]);
     }
     for (const [id, list] of byProvider) {
       const provider = this.#provider(id) as
         | (QuoteProvider & {
-            describe?: (s: readonly string[], now: number) => Promise<Map<string, YahooQuote>>;
+            describe?: (s: readonly string[], now: number) => Promise<Map<string, Absorbed>>;
           })
         | undefined;
       if (!provider) continue;
-      for (let i = 0; i < list.length; i += this.#d.config.batch_size) {
-        const batch = list.slice(i, i + this.#d.config.batch_size);
+      const size = this.#batchOf(id);
+      for (let i = 0; i < list.length; i += size) {
+        const batch = list.slice(i, i + size);
         for (const { inst } of batch) this.#closeAsked.set(inst.code, now);
-        let got: Map<string, RawQuote | YahooQuote>;
+        let got: Map<string, Absorbed>;
         try {
           const symbols = batch.map((b) => b.inst.symbol);
           got = provider.describe
@@ -1192,8 +1226,11 @@ export class RealDesk {
    * progress goes through the guard like any other; anything else is kept as its last close
    * (shown and used to value holdings, never traded at), when it is newer than what is known. A
    * provider's name, when it gives one, replaces a stored one cut short by an older version.
+   * A quote of the session in progress that cannot be traded at (too old: Yahoo's Taiwan data is
+   * late; refused; or no price yet, `prev_only`) keeps its previous close instead, as the last
+   * session's close, so a ticker in session is never shown without a price.
    */
-  async #absorb(inst: RealInstrument, q: RawQuote | YahooQuote, now: number): Promise<void> {
+  async #absorb(inst: RealInstrument, q: Absorbed, now: number): Promise<void> {
     const store = this.#d.store.real;
     const row = store.instrument(inst.code);
     if (!row) return;
@@ -1201,25 +1238,34 @@ export class RealDesk {
     if (name !== null && name !== row.name && name.length > row.name.length)
       store.setInstrument(inst.code, { name }, now);
     if (!finitePositive(q.price) || !Number.isFinite(q.at) || q.at > now + 60_000) return;
+    const s = this.sessions[inst.market];
     const regular = "regular" in q ? q.regular : false;
-    if (regular && isOpenAt(this.sessions[inst.market], now) && this.#inSession(inst, q.at)) {
+    const prevOnly = "prev_only" in q && q.prev_only === true;
+    const keep = (close: { price: number; prev_close: number | null; at: number }) => {
+      const known = this.#known(row, store.quotes());
+      if (known && known.at >= close.at) return;
+      store.setInstrument(inst.code, { close }, now);
+    };
+    if (!prevOnly && regular && isOpenAt(s, now) && this.#inSession(inst, q.at)) {
       const g = this.#guard(inst).check(inst, q, now);
-      if (g.ok) await this.#onQuote(inst, g.quote);
+      if (g.ok) {
+        await this.#onQuote(inst, g.quote);
+        return;
+      }
+    }
+    if (prevOnly || (regular && isOpenAt(s, now) && isOpenAt(s, q.at))) {
+      const prev = prevOnly ? q.price : q.prev_close;
+      const at = lastCloseAt(s, q.at);
+      if (finitePositive(prev) && at !== null && at < q.at)
+        keep({ price: prev, prev_close: null, at });
       return;
     }
-    const known = this.#known(row, store.quotes());
-    if (known && known.at >= q.at) return;
-    store.setInstrument(
-      inst.code,
-      {
-        close: {
-          price: q.price,
-          prev_close: finitePositive(q.prev_close) ? q.prev_close : null,
-          at: q.at,
-        },
-      },
-      now,
-    );
+    if (regular && isOpenAt(s, now) && this.#inSession(inst, q.at)) return;
+    keep({
+      price: q.price,
+      prev_close: finitePositive(q.prev_close) ? q.prev_close : null,
+      at: q.at,
+    });
   }
 
   async #onQuote(inst: RealInstrument, quote: Quote): Promise<void> {
@@ -1320,18 +1366,21 @@ export class RealDesk {
     const quotes = this.#d.store.real.quotes();
     const state = this.#d.store.real.state();
     const hours = (s: Session) => `${s.open}–${s.close}`;
+    const polled = this.pollSet();
     return {
       enabled: c.open,
       currency: this.#currency(),
       instruments: this.#rows().map((row) => this.#line(row, quotes, now)),
       sessions: (["tw", "us"] as const).map((m) => {
         const open = isOpenAt(this.sessions[m], now);
-        const list = this.instruments().filter((i) => i.market === m);
+        // The market's quotes are not flowing: none of what is asked for (held, ordered, viewed,
+        // watched) has a fresh quote. One quiet ticker is stale on its own line, not the market.
+        const list = open ? polled.filter((i) => i.market === m) : [];
         const stale =
           open &&
           this.#mode(m) === "intraday" &&
           list.length > 0 &&
-          list.some((i) => this.#latest(i.code) === null);
+          list.every((i) => this.#latest(i.code) === null);
         return {
           market: m,
           open,
@@ -1387,12 +1436,20 @@ export class RealDesk {
     const local = i.market === "local" ? this.localOf(i.code) : null;
     const date = shown && shown.at !== null ? tradingDate(session, shown.at) : null;
     const next = open ? null : nextOpenAt(session, now);
+    // A real ticker in session without a fresh quote: the last known price is shown, said as not
+    // live and not traded at (orders wait for the next valid quote).
+    const stale =
+      i.market === "local"
+        ? q !== null && open && now - q.at > this.#maxAge(i.market)
+        : open &&
+          this.#mode(i.market) === "intraday" &&
+          !this.#fresh(i, this.#guard(i).last(i.code), now);
     const note =
       shown === null || shown.basis === "quote"
         ? null
         : shown.basis === "reference"
           ? `開盤參考價・第一筆價格在 ${taipeiWhen(open ? (lastTick(now, this.#d.config.local_tick_seconds) ?? now) : (next ?? now))}`
-          : `收盤價(${shortDate(date ?? "")})・${open ? "等今天第一筆報價" : "休市中"}`;
+          : `收盤價(${shortDate(date ?? "")})・${open ? (stale ? STALE_NOTE : "等今天第一筆報價") : "休市中"}`;
     return {
       code: i.code,
       name: i.name,
@@ -1411,11 +1468,13 @@ export class RealDesk {
           ? Math.max(0, Math.round((now - shown.at) / 60_000))
           : null,
       source:
-        i.provider === "yahoo"
-          ? "資料來源:Yahoo Finance"
-          : i.provider === "local"
-            ? "這裡獨家:價格由程式模擬"
-            : `資料來源:${i.provider}`,
+        this.#feedId(i) === "twse"
+          ? "資料來源:臺灣證券交易所(備援 Yahoo Finance)"
+          : i.provider === "yahoo"
+            ? "資料來源:Yahoo Finance"
+            : i.provider === "local"
+              ? "這裡獨家:價格由程式模擬"
+              : `資料來源:${i.provider}`,
       local:
         i.market === "local"
           ? {
@@ -1431,11 +1490,7 @@ export class RealDesk {
           : null,
       at: shown && shown.at !== null ? toTimestamp(shown.at) : null,
       open,
-      stale:
-        q !== null &&
-        open &&
-        this.#mode(i.market) === "intraday" &&
-        now - q.at > this.#maxAge(i.market),
+      stale,
       quotes: this.#mode(i.market),
     };
   }
