@@ -92,6 +92,53 @@
 - 插件可以有排程和背景工作。
 - `miyoria ext new` 的範本做到「十幾行就多一個能力」。
 
+## 上限收成三種
+
+> 2026-11-23。owner 問上限是不是太多、有沒有重疊:有。一個人的一個要求原本要過十來層(每次執行的輪數、每步幾個工具、時間、每個工具的時間、token;每個對話每小時的美元和 token;每天的美元;小幫手同時幾個、排隊、每天的美元和 token、每種的輪數 / 分鐘 / 美元 / token;閘門的層級;每人每 10 分鐘的上網次數……)。上限只為四件事:錢、洗版、一個人濫用她、停不下來的迴圈。owner 同意每件事只留一個地方管,而且每人有一份 AI 額度,一開始設很高。
+
+收成三種:**錢**(每天的預算和每人的 AI 額度)、**一次做事的長度**(擋停不下來的迴圈)、**她往外碰到人的動作**(洗版和打擾人,原本就在閘門和 Floor)。
+
+### 每人的 AI 額度
+
+- `[modules.agent.quota]`:`person_usd_per_hour`(預設 3)、`person_usd_per_day`(預設 10),0 = 不設;`unpriced_usd_per_mtok`(預設 1):沒有價目的模型每一百萬 token 算多少美元,所以到處都只有一個單位,美元。
+- **算誰的**:回一個人的執行(文字和語音)算在那個人身上;他要的小幫手工作算在他身上(工作替他做事,執行的 turn 是 `delegate-<id>`);執行裡的工具替他叫的模型(例如 `watch_look` 看直播畫面)也算他的。她自己主動的事(看一眼、提醒、反思、她自己開的工作)不算在任何人身上,只受每天的預算管。owner 會記帳,但不受限。
+- **記在哪**:store 的 `quota` 外掛,表 `quota_spend`(人、`minute` 或 `day`、鍵、微美元),重啟不會歸零;每小時清一次一小時前的分鐘和昨天以前的日子。一小時是滾動的(以分鐘為單位),一天是她的當地日(`[modules.arbiter]` 的換日時間)。人是 person id,不認識的人用帳號(`platform:id`)。
+- **到了**:那個人的執行在呼叫任何模型之前停下,她說一句固定的話,同一段時間只說一次,不叫模型:「你這個小時找我做的事有點多,大概 N 分鐘後再來。」或「你今天找我做的事有點多了,大概 N 個小時後再來。」(一小時以內說分鐘)。執行做到一半到了,就是最後一步(不能再交給小幫手)。他要開小幫手,`delegate` 當場拒絕,給她一句可以轉述的理由;做到一半的工作做完這一步就交代結果(`out_of_budget`,附註寫是額度到了)。
+- **看得到**:`GET /api/llm/quota`(管理端:上限,和今天有花到的每個人這小時、今天用了多少、到了哪一個);會員頁 `GET /api/member/me` 多一欄 `quota`(自己用了多少和上限)。面板還沒有畫面。
+
+### 拿掉或改掉的設定
+
+舊的 `miyoria.toml` 照樣開得起來,這些鍵在開機時列在「config keys no longer read, ignored」那一行警告裡(`packages/core/src/removed-config.ts`)。
+
+| 設定 | 原本管什麼 | 現在由誰管 |
+|---|---|---|
+| `[modules.agent] session_usd_per_hour` | 一個對話一小時花多少(錢、一個人洗一個頻道) | 每人的 AI 額度;一個頻道裡別人照樣有人回 |
+| `[modules.agent] session_tokens_per_hour` | 同上,模型沒價目時用 token 算 | AI 額度,沒價目的照 `unpriced_usd_per_mtok` 換成美元 |
+| `[modules.agent] text_tokens` | 一次文字執行的 token | 每個執行種類固定的 token 天花板(程式裡,不是設定),只擋壞掉的迴圈;錢由額度管 |
+| `[modules.agent] text_calls_per_round` | 一步最多幾個工具 | 固定 8 個(程式裡) |
+| `[modules.agent.delegate] daily_usd` | 所有小幫手一天花多少 | 每天的預算 `[llm.budget] daily_usd`,加上要工作的人的額度 |
+| `[modules.agent.delegate] daily_tokens` | 同上,用 token 算 | 同上 |
+| `[modules.agent.delegate] reflect_daily_tokens` | 反思一天的 token | `reflect_daily_usd`(沒價目的換成美元) |
+| `[modules.agent.delegate.kinds.*] calls_per_round` | 每種小幫手一步幾個工具 | 固定 8 個 |
+| `[modules.agent.delegate.kinds.*] tokens` | 每種小幫手一件工作的 token | 每種固定的 token 天花板(程式裡);錢由 `usd_default` / `usd_max` 和額度管 |
+| `[modules.web] search_per_person`、`read_per_person`、`image_per_person`、`window_s` | 每人每 10 分鐘查、讀、看圖幾次 | 只留 `search_per_person_hour`(預設 60):搜尋可能花付費服務的點數;讀網頁和看圖由一次做事的步數和額度管 |
+| `[modules.web] search_global`、`read_global`、`image_global` | 所有人每 10 分鐘加起來幾次 | 拿掉;DuckDuckGo 的間隔和冷卻照舊擋 |
+| `[modules.web] search_per_job`、`read_per_job`、`image_per_job` | 一件小幫手工作自己的上網次數 | 拿掉;工作的搜尋算在要它的人的每小時次數裡 |
+
+### 留下的,各管一件事
+
+- `[llm.budget] daily_usd`:錢,所有東西加起來一天。
+- `[modules.agent.quota]`:錢,一個人。也擋一個人把她占住。
+- `[modules.agent] text_rounds`、`text_seconds`、`text_tool_seconds`,語音和各種小幫手的輪數、分鐘、`tool_seconds`,每個執行固定的 token 天花板:停不下來的迴圈。
+- `[modules.agent.delegate.kinds.*] usd_default`、`usd_max`:一件工作的大小,由她挑,不是對人的上限。
+- `[modules.agent.delegate] max_running`、`max_queued`:同時有多少件工作在跑(機器和模型的並行),不是錢。
+- `[modules.agent.delegate] reflect_daily_usd`:每晚的反思,一晚不能把隔天的預算吃光。
+- `[modules.web] search_per_person_hour`:付費搜尋的點數。DuckDuckGo 的 `ddg_gap_ms`、`ddg_cooldown_s` 和網路安全檢查:保護服務和內網,不是額度。
+- 她自己多常開口(看一眼的次數、Floor)、閘門對往外碰到人的動作(私訊、發文、分享)和同意的規則:洗版和打擾人。
+- 沙箱的資源上限、經濟 / 交易所 / 卡拉 OK / 卡片的數字(遊戲平衡)、watch 的 `looks_per_hour`、隱私的退出設定:各自原本的用途,不動。
+
+還沒收的、留在 backlog:工作線的 `[modules.agent.work] daily_tokens`(只剩遊戲導演用,跟工作線一起拿掉)、`[modules.reflect.tidy] budget_tokens`、沙箱附件的 `per_person` / `global`。
+
 ## 不做的
 
 - 讓她直接在主機上跑指令(沒有沙箱的 shell)。
