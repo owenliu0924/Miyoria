@@ -77,5 +77,12 @@ export const WebConfigSchema = z.object({
   image_global: z.number().int().min(1).max(10_000).default(40),
   search_global: z.number().int().min(1).max(10_000).default(30),
   read_global: z.number().int().min(1).max(10_000).default(60),
+  /**
+   * One helper's job (`delegate`) over `window_s`, instead of the per-person limits of whoever
+   * asked; everyone's limits still hold. Below those, so one job never takes the whole window.
+   */
+  search_per_job: z.number().int().min(1).max(1000).default(20),
+  read_per_job: z.number().int().min(1).max(1000).default(40),
+  image_per_job: z.number().int().min(1).max(1000).default(20),
 });
 export type WebConfig = z.output<typeof WebConfigSchema>;

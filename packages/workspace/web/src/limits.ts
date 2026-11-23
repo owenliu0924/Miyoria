@@ -25,17 +25,26 @@ export class WindowLimit {
   }
 }
 
-/** Both limits of one kind of call: per person and for everyone. */
+/** The key prefix of a helper's job (`jobKey`): it has an allowance of its own. */
+export const JOB_KEY = "job:";
+
+/**
+ * Both limits of one kind of call: per person and for everyone. A helper's job (`job:<id>`) is
+ * held to `job` instead of the person's: its many steps would use up the chat quota of whoever
+ * asked; everyone's limit still holds it.
+ */
 export class Limits {
   constructor(
     readonly person: WindowLimit,
     readonly global: WindowLimit,
+    readonly job: WindowLimit = person,
   ) {}
 
   /** Records the call and returns `true`, or returns `false` without recording when over. */
   take(who: string, now: number): boolean {
-    if (!this.person.has(who, now) || !this.global.has("*", now)) return false;
-    this.person.record(who, now);
+    const own = who.startsWith(JOB_KEY) ? this.job : this.person;
+    if (!own.has(who, now) || !this.global.has("*", now)) return false;
+    own.record(who, now);
     this.global.record("*", now);
     return true;
   }

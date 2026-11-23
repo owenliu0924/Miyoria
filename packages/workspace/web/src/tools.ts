@@ -12,6 +12,7 @@ import {
 } from "@miyoria/gate/actions";
 import { accountRefString, type Principal } from "@miyoria/types";
 import { z } from "zod";
+import { JOB_KEY } from "./limits.js";
 import { WebError } from "./net.js";
 import type { WebService } from "./web.js";
 
@@ -30,8 +31,23 @@ type ReadArgs = z.output<typeof ReadArgs>;
 const ImageArgs = z.object({ url: z.string().trim().min(1).max(2000) });
 type ImageArgs = z.output<typeof ImageArgs>;
 
-/** A stable key of whoever the call is for: the asker, else her own. */
-export function whoKey(principal: Principal): string {
+/** The turn of a helper's job (`delegate-<id>`, brain/self delegate.ts). */
+const JOB_TURN = "delegate-";
+
+/** The key of a helper's job from its turn, `null` for any other turn. */
+export function jobKey(turn: string | null | undefined): string | null {
+  if (typeof turn !== "string" || !turn.startsWith(JOB_TURN)) return null;
+  const id = turn.slice(JOB_TURN.length);
+  return id === "" ? null : `${JOB_KEY}${id}`;
+}
+
+/**
+ * A stable key of whoever the call is for: a helper's job has its own allowance (its calls still
+ * act for the asker at the gate), else the asker, else her own.
+ */
+export function whoKey(principal: Principal, turn?: string | null): string {
+  const job = jobKey(turn);
+  if (job !== null) return job;
   return principal.requester === null ? "self" : accountRefString(principal.requester);
 }
 
@@ -69,7 +85,7 @@ export function searchCapability(web: WebService): Capability {
     async execute(args, ctx: ExecContext) {
       const max = args.max ?? web.config.search_results;
       const out = await guarded(() =>
-        web.search(whoKey(ctx.principal), args.query, max, ctx.signal),
+        web.search(whoKey(ctx.principal, ctx.request.turn), args.query, max, ctx.signal),
       );
       return { text: out.text, data: { results: out.hits.map((h) => ({ ...h })) } };
     },
@@ -96,7 +112,9 @@ export function readCapability(web: WebService): Capability {
       required: ["url"],
     },
     async execute(args, ctx: ExecContext) {
-      const out = await guarded(() => web.read(whoKey(ctx.principal), args.url, ctx.signal));
+      const out = await guarded(() =>
+        web.read(whoKey(ctx.principal, ctx.request.turn), args.url, ctx.signal),
+      );
       return {
         text: out.text,
         data: {
@@ -129,7 +147,9 @@ export function imageCapability(web: WebService): Capability {
       required: ["url"],
     },
     async execute(args, ctx: ExecContext) {
-      const out = await guarded(() => web.image(whoKey(ctx.principal), args.url, ctx.signal));
+      const out = await guarded(() =>
+        web.image(whoKey(ctx.principal, ctx.request.turn), args.url, ctx.signal),
+      );
       const kb = Math.max(1, Math.round(out.bytes / 1000));
       return {
         text: `圖片已經看到了(${out.type},${kb} KB):${out.url}`,

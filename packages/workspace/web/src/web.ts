@@ -109,14 +109,17 @@ export class WebService {
     this.#searches = new Limits(
       new WindowLimit(c.search_per_person, windowMs),
       new WindowLimit(c.search_global, windowMs),
+      new WindowLimit(c.search_per_job, windowMs),
     );
     this.#reads = new Limits(
       new WindowLimit(c.read_per_person, windowMs),
       new WindowLimit(c.read_global, windowMs),
+      new WindowLimit(c.read_per_job, windowMs),
     );
     this.#images = new Limits(
       new WindowLimit(c.image_per_person, windowMs),
       new WindowLimit(c.image_global, windowMs),
+      new WindowLimit(c.image_per_job, windowMs),
     );
   }
 
