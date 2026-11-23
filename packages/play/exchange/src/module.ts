@@ -65,6 +65,7 @@ import { taipeiDay } from "./real/local.js";
 import { HttpJsonProvider, type QuoteProvider } from "./real/provider.js";
 import { LocalSignalBook, type LocalSources } from "./real/signals.js";
 import { DEFAULT_KEEPING, eventLogSources } from "./real/sources.js";
+import { TaiwanQuotes, TwseProvider } from "./real/twse.js";
 import { YahooProvider } from "./real/yahoo.js";
 import { ExchangeService, type Traders } from "./service.js";
 import { exchangeTables } from "./store.js";
@@ -382,10 +383,15 @@ function tell(
   );
 }
 
-/** The providers the config names: `yahoo` always, and every JSON endpoint listed. */
+/**
+ * The providers the config names: `yahoo` always, `twse` (the Taiwan Stock Exchange's feed with
+ * Yahoo behind it, for Taiwan quotes) always, and every JSON endpoint listed.
+ */
 export function providersOf(config: ExchangeConfig): Map<string, QuoteProvider> {
   const out = new Map<string, QuoteProvider>();
-  out.set("yahoo", new YahooProvider(config.yahoo));
+  const yahoo = new YahooProvider(config.yahoo);
+  out.set("yahoo", yahoo);
+  out.set("twse", new TaiwanQuotes(new TwseProvider(config.twse), yahoo));
   for (const p of config.providers) out.set(p.id, new HttpJsonProvider(p));
   return out;
 }

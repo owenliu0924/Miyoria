@@ -656,9 +656,10 @@ dirs = ["extensions"]
 # local_stocks = true         # 新手推薦的五檔獨家股票(價格由程式模擬,每天 12:00–23:00)
 # local_tick_seconds = 60     # 獨家股票幾秒跳一次(10–3600;3600 = 以前的每小時一筆)。一天的漲跌幅度、±10% 和開盤跳空都一樣
 # twd_per_usd = 30            # 一美元等於幾台幣(固定;改了所有美股持股的市值一起變,股數不變)
-# # ---- 報價(預設兩個市場都用 Yahoo Finance)
+# # ---- 報價(查代號、名稱和 K 線兩個市場都用 Yahoo Finance;台股的報價預設用證交所的即時報價)
 # provider_tw = "yahoo"
 # provider_us = "yahoo"
+# quotes_tw_provider = "twse" # 台股報價:"twse" 證交所自己的公開報價(晚幾十秒,出錯時改問 Yahoo),或 "yahoo" 只用 Yahoo(台股約晚 20 分鐘,一直太舊不能成交)
 # quotes_tw = "intraday"      # "intraday" 盤中報價,或 "close" 只用收盤價(委託在下一個收盤成交)
 # quotes_us = "intraday"
 # quote_poll_seconds = 60     # 多久問一次報價(只問有人持有、掛單、剛看過、或活躍的人觀察中的股票)
@@ -780,6 +781,12 @@ dirs = ["extensions"]
 # # daily_budget = 3000       # 一天最多幾次請求,用完就停到隔天、報價標為停滯
 # # timeout_ms = 8000
 # # max_backoff_seconds = 1800
+# # [modules.exchange.twse]   # quotes_tw_provider = "twse" 時的證交所報價
+# # host = "mis.twse.com.tw"
+# # daily_budget = 3000       # 一天(台北)最多幾次請求,用完就改問 Yahoo
+# # timeout_ms = 5000
+# # max_backoff_seconds = 900 # 429、5xx、沒有回應時退避(15 秒起加倍)
+# # max_symbols = 50          # 一次請求最多幾檔
 
 # 唱 K 第一步(docs/design/karaoke.md「做了什麼(第一步)」):會員頁一個人唱。貼連結或打歌名,
 # 唱歌 worker 做伴唱軌和參考旋律;在自己的瀏覽器唱、算音高,唱完 Core 用同一份評分重算,

@@ -63,6 +63,9 @@ owner 2026-11-21 選的,兩個市場都用。**這是非官方的公開端點**:
 - 報價卡和下單確認都寫報價的時間和「約 N 分鐘前」。來源沒有給延遲的欄位,所以寫的是我們知道的:那筆報價的時間。
 - **換來源**:`provider_tw` / `provider_us` 改成 `[[modules.exchange.providers]]` 裡的一個 JSON 端點(固定的 https 主機、價格和時間的路徑)。通用的那一種沒有「查一個新代號」的功能,所以只能交易已經存在表裡的股票。
 - 測試只用存下來的回應(`test/fixtures/yahoo-*.json`),不連網路。
+
+**台股報價改用證交所自己的公開報價**(2026-11-23,第一個台股交易日一筆都沒成交):Yahoo 的台股資料大約晚 20 分鐘,比能成交的 `quote_max_age_seconds`(300 秒)舊,整個盤中都停滯;證交所的 `mis.twse.com.tw/stock/api/getStockInfo.jsp` 同時只晚十幾到幾十秒。所以台股報價預設從證交所來(`quotes_tw_provider = "twse"`,`src/real/twse.ts`,規則寫在檔頭,測試用 `test/fixtures/twse-observed.json`),美股的報價、兩個市場的查代號、名稱和 K 線照舊用 Yahoo;證交所失敗或不認得代號時改問 Yahoo(多半停滯、不成交)。開盤中沒有新報價時,清單照樣寫最後知道的價格和時間,標「報價沒有更新,暫停成交」,從不用它成交。
+
 **K 線**(owner 2026-11-21:「要像真的股票圖」):同一個主機的 chart 端點 `/v8/finance/chart/{代號}?range=…&interval=…`。2026-11-21 手動試打(一般瀏覽器的 User-Agent、沒有 cookie、沒有帳號,2330.TW 的 6mo/1d、2y/1wk,AAPL 的 10y/1mo、6mo/1d;1d/5m 是之前存的),全部 200、不用 crumb,存在 `test/fixtures/yahoo-candles-*.json`(剪短過):
 
 | 週期 | range / interval | 一根 K 棒 |

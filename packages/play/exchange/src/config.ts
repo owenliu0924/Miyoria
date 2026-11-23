@@ -254,7 +254,8 @@ export const ExchangeConfigSchema = z
     /**
      * Yahoo Finance (the owner's choice for both markets): an unofficial public endpoint, data for
      * personal use per Yahoo's terms, which can change or break without notice. Switch a market to
-     * another source by giving its instruments another `provider` from `providers`.
+     * another source by giving its instruments another `provider` from `providers`. Taiwan quotes
+     * come from `twse` by default (`quotes_tw_provider`); Yahoo stays their fallback and their charts.
      */
     yahoo: z
       .object({
@@ -265,6 +266,39 @@ export const ExchangeConfigSchema = z
         daily_budget: z.number().int().min(10).max(100_000).default(3000),
         timeout_ms: z.number().int().min(1000).max(30_000).default(8000),
         max_backoff_seconds: z.number().int().min(15).max(86_400).default(1800),
+      })
+      .prefault({}),
+    /**
+     * Where Taiwan quotes come from (owner 2026-11-23, after the first Taiwan session showed no
+     * price): `twse`, the exchange's own public feed (seconds old), with Yahoo as the fallback when
+     * it fails; `yahoo`, Yahoo only (about 20 minutes late, so every quote is older than
+     * `quote_max_age_seconds` and nothing trades). Only for Taiwan tickers whose `provider` is
+     * `yahoo`: lookups, names and charts stay on Yahoo either way; US quotes are always Yahoo's.
+     */
+    quotes_tw_provider: z
+      .enum(["twse", "yahoo"])
+      .default("twse")
+      .meta(
+        setting({
+          kind: "select",
+          label: "台股報價來源",
+          labels: { twse: "臺灣證券交易所", yahoo: "Yahoo Finance" },
+          help: "twse 用證交所自己的即時報價(預設,出錯時改用 Yahoo);yahoo 只用 Yahoo(台股約晚 20 分鐘,會一直太舊不能成交)。查代號、名稱和 K 線都照樣用 Yahoo",
+          group: "market",
+        }),
+      ),
+    /** The Taiwan Stock Exchange's public quote feed (`mis.twse.com.tw`), as `yahoo` above. */
+    twse: z
+      .object({
+        host: z
+          .string()
+          .regex(/^[a-z0-9.-]+$/i)
+          .default("mis.twse.com.tw"),
+        daily_budget: z.number().int().min(10).max(100_000).default(3000),
+        timeout_ms: z.number().int().min(1000).max(30_000).default(5000),
+        max_backoff_seconds: z.number().int().min(15).max(86_400).default(900),
+        /** Symbols per request at most (the endpoint takes a `|`-joined list). */
+        max_symbols: z.number().int().min(1).max(100).default(50),
       })
       .prefault({}),
     /** Other quote providers: each a JSON endpoint (the generic one). */
