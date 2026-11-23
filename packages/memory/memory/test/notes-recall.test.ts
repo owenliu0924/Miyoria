@@ -17,6 +17,7 @@ import {
   type NotesStore,
   notesTables,
   personSubject,
+  SELF_SUBJECT,
   topicSubject,
 } from "../../notes/src/store.js";
 import { markRebuildStarted, markRebuilt, ulidTime } from "../../notes/src/switch.js";
@@ -31,6 +32,7 @@ import {
   RecallTool,
 } from "../src/index.js";
 import { acct, profile } from "./helpers.js";
+import { FakeHandles } from "./recent-helpers.js";
 
 const OWEN = "01HOWEN0000000000000000000" as PersonId;
 const AMY = "01HAMY00000000000000000000" as PersonId;
@@ -54,12 +56,13 @@ afterEach(async () => {
   for (const s of stores.splice(0)) await s.close();
 });
 
-async function rig(config = memoryConfig()) {
+async function rig(config = memoryConfig(), handles: FakeHandles | null = null) {
   const store = await SqliteStore.open(":memory:", { plugins: [memoryTables, notesTables] });
   stores.push(store);
   const notes = store.plugin(notesTables) as NotesStore;
   const engine = new MemoryEngine(profile(), config, store.plugin(memoryTables), {
     settings: store.settings,
+    ...(handles === null ? {} : { handles }),
   });
   const search = new NotesSearch({
     notes,
@@ -225,6 +228,71 @@ describe("NotesRecall", () => {
     const text = await tool.call(ctx, { query: "拉麵" });
     expect(text).toContain("喜歡吃拉麵");
     expect(text).toContain(RECALL_WEAK);
+  });
+
+  it("counts a person as named only by a whole word of their handle", async () => {
+    const handles = new FakeHandles().add("Al", AMY, acct("u-al"));
+    const r = await rig(memoryConfig(), handles);
+    // Unscoped, the topic's line holds more of what is said and comes first.
+    line(r, personSubject(AMY), "喜歡拉麵", "Al");
+    line(r, topicSubject("拉麵店"), "拉麵很好吃", "拉麵店");
+    await switchOver(r, Date.now() + 60_000);
+    const first = async (text: string) =>
+      (await r.recall.recollect({ ...ask(text, []), accounts: [] })).memories[0]?.content;
+    // Named, her document's line comes first; a word holding "al" names nobody.
+    expect(await first("Al 說拉麵很好吃")).toBe("Al:喜歡拉麵");
+    expect(await first("always 說拉麵很好吃")).toBe("拉麵店:拉麵很好吃");
+  });
+
+  it("reads a person's DM lines in their DM, never in a group DM", async () => {
+    const r = await rig();
+    r.notes.add(
+      personSubject(OWEN),
+      {
+        section: "misc",
+        text: "偷偷喜歡拉麵店的店員",
+        provenance: "observed",
+        scope: { type: "dm", person: OWEN },
+        confidence: 0.9,
+      },
+      { author: "tool" },
+      "Owen",
+    );
+    await switchOver(r, Date.now() + 60_000);
+    const DM: ContextKey = { platform: "discord", scope: null, channel: "d1", kind: "dm" };
+    const inDm = await r.recall.recollect({ ...ask("拉麵店員"), context: DM });
+    expect(inDm.memories.map((m) => m.content)).toEqual(["Owen:偷偷喜歡拉麵店的店員"]);
+    const group = await r.recall.recollect({
+      ...ask("拉麵店員"),
+      context: DM,
+      accounts: [OWEN_ACCOUNT, acct("u-cara")],
+    });
+    expect(group.memories).toEqual([]);
+  });
+
+  it("says who a self line's 他 is, and leaves one nobody can tell out", async () => {
+    const handles = new FakeHandles().add("Owen", OWEN, OWEN_ACCOUNT);
+    const r = await rig(memoryConfig(), handles);
+    const self = (text: string, by: PersonId | null) =>
+      r.notes.add(
+        SELF_SUBJECT,
+        {
+          section: "recent",
+          text,
+          provenance: "observed",
+          scope: inSpace,
+          confidence: 0.9,
+          evidence: [{ quote: "下次一起吃拉麵", person_id: by }],
+        },
+        { author: "tool" },
+      );
+    self("答應他下次一起吃拉麵", OWEN);
+    self("覺得她煮的拉麵太鹹", null);
+    await switchOver(r, Date.now() + 60_000);
+    const found = await r.recall.recollect(ask("拉麵", []));
+    const contents = found.memories.map((m) => m.content);
+    expect(contents).toContain("答應他下次一起吃拉麵(關於 Owen)");
+    expect(contents.some((c) => c.includes("太鹹"))).toBe(false);
   });
 
   it("returns nothing for a question nothing in the notes is about", async () => {

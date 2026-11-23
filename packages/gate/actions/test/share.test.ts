@@ -40,6 +40,7 @@ import {
   activeText,
   checkContent,
   type ExecContext,
+  ReplyReferencesKey,
   type ShareConfig,
   ShareConfigSchema,
   shareCapability,
@@ -267,6 +268,53 @@ describe("share: the hand-over", () => {
     const result = await exec(OWEN, OWEN_DM, { artifact: a.id });
     expect(result.data).toMatchObject({ ok: true });
     expect(sink.sent[0]?.context).toEqual(OWEN_DM);
+  });
+});
+
+describe("share: what it quotes", () => {
+  it("quotes what the text runner decides for the turn, not the request's message", async () => {
+    const asked: [string, ContextKey][] = [];
+    let answer: MessageRef | null = { context: ROOM, id: "q7" };
+    services.provide("test", ReplyReferencesKey, {
+      take: (turn, place) => {
+        asked.push([turn, place]);
+        return answer;
+      },
+    });
+    const a = await make(text("one\n"), ROOM, OWEN);
+    await exec(OWEN, ROOM, { artifact: a.id }, { context: ROOM, id: "q1" });
+    expect(sink.sent[0]?.message.reply_to).toEqual({ context: ROOM, id: "q7" });
+    answer = null;
+    await exec(OWEN, ROOM, { artifact: a.id }, { context: ROOM, id: "q1" });
+    expect(sink.sent[1]?.message.reply_to).toBeNull();
+    expect(asked).toEqual([
+      ["T1", ROOM],
+      ["T1", ROOM],
+    ]);
+  });
+
+  it("a refused share does not ask, so the run's one quote is left for her line", async () => {
+    let asked = 0;
+    services.provide("test", ReplyReferencesKey, {
+      take: () => {
+        asked += 1;
+        return null;
+      },
+    });
+    const a = await make(text("for mia\n"), ROOM, MIA);
+    expect(refusal(await exec(OWEN, ROOM, { artifact: a.id }))).toBe("not_for_them");
+    expect(asked).toBe(0);
+  });
+
+  it("without a runner that decides: never a turn's placeholder id, never in a DM", async () => {
+    const a = await make(text("after the job\n"), ROOM, OWEN);
+    // A run nobody's message woke (a finished job's result) carries its turn id as the message.
+    const result = await exec(OWEN, ROOM, { artifact: a.id }, { context: ROOM, id: "T1" });
+    expect(result.data).toMatchObject({ ok: true });
+    expect(sink.sent[0]?.message.reply_to).toBeNull();
+    const d = await make(text("in private\n"), OWEN_DM, OWEN);
+    await exec(OWEN, OWEN_DM, { artifact: d.id }, { context: OWEN_DM, id: "q2" });
+    expect(sink.sent[1]?.message.reply_to).toBeNull();
   });
 });
 

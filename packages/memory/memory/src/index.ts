@@ -207,7 +207,7 @@ export {
   quotable,
   type Viewer,
 } from "./places.js";
-export { type ProfileSources, Profiles, profileLine } from "./profiles.js";
+export { aboutThem, type ProfileSources, Profiles, profileLine } from "./profiles.js";
 export {
   clockOf,
   entryLine,

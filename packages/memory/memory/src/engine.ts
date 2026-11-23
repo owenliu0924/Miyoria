@@ -88,7 +88,10 @@ import {
   isPrivate,
   mayRecall,
   type NamedPerson,
+  namesIn,
   noteAbout,
+  privateScope,
+  pronounOnly,
   scopeEquals,
   scopeForNew,
   visibleScopes,
@@ -900,6 +903,14 @@ export class MemoryEngine implements FollowupSource {
       r.superseded_by === null &&
       (options.includeDone || !r.done) &&
       !(options.forTurn && (expired(r, now) || staleState(r))) &&
+      // A note of hers from a server saying 他 / 你 of nobody: in a turn it reads as whoever is
+      // talking (`pronounOnly`).
+      !(
+        options.forTurn &&
+        r.kind === "self_note" &&
+        !privateScope(r.scope) &&
+        pronounOnly(r.content, r.subjects, known)
+      ) &&
       (options.keep === undefined || options.keep(r));
 
     // id -> (record, backend text score, vector score)
@@ -1001,11 +1012,10 @@ export class MemoryEngine implements FollowupSource {
    */
   #turnPeople(turn: TurnQuery | undefined, text: string): PersonId[] {
     const out = new Set<PersonId>(turn?.people ?? []);
-    const lower = text.toLowerCase();
     for (const entry of this.#handles?.list() ?? []) {
       if (entry.person === null || out.has(entry.person)) continue;
-      const handle = entry.handle.toLowerCase();
-      if ([...handle].length >= 2 && lower.includes(handle)) out.add(entry.person);
+      // A whole word: a short Latin handle inside another word is nobody (`namesIn`).
+      if (namesIn(text, [entry.handle])) out.add(entry.person);
     }
     return [...out].slice(0, 16);
   }
@@ -1282,6 +1292,24 @@ export class MemoryEngine implements FollowupSource {
       );
       return { scope: where, subjects: where.type === "person" ? [where.person] : tagged };
     };
+    // A note of hers saying 他 / 你 of nobody named, learned in a server, would be read as whoever
+    // she talks with next. With one other speaker it is them, and says so; with several it cannot
+    // be told who it is, and is not kept.
+    const attribute = (
+      content: string,
+      tagged: PersonId[],
+    ): { content: string; tagged: PersonId[] } | null => {
+      if (isPrivate(context) || !pronounOnly(content, tagged, known)) return { content, tagged };
+      const [only, ...more] = speakers;
+      if (only === undefined || more.length > 0) return null;
+      const name =
+        (only.person === null ? null : this.#handles?.ofPerson(only.person)) ?? only.names[0];
+      if (name === undefined || name.trim() === "") return null;
+      return {
+        content: `${content}(關於 ${name})`,
+        tagged: only.person === null ? [] : [only.person],
+      };
+    };
     const others = lines.filter((l) => !l.self);
 
     // The lines backing a statement: among the ones the summarizer cited (else any line in
@@ -1355,13 +1383,18 @@ export class MemoryEngine implements FollowupSource {
         continue;
       }
       const global = fact.subject.type === "named" && fact.global ? (subjects[0] ?? null) : null;
+      const said = kind === "self_note" ? attribute(fact.statement, subjects) : null;
+      if (kind === "self_note" && said === null) {
+        report.skipped += 1;
+        continue;
+      }
       items.push({
         ...base,
         kind,
-        ...(kind === "self_note"
-          ? noteOf(fact.statement, subjects)
+        ...(said !== null
+          ? noteOf(said.content, said.tagged)
           : { scope: scope(kind, global), subjects }),
-        content: fact.statement,
+        content: said?.content ?? fact.statement,
         importance: fact.importance,
         confidence: fact.confidence,
         due: expiryOf(kind, fact.statement, fact.valid_hours, this.config, now),
@@ -1386,11 +1419,16 @@ export class MemoryEngine implements FollowupSource {
         report.refusedEvidence += 1;
         continue;
       }
+      const said = attribute(note.note, mentioned(note.note, speakers));
+      if (said === null) {
+        report.skipped += 1;
+        continue;
+      }
       items.push({
         ...base,
         kind: "self_note",
-        ...noteOf(note.note, mentioned(note.note, speakers)),
-        content: note.note,
+        ...noteOf(said.content, said.tagged),
+        content: said.content,
         importance: note.importance,
         confidence: 1,
         due: expiryOf("self_note", note.note, note.valid_hours, this.config, now),
@@ -2216,28 +2254,21 @@ function optional<T>(value: T | null): T[] {
   return value === null ? [] : [value];
 }
 
-const charCount = (s: string) => [...s].length;
-
-/** The person a name from the summarizer refers to. */
+/**
+ * The person a name from the summarizer refers to: a speaker known by exactly that name (case
+ * aside). A part of a name is nobody: 「Ann」 is not 「Annabel」, 「小明的媽媽」 is not 小明.
+ */
 function resolveName(raw: string, speakers: readonly Speaker[]): PersonId | null {
   const name = raw.trim().replace(/^@+/, "").toLowerCase();
   if (name === "") return null;
-  const exact = speakers.find((s) => s.names.some((n) => n.toLowerCase() === name));
-  if (exact) return exact.person;
-  const partial = speakers.filter((s) =>
-    s.names.some((n) => {
-      const lower = n.toLowerCase();
-      return charCount(lower) >= 2 && (name.includes(lower) || lower.includes(name));
-    }),
-  );
-  return partial.length === 1 ? (partial[0]?.person ?? null) : null;
+  const exact = speakers.filter((s) => s.names.some((n) => n.trim().toLowerCase() === name));
+  return exact.length === 1 ? (exact[0]?.person ?? null) : null;
 }
 
 /** People whose names appear in `text`. */
-function mentioned(raw: string, speakers: readonly Speaker[]): PersonId[] {
-  const text = raw.toLowerCase();
+function mentioned(text: string, speakers: readonly Speaker[]): PersonId[] {
   return speakers
-    .filter((s) => s.names.some((n) => charCount(n) >= 2 && text.includes(n.toLowerCase())))
+    .filter((s) => namesIn(text, s.names))
     .flatMap((s) => (s.person !== null ? [s.person] : []));
 }
 

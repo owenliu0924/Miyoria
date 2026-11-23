@@ -106,11 +106,49 @@ export function rulesFor(profile: ProfileName): string {
 
 // ---- block 7: what woke her --------------------------------------------------------------------
 
+/** Characters of each line of theirs the turn line quotes. */
+const WAKE_QUOTE_CHARS = 60;
+
+function wakeQuote(text: string): string {
+  const flat = neutralize(text).replace(/\s+/g, " ").trim();
+  const chars = [...flat];
+  return chars.length > WAKE_QUOTE_CHARS ? `${chars.slice(0, WAKE_QUOTE_CHARS).join("")}…` : flat;
+}
+
+/**
+ * Which of someone's lines she answers, quoted: the transcript's newest line may be someone else's
+ * (lines that came in while she waited or worked), so it is never "the last line".
+ */
+function theirLines(said: readonly string[]): string {
+  // A picture or a sticker has no words to quote; an empty 「」 would point at nothing.
+  const worded = said.map(wakeQuote).filter((t) => t !== "");
+  const first = worded[0];
+  if (first === undefined) return "剛傳的那則(沒有文字)";
+  const last = worded.at(-1) ?? first;
+  return worded.length <= 1 ? `這句「${first}」` : `從「${first}」到「${last}」這幾句`;
+}
+
+/** After them, where others talk too: people who called her get a run of their own after this one. */
+const OTHERS_LATER = "其他人的話是背景;有叫你的人之後會輪到。";
+
+/** `said`: the lines of theirs the run answers; `null`: not known, only who. */
+function addressed(head: string, said: readonly string[] | null, others: boolean): string {
+  if (said === null || said.length === 0) return `${head}。`;
+  return `${head}:要回的是他${theirLines(said)}。${others ? OTHERS_LATER : ""}`;
+}
+
 export const WAKE_LINES = {
-  mention: (name: string) => `${safeName(name)} 在叫你:對話紀錄最後那句是對你說的。`,
-  name: (name: string) => `${safeName(name)} 提到你的名字:對話紀錄最後那句是對你說的。`,
-  reply: (name: string) => `${safeName(name)} 回覆了你說的話(對話紀錄最後那句)。`,
-  dm: (name: string) => `${safeName(name)} 私訊你(對話紀錄最後那句)。`,
+  mention: (name: string, said: readonly string[] | null = null) =>
+    addressed(`${safeName(name)} 在叫你`, said, true),
+  name: (name: string, said: readonly string[] | null = null) =>
+    addressed(`${safeName(name)} 提到你的名字`, said, true),
+  reply: (name: string, said: readonly string[] | null = null) =>
+    addressed(`${safeName(name)} 回覆了你說的話`, said, true),
+  dm: (name: string, said: readonly string[] | null = null) =>
+    addressed(`${safeName(name)} 私訊你`, said, false),
+  /** Several people called her in the lines of one run (`one_caller_per_turn = false`). */
+  several: (people: readonly { name: string; said: readonly string[] }[]) =>
+    `好幾個人在叫你:${people.map((p) => `${safeName(p.name)} 的${theirLines(p.said)}`).join("、")}。其他人的話是背景。`,
   result: (tool: string, job: string | null, ok: boolean) =>
     `你之前開始的事${ok ? "有結果了" : "沒有成功"}(${safeName(tool, 64)}${
       job === null ? "" : `,代號 ${safeName(job, 64)}`

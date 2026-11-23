@@ -64,6 +64,7 @@ import { type EvidenceLine, nameWords, supporting } from "../../memory/src/evide
 import { isPresentState } from "../../memory/src/expiry.js";
 import { sameMatter } from "../../memory/src/followups.js";
 import { fromElsewhere } from "../../memory/src/places.js";
+import { namesIn } from "../../memory/src/scope.js";
 import { textSimilarity } from "../../memory/src/tokenize.js";
 import type { TranscriptEntry } from "../../transcript/src/types.js";
 import type { EpisodeSink, OpenFollowup } from "./episodes.js";
@@ -449,6 +450,9 @@ interface Backed {
   evidence: EvidenceInput;
 }
 
+/** Words for oneself: 「我」 (not 「我們」), `I`, `my`, `me`. */
+const FIRST_PERSON = /我(?![們们])|(?<![a-z])(?:i|i'm|i've|my|me)(?![a-z'])/i;
+
 /**
  * Runs the segment pass over `input` (see the module comment). Provider errors are thrown as
  * they are; an unusable reply abandons the pass.
@@ -774,7 +778,12 @@ export async function runSegmentPass(
         edit,
         others.filter((e) => e.person_id !== doc.person),
       );
-      if (heard !== null) {
+      // Someone saying 「我…」 of themselves, not naming the person: nothing about them.
+      const theirNames = [doc.title, ...(people.find((p) => p.person === doc.person)?.names ?? [])];
+      if (
+        heard !== null &&
+        !(FIRST_PERSON.test(heard.entry.content) && !namesIn(heard.entry.content, theirNames))
+      ) {
         return {
           provenance: "told_by_other",
           told_by: heard.entry.person_id,

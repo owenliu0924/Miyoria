@@ -26,6 +26,7 @@ import {
   TableEmbedder,
   t0,
 } from "./helpers.js";
+import { FakeHandles } from "./recent-helpers.js";
 
 const G1: MemoryScope = { type: "guild", platform: "discord", guild: "g1" };
 
@@ -108,13 +109,14 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     // while the record sharing the most words (often about someone else) took the first place.
     const embedder = new TableEmbedder()
       .with("小魚喜歡吃什麼", [1, 0, 0])
-      .with("她最愛的食物是拉麵", [0.8, 0.6, 0])
+      // No 她: a note of hers saying 她 of nobody is not brought into a turn.
+      .with("最愛的食物是拉麵", [0.8, 0.6, 0])
       // Far enough from each other not to be merged as the same memory.
       .with("小魚喜歡打籃球", [0.55, 0, Math.sqrt(1 - 0.55 ** 2)])
       .with("今天的天空很藍", [0.45, -Math.sqrt(1 - 0.45 ** 2), 0]);
     const e = await envWith(backend, memoryConfig(), null, embedder);
     const global: MemoryScope = { type: "global" };
-    const ramen = await e.add("self_note", global, [], "她最愛的食物是拉麵", 0.5, t0());
+    const ramen = await e.add("self_note", global, [], "最愛的食物是拉麵", 0.5, t0());
     const ball = await e.add("self_note", global, [], "小魚喜歡打籃球", 0.5, t0());
     const sky = await e.add("self_note", global, [], "今天的天空很藍", 0.5, t0());
     const got = await e.engine.recall([global], [], "小魚喜歡吃什麼", PROMPT_KINDS, 8, t0());
@@ -177,6 +179,97 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     const record = await e.rec(id);
     if (!record) throw new Error("missing");
     expect(formatLines([{ record, score: 1 }], t0())).toBe("- Owen 喜歡拉麵(三天前)");
+  });
+
+  it("a line says who it is about when its words do not, and a 他 of nobody stays out", async () => {
+    const handles = new FakeHandles();
+    const e = await envWith(backend, memoryConfig(), null, null, handles);
+    const owen = await e.person(acct("2"), "Owen");
+    handles.add("Owen", owen, acct("2"));
+    const tired = await e.add("fact", G1, [owen], "他最近加班很累", 0.5, t0(-3 * DAY));
+    const named = await e.add("fact", G1, [owen], "Owen 喜歡拉麵", 0.5, t0(-3 * DAY));
+    const record = await e.rec(tired);
+    const plain = await e.rec(named);
+    if (!record || !plain) throw new Error("missing");
+    expect(formatLines([{ record, score: 1 }], t0(), handles)).toBe(
+      "- 他最近加班很累(關於 Owen)(三天前)",
+    );
+    expect(formatLines([{ record: plain, score: 1 }], t0(), handles)).toBe(
+      "- Owen 喜歡拉麵(三天前)",
+    );
+
+    // A note of hers from the server saying 他 of nobody: not brought into a turn there; in a DM
+    // the 他 is the one person in it.
+    await e.add("self_note", G1, [], "我答應他明天一起加班", 0.8, t0(-DAY));
+    const dmScope: MemoryScope = { type: "dm", account: acct("3") };
+    await e.add("self_note", dmScope, [], "我答應他週末一起加班", 0.8, t0(-DAY));
+    const inGuild = visibleScopes(guildCtx("g1", "c1"), [acct("3")], []);
+    const got = await e.engine.recall(inGuild, [], "加班", PROMPT_KINDS, 8, t0());
+    expect(got.map((r) => r.record.content)).not.toContain("我答應他明天一起加班");
+    const inDm = visibleScopes(dmCtx("d3"), [acct("3")], []);
+    const there = await e.engine.recall(inDm, [], "加班", PROMPT_KINDS, 8, t0());
+    expect(there.map((r) => r.record.content)).toContain("我答應他週末一起加班");
+  });
+
+  it("a short handle inside another word does not bring that person's memories", async () => {
+    const handles = new FakeHandles();
+    const e = await envWith(backend, memoryConfig(), null, null, handles);
+    const al = await e.person(acct("5"), "Al");
+    handles.add("Al", al, acct("5"));
+    const exam = await e.add("fact", G1, [al], "Al 下週三要考期末考", 0.9, t0(-DAY));
+    const scopes = visibleScopes(guildCtx("g1", "c1"), [acct("6")], []);
+    const named = await e.engine.recall(scopes, [], "好啊", PROMPT_KINDS, 8, t0(), undefined, {
+      context: "Al 最近好嗎",
+    });
+    expect(named.map((r) => r.record.id)).toEqual([exam]);
+    const inside = await e.engine.recall(scopes, [], "好啊", PROMPT_KINDS, 8, t0(), undefined, {
+      context: "always 這樣",
+    });
+    expect(inside).toEqual([]);
+  });
+
+  it("one member's DM memories stay out of a group DM", async () => {
+    const e = await env(backend);
+    const owen = await e.person(acct("2"), "Owen");
+    const secret = await e.add(
+      "fact",
+      { type: "dm", account: acct("2") },
+      [owen],
+      "Owen 偷偷喜歡拉麵店的店員",
+      0.8,
+      t0(-DAY),
+    );
+    const own = visibleScopes(dmCtx("d2"), [acct("2")], [owen]);
+    const got = await e.engine.recall(own, [owen], "拉麵店員", PROMPT_KINDS, 8, t0());
+    expect(got.map((r) => r.record.id)).toEqual([secret]);
+    // The same account twice is still one.
+    expect(visibleScopes(dmCtx("d2"), [acct("2"), acct("2")], [])).toContainEqual({
+      type: "dm",
+      account: acct("2"),
+    });
+    const group = visibleScopes(dmCtx("group"), [acct("2"), acct("3")], [owen]);
+    expect(group.some((s) => s.type === "dm")).toBe(false);
+    expect(await e.engine.recall(group, [owen], "拉麵店員", PROMPT_KINDS, 8, t0())).toEqual([]);
+  });
+
+  it("remember tags the person the words name, when that is not the speaker", async () => {
+    const handles = new FakeHandles();
+    const e = await envWith(backend, memoryConfig(), null, null, handles);
+    const owen = await e.person(acct("2"), "Owen");
+    const amy = await e.person(acct("3"), "Amy");
+    handles.add("Owen", owen, acct("2")).add("Amy", amy, acct("3"));
+    const remember = new RememberTool(e.engine, { now: () => T0_MS });
+    const guild = toolCtx(guildCtx("g1", "c1"), acct("2"));
+    await remember.call(guild, { content: "Amy 下週要搬家" });
+    await remember.call(guild, { content: "Owen 跟 Amy 去看電影" });
+    await remember.call(guild, { content: "Amy 喜歡貓", about: "speaker" });
+    await remember.call(guild, { content: "最近在學吉他" });
+    const subjectsOf = async (needle: string) =>
+      (await e.all()).find((r) => r.content.includes(needle))?.subjects;
+    expect(await subjectsOf("搬家")).toEqual([amy]);
+    expect(await subjectsOf("看電影"), "names the speaker too").toEqual([owen]);
+    expect(await subjectsOf("喜歡貓"), "said to be about the speaker").toEqual([owen]);
+    expect(await subjectsOf("吉他")).toEqual([owen]);
   });
 
   it("remember_and_recall_tools_respect_scopes", async () => {

@@ -77,7 +77,9 @@ import {
   PlatformSinksKey,
   type Publish,
   sameAccount,
+  serviceKey,
   systemClock,
+  type TurnId,
   textLane,
 } from "@miyoria/types";
 import { z } from "zod";
@@ -90,6 +92,18 @@ import { inspectZip, isZip, ZIP_MIMES, type ZipLimits } from "./zip.js";
 const log = getLogger("actions.share");
 
 export const SHARE = "share";
+
+/**
+ * Whether what `turn` hands over at `place` quotes a message, decided where her lines' reply
+ * reference is (the text runner's `reply_reference` rule: only for a run that answers one
+ * person, in the place of the run, never in a DM, once per run). Taking it uses the run's one
+ * quote; `null`: quote nothing.
+ */
+export interface ReplyReferences {
+  take(turn: TurnId, place: ContextKey): MessageRef | null;
+}
+
+export const ReplyReferencesKey = serviceKey<ReplyReferences>("ReplyReferences");
 
 /** What can go out, for her. */
 const SHAREABLE =
@@ -281,6 +295,24 @@ function refused(code: ShareRefusalCode, text: string, extra: Record<string, Jso
 
 function personKey(account: AccountRef): string {
   return `${account.platform}:${account.id}`;
+}
+
+/**
+ * The message a hand-over in `turn` at `where` quotes: the text runner's decision, the same as
+ * for her lines (`ReplyReferencesKey`). Without a runner that decides: the request's message
+ * where the hand-over goes, never in a DM, and never a turn's placeholder (a run nobody's message
+ * woke carries its turn id as the message id, which no platform takes).
+ */
+function replyOf(
+  services: ServiceLookup,
+  turn: TurnId | null,
+  message: MessageRef | null,
+  where: ContextKey,
+): MessageRef | null {
+  const references = services.get(ReplyReferencesKey);
+  if (references !== undefined) return turn === null ? null : references.take(turn, where);
+  if (message === null || message.id === turn || where.kind === "dm") return null;
+  return contextKeyEquals(message.context, where) ? message : null;
 }
 
 /** The share limits of `[modules.actions.share]`, per rolling day (pages count too). */
@@ -580,8 +612,6 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
       if (here && site.dm) {
         return refused("wider_than_origin", "私訊裡沒有「這個伺服器的成員」,所以只能給對方本人。");
       }
-      const message = ctx.request.message ?? null;
-      const reply = message !== null && contextKeyEquals(message.context, where) ? message : null;
       // An image leaves as its cleaned copy, when the cleaner is there.
       let handed: Artifact = artifact;
       let stripped = false;
@@ -615,6 +645,8 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         active,
       );
       const link = "link" in issued ? issued.link : null;
+      // Asked only now, once it goes out: a refused share does not use the run's one quote.
+      const reply = replyOf(services, ctx.request.turn, ctx.request.message ?? null, where);
       let sent = await send(handed, where, reply, ctx.signal, link?.url ?? "");
       if ("text" in sent) {
         const code = (sent.data as { refused?: string }).refused;

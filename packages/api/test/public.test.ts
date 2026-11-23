@@ -440,6 +440,8 @@ async function rig(publicConfig: Record<string, JsonValue> = {}, panelDir = ""):
         memory("m1", { content: "Alice 第一次來語音陪她聊天", subjects: [alice] }),
         memory("m2", { kind: "fact", content: "小愛喜歡貓", subjects: [alice] }),
         memory("m3", { content: "Alice 和 Bob 一起打遊戲", subjects: [alice, bob] }),
+        // A talk she was only part of: names nobody, tagged with everyone who spoke.
+        memory("m3b", { content: "頻道裡在聊颱風假", subjects: [alice, bob] }),
         memory("m4", {
           content: "聽說 Alice 考試沒過",
           subjects: [alice],
