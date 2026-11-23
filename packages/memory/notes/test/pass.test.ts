@@ -257,6 +257,47 @@ describe("runSegmentPass", () => {
     expect(notes.card(OWEN_DOC, channel)).toContain("Owen 很會彈吉他(聽說)");
   });
 
+  it("writes nothing into one person's document from what someone else said of themself", async () => {
+    const { notes, clock } = await rig();
+    const model = scripted(
+      reply({
+        episode: null,
+        edits: [
+          {
+            op: "add",
+            doc: "p1",
+            section: "喜好",
+            text: "Owen 喜歡爬山",
+            source: "別人說的",
+            quote: "我最近很喜歡爬山",
+            seq: 2,
+          },
+          {
+            op: "add",
+            doc: "p1",
+            section: "近況",
+            text: "Owen 下週要去日本",
+            source: "別人說的",
+            quote: "Owen 下週要去日本",
+            seq: 3,
+          },
+        ],
+      }),
+    );
+    const result = await runSegmentPass(
+      input([
+        by(1, OWEN, "Owen", "嗨"),
+        by(2, AMY, "Amy", "我最近很喜歡爬山"),
+        by(3, AMY, "Amy", "我聽說 Owen 下週要去日本"),
+      ]),
+      { router: model.router, notes, now: clock.now },
+    );
+    expect(result.dropped).toEqual([expect.objectContaining({ index: 0, reason: "no_evidence" })]);
+    const lines = notes.lines(OWEN_DOC, "owner");
+    expect(lines.map((l) => l.text)).toEqual(["Owen 下週要去日本"]);
+    expect(lines[0]).toMatchObject({ provenance: "told_by_other", told_by: AMY });
+  });
+
   it("drops a present-tense state, a repeat, an unknown line and any edit of her self document", async () => {
     const { notes, clock } = await rig();
     notes.add(
