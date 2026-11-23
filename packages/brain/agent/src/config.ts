@@ -418,20 +418,86 @@ export const WorkConfigSchema = z.object({
 });
 export type WorkConfig = z.output<typeof WorkConfigSchema>;
 
+/** What one job of a kind may use when the config says nothing (`DelegateKindSchema`). */
+interface KindDefaults {
+  rounds: number;
+  calls_per_round: number;
+  minutes: number;
+  tool_seconds: number;
+  tokens: number;
+  usd_default: number;
+  usd_max: number;
+}
+
 /**
- * `[modules.agent.delegate]`: the sub-agents of the phase-3 runner (docs/design/v5-brain.md). The
- * per-kind limits are in `packages/brain/self/src/subagents.ts`.
+ * `[modules.agent.delegate.kinds.<kind>]`: what one job of a kind may use. The defaults are the
+ * kinds' own (`KINDS` in `packages/brain/self/src/subagents.ts`; a test holds them equal).
  */
+function delegateKind(d: KindDefaults) {
+  return z.object({
+    /** Model steps that may call tools; one more without tools writes the result. */
+    rounds: z.number().int().min(1).max(500).default(d.rounds),
+    /** Tool calls of one step. */
+    calls_per_round: z.number().int().min(1).max(32).default(d.calls_per_round),
+    /** Wall time of the whole job; the gap of a restart is not counted. */
+    minutes: z
+      .number()
+      .positive()
+      .max(24 * 60)
+      .default(d.minutes),
+    /** One tool call may take this long. */
+    tool_seconds: z.number().int().min(1).max(3600).default(d.tool_seconds),
+    /** Prompt and completion tokens of the whole job. */
+    tokens: z.number().int().positive().default(d.tokens),
+    /** USD a job may spend when she does not say. */
+    usd_default: z.number().positive().default(d.usd_default),
+    /** USD a job may spend at most, whatever she asks for. */
+    usd_max: z.number().positive().default(d.usd_max),
+  });
+}
+
+export const DelegateKindsSchema = z.object({
+  research: delegateKind({
+    rounds: 16,
+    calls_per_round: 4,
+    minutes: 8,
+    tool_seconds: 45,
+    tokens: 500_000,
+    usd_default: 0.25,
+    usd_max: 1,
+  }).prefault({}),
+  curator: delegateKind({
+    rounds: 20,
+    calls_per_round: 6,
+    minutes: 8,
+    tool_seconds: 30,
+    tokens: 500_000,
+    usd_default: 0.25,
+    usd_max: 0.75,
+  }).prefault({}),
+  worker: delegateKind({
+    rounds: 60,
+    calls_per_round: 8,
+    minutes: 30,
+    tool_seconds: 180,
+    tokens: 4_000_000,
+    usd_default: 1,
+    usd_max: 3,
+  }).prefault({}),
+});
+export type DelegateKindsConfig = z.output<typeof DelegateKindsSchema>;
+
+/** `[modules.agent.delegate]`: the sub-agents of the runner (docs/design/v5-brain.md, v6-agent.md). */
 export const DelegateConfigSchema = z.object({
   enabled: z.boolean().default(true),
   /** Jobs running at once; more wait in the queue. */
-  max_running: z.number().int().min(1).max(4).default(2),
+  max_running: z.number().int().min(1).max(8).default(3),
   /** Jobs waiting at most; a start past it is refused (she hears so). */
-  max_queued: z.number().int().nonnegative().default(4),
+  max_queued: z.number().int().nonnegative().default(8),
   /** What all sub-agents together may spend in a day, from the router's price table (USD). */
-  daily_usd: z.number().positive().default(3),
+  daily_usd: z.number().positive().default(10),
   /** The same cap in tokens, for calls of a model that has no price. */
-  daily_tokens: z.number().int().positive().default(9_000_000),
+  daily_tokens: z.number().int().positive().default(30_000_000),
   /** What the nightly reflection may spend in a day (USD). */
   reflect_daily_usd: z.number().positive().default(0.5),
   reflect_daily_tokens: z.number().int().positive().default(1_500_000),
@@ -441,6 +507,8 @@ export const DelegateConfigSchema = z.object({
   read_chars: z.number().int().positive().default(8000),
   /** Ended jobs kept for the lists and `delegate_read`. */
   keep_ended: z.number().int().nonnegative().default(20),
+  /** Each kind's limits: `[modules.agent.delegate.kinds.research|curator|worker]`. */
+  kinds: DelegateKindsSchema.prefault({}),
 });
 export type DelegateConfig = z.output<typeof DelegateConfigSchema>;
 
