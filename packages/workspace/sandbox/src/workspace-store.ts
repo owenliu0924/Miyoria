@@ -96,7 +96,7 @@ export interface WorkspaceApi {
 }
 
 const MAX_ENTRIES_FLOOR = 100;
-/** Most entries `enforce` looks at (more are left and make `usage` report overflow). */
+/** Fewest entries `enforce` looks at; it looks at twice the file cap when that is more. */
 const ENFORCE_ENTRIES = 20_000;
 
 function invalid(path: string, why: string): SandboxError {
@@ -486,7 +486,7 @@ export class PersistentWorkspace implements WorkspaceApi {
         return;
       }
       for (const name of names) {
-        if (++seen > ENFORCE_ENTRIES) return;
+        if (++seen > Math.max(ENFORCE_ENTRIES, this.limits.maxFiles * 2)) return;
         const full = join(dir, name);
         const path = prefix === "" ? name : `${prefix}/${name}`;
         let stat: Awaited<ReturnType<typeof lstat>>;

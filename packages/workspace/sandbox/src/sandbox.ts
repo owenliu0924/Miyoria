@@ -794,6 +794,9 @@ export class DockerSandbox implements Sandbox {
         codeDir: dirs.codeDir,
         toolsDir,
         workspaceDir,
+        // The whole workspace is mounted without anyone's folder: a program reaches a person's
+        // files only in a run for that person.
+        ...(workspace !== null && workspace === root ? { hiddenInWorkspace: [PEOPLE_DIR] } : {}),
         ...(network === null ? {} : { network }),
         user: this.#user,
         limits: this.#config.limits,

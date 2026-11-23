@@ -76,6 +76,23 @@ describe("persistent workspace in runs", () => {
     expect((await sbx.workspace?.read("counter.txt"))?.text).toBe("2");
   });
 
+  it("the_whole_workspace_is_mounted_without_peoples_folders_and_a_persons_run_is_not_masked", async () => {
+    const sbx = sandbox();
+    runner.onRun = async () => result({ stdout: Buffer.from("ok") });
+    await sbx.run({ language: "python", code: "x", mount_workspace: true });
+    await sbx.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      workspace_folder: "discord-200",
+    });
+    const [whole, person] = runner.calledWith("run");
+    const hides = (args: readonly string[] | undefined) =>
+      args?.some((a) => a.startsWith("type=tmpfs,target=/workspace/people")) ?? false;
+    expect(hides(whole)).toBe(true);
+    expect(hides(person)).toBe(false);
+  });
+
   it("a_run_for_someone_mounts_only_their_folder_under_its_own_caps", async () => {
     const sbx = sandbox({ workspace: { person_max_files: 2 } });
     const ws = sbx.workspace;
