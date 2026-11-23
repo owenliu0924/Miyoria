@@ -132,6 +132,7 @@ import type {
 } from "./store.js";
 import type { TwseQuote } from "./twse.js";
 import { CHART_SHARE, type YahooQuote } from "./yahoo.js";
+import { round4, type StreamQuote, type YahooStream } from "./yahoo-stream.js";
 
 /** A provider's answer about one ticker outside the poll (a lookup, a close asked for). */
 type Absorbed = RawQuote | YahooQuote | TwseQuote;
@@ -197,6 +198,16 @@ const DAY_MS = 86_400_000;
 const STALE_NOTE = "報價沒有更新,暫停成交";
 /** One chart point per instrument at most this often. */
 const TICK_EVERY_MS = 5 * 60_000;
+/**
+ * The US tickers outside the quick poll (nobody holds, orders or looks at them; or the stream
+ * pushes them) are asked this often while the market is open: every ticker has a price of the
+ * session, and a pushed one gets what only the poll gives.
+ */
+const SLOW_POLL_MS = 5 * 60_000;
+/** The slow refresh takes at most this share of the quote budget (longer apart when it would take more). */
+const SLOW_SHARE = 0.25;
+/** The stream connects this long before the US open, so the first quotes come with it. */
+const STREAM_LEAD_MS = 2 * 60_000;
 
 export type Refusal = { ok: false; status: number; code: string; message: string };
 const refuse = (status: number, code: string, message: string): Refusal => ({
@@ -230,6 +241,10 @@ export interface RealDeskDeps {
   currency?: () => string;
   /** How texts name her (`[character] pronoun`); none: 她. */
   pronoun?: () => string;
+  /** US quotes pushed by Yahoo's streamer (none: polled only). */
+  stream?: YahooStream;
+  /** Quotes of these codes were taken (the member pages' push follows them). */
+  quoted?: (codes: readonly string[]) => void;
 }
 
 /**
@@ -531,6 +546,11 @@ export class RealDesk {
   readonly #closeAnswered = new Map<string, number>();
   /** The starter lists' display names by symbol, for the config they came from. */
   #names: { config: ExchangeConfig; byCode: Map<string, string> } | null = null;
+  /** Pushed quotes waiting for the desk's turn (the newest per symbol), and whether one is queued. */
+  readonly #pushed = new Map<string, StreamQuote>();
+  #pushQueued = false;
+  /** When the slow refresh of the US tickers outside the quick poll is next due. */
+  #nextSlow = 0;
 
   constructor(deps: RealDeskDeps) {
     this.#d = deps;
@@ -551,6 +571,7 @@ export class RealDesk {
         confirm_within: 0.02,
       }),
     };
+    deps.stream?.listen((quotes) => this.#onPushed(quotes));
   }
 
   get config(): ExchangeConfig {
@@ -740,15 +761,70 @@ export class RealDesk {
    */
   effectiveInterval(): number {
     const c = this.#d.config;
-    // Only what Yahoo is asked counts against Yahoo's budget.
-    const set = this.pollSet().filter((i) => this.#feedId(i) !== "twse");
+    const now = this.#now();
+    const quick = this.#quickSet(now);
+    // Only what Yahoo is asked counts against Yahoo's budget (what the stream pushes is not asked).
+    const set = quick.filter((i) => this.#feedId(i) !== "twse");
     const batches = (["tw", "us"] as const).reduce(
       (t, m) => t + Math.ceil(set.filter((i) => i.market === m).length / c.batch_size),
       0,
     );
-    // Charts may take `CHART_SHARE` of the budget; the quotes keep the rest.
-    const perMinute = (c.yahoo.daily_budget * (1 - CHART_SHARE)) / (11 * 60);
-    return Math.max(c.quote_poll_seconds, Math.ceil((batches / Math.max(perMinute, 0.001)) * 60));
+    // The slow refresh of the other US tickers takes its share while that market is open.
+    const slow = isOpenAt(this.sessions.us, now)
+      ? Math.ceil(
+          this.#slowSet(quick).filter((i) => this.#feedId(i) === "yahoo").length / c.batch_size,
+        )
+      : 0;
+    const left = this.#perMinute() - (slow > 0 ? slow / this.#slowMinutes(slow) : 0);
+    return Math.max(c.quote_poll_seconds, Math.ceil((batches / Math.max(left, 0.001)) * 60));
+  }
+
+  /** Quote requests a minute the day's budget allows: charts may take `CHART_SHARE`, quotes the rest. */
+  #perMinute(): number {
+    return (this.#d.config.yahoo.daily_budget * (1 - CHART_SHARE)) / (11 * 60);
+  }
+
+  /** Minutes between two slow refreshes of `batches` requests: five, more when its share of the budget needs. */
+  #slowMinutes(batches: number): number {
+    return Math.max(
+      SLOW_POLL_MS / 60_000,
+      batches / Math.max(this.#perMinute() * SLOW_SHARE, 0.001),
+    );
+  }
+
+  /** The active US tickers on Yahoo: what the stream follows. */
+  #usYahoo(): RealInstrument[] {
+    return this.#usActive().filter((i) => this.#feedId(i) === "yahoo");
+  }
+
+  /** The active (or blocked: still sold) US tickers, held or not. */
+  #usActive(): RealInstrument[] {
+    return this.#rows()
+      .filter((r) => r.market === "us" && (r.status === "active" || r.status === "blocked"))
+      .map((r) => this.#instOf(r));
+  }
+
+  /** `inst`'s quotes come from the stream now: it leaves the quick poll. */
+  #streamed(inst: RealInstrument, now: number): boolean {
+    const stream = this.#d.stream;
+    return (
+      stream !== undefined &&
+      inst.market === "us" &&
+      this.#mode("us") === "intraday" &&
+      this.#feedId(inst) === "yahoo" &&
+      stream.covers(inst.symbol, now)
+    );
+  }
+
+  /** What the quick poll asks: `pollSet()` without what the stream pushes. */
+  #quickSet(now: number): RealInstrument[] {
+    return this.pollSet().filter((i) => !this.#streamed(i, now));
+  }
+
+  /** The active US tickers outside the quick poll (refreshed every `SLOW_POLL_MS` while open). */
+  #slowSet(quick: readonly RealInstrument[]): RealInstrument[] {
+    const asked = new Set(quick.map((i) => i.code));
+    return this.#usActive().filter((i) => !asked.has(i.code));
   }
 
   /** The providers, with the local stocks' own. */
@@ -967,13 +1043,18 @@ export class RealDesk {
     };
   }
 
-  async #balances(book: HouseBook): Promise<Map<string, number>> {
+  /**
+   * The wallets of everyone with a position or a waiting order (of `code` only, when given: a quote
+   * of one ticker only ever needs those people's wallets, and quotes may come every second).
+   */
+  async #balances(book: HouseBook, code?: string): Promise<Map<string, number>> {
     const wallet = this.#d.wallet();
     const out = new Map<string, number>();
     if (!wallet) return out;
+    const mine = (x: { code: string }) => code === undefined || x.code === code;
     for (const p of new Set([
-      ...book.positions.map((x) => x.person),
-      ...book.orders.map((x) => x.person),
+      ...book.positions.filter(mine).map((x) => x.person),
+      ...book.orders.filter(mine).map((x) => x.person),
     ]))
       out.set(p, await wallet.balance(p));
     return out;
@@ -995,6 +1076,7 @@ export class RealDesk {
         this.#countMissing();
       }
       if (!this.#d.config.open) {
+        this.#follow(this.#now());
         await this.#closeAll("closed");
         return;
       }
@@ -1024,6 +1106,8 @@ export class RealDesk {
 
   async #poll(): Promise<void> {
     const now = this.#now();
+    // The stream first: what it pushes leaves the quick poll below.
+    this.#follow(now);
     // Stretched past the configured interval only when the day's request budget needs it (the
     // providers' requests only: the local stocks' ticks are worked out at every pass).
     const every = this.effectiveInterval();
@@ -1032,8 +1116,9 @@ export class RealDesk {
       if (now < this.#nextPoll) asking = false;
       else this.#nextPoll = now + every * 1000 - 5_000;
     }
+    const quick = this.#quickSet(now);
     const byProvider = new Map<string, RealInstrument[]>();
-    for (const inst of this.pollSet()) {
+    for (const inst of quick) {
       const s = this.sessions[inst.market];
       // The local stocks are worked out, not asked for: always due, so a downtime is caught up
       // also while they do not trade (nothing that old is traded at).
@@ -1046,6 +1131,7 @@ export class RealDesk {
       const feed = this.#feedId(inst);
       byProvider.set(feed, [...(byProvider.get(feed) ?? []), inst]);
     }
+    const taken: string[] = [];
     for (const [id, list] of byProvider) {
       const provider = this.#provider(id);
       if (!provider) continue;
@@ -1054,58 +1140,185 @@ export class RealDesk {
         continue;
       }
       if (!asking) continue;
-      const quotes = new Map<
-        string,
-        { symbol: string; price: number; at: number; prev_close?: number }
-      >();
-      const size = this.#batchOf(id);
-      try {
-        for (let i = 0; i < list.length; i += size) {
-          for (const [k, v] of await provider.quotes(
-            list.slice(i, i + size).map((x) => x.symbol),
-            now,
-          ))
-            quotes.set(k, v);
+      taken.push(...(await this.#askAndTake(id, provider, list, now)));
+    }
+    // The US tickers outside the quick poll (nobody holds or looks at them, or the stream pushes
+    // them): asked slowly while the market is open, so every one has a price of the session, and
+    // the stream's get what only the poll gives (the previous close).
+    if (
+      this.#mode("us") === "intraday" &&
+      isOpenAt(this.sessions.us, now) &&
+      now >= this.#nextSlow
+    ) {
+      const slow = this.#slowSet(quick);
+      if (slow.length > 0) {
+        const yahoo = slow.filter((i) => this.#feedId(i) === "yahoo").length;
+        const batches = Math.ceil(yahoo / this.#d.config.batch_size);
+        this.#nextSlow = now + this.#slowMinutes(batches) * 60_000 - 5_000;
+        const byFeed = new Map<string, RealInstrument[]>();
+        for (const inst of slow) {
+          const feed = this.#feedId(inst);
+          byFeed.set(feed, [...(byFeed.get(feed) ?? []), inst]);
         }
-      } catch (error) {
-        // Blocked or broken: stop asking and let the quotes go stale; nothing trades or is sold on old data.
-        this.#d.log.info(
-          { provider: id, err: String(error) },
-          "exchange: no quotes from a provider",
-        );
-        if (quotes.size === 0) continue;
-      }
-      for (const inst of list) {
-        const raw = quotes.get(inst.symbol);
-        if (!raw) continue;
-        const prev = this.#guard(inst).last(inst.code);
-        if (prev && raw.at <= prev.at) continue; // nothing new
-        const r = this.#guard(inst).check(inst, raw, now);
-        if (!r.ok) {
-          this.#d.store.real.refuseQuote(inst.code, r.why, now);
-          // A jump by a clean small ratio with no reason in the market is a split: the ticker pauses
-          // for the owner to confirm the share change; nothing is filled or sold on it meanwhile.
-          const split = r.why === "jump" && prev ? splitRatio(prev.price, raw.price) : null;
-          if (split)
-            this.#d.store.real.setInstrument(
-              inst.code,
-              { status: "paused", reason: split.label },
-              now,
-            );
-          continue;
+        for (const [id, list] of byFeed) {
+          const provider = this.#provider(id);
+          if (provider && !(provider instanceof LocalProvider))
+            taken.push(...(await this.#askAndTake(id, provider, list, now)));
         }
-        if (!this.#inSession(inst, r.quote.at)) continue;
-        const st = this.#status(inst.code);
-        if (st === "paused" || st === "suspended") continue;
-        this.#d.store.real.setInstrument(
-          inst.code,
-          { last_quote_at: r.quote.at, missing_days: 0 },
-          now,
-        );
-        await this.#onQuote(inst, r.quote);
       }
     }
+    if (taken.length > 0) this.#d.quoted?.(taken);
     if (asking) await this.#refreshCloses(now);
+  }
+
+  /** One provider's quotes of `list`, in batches, each taken like any other quote: the codes taken. */
+  async #askAndTake(
+    id: string,
+    provider: QuoteProvider,
+    list: readonly RealInstrument[],
+    now: number,
+  ): Promise<string[]> {
+    const quotes = new Map<string, RawQuote>();
+    const size = this.#batchOf(id);
+    try {
+      for (let i = 0; i < list.length; i += size) {
+        for (const [k, v] of await provider.quotes(
+          list.slice(i, i + size).map((x) => x.symbol),
+          now,
+        ))
+          quotes.set(k, v);
+      }
+    } catch (error) {
+      // Blocked or broken: stop asking and let the quotes go stale; nothing trades or is sold on old data.
+      this.#d.log.info({ provider: id, err: String(error) }, "exchange: no quotes from a provider");
+      if (quotes.size === 0) return [];
+    }
+    const taken: string[] = [];
+    for (const inst of list) {
+      const raw = quotes.get(inst.symbol);
+      if (raw && (await this.#take(inst, raw, now))) taken.push(inst.code);
+    }
+    return taken;
+  }
+
+  /**
+   * One quote of a provider, polled or pushed, the same way: never one older than the last
+   * accepted; the guard's checks (a sane number, not in the future, no older than the maximum age,
+   * a jump confirmed by a later quote); a clean split ratio pauses the ticker; only a quote inside
+   * its session and of a ticker that is not paused or suspended is used. Whether it was taken.
+   */
+  async #take(inst: RealInstrument, raw: RawQuote, now: number): Promise<boolean> {
+    const prev = this.#guard(inst).last(inst.code);
+    if (prev && raw.at <= prev.at) return false; // nothing new
+    const r = this.#guard(inst).check(inst, raw, now);
+    if (!r.ok) {
+      this.#d.store.real.refuseQuote(inst.code, r.why, now);
+      // A jump by a clean small ratio with no reason in the market is a split: the ticker pauses
+      // for the owner to confirm the share change; nothing is filled or sold on it meanwhile.
+      const split = r.why === "jump" && prev ? splitRatio(prev.price, raw.price) : null;
+      if (split)
+        this.#d.store.real.setInstrument(inst.code, { status: "paused", reason: split.label }, now);
+      return false;
+    }
+    if (!this.#inSession(inst, r.quote.at)) return false;
+    const st = this.#status(inst.code);
+    if (st === "paused" || st === "suspended") return false;
+    this.#d.store.real.setInstrument(
+      inst.code,
+      { last_quote_at: r.quote.at, missing_days: 0 },
+      now,
+    );
+    await this.#onQuote(inst, r.quote);
+    return true;
+  }
+
+  // ---- the stream -----------------------------------------------------------------------------
+
+  /** Tells the stream what to follow: every active US ticker on Yahoo, from just before the open. */
+  #follow(now: number): void {
+    const stream = this.#d.stream;
+    if (!stream) return;
+    const us = this.sessions.us;
+    const wanted =
+      this.#d.config.open &&
+      this.#mode("us") === "intraday" &&
+      (isOpenAt(us, now) || isOpenAt(us, now + STREAM_LEAD_MS));
+    stream.update(
+      this.#usYahoo().map((i) => i.symbol),
+      wanted,
+    );
+  }
+
+  /**
+   * A batch from the stream: kept (the newest per symbol) until the desk's turn, one turn waiting
+   * at most however fast batches come, so a slow pass never piles them up.
+   */
+  #onPushed(quotes: readonly StreamQuote[]): void {
+    for (const q of quotes) {
+      const held = this.#pushed.get(q.symbol);
+      if (!held || held.at <= q.at) this.#pushed.set(q.symbol, q);
+    }
+    if (this.#pushQueued) return;
+    this.#pushQueued = true;
+    this.#turns
+      .run(async () => {
+        this.#pushQueued = false;
+        const batch = [...this.#pushed.values()];
+        this.#pushed.clear();
+        await this.#takePushed(batch);
+      })
+      .catch((error: unknown) => {
+        this.#pushQueued = false;
+        this.#d.log.info({ err: String(error) }, "exchange: pushed quotes could not be taken");
+      });
+  }
+
+  /**
+   * Pushed quotes, each through `#take` like a polled one, with the frame's own time as the
+   * quote's: only regular-session frames, only while the US market is open and the exchange too.
+   * The previous close is the frame's price less its change, when it says one that makes sense.
+   */
+  async #takePushed(batch: readonly StreamQuote[]): Promise<void> {
+    if (!this.#d.config.open || this.#mode("us") !== "intraday") return;
+    const now = this.#now();
+    if (!isOpenAt(this.sessions.us, now)) return;
+    const bySymbol = new Map(this.#usYahoo().map((i) => [i.symbol, i]));
+    const taken: string[] = [];
+    for (const q of batch) {
+      if (!q.regular) continue;
+      const inst = bySymbol.get(q.symbol);
+      if (!inst) continue;
+      const prev = q.change === null ? null : round4(q.price - q.change);
+      const sane = prev !== null && prev > 0 && q.price / prev > 0.5 && q.price / prev < 2;
+      const raw: RawQuote = {
+        symbol: q.symbol,
+        price: q.price,
+        at: q.at,
+        ...(sane ? { prev_close: prev } : {}),
+      };
+      if (await this.#take(inst, raw, now)) taken.push(inst.code);
+    }
+    if (taken.length > 0) this.#d.quoted?.(taken);
+  }
+
+  /** What the stream says of itself, for the owner's page (`null`: no stream). */
+  streamStatus(): {
+    active: boolean;
+    connected: boolean;
+    healthy: boolean;
+    last_frame_at: Timestamp | null;
+    symbols: number;
+  } | null {
+    const stream = this.#d.stream;
+    if (!stream) return null;
+    const s = stream.status(this.#now());
+    return {
+      active: s.active,
+      connected: s.connected,
+      healthy: s.healthy,
+      last_frame_at: s.last_frame_at === null ? null : toTimestamp(s.last_frame_at),
+      symbols: s.symbols,
+    };
   }
 
   /**
@@ -1290,7 +1503,12 @@ export class RealDesk {
     // A local stock's ticks are all kept already (`#recordLocal`); a real one's a point in five minutes.
     if (inst.market !== "local") store.tick(inst.code, q.at, q.price, TICK_EVERY_MS);
     const book = this.#book();
-    const out = onQuote(book, inst, this.#coins(inst, q), this.#ctx(await this.#balances(book)));
+    const out = onQuote(
+      book,
+      inst,
+      this.#coins(inst, q),
+      this.#ctx(await this.#balances(book, inst.code)),
+    );
     this.#commit(out, book);
   }
 
@@ -2623,11 +2841,20 @@ export class RealDesk {
     });
   }
 
-  /** Each provider's last problem, for the owner's page (`null`: none). */
-  providerStatus(): { id: string; last_error: string | null }[] {
+  /**
+   * Each provider's last problem, for the owner's page (`null`: none); Yahoo's also says how its
+   * stream is (connected, healthy, when the last frame came).
+   */
+  providerStatus(): {
+    id: string;
+    last_error: string | null;
+    stream?: NonNullable<ReturnType<RealDesk["streamStatus"]>>;
+  }[] {
+    const stream = this.streamStatus();
     return [...this.#d.providers].map(([id, p]) => ({
       id,
       last_error: (p as { lastError?: string | null }).lastError ?? null,
+      ...(id === "yahoo" && stream !== null ? { stream } : {}),
     }));
   }
 

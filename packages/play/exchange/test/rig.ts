@@ -221,9 +221,12 @@ export async function rig(
   providers?: ReadonlyMap<string, QuoteProvider>,
   /**
    * The profile's words (`[character]`, the coins' name); none: the first character's. Also where
-   * members' own choices are kept (`settings`); none: the service keeps them in memory.
+   * members' own choices are kept (`settings`); none: the service keeps them in memory. Also the
+   * US quote stream (`stream`) and who hears of taken quotes (`quoted`).
    */
-  words: Partial<Pick<ExchangeDeps, "name" | "currency" | "pronoun" | "settings">> = {},
+  words: Partial<
+    Pick<ExchangeDeps, "name" | "currency" | "pronoun" | "settings" | "stream" | "quoted">
+  > = {},
   /** A database opened already (an older install's), with the clock it was opened with. */
   existing?: { raw: TestDb; clock: { at: number } },
 ): Promise<Rig> {

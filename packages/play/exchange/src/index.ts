@@ -71,6 +71,7 @@ export * from "./real/sources.js";
 export { RealStore } from "./real/store.js";
 export * from "./real/twse.js";
 export * from "./real/yahoo.js";
+export * from "./real/yahoo-stream.js";
 export * from "./service.js";
 export { STRATEGY_LABEL, type StrategyName } from "./sim/agents.js";
 export { defaultAgents, runSim, type SimOptions, type SimResult } from "./sim/run.js";

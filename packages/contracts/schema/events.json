@@ -2750,6 +2750,20 @@
         "reasoning_tokens"
       ]
     },
+    "EventsExchangeQuotes": {
+      "type": "object",
+      "properties": {
+        "codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "codes"
+      ]
+    },
     "EventsFeedbackSignal": {
       "type": "object",
       "properties": {

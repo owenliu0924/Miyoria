@@ -2,7 +2,7 @@
 // daily mint and burn report against the payout cap (off by default) and whether the books
 // balance, the net minted over today, 7 and 30 days against the coins in wallets with a warning
 // past its line, the provider's
-// last problem and the refresh the budget allows, the tickers people added (block for buying,
+// last problem and the refresh the budget allows (with whether Yahoo's US stream is pushing), the tickers people added (block for buying,
 // unblock, remove one nobody holds; a split-like jump to confirm; a suspended ticker to settle at
 // its last price or at zero), who is bankrupt, and every open position with a sale by hand. Every
 // change asks first, needs `admin.economy.adjust` and is written to the audit log. The master
@@ -20,7 +20,7 @@ import { EmptyLine } from "@/components/query-state";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { fmtDateTime, fmtInt } from "@/lib/format";
+import { fmtDateTime, fmtInt, fmtTime } from "@/lib/format";
 import { notify } from "@/lib/notify";
 import { WORLD } from "@/lib/world";
 
@@ -49,6 +49,15 @@ function Fact({ label, children }: { label: string; children: React.ReactNode })
   );
 }
 
+/** Yahoo's US quote stream in a few words (empty: none configured). */
+function streamWord(v: ExchangeAdmin): string {
+  const s = v.providers.find((p) => p.stream)?.stream;
+  if (!s) return "";
+  if (!s.active) return "・美股推送在開盤前才連線";
+  const state = s.healthy ? "推送中" : s.connected ? "連上了但沒有資料,改用定時問" : "沒有連線,改用定時問";
+  return `・美股${state}${s.last_frame_at ? `(最後一筆 ${fmtTime(s.last_frame_at)})` : ""}`;
+}
+
 function Report({ v }: { v: ExchangeAdmin }) {
   const r = v.report;
   const balanced = r.books.postings === r.books.lines;
@@ -72,7 +81,7 @@ function Report({ v }: { v: ExchangeAdmin }) {
         <Fact label="吸收的虧損">{fmtInt(r.today.written_off)}</Fact>
         <Fact label="帳">{balanced ? "對得上" : `對不上(錢包 ${r.books.postings}、交易所 ${r.books.lines})`}</Fact>
         <Fact label="還沒入帳">{fmtInt(r.books.pending)}</Fact>
-        <Fact label="報價更新">{`約每 ${v.refresh_seconds} 秒`}</Fact>
+        <Fact label="報價更新">{`約每 ${v.refresh_seconds} 秒${streamWord(v)}`}</Fact>
         <Fact label="固定匯率">{`1 ${COIN} = NT$${v.rates.twd_per_coin}・1 美元 = NT$${v.rates.twd_per_usd}`}</Fact>
       </dl>
       <p className="text-xs text-muted-foreground">改匯率會讓所有人的台股、美股持股市值一起變(股數不變)。匯率在 系統 / 經濟(twd_per_coin)和 系統 / 交易所(twd_per_usd)。</p>
