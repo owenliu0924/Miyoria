@@ -127,6 +127,8 @@ describe("code.run through the gate", () => {
   it("review_deny_does_not_run", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
+    // on_own for Amy is still work for Amy: she needs the node (or the bond).
+    h.grants.grant(AMY, NODE_CODE_RUN);
     h.router.verdict("deny", "tries to find docker.sock");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
@@ -146,6 +148,7 @@ describe("code.run through the gate", () => {
   it("uncertain_asks_the_owner_with_the_code_attached", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
+    h.grants.grant(AMY, NODE_CODE_RUN);
     h.router.verdict("uncertain", "not sure");
     const sent = h.cards.next();
     const outcome = h.registry.invoke({
@@ -175,6 +178,7 @@ describe("code.run through the gate", () => {
     h.registry.configure({ ...h.registry.config, inline_wait_ms: 10 });
     h.router.delayMs = 50;
     await h.gate.setAvailable(true);
+    h.grants.grant(AMY, NODE_CODE_RUN);
     h.router.verdict("allow");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");

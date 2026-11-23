@@ -76,7 +76,7 @@ import { effectiveLimits, RateLimiter, type RateRun, tightened } from "./rate.js
 import { approvalCard, Escalations, parseReview, reviewMessages } from "./review.js";
 import { shareCapability } from "./share.js";
 import { CapabilityTool } from "./tools.js";
-import { type Permit, permit, permitted, WORK_BELOW_BOND } from "./work.js";
+import { isWorkNode, type Permit, permit, permitted, WORK_BELOW_BOND } from "./work.js";
 
 const log = getLogger("actions");
 
@@ -972,6 +972,19 @@ export class ActuatorRegistry implements ActuatorExecutor {
           "permission",
           "the person asking may not request this (if you want to do it yourself, set on_own)",
         );
+      }
+    }
+    // `on_own` for someone is still their work: a work node needs their bond (or node) too.
+    if (
+      p.kind === "self" &&
+      p.requester !== null &&
+      capability.permission !== null &&
+      isWorkNode(capability.permission)
+    ) {
+      const may = this.permit(p.requester, capability.permission);
+      if (may === "below_bond") return deny("permission", WORK_BELOW_BOND);
+      if (!permitted(may)) {
+        return deny("permission", "the person asking may not ask for this work, on_own or not");
       }
     }
     if (p.kind === "command" && p.override) return allow("permission", "command override");

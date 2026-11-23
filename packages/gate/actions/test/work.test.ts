@@ -149,3 +149,66 @@ describe("work limits", () => {
     expect((await g.registry.invoke(request("t.write", user()))).status).toBe("done");
   });
 });
+
+describe("work on_own", () => {
+  const onOwn = (who: typeof OWEN | null) => Principals.self(CTX, who);
+
+  it("asked for by someone, on_own still needs their bond for a work node", async () => {
+    const g = await gate();
+    g.registry.register(workCapability("t.write", "sandbox.workspace"));
+    g.authorizer.grant(OWEN, WORK_BOND);
+    g.social.set(OWEN, { affinity: 14 });
+    const below = await g.registry.invoke(request("t.write", onOwn(OWEN)));
+    expect(below.status).toBe("denied");
+    expect(below.decision).toMatchObject({ stage: "permission", reason: WORK_BELOW_BOND });
+    // Without work.bond at all: refused too.
+    const stranger = await g.registry.invoke(request("t.write", onOwn(AMY)));
+    expect(stranger.decision).toMatchObject({ stage: "permission" });
+    g.social.set(OWEN, { affinity: 15 });
+    expect((await g.registry.invoke(request("t.write", onOwn(OWEN)))).status).toBe("done");
+  });
+
+  it("her own work with nobody behind it needs nobody's bond", async () => {
+    const g = await gate();
+    g.registry.register(workCapability("t.write", "sandbox.workspace"));
+    expect((await g.registry.invoke(request("t.write", onOwn(null)))).status).toBe("done");
+  });
+
+  it("on_own for something that is not work keeps needing no permission", async () => {
+    const g = await gate();
+    expect((await g.registry.invoke(request("t.low", onOwn(AMY)))).status).toBe("done");
+  });
+
+  it("on_own in a turn nobody asked for stays requester-less, not her own account", async () => {
+    const g = await gate();
+    const seen: Principal[] = [];
+    g.registry.register(
+      defineCapability({
+        name: "t.seen",
+        summary: "test",
+        risk: "low",
+        args: z.object({}),
+        permission: null,
+        tool: { name: "t_seen", description: "測試。", properties: {} },
+        async execute(_args, ctx) {
+          seen.push(ctx.principal);
+          return "ok";
+        },
+      }) as Capability,
+    );
+    const her = { platform: "discord", id: "self-bot" };
+    await g.tools.get("t_seen")?.call(
+      {
+        turn: "01JC0000000000000000000000",
+        context: CTX,
+        account: her,
+        principal: Principals.self(CTX, null),
+        message: { context: CTX, id: "m1" },
+        priority: "initiative",
+        signal: new AbortController().signal,
+      },
+      { on_own: true },
+    );
+    expect(seen.at(-1)).toMatchObject({ kind: "self", requester: null });
+  });
+});
