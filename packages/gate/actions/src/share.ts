@@ -16,9 +16,11 @@
 //    artifact made for one person does not go to another.
 // 4. Song covers are never shared (source `sing`, `downloadable = false`).
 // 5. Nothing withdrawn: deleted, expired, blocked or taken down.
-// 6. A type allow-list by content, read again from the bytes: images, audio, video, PDF and plain
-//    text; a zip only for the person it was made for. Text that is HTML, SVG, PHP or a script
-//    with an interpreter line is refused, as are executables and anything unrecognised.
+// 6. A type allow-list by content, read again from the bytes: images, audio, video, PDF, text
+//    (markdown, CSV, JSON, source code and HTML too: it goes as a file and is only ever served as
+//    `text/plain`, never rendered) and the zip family (zip, docx, xlsx, pptx) only for the person
+//    it was made for, judged by its listing (`zip.ts`). SVG, executables and anything
+//    unrecognised are refused.
 // 7. A size cap (`[modules.actions.share] max_bytes`, and what the platform takes there).
 // 8. Text passes the outgoing checks first: a credential in it (a known format, or a protected
 //    value such as the admin token) or any other moderation block refuses the share.
@@ -76,10 +78,16 @@ import { handleLookup, type NameLookup, recipient } from "./builtin.js";
 import { type ActionResult, type Capability, defineCapability } from "./capability.js";
 import type { ShareConfig } from "./config.js";
 import { RateLimiter } from "./rate.js";
+import { inspectZip, isZip, ZIP_MIMES, type ZipLimits } from "./zip.js";
 
 const log = getLogger("actions.share");
 
 export const SHARE = "share";
+
+/** What can go out, for her. */
+const SHAREABLE =
+  "可以傳的是圖片、音訊、影片、PDF、文字檔(markdown、CSV、JSON、程式碼、網頁原始檔都算)," +
+  "以及壓縮檔和 Word / Excel / PowerPoint 檔(這兩種只給做給的那個人,而且不能是會解壓出超大檔案的)。";
 
 /** Why a share was refused (`data.refused`). */
 export type ShareRefusalCode =
@@ -112,7 +120,6 @@ export type ContentVerdict =
   | { ok: true; mime: string }
   | { ok: false; code: "type_not_allowed"; what: string };
 
-const ZIP = [0x50, 0x4b, 0x03, 0x04];
 const EXECUTABLES: readonly (readonly number[])[] = [
   [0x4d, 0x5a], // MZ: Windows PE
   [0x7f, 0x45, 0x4c, 0x46], // ELF
@@ -145,14 +152,35 @@ export function activeText(text: string): string | null {
   return null;
 }
 
+/** What the zip limits of `[modules.actions.share]` allow. */
+export function zipLimits(config: ShareConfig): ZipLimits {
+  return {
+    maxUnpackedBytes: config.zip_max_unpacked_mb * 1024 * 1024,
+    maxEntries: config.zip_max_entries,
+  };
+}
+
+const DEFAULT_ZIP: ZipLimits = { maxUnpackedBytes: 256 * 1024 * 1024, maxEntries: 5000 };
+
 /**
  * The type of `bytes` by content, against the allow-list. `owner`: the share goes to the person
- * the artifact was made for (a zip goes to nobody else).
+ * the artifact was made for (the zip family goes to nobody else). `mime`: the type the artifact
+ * was stored as, which names which member of the zip family it is. `attachment`: it leaves as a
+ * file attachment, so HTML, PHP and scripts are text files like any other (SVG is still refused);
+ * otherwise (a page that opens it) they are refused too.
  */
-export function checkContent(bytes: Uint8Array, owner: boolean): ContentVerdict {
+export function checkContent(
+  bytes: Uint8Array,
+  owner: boolean,
+  options: { mime?: string | null; zip?: ZipLimits; attachment?: boolean } = {},
+): ContentVerdict {
   const refuse = (what: string): ContentVerdict => ({ ok: false, code: "type_not_allowed", what });
-  if (startsWith(bytes, ZIP)) {
-    return owner ? { ok: true, mime: "application/zip" } : refuse("zip (only for its own person)");
+  if (isZip(bytes)) {
+    if (!owner) return refuse("zip (only for its own person)");
+    const listing = inspectZip(bytes, options.zip ?? DEFAULT_ZIP);
+    if (!listing.ok) return refuse(`zip: ${listing.why}`);
+    const mime = options.mime ?? null;
+    return { ok: true, mime: mime !== null && ZIP_MIMES.includes(mime) ? mime : "application/zip" };
   }
   const known = sniff(bytes.subarray(0, SNIFF_BYTES));
   if (known !== null) return { ok: true, mime: known.mime };
@@ -162,7 +190,10 @@ export function checkContent(bytes: Uint8Array, owner: boolean): ContentVerdict 
     return refuse(EXECUTABLES.some((magic) => startsWith(bytes, magic)) ? "executable" : "binary");
   }
   const active = activeText(new TextDecoder("utf-8").decode(bytes));
-  return active === null ? { ok: true, mime: "text/plain" } : refuse(active);
+  if (active === null || (options.attachment === true && active !== "SVG")) {
+    return { ok: true, mime: "text/plain" };
+  }
+  return refuse(active);
 }
 
 export interface ShareOptions {
@@ -239,11 +270,15 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
     }
     const site = store.places.at(where, who);
     const owner = artifact.made_for !== null && artifact.made_for === site?.person_id;
-    const content = checkContent(bytes, owner);
+    const content = checkContent(bytes, owner, {
+      mime: artifact.mime,
+      zip: zipLimits(config),
+      attachment: true,
+    });
     if (!content.ok) {
       return refused(
         "type_not_allowed",
-        `這種內容不能當附件傳出去(${content.what})。可以傳的是圖片、音訊、影片、PDF 和純文字。`,
+        `這種內容不能當附件傳出去(${content.what})。${SHAREABLE}`,
         { what: content.what },
       );
     }
@@ -277,6 +312,8 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         perDay: config.per_day,
         perPersonPerDay: config.per_person_per_day,
         cooldownMs: 0,
+        perHour: Infinity,
+        perPersonPerHour: Infinity,
       },
       clock.now(),
     );
@@ -398,7 +435,7 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。" +
         "artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。" +
         "只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;" +
-        "翻唱的成品不能傳;只收圖片、音訊、影片、PDF、純文字。不行的時候會告訴你原因,照原因跟對方說就好。" +
+        "翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。" +
         "有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。",
       properties: {
         artifact: { type: "string", description: "產物的 id" },

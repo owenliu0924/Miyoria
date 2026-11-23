@@ -61,6 +61,7 @@ export {
   type ShareConfig,
   ShareConfigSchema,
   type TierLimit,
+  WorkLimitSchema,
 } from "./config.js";
 export { type EmergencyDeps, EmergencyStop } from "./emergency.js";
 export { GatedToolsKey, isGatedToolName } from "./gated.js";
@@ -120,5 +121,22 @@ export {
   type ShareOptions,
   type ShareRefusalCode,
   shareCapability,
+  zipLimits,
 } from "./share.js";
 export { CapabilityTool, REQUEST_RULE, RESULT_PENDING, REVIEW_PENDING } from "./tools.js";
+export {
+  isWorkNode,
+  type Permit,
+  type PermitSources,
+  permit,
+  permitted,
+  WORK_BELOW_BOND,
+} from "./work.js";
+export {
+  inspectZip,
+  isZip,
+  safeEntryName,
+  ZIP_MIMES,
+  type ZipLimits,
+  type ZipVerdict,
+} from "./zip.js";

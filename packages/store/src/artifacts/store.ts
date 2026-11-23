@@ -68,7 +68,14 @@ import type { Db } from "../db.js";
 import type { EventStore, LoggedEvent } from "../events/log.js";
 import { HOME_SESSION } from "../identity/identity.js";
 import { rooms, sessions } from "../identity/schema.js";
-import { ArtifactTypeError, decideType, SNIFF_BYTES, sniff, TextCheck } from "./media.js";
+import {
+  ArtifactTypeError,
+  decideType,
+  SNIFF_BYTES,
+  sniff,
+  TextCheck,
+  textExtension,
+} from "./media.js";
 import { BlobLayout, cleanFilename, isSha256 } from "./paths.js";
 import { ArtifactPlaces } from "./places.js";
 import {
@@ -442,7 +449,10 @@ export class ArtifactStore {
           size: written.size,
           mime: type.mime,
           kind: type.kind,
-          filename: cleanFilename(input.filename, type.extension),
+          filename: cleanFilename(
+            input.filename,
+            type.kind === "text" ? textExtension(input.filename) : type.extension,
+          ),
         }),
       );
     } catch (error) {

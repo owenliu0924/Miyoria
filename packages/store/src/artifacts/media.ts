@@ -1,9 +1,12 @@
 // The media type of an artifact, decided from its bytes (v5-architecture §11.2: "型別看內容判斷,不信副
 // 檔名"). The kinds she makes have fixed signatures in their first bytes: PNG, JPEG, WebP, GIF, WAV,
-// MP3, OGG, MP4, WebM, PDF. Anything without one is accepted only as plain text, and only when the
-// whole content is UTF-8 without NUL or control characters (tab, newline, carriage return and form
-// feed allowed). Everything else is refused, so HTML, SVG, scripts and executables never come in
-// under a type a browser would run: HTML or SVG text is stored as `text/plain`.
+// MP3, OGG, MP4, WebM, PDF, zip. Anything without one is accepted only as plain text, and only when
+// the whole content is UTF-8 without NUL or control characters (tab, newline, carriage return and
+// form feed allowed). Everything else is refused, so HTML, SVG, scripts and executables never come
+// in under a type a browser would run: HTML or SVG text is stored as `text/plain`. A text keeps
+// its own extension when it is a known text one (`.md`, `.csv`, `.py`, ...), its type stays
+// `text/plain`. A zip is `application/zip`, or the Office type it was declared as (docx, xlsx,
+// pptx are zips): the declaration only names which, the bytes must be a zip either way.
 //
 // A caller may declare the type it believes it has. A declaration the content contradicts is
 // refused; one that agrees (an alias, a text subtype for text) is replaced by the sniffed type.
@@ -34,8 +37,116 @@ const TYPES = {
   m4a: { mime: "audio/mp4", kind: "audio", extension: "m4a" },
   webm: { mime: "video/webm", kind: "video", extension: "webm" },
   pdf: { mime: "application/pdf", kind: "document", extension: "pdf" },
+  zip: { mime: "application/zip", kind: "document", extension: "zip" },
+  docx: {
+    mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    kind: "document",
+    extension: "docx",
+  },
+  xlsx: {
+    mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    kind: "document",
+    extension: "xlsx",
+  },
+  pptx: {
+    mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    kind: "document",
+    extension: "pptx",
+  },
   text: { mime: "text/plain", kind: "text", extension: "txt" },
 } as const satisfies Record<string, MediaType>;
+
+/** The zip family: what a zip may be declared as. */
+const ZIP_FAMILY: readonly MediaType[] = [TYPES.docx, TYPES.xlsx, TYPES.pptx];
+
+/**
+ * Text extensions a text artifact keeps (its type stays `text/plain`, so nothing renders it):
+ * documents, data and the usual source code.
+ */
+const TEXT_EXTENSIONS = new Set([
+  "txt",
+  "md",
+  "markdown",
+  "csv",
+  "tsv",
+  "json",
+  "jsonl",
+  "ndjson",
+  "yaml",
+  "yml",
+  "toml",
+  "ini",
+  "cfg",
+  "conf",
+  "xml",
+  "html",
+  "htm",
+  "css",
+  "log",
+  "srt",
+  "vtt",
+  "tex",
+  "rst",
+  "org",
+  "adoc",
+  "py",
+  "js",
+  "mjs",
+  "cjs",
+  "ts",
+  "tsx",
+  "jsx",
+  "java",
+  "kt",
+  "c",
+  "h",
+  "cc",
+  "cpp",
+  "hpp",
+  "cs",
+  "go",
+  "rs",
+  "rb",
+  "php",
+  "swift",
+  "lua",
+  "r",
+  "jl",
+  "scala",
+  "sh",
+  "bash",
+  "zsh",
+  "ps1",
+  "bat",
+  "sql",
+  "graphql",
+  "proto",
+  "vue",
+  "svelte",
+  "dart",
+  "hs",
+  "ml",
+  "ex",
+  "exs",
+  "erl",
+  "clj",
+  "pl",
+  "m",
+  "asm",
+  "diff",
+  "patch",
+  "dockerfile",
+  "makefile",
+  "gradle",
+]);
+
+/** The extension a text artifact named `filename` keeps: its own when it is a text one, else `txt`. */
+export function textExtension(filename: string | null | undefined): string {
+  const name = (filename ?? "").split(/[/\\]/).pop() ?? "";
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return TEXT_EXTENSIONS.has(ext) ? ext : "txt";
+}
 
 /** Every type the store stores, by mime. */
 export const MEDIA_TYPES: readonly MediaType[] = Object.values(TYPES);
@@ -111,6 +222,9 @@ export function sniff(head: Uint8Array): MediaType | null {
   if (ascii(head, 0, "RIFF") && ascii(head, 8, "WEBP")) return TYPES.webp;
   if (ascii(head, 0, "RIFF") && ascii(head, 8, "WAVE")) return TYPES.wav;
   if (ascii(head, 0, "%PDF-")) return TYPES.pdf;
+  if (startsWith(head, [0x50, 0x4b, 0x03, 0x04]) || startsWith(head, [0x50, 0x4b, 0x05, 0x06])) {
+    return TYPES.zip;
+  }
   if (ascii(head, 0, "OggS")) {
     return contains(head, "theora") ? TYPES.oggVideo : TYPES.ogg;
   }
@@ -187,6 +301,8 @@ const ALIASES: Record<string, string> = {
   "application/x-pdf": "application/pdf",
   "audio/x-m4a": "audio/mp4",
   "audio/m4a": "audio/mp4",
+  "application/x-zip-compressed": "application/zip",
+  "application/x-zip": "application/zip",
 };
 
 /** One container, two kinds: a declaration of either agrees with the content. */
@@ -230,10 +346,14 @@ export function decideType(
   if (type === null) {
     throw new ArtifactTypeError(
       "the content is not one of the accepted types (PNG, JPEG, WebP, GIF, WAV, MP3, OGG, MP4, " +
-        "WebM, PDF, plain text)",
+        "WebM, PDF, zip, docx, xlsx, pptx, plain text)",
     );
   }
   const want = normalizeMime(declared);
+  if (type === TYPES.zip && want !== null) {
+    const office = ZIP_FAMILY.find((t) => t.mime === want);
+    if (office !== undefined) return office;
+  }
   if (want !== null && !agrees(want, type)) {
     throw new ArtifactTypeError(`the content is ${type.mime}, not the declared ${want}`);
   }

@@ -45,6 +45,7 @@ import {
   shareCapability,
 } from "../src/index.js";
 import { ActuatorRegistry } from "../src/registry.js";
+import { buildZip } from "./zip-fixture.js";
 
 const T0 = Date.parse("2026-11-16T00:00:00.000Z");
 const HOUR = 3_600_000;
@@ -349,7 +350,7 @@ describe("share: ids only", () => {
 });
 
 describe("share: what may leave", () => {
-  it("refuses a .png that is really HTML", async () => {
+  it("a .png that is really HTML goes, if at all, as the text file it is", async () => {
     const a = await make(
       text("<!doctype html><html><body><script>alert(1)</script></body></html>"),
       ROOM,
@@ -359,29 +360,70 @@ describe("share: what may leave", () => {
         mime: "image/png",
       },
     ).catch(() => null);
-    // The store does not take it as a PNG either; stored as the text it is, share still refuses.
+    // The store does not take it as a PNG; stored as the text it is, named as text.
     const b = await make(text("<!doctype html><html><body>hi</body></html>"), ROOM, OWEN, {
       filename: "cat.png",
     });
     expect(a).toBeNull();
-    expect(b.mime).toBe("text/plain");
+    expect(b).toMatchObject({ mime: "text/plain", filename: "cat.txt" });
     const result = await exec(OWEN, ROOM, { artifact: b.id });
-    expect(refusal(result)).toBe("type_not_allowed");
-    expect(sink.sent).toEqual([]);
+    expect((result.data as { ok: boolean }).ok).toBe(true);
+    expect(sink.sent[0]?.files[0]?.filename).toBe("cat.txt");
+    expect(sink.sent[0]?.files[0]?.content_type).toContain("text/plain");
   });
 
-  it("refuses SVG, PHP and script text, and executables", async () => {
+  it("refuses SVG; HTML, PHP, scripts, markdown, CSV, JSON and code go as text files", async () => {
     for (const body of [
       '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"></svg>',
       "<svg onload=alert(1)></svg>",
-      "<?php echo 1;",
-      "#!/bin/sh\nrm -rf /\n",
-      "intro\n<script src=x></script>\n",
     ]) {
       const a = await make(text(body), ROOM, OWEN);
       expect(refusal(await exec(OWEN, ROOM, { artifact: a.id })), body).toBe("type_not_allowed");
     }
     expect(sink.sent).toEqual([]);
+    const files: (readonly [string, string])[] = [
+      ["index.php", "<?php echo 1;"],
+      ["run.sh", "#!/bin/sh\necho hi\n"],
+      ["page.html", "<!doctype html><html><body><script>go()</script></body></html>"],
+      ["notes.md", "# notes\n- one\n"],
+      ["data.csv", "a,b\n1,2\n"],
+      ["data.json", '{"a": 1}\n'],
+      ["main.py", "print('hi')\n"],
+    ];
+    for (const [name, body] of files) {
+      const a = await make(text(body), ROOM, OWEN, { filename: name });
+      expect((await exec(OWEN, ROOM, { artifact: a.id })).data, name).toMatchObject({ ok: true });
+    }
+    expect(sink.sent.map((s) => s.files[0]?.filename)).toEqual(files.map(([name]) => name));
+  });
+
+  it("a source file with a key in it is refused like any other text", async () => {
+    const key = `sk-ant-api03-${"a".repeat(90)}`;
+    const a = await make(text(`API_KEY = "${key}"\n`), ROOM, OWEN, { filename: "config.py" });
+    expect(refusal(await exec(OWEN, ROOM, { artifact: a.id }))).toBe("secret");
+    expect(sink.sent).toEqual([]);
+  });
+
+  it("sends a zip or an Office file to its own person, after its listing is checked", async () => {
+    const zip = buildZip([{ name: "report/summary.md", data: text("# hi\n") }]);
+    const docx = await make(zip, ROOM, OWEN, {
+      filename: "report.docx",
+      mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    });
+    expect((await exec(OWEN, ROOM, { artifact: docx.id })).data).toMatchObject({ ok: true });
+    expect(sink.sent[0]?.files[0]?.filename).toBe("report.docx");
+    // Made for Owen: not for Mia.
+    expect(refusal(await exec(MIA, ROOM, { artifact: docx.id }))).toBe("not_for_them");
+    // A bomb and a traversal (either separator) are refused by their listing.
+    for (const entries of [
+      [{ name: "big.bin", data: text("x"), claimedSize: 300 * 1024 * 1024 }],
+      [{ name: "../../evil.txt", data: text("x") }],
+      [{ name: "..\\evil.txt", data: text("x") }],
+    ]) {
+      const bad = await make(buildZip(entries), ROOM, OWEN, { filename: "bad.zip" });
+      expect(refusal(await exec(OWEN, ROOM, { artifact: bad.id }))).toBe("type_not_allowed");
+    }
+    expect(sink.sent).toHaveLength(1);
   });
 
   it("checks content, not names: types, zip and executables", () => {
@@ -401,9 +443,18 @@ describe("share: what may leave", () => {
       ok: false,
       what: "binary",
     });
-    const zip = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+    const zip = buildZip([{ name: "a.txt", data: text("a") }]);
     expect(checkContent(zip, true)).toEqual({ ok: true, mime: "application/zip" });
     expect(checkContent(zip, false)).toMatchObject({ ok: false, code: "type_not_allowed" });
+    const xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    expect(checkContent(zip, true, { mime: xlsx })).toEqual({ ok: true, mime: xlsx });
+    // HTML goes as an attachment only; a page that would open it still refuses it.
+    const page = text("<!doctype html><html><body>hi</body></html>");
+    expect(checkContent(page, true)).toMatchObject({ ok: false, what: "HTML" });
+    expect(checkContent(page, true, { attachment: true })).toEqual({ ok: true, mime: "text/plain" });
+    // A zip header without a directory is not a zip she hands out.
+    const header = Uint8Array.from([0x50, 0x4b, 0x03, 0x04, 0x14, 0x00]);
+    expect(checkContent(header, true)).toMatchObject({ ok: false, what: "zip: no zip directory" });
     expect(activeText("<HTML><body>")).toBe("HTML");
     expect(activeText("\uFEFF<svg></svg>")).toBe("SVG");
     expect(activeText("just <b>text</b>")).toBeNull();
@@ -411,7 +462,7 @@ describe("share: what may leave", () => {
 
   it("refuses an artifact whose bytes are not the ones recorded", async () => {
     const a = await make(text("original\n"), ROOM, OWEN);
-    writeFileSync(artifacts().layout.blobPath(a.sha256), "<html>swapped</html>");
+    writeFileSync(artifacts().layout.blobPath(a.sha256), PNG);
     const result = await exec(OWEN, ROOM, { artifact: a.id });
     expect(refusal(result)).toBe("type_not_allowed");
     expect(sink.sent).toEqual([]);
