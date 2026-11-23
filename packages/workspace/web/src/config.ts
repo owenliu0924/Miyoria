@@ -68,21 +68,11 @@ export const WebConfigSchema = z.object({
   /** The same search or page is answered from memory this long. */
   cache_ttl_s: z.number().int().min(0).max(86_400).default(600),
   cache_entries: z.number().int().min(1).max(1000).default(100),
-  /** Rate limits: per person and for everyone, over `window_s`. */
-  window_s: z.number().int().min(10).max(86_400).default(600),
-  search_per_person: z.number().int().min(1).max(1000).default(6),
-  read_per_person: z.number().int().min(1).max(1000).default(10),
-  /** `web_image` per person and for everyone over `window_s`. */
-  image_per_person: z.number().int().min(1).max(1000).default(10),
-  image_global: z.number().int().min(1).max(10_000).default(40),
-  search_global: z.number().int().min(1).max(10_000).default(30),
-  read_global: z.number().int().min(1).max(10_000).default(60),
   /**
-   * One helper's job (`delegate`) over `window_s`, instead of the per-person limits of whoever
-   * asked; everyone's limits still hold. Below those, so one job never takes the whole window.
+   * Searches one person may make in a rolling hour (a paid provider spends credits on each); her
+   * own count as one person. 0: no limit. Reads and pictures have no count of their own: a run's
+   * steps and the person's AI quota bound them.
    */
-  search_per_job: z.number().int().min(1).max(1000).default(20),
-  read_per_job: z.number().int().min(1).max(1000).default(40),
-  image_per_job: z.number().int().min(1).max(1000).default(20),
+  search_per_person_hour: z.number().int().min(0).max(10_000).default(60),
 });
 export type WebConfig = z.output<typeof WebConfigSchema>;

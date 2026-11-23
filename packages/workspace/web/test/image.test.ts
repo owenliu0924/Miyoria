@@ -1,5 +1,5 @@
 // `web_image` with fake transports (no network): the same guard as a page, a byte cap, the byte
-// sniff, its own rate limits, and the picture reaching the model beside a short text.
+// sniff, no count of its own, and the picture reaching the model beside a short text.
 
 import { ActuatorRegistry, type CapabilityTool } from "@miyoria/gate/actions";
 import type { ToolResult } from "@miyoria/llm/tools";
@@ -13,7 +13,6 @@ import { NO_IMAGES, WebService } from "../src/web.js";
 import { fakeTransport, resolver, response } from "./helpers.js";
 
 const ALICE = "discord:1";
-const BOB = "discord:2";
 const signal = () => new AbortController().signal;
 
 const PNG_HEAD = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -136,23 +135,18 @@ describe("web_image download", () => {
     expect((await r.web.image(ALICE, "https://img.example/edge.png", signal())).bytes).toBe(10_000);
   });
 
-  it("downloads nothing when the chat model takes no images, and spends no limit", async () => {
-    const r = rig({ image_per_person: 1 }, pages, { takes: false });
+  it("downloads nothing when the chat model takes no images", async () => {
+    const r = rig({}, pages, { takes: false });
     await expect(r.web.image(ALICE, OK, signal())).rejects.toThrow(NO_IMAGES);
     expect(r.transport.calls).toEqual([]);
-    const on = rig({ image_per_person: 1 }, pages);
+    const on = rig({}, pages);
     await expect(on.web.image(ALICE, OK, signal())).resolves.toBeDefined();
   });
 
-  it("limits pictures per person and for everyone, apart from page reads", async () => {
-    const r = rig({ image_per_person: 2, image_global: 3 }, pages);
-    await r.web.image(ALICE, OK, signal());
-    await r.web.image(ALICE, OK, signal());
-    await expect(r.web.image(ALICE, OK, signal())).rejects.toThrow(/看太多張/);
-    await r.web.image(BOB, OK, signal());
-    await expect(r.web.image(BOB, OK, signal())).rejects.toThrow(/看太多張/);
-    // A refusal by the guard still counts: it cost a lookup.
-    expect(r.transport.calls).toHaveLength(3);
+  it("does not count pictures: her steps and the person's quota bound them", async () => {
+    const r = rig({ search_per_person_hour: 1 }, pages);
+    for (let i = 0; i < 30; i++) await r.web.image(ALICE, OK, signal());
+    expect(r.transport.calls).toHaveLength(30);
   });
 });
 

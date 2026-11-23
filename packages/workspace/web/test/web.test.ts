@@ -179,33 +179,38 @@ describe("web_search", () => {
     });
   });
 
-  it("limits each person to 6 searches per 10 minutes", async () => {
+  it("limits each person to 60 searches in an hour", async () => {
     const r = rig();
-    for (let i = 0; i < 6; i++) await r.web.search(ALICE, `q${i}`, 5, signal());
-    await expect(r.web.search(ALICE, "q6", 5, signal())).rejects.toThrow(/查太多次/);
+    for (let i = 0; i < 60; i++) await r.web.search(ALICE, `q${i}`, 5, signal());
+    await expect(r.web.search(ALICE, "q60", 5, signal())).rejects.toThrow(/這個小時查太多次/);
     // Somebody else is not affected, and a cached query still answers for the limited one.
-    await expect(r.web.search(BOB, "q6", 5, signal())).resolves.toBeDefined();
+    await expect(r.web.search(BOB, "q60", 5, signal())).resolves.toBeDefined();
     await expect(r.web.search(ALICE, "q0", 5, signal())).resolves.toBeDefined();
-    // The window slides.
+    // Ten minutes is not an hour.
     r.clock.at += 10 * 60_000 + 1;
-    await expect(r.web.search(ALICE, "q7", 5, signal())).resolves.toBeDefined();
+    await expect(r.web.search(ALICE, "q61", 5, signal())).rejects.toThrow(/查太多次/);
+    // The hour slides.
+    r.clock.at += 50 * 60_000;
+    await expect(r.web.search(ALICE, "q61", 5, signal())).resolves.toBeDefined();
   });
 
-  it("limits everyone together to 30 searches per 10 minutes", async () => {
-    const r = rig();
-    for (let i = 0; i < 30; i++) await r.web.search(`discord:${i}`, `q${i}`, 5, signal());
-    await expect(r.web.search("discord:fresh", "new", 5, signal())).rejects.toThrow(/查太多次/);
-    expect(r.sent).toHaveLength(30);
+  it("has no limit for everyone together; 0 is no limit at all", async () => {
+    const r = rig({ search_per_person_hour: 1 });
+    for (let i = 0; i < 40; i++) await r.web.search(`discord:${i}`, `q${i}`, 5, signal());
+    expect(r.sent).toHaveLength(40);
+    const free = rig({ search_per_person_hour: 0 });
+    for (let i = 0; i < 70; i++) await free.web.search(ALICE, `q${i}`, 5, signal());
+    expect(free.sent).toHaveLength(70);
   });
 
   it("does not count a refused call against the limit", async () => {
-    const r = rig({ search_per_person: 2 });
+    const r = rig({ search_per_person_hour: 2 });
     await r.web.search(ALICE, "a", 5, signal());
     await r.web.search(ALICE, "b", 5, signal());
     for (let i = 0; i < 5; i++) {
       await expect(r.web.search(ALICE, "c", 5, signal())).rejects.toThrow(WebError);
     }
-    r.clock.at += 10 * 60_000 + 1;
+    r.clock.at += 60 * 60_000 + 1;
     await expect(r.web.search(ALICE, "c", 5, signal())).resolves.toBeDefined();
   });
 });
@@ -213,6 +218,15 @@ describe("web_search", () => {
 describe("web_read", () => {
   const PAGE = "https://example.com/post";
   const pages = (body = fixture("page.html")) => ({ [PAGE]: () => html(body) });
+
+  it("does not count reads: her steps and the person's quota bound them", async () => {
+    const many = Object.fromEntries(
+      Array.from({ length: 30 }, (_, i) => [`${PAGE}?n=${i}`, () => html(fixture("page.html"))]),
+    );
+    const r = rig({ search_per_person_hour: 1 }, undefined, many);
+    for (let i = 0; i < 30; i++) await r.web.read(ALICE, `${PAGE}?n=${i}`, signal());
+    expect(r.transport.calls).toHaveLength(30);
+  });
 
   it("returns the title and main text inside one untrusted block", async () => {
     const r = rig({}, undefined, pages());
@@ -331,23 +345,6 @@ describe("web_read", () => {
     r.clock.at += 10 * 60_000 + 1;
     await r.web.read(BOB, PAGE, signal());
     expect(r.transport.calls).toHaveLength(2);
-  });
-
-  it("limits reads per person (10) and for everyone (60)", async () => {
-    const table: Record<string, () => ReturnType<typeof html>> = {};
-    for (let i = 0; i < 80; i++) table[`https://example.com/${i}`] = () => html("<p>hi there</p>");
-    const r = rig({}, undefined, table);
-    for (let i = 0; i < 10; i++) await r.web.read(ALICE, `https://example.com/${i}`, signal());
-    await expect(r.web.read(ALICE, "https://example.com/10", signal())).rejects.toThrow(/讀太多/);
-    for (let p = 0; p < 5; p++) {
-      for (let i = 0; i < 10; i++) {
-        await r.web.read(`discord:p${p}`, `https://example.com/${20 + p * 10 + i}`, signal());
-      }
-    }
-    // 10 + 50 reads so far: the global 60 is spent.
-    await expect(r.web.read("discord:late", "https://example.com/79", signal())).rejects.toThrow(
-      /讀太多/,
-    );
   });
 
   it("reads plain text and other charsets", async () => {

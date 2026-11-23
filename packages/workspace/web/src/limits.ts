@@ -1,6 +1,6 @@
-// Sliding-window rate limits and a small TTL cache, both in memory.
+// A sliding-window rate limit and a small TTL cache, both in memory.
 
-/** At most `max` hits per `windowMs` for each key. */
+/** At most `max` hits per `windowMs` for each key; a `max` of 0 is no limit. */
 export class WindowLimit {
   readonly #hits = new Map<string, number[]>();
   constructor(
@@ -17,36 +17,18 @@ export class WindowLimit {
 
   /** Whether one more hit fits (not recorded). */
   has(key: string, now: number): boolean {
-    return this.#fresh(key, now).length < this.max;
+    return this.max <= 0 || this.#fresh(key, now).length < this.max;
+  }
+
+  /** Records the hit and returns `true`, or returns `false` without recording when over. */
+  take(key: string, now: number): boolean {
+    if (!this.has(key, now)) return false;
+    if (this.max > 0) this.record(key, now);
+    return true;
   }
 
   record(key: string, now: number): void {
     this.#hits.set(key, [...this.#fresh(key, now), now]);
-  }
-}
-
-/** The key prefix of a helper's job (`jobKey`): it has an allowance of its own. */
-export const JOB_KEY = "job:";
-
-/**
- * Both limits of one kind of call: per person and for everyone. A helper's job (`job:<id>`) is
- * held to `job` instead of the person's: its many steps would use up the chat quota of whoever
- * asked; everyone's limit still holds it.
- */
-export class Limits {
-  constructor(
-    readonly person: WindowLimit,
-    readonly global: WindowLimit,
-    readonly job: WindowLimit = person,
-  ) {}
-
-  /** Records the call and returns `true`, or returns `false` without recording when over. */
-  take(who: string, now: number): boolean {
-    const own = who.startsWith(JOB_KEY) ? this.job : this.person;
-    if (!own.has(who, now) || !this.global.has("*", now)) return false;
-    own.record(who, now);
-    this.global.record("*", now);
-    return true;
   }
 }
 

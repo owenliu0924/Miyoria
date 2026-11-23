@@ -166,36 +166,24 @@ describe("the gate", () => {
     await expect(r.call("web_read", ALICE, { url: "file:///etc/passwd" })).rejects.toThrow(/http/);
   });
 
-  it("counts limits per person", async () => {
+  it("counts searches per person", async () => {
     const r = rig();
-    for (let i = 0; i < 6; i++) await r.call("web_search", ALICE, { query: `q${i}` });
-    await expect(r.call("web_search", ALICE, { query: "q6" })).rejects.toThrow(/查太多次/);
+    for (let i = 0; i < 60; i++) await r.call("web_search", ALICE, { query: `q${i}` });
+    await expect(r.call("web_search", ALICE, { query: "q60" })).rejects.toThrow(/查太多次/);
   });
 
-  it("keys the limits on the asker, else on her own, and a helper's job on the job", () => {
+  it("keys the count on the asker, else on her own", () => {
     expect(whoKey(Principals.user(ALICE, ctx))).toBe("discord:1");
     expect(whoKey(Principals.self(ctx))).toBe("self");
-    expect(whoKey(Principals.user(ALICE, ctx), "delegate-ab12cd34")).toBe("job:ab12cd34");
-    expect(whoKey(Principals.user(ALICE, ctx), "t-delegate-x")).toBe("discord:1");
-    expect(whoKey(Principals.self(ctx), "delegate-")).toBe("self");
   });
 
-  it("gives a helper's job its own allowance, apart from the asker's chat quota", async () => {
+  it("counts a helper's job's searches as the asker's: one number for both", async () => {
     const r = rig();
     const job = "delegate-ab12cd34";
-    // The job searches past the person's 6 for the asker, up to its own 20.
-    for (let i = 0; i < 20; i++) await r.call("web_search", ALICE, { query: `j${i}` }, job);
-    await expect(r.call("web_search", ALICE, { query: "j20" }, job)).rejects.toThrow(/查太多次/);
-    // The asker's own quota was not touched by it.
-    for (let i = 0; i < 6; i++) await r.call("web_search", ALICE, { query: `q${i}` });
-    await expect(r.call("web_search", ALICE, { query: "q6" })).rejects.toThrow(/查太多次/);
-    // Another job has its own; everyone's limit (30) still holds all of them.
-    for (let i = 0; i < 4; i++) {
-      await r.call("web_search", ALICE, { query: `k${i}` }, "delegate-ef56gh78");
-    }
-    await expect(r.call("web_search", ALICE, { query: "k4" }, "delegate-ef56gh78")).rejects.toThrow(
-      /查太多次/,
-    );
+    for (let i = 0; i < 40; i++) await r.call("web_search", ALICE, { query: `j${i}` }, job);
+    for (let i = 0; i < 20; i++) await r.call("web_search", ALICE, { query: `q${i}` });
+    await expect(r.call("web_search", ALICE, { query: "q20" })).rejects.toThrow(/查太多次/);
+    await expect(r.call("web_search", ALICE, { query: "j40" }, job)).rejects.toThrow(/查太多次/);
     // The gate still checks the asker: someone without tools.web gets nothing through a job.
     await expect(r.call("web_search", BOB, { query: "x" }, job)).rejects.toBeInstanceOf(
       ActionDeniedError,
@@ -212,14 +200,7 @@ describe("module", () => {
       read_chars: 12_000,
       result_chars: 12_000,
       search_chars: 3900,
-      search_per_person: 6,
-      read_per_person: 10,
-      search_global: 30,
-      read_global: 60,
-      search_per_job: 20,
-      read_per_job: 40,
-      image_per_job: 20,
-      window_s: 600,
+      search_per_person_hour: 60,
       cache_ttl_s: 600,
       max_redirects: 3,
       max_download_bytes: 2_000_000,

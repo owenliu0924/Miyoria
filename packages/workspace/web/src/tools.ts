@@ -1,6 +1,6 @@
 // Her three web tools behind the gate (search, read a page, look at a picture). Low risk: the gate checks `tools.web` for the person who
-// asked (or lets her own `on_own` call through), and the module's own limits (limits.ts) bound
-// what anyone, and everyone together, can make her fetch. The text tools answer with an untrusted
+// asked (or lets her own `on_own` call through), and the module counts each person's searches in
+// an hour (limits.ts). The text tools answer with an untrusted
 // data block (web.ts), so what a page says is something she read, never something she was told;
 // `web_image` hands the picture to the model as a picture (`ActionResult.images`).
 
@@ -12,7 +12,6 @@ import {
 } from "@miyoria/gate/actions";
 import { accountRefString, type Principal } from "@miyoria/types";
 import { z } from "zod";
-import { JOB_KEY } from "./limits.js";
 import { WebError } from "./net.js";
 import type { WebService } from "./web.js";
 
@@ -31,23 +30,11 @@ type ReadArgs = z.output<typeof ReadArgs>;
 const ImageArgs = z.object({ url: z.string().trim().min(1).max(2000) });
 type ImageArgs = z.output<typeof ImageArgs>;
 
-/** The turn of a helper's job (`delegate-<id>`, brain/self delegate.ts). */
-const JOB_TURN = "delegate-";
-
-/** The key of a helper's job from its turn, `null` for any other turn. */
-export function jobKey(turn: string | null | undefined): string | null {
-  if (typeof turn !== "string" || !turn.startsWith(JOB_TURN)) return null;
-  const id = turn.slice(JOB_TURN.length);
-  return id === "" ? null : `${JOB_KEY}${id}`;
-}
-
 /**
- * A stable key of whoever the call is for: a helper's job has its own allowance (its calls still
- * act for the asker at the gate), else the asker, else her own.
+ * A stable key of whoever the call is for: the asker (a helper's job acts for whoever asked, so
+ * its searches are theirs), else her own.
  */
-export function whoKey(principal: Principal, turn?: string | null): string {
-  const job = jobKey(turn);
-  if (job !== null) return job;
+export function whoKey(principal: Principal): string {
   return principal.requester === null ? "self" : accountRefString(principal.requester);
 }
 
@@ -85,7 +72,7 @@ export function searchCapability(web: WebService): Capability {
     async execute(args, ctx: ExecContext) {
       const max = args.max ?? web.config.search_results;
       const out = await guarded(() =>
-        web.search(whoKey(ctx.principal, ctx.request.turn), args.query, max, ctx.signal),
+        web.search(whoKey(ctx.principal), args.query, max, ctx.signal),
       );
       return { text: out.text, data: { results: out.hits.map((h) => ({ ...h })) } };
     },
@@ -112,9 +99,7 @@ export function readCapability(web: WebService): Capability {
       required: ["url"],
     },
     async execute(args, ctx: ExecContext) {
-      const out = await guarded(() =>
-        web.read(whoKey(ctx.principal, ctx.request.turn), args.url, ctx.signal),
-      );
+      const out = await guarded(() => web.read(whoKey(ctx.principal), args.url, ctx.signal));
       return {
         text: out.text,
         data: {
@@ -147,9 +132,7 @@ export function imageCapability(web: WebService): Capability {
       required: ["url"],
     },
     async execute(args, ctx: ExecContext) {
-      const out = await guarded(() =>
-        web.image(whoKey(ctx.principal, ctx.request.turn), args.url, ctx.signal),
-      );
+      const out = await guarded(() => web.image(whoKey(ctx.principal), args.url, ctx.signal));
       const kb = Math.max(1, Math.round(out.bytes / 1000));
       return {
         text: `圖片已經看到了(${out.type},${kb} KB):${out.url}`,

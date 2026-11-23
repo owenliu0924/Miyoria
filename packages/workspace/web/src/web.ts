@@ -1,6 +1,7 @@
 // What `web_search` and `web_read` do, without the gate: DuckDuckGo (paced, so a burst is not
-// challenged), the guarded page reader, the caches and the rate limits. Results are formatted as
-// untrusted data blocks for her.
+// challenged), the guarded page reader, the caches and the search count. Results are formatted as
+// untrusted data blocks for her. Only searches are counted per person (`search_per_person_hour`):
+// a paid provider spends credits on each. Reads and pictures are bounded by her steps and cost.
 
 import { type Clock, dataBlock, sniffImage } from "@miyoria/types";
 import type { WebConfig } from "./config.js";
@@ -11,7 +12,7 @@ import {
   readableText,
   type SearchHit,
 } from "./html.js";
-import { Limits, TtlCache, WindowLimit } from "./limits.js";
+import { TtlCache, WindowLimit } from "./limits.js";
 import { type GuardDeps, guardedGet, WebError } from "./net.js";
 
 export const SEARCH_URL = "https://html.duckduckgo.com/html/";
@@ -92,9 +93,8 @@ export class WebService {
   readonly #d: WebDeps;
   readonly #searchCache: TtlCache<SearchOutcome>;
   readonly #readCache: TtlCache<ReadOutcome>;
-  readonly #searches: Limits;
-  readonly #reads: Limits;
-  readonly #images: Limits;
+  /** Searches per person in a rolling hour. */
+  readonly #searches: WindowLimit;
   /** DuckDuckGo searches go one at a time, `ddg_gap_ms` apart. */
   #ddgQueue: Promise<unknown> = Promise.resolve();
   #ddgLast = Number.NEGATIVE_INFINITY;
@@ -103,24 +103,9 @@ export class WebService {
   constructor(deps: WebDeps) {
     this.#d = deps;
     const c = deps.config;
-    const windowMs = c.window_s * 1000;
     this.#searchCache = new TtlCache(c.cache_ttl_s * 1000, c.cache_entries);
     this.#readCache = new TtlCache(c.cache_ttl_s * 1000, c.cache_entries);
-    this.#searches = new Limits(
-      new WindowLimit(c.search_per_person, windowMs),
-      new WindowLimit(c.search_global, windowMs),
-      new WindowLimit(c.search_per_job, windowMs),
-    );
-    this.#reads = new Limits(
-      new WindowLimit(c.read_per_person, windowMs),
-      new WindowLimit(c.read_global, windowMs),
-      new WindowLimit(c.read_per_job, windowMs),
-    );
-    this.#images = new Limits(
-      new WindowLimit(c.image_per_person, windowMs),
-      new WindowLimit(c.image_global, windowMs),
-      new WindowLimit(c.image_per_job, windowMs),
-    );
+    this.#searches = new WindowLimit(c.search_per_person_hour, 3_600_000);
   }
 
   get config(): WebConfig {
@@ -145,7 +130,7 @@ export class WebService {
     const cached = this.#searchCache.get(key, this.#now());
     if (cached !== undefined) return cached;
     if (!this.#searches.take(who, this.#now())) {
-      throw new WebError("查太多次了,等一下再查。", "search rate limit");
+      throw new WebError("這個小時查太多次了,等一下再查。", "search rate limit");
     }
     let hits: FoundHit[];
     let answer: string | undefined;
@@ -324,16 +309,13 @@ export class WebService {
 
   /**
    * One picture by URL, through the same guarded download as a page (public addresses, every
-   * redirect checked, the pinned connection) with its own rate limit. Only png, jpeg, webp and
+   * redirect checked, the pinned connection). Only png, jpeg, webp and
    * gif by their bytes, at most `image_max_bytes` and not downsized. Nothing is fetched when the
-   * chat model takes no images.
+   * chat model takes no images. `_who` is the asker, like `search`'s; a picture is not counted.
    */
-  async image(who: string, rawUrl: string, signal: AbortSignal): Promise<ImageOutcome> {
+  async image(_who: string, rawUrl: string, signal: AbortSignal): Promise<ImageOutcome> {
     const cfg = this.#d.config;
     if (this.#d.takesImages?.() !== true) throw new WebError(NO_IMAGES, "no image input");
-    if (!this.#images.take(who, this.#now())) {
-      throw new WebError("看太多張圖了,等一下再看。", "image rate limit");
-    }
     const got = await guardedGet(rawUrl.trim(), cfg, signal, this.#d, {
       accept: "image/png,image/jpeg,image/webp,image/gif;q=0.9,*/*;q=0.1",
       types: IMAGE_TYPES,
@@ -359,14 +341,12 @@ export class WebService {
     };
   }
 
-  async read(who: string, rawUrl: string, signal: AbortSignal): Promise<ReadOutcome> {
+  /** One page as text. `_who` is the asker, like `search`'s; a read is not counted. */
+  async read(_who: string, rawUrl: string, signal: AbortSignal): Promise<ReadOutcome> {
     const cfg = this.#d.config;
     const key = rawUrl.trim();
     const cached = this.#readCache.get(key, this.#now());
     if (cached !== undefined) return cached;
-    if (!this.#reads.take(who, this.#now())) {
-      throw new WebError("讀太多頁了,等一下再讀。", "read rate limit");
-    }
     const page = await guardedGet(key, cfg, signal, this.#d);
     const body = decode(page.bytes, page.contentType);
     const plain = page.contentType.startsWith("text/plain");
