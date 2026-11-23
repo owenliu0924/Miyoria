@@ -177,8 +177,7 @@ export const stack: typeof en = {
       inference: "GPU 推論機",
     },
     help: {
-      broadcast:
-        "直播用主機:Discord 語音與 Go Live(voice node)、VTube Studio / OBS / overlay(stage)",
+      broadcast: "直播機:Discord 語音與 Go Live(voice node)、VTube Studio / OBS / overlay(stage)",
       core: "Discord bot、所有模組、資料庫、管理面板(core),判斷發言結束的 worker(turn),檔案沙箱使用的 Docker",
       inference: "全部 AI 模型:語音辨識(asr)、語音合成(tts)、翻唱(sing);三者須在同一台主機執行",
     },

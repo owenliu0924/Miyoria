@@ -220,7 +220,7 @@ export const stack = {
 
   roles: {
     label: {
-      broadcast: "Broadcast machine",
+      broadcast: "Streaming machine",
       core: "Bot server",
       inference: "GPU inference machine",
     },
