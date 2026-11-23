@@ -71,7 +71,7 @@ import {
 } from "@miyoria/types";
 import type { Agent } from "../../agent/src/index.js";
 import { dayIndex, type LocalTime, localHour } from "../../arbiter/src/index.js";
-import type { PromptInput, Wake } from "../../self/src/index.js";
+import type { PromptInput, Wake, WakeAuthor } from "../../self/src/index.js";
 import {
   GateBook,
   type GateFacts,
@@ -697,6 +697,7 @@ export class Initiative {
               ? WAKE_NOTES.commitment(row.text)
               : row.text,
         item: row.id,
+        asker: row.kind === "timer" ? this.#askerOfTimer(row.key) : null,
       });
     }
     out.push(...this.#quiet(now, open));
@@ -704,6 +705,17 @@ export class Initiative {
     const morning = this.#morningOf(now, home);
     if (morning !== null) out.push(morning);
     return out.filter((o) => !this.#woken.includes(o.id));
+  }
+
+  /**
+   * Who asked for the schedule behind a timer item (`timer:<id>:<n>`), from its row; `null`: she
+   * set it herself, or a row from before askers were kept (hers).
+   */
+  #askerOfTimer(key: string): WakeAuthor | null {
+    const id = key.split(":")[1] ?? "";
+    const account = id === "" ? null : (this.#h.store.schedule(id)?.for_account ?? null);
+    if (account === null) return null;
+    return { account, name: this.#h.agent.handleOf(account, account.id) };
   }
 
   /** Places that went quiet with something in her inbox or promises there, once per lull. */
@@ -910,7 +922,7 @@ export class Initiative {
     if (place === null) return;
     const wake: Wake =
       o.kind === "timer"
-        ? { kind: "timer", note: o.note }
+        ? { kind: "timer", note: o.note, ...(o.asker ? { from: o.asker } : {}) }
         : o.kind === "world"
           ? { kind: "world", what: o.note }
           : { kind: "self", note: o.note };

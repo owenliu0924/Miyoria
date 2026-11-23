@@ -35,6 +35,7 @@ import {
   nextDayStart,
   quietEndsAt,
 } from "../../arbiter/src/index.js";
+import type { WakeAuthor } from "../../self/src/index.js";
 
 const HOUR_MS = 3_600_000;
 
@@ -72,6 +73,11 @@ export interface Opportunity {
   note: string;
   /** The inbox item behind it. */
   item: number | null;
+  /**
+   * Who asked for it (a timer someone asked her to set): the run acts for them. Unset: nobody,
+   * it is hers.
+   */
+  asker?: WakeAuthor | null;
 }
 
 export interface GateConfig {

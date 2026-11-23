@@ -127,7 +127,9 @@ export function wakeLine(wake: Wake, names: SpeakerNames | null = null): string 
     case "result":
       return WAKE_LINES.result(wake.tool, wake.job, wake.ok);
     case "timer":
-      return WAKE_LINES.timer(wake.note);
+      return wake.from
+        ? WAKE_LINES.askedTimer(wake.from.name, wake.note)
+        : WAKE_LINES.timer(wake.note);
     case "world":
       return WAKE_LINES.world(wake.what);
     case "glance":

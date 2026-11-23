@@ -116,6 +116,8 @@ export const WAKE_LINES = {
     }):見參考資料「${RESULT_TITLE}」。這是有人要你做的事(資料裡寫了是誰要的)時,一定要跟那個人交代:做了什麼、東西或檔案在哪,或為什麼沒做成;不能不說。只有沒有人在等的結果,才可以想講再講、沒什麼好說就不寫。`,
   timer: (note: string) =>
     `你自己設的時間到了:「${neutralize(note).replace(/\s+/g, " ").trim()}」。要不要說、怎麼說由你決定。`,
+  askedTimer: (name: string, note: string) =>
+    `${safeName(name)} 請你設的時間到了:「${neutralize(note).replace(/\s+/g, " ").trim()}」。這時候做的事是替他做的。要不要說、怎麼說由你決定。`,
   glance: (lines: number) =>
     `沒有人叫你。你看了一眼這裡最近的 ${lines} 則訊息:要不要參與由你決定,不想就什麼都不寫。`,
   world: (what: string) =>

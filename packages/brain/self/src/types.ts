@@ -76,8 +76,11 @@ export type Wake =
       /** Who asked for it, when someone did: tools of the run act for them. */
       from?: WakeAuthor | null;
     }
-  /** A time she set came. */
-  | { kind: "timer"; note: string }
+  /**
+   * A time she set came. `from`: who asked for it, when someone did: tools of the run act for
+   * them (their folder, their bond, their quota). Unset: she set it herself.
+   */
+  | { kind: "timer"; note: string; from?: WakeAuthor | null }
   /**
    * Something happened in the world that is worth a look. `claim`: the Floor row the Arbiter
    * admitted it under (a game's narration, a song's announcement); unset: `notable`.
@@ -98,7 +101,7 @@ export function someoneWaits(wake: Wake): boolean {
 /** The person a run's tools act for, when there is one. */
 export function wakeAuthor(wake: Wake): WakeAuthor | null {
   if (wake.kind === "addressed") return wake.from;
-  if (wake.kind === "result") return wake.from ?? null;
+  if (wake.kind === "result" || wake.kind === "timer") return wake.from ?? null;
   return null;
 }
 

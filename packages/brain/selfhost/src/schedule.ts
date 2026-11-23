@@ -236,15 +236,28 @@ export class ScheduleBook {
     );
   }
 
-  /** Sets a time she chose (`schedule`); throws `ScheduleError` in her words. */
-  set(input: { when: When; note: string; context: ContextKey | null }): ScheduleRow {
+  /**
+   * Sets a time she chose (`schedule`); throws `ScheduleError` in her words. `asker`: who asked
+   * for it (kept as `for_account`, so it wakes her for them); `null` or unset: her own.
+   */
+  set(input: {
+    when: When;
+    note: string;
+    context: ContextKey | null;
+    asker?: AccountRef | null;
+  }): ScheduleRow {
+    const asker = input.asker ?? null;
+    const { perPerson } = this.#o.limits;
+    if (asker !== null && this.reminders.of(asker).length >= perPerson) {
+      throw new ScheduleError(SCHEDULE_TOOL.perPerson(perPerson));
+    }
     return this.#add({
       note: input.note,
       due: input.when.due,
       daily: input.when.daily,
       context: input.context,
       person: null,
-      for_account: null,
+      for_account: asker,
       source: "schedule",
     });
   }
