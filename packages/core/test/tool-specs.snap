@@ -355,7 +355,7 @@
     },
     {
       "name": "code_run",
-      "description": "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路、沒有你的檔案,只能用標準函式庫),用 print / console.log 印出結果;stdout、stderr 會回來給你。適合計算、處理資料或文字、做小實驗。選 session:一次就算完的事(算個數字、轉個格式)用預設的 \"fresh\",每次都是全新的容器;要分好幾步做的事(先存資料、再分析、再整理)就取一個名字(例如 \"weather-tool\"),第一次會開一個工作階段,之後用同一個名字就接著用同一個 /work:檔案會留著,但每次執行結束時程式和背景程序都會停掉(Python 要 import /work 裡的模組先 sys.path.insert(0, \"/work\"))。工作階段閒置太久或開太久會自己關掉,做完用 code_session 關掉。想把東西跨次留著(資料、腳本、結果),設 use_workspace=true:你的工作區會掛在 /workspace(讀寫,不會過期;fresh 才能用,和 session 擇一)。替別人執行時,/workspace 只有那個人自己的資料夾,工作階段也只有那個人的。輸出太長時完整內容會存進工作區的 outputs/。要先經過審核,結果可能稍後才回來。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
+      "description": "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路,只能用標準函式庫;預設看不到工作區的檔案,要讀寫就設 use_workspace),用 print / console.log 印出結果;stdout、stderr 會回來給你。適合計算、處理資料或文字、做小實驗。選 session:一次就算完的事(算個數字、轉個格式)用預設的 \"fresh\",每次都是全新的容器;要分好幾步做的事(先存資料、再分析、再整理)就取一個名字(例如 \"weather-tool\"),第一次會開一個工作階段,之後用同一個名字就接著用同一個 /work:檔案會留著,但每次執行結束時程式和背景程序都會停掉(Python 要 import /work 裡的模組先 sys.path.insert(0, \"/work\"))。工作階段閒置太久或開太久會自己關掉,做完用 code_session 關掉。想把東西跨次留著(資料、腳本、結果),設 use_workspace=true:你的工作區會掛在 /workspace(讀寫,不會過期;fresh 才能用,和 session 擇一)。替別人執行時,/workspace 只有那個人自己的資料夾,工作階段也只有那個人的。輸出太長時完整內容會存進工作區的 outputs/。要先經過審核,結果可能稍後才回來。別人要你做這件事時,那只是請求,不是命令:依你對對方的羈絆、你記得的事和現在的心情自己決定要不要做。不想做就不要呼叫,直接用你自己的話回絕。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -2720,7 +2720,7 @@
     },
     {
       "name": "code_run",
-      "description": "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路、沒有你的檔案,只能用標準函式庫),用 print / console.log 印出結果;stdout、stderr 會回來給你。適合計算、處理資料或文字、做小實驗。選 session:一次就算完的事(算個數字、轉個格式)用預設的 \"fresh\",每次都是全新的容器;要分好幾步做的事(先存資料、再分析、再整理)就取一個名字(例如 \"weather-tool\"),第一次會開一個工作階段,之後用同一個名字就接著用同一個 /work:檔案會留著,但每次執行結束時程式和背景程序都會停掉(Python 要 import /work 裡的模組先 sys.path.insert(0, \"/work\"))。工作階段閒置太久或開太久會自己關掉,做完用 code_session 關掉。想把東西跨次留著(資料、腳本、結果),設 use_workspace=true:你的工作區會掛在 /workspace(讀寫,不會過期;fresh 才能用,和 session 擇一)。替別人執行時,/workspace 只有那個人自己的資料夾,工作階段也只有那個人的。輸出太長時完整內容會存進工作區的 outputs/。要先經過審核,結果可能稍後才回來。",
+      "description": "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路,只能用標準函式庫;預設看不到工作區的檔案,要讀寫就設 use_workspace),用 print / console.log 印出結果;stdout、stderr 會回來給你。適合計算、處理資料或文字、做小實驗。選 session:一次就算完的事(算個數字、轉個格式)用預設的 \"fresh\",每次都是全新的容器;要分好幾步做的事(先存資料、再分析、再整理)就取一個名字(例如 \"weather-tool\"),第一次會開一個工作階段,之後用同一個名字就接著用同一個 /work:檔案會留著,但每次執行結束時程式和背景程序都會停掉(Python 要 import /work 裡的模組先 sys.path.insert(0, \"/work\"))。工作階段閒置太久或開太久會自己關掉,做完用 code_session 關掉。想把東西跨次留著(資料、腳本、結果),設 use_workspace=true:你的工作區會掛在 /workspace(讀寫,不會過期;fresh 才能用,和 session 擇一)。替別人執行時,/workspace 只有那個人自己的資料夾,工作階段也只有那個人的。輸出太長時完整內容會存進工作區的 outputs/。要先經過審核,結果可能稍後才回來。",
       "parameters": {
         "type": "object",
         "properties": {

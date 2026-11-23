@@ -193,7 +193,10 @@ export function codeRunCapability(o: SandboxGateOptions): Capability<CodeRunArgs
       meta: { effect: "external", speed: "instant", group: "code", core: true },
       framed: true,
       description:
-        "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路、沒有你的檔案,只能用標準函式庫)," +
+        "寫一段 Python 或 Node 程式,在離線的沙箱容器裡執行(沒有網路,只能用標準函式庫" +
+        (o.sandbox.workspace === null
+          ? ",也沒有你的檔案),"
+          : ";預設看不到工作區的檔案,要讀寫就設 use_workspace),") +
         "用 print / console.log 印出結果;stdout、stderr 會回來給你。適合計算、處理資料或文字、做小實驗。" +
         '選 session:一次就算完的事(算個數字、轉個格式)用預設的 "fresh",每次都是全新的容器;' +
         '要分好幾步做的事(先存資料、再分析、再整理)就取一個名字(例如 "weather-tool"),' +
