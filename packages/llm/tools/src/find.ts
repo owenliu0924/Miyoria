@@ -85,12 +85,15 @@ const GROUP_WORDS: Readonly<Record<string, readonly string[]>> = {
   notebook: ["筆記本"],
   notes: ["筆記"],
   web: ["網路", "網頁", "搜尋"],
-  code: ["程式"],
-  workspace: ["工作區", "檔案"],
+  code: ["程式", "跑程式", "程式碼", "腳本"],
+  workspace: ["工作區", "檔案", "腳本"],
+  files: ["檔案", "附件", "產物"],
+  mcp: ["插件", "外部服務", "外部工具"],
+  extension: ["插件", "擴充"],
   skills: ["技能"],
-  work: ["任務"],
+  work: ["任務", "小幫手"],
   rules: ["規則"],
-  schedule: ["提醒"],
+  schedule: ["提醒", "排程"],
   chat: ["私訊", "聊天"],
   diary: ["日記"],
 };
@@ -173,8 +176,15 @@ export function toolSession(context: ContextKey): string {
 const Params = z.object({
   query: z
     .string()
-    .describe("想做的事或工具的關鍵字,中文或英文都可以,例如「金幣」「唱歌」「game」"),
-  group: z.string().describe("只找某一類,例如 economy、party、sing、game、stream").optional(),
+    .describe(
+      "想做的事或工具的關鍵字,中文或英文都可以,例如「檔案」「跑程式」「排程」「金幣」「game」",
+    ),
+  group: z
+    .string()
+    .describe(
+      "只找某一類,例如 workspace、code、schedule、mcp、extension、economy、party、sing、game",
+    )
+    .optional(),
 });
 
 /** Where `find_tools` looks and what it adds to. */
@@ -188,7 +198,8 @@ export function findTools(catalog: ToolCatalog): Tool {
   return defineTool({
     name: FIND_TOOLS,
     description:
-      "找出平常不在你工具清單裡的工具(金幣、派對遊戲、唱歌、遊戲、直播這些)。" +
+      "找出平常不在你工具清單裡的工具:檔案和工作區的其他工具(刪檔、存腳本、跑腳本)、跑程式(工作階段)、排程、" +
+      "筆記和日記、插件和外部服務,還有金幣、派對遊戲、唱歌、遊戲、直播這些。" +
       "用關鍵字說你想做的事;找到的工具會加進這次對話可以用的工具,之後直接呼叫就好。" +
       "不確定有沒有這種工具時先找,不要猜工具的名字。",
     parameters: Params,
