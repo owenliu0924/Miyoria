@@ -5,7 +5,7 @@
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExchangeAccount, ExchangeAdmin, ExchangeBoards, ExchangeLine, ExchangeMarket, ExchangePortfolio, ExchangeQuote } from "@miyoria/contracts/api";
@@ -216,9 +216,11 @@ describe("a profile with other words", () => {
     const texts = [shown()];
     list.unmount();
     renderPage(<Exchange initialCode="KELP" />);
-    expect(await screen.findByText(/\$200 = 花 200 貝殼/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "試算並確認" }));
-    await screen.findByRole("alertdialog");
+    // Buying is stopped today on this install: the sale's ticket, in his coins.
+    await userEvent.click(within(await screen.findByRole("region", { name: "買賣" })).getByRole("button", { name: "賣出" }));
+    const sheet = await screen.findByRole("dialog", { name: /KELP/ });
+    await userEvent.click(within(sheet).getByRole("radio", { name: "金額" }));
+    expect(within(sheet).getByLabelText("賣多少貝殼")).toBeInTheDocument();
     texts.push(shown());
     await userEvent.keyboard("{Escape}");
     for (const name of ["我的", "富人榜", "規則"]) {
