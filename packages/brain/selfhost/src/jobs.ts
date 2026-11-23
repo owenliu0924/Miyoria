@@ -5,8 +5,12 @@
 // and `work_steer`; the lane itself stays only for the game director's driven tasks.
 //
 // Results. A job that ends wakes the place that started it as a `result`, with the job's id,
-// kind, goal and summary as the data of the wake (the runner frames it); one a restart cut is told
-// the same way once the host is up. A job she cancelled herself is not told: she knows.
+// kind, goal, who asked and summary as the data of the wake (the runner frames it). A job a
+// restart cut goes on once the host is up (`Delegator.recover`); one that cannot is told the same
+// way. A job she cancelled herself is not told: she knows.
+//
+// Progress. Her prompt has the section 「進行中的工作」 (`JobsPrompt`): the jobs of the place she
+// answers, with their plans.
 //
 // Events. A job publishes the work lane's task events under the owner `delegate`
 // (`delegate.task.started|progress|done|failed`), so the fact layer and the panel's task list show
@@ -26,6 +30,7 @@ import {
   isJsonObject,
   type JsonValue,
   type ProfileId,
+  PromptContributorsKey,
   publishTaskEvent,
   ReflectGuardKey,
   type TaskEvent,
@@ -37,14 +42,17 @@ import type { LocalTime } from "../../arbiter/src/index.js";
 import {
   type DayState,
   type DelegateEvent,
-  type DelegateLimits,
+  type DelegateLimitsInput,
   Delegator,
   delegateTexts,
   delegateTools,
   isSubagentKind,
+  JOBS_PROMPT_KEY,
   type JobRow,
   type JobState,
   type JobStore,
+  JobsPrompt,
+  kindLimitsOf,
   type RunModel,
   serviceGuard,
   type Wake,
@@ -211,7 +219,7 @@ export function runReflect<T>(deps: RunReflectDeps<T>) {
 
 export interface JobsHostOptions {
   /** Jobs at once, the queue, caps and so on: over `[modules.agent.delegate]`. */
-  limits?: Partial<DelegateLimits>;
+  limits?: DelegateLimitsInput;
   /** Where jobs are kept; default: the settings store, else nowhere. */
   store?: JobStore;
   /** Wait before jobs a restart cut are told (ms). */
@@ -265,6 +273,11 @@ export class JobsHost {
         resultChars: cfg.result_chars,
         readChars: cfg.read_chars,
         keepEnded: cfg.keep_ended,
+        kinds: {
+          research: kindLimitsOf(cfg.kinds.research),
+          curator: kindLimitsOf(cfg.kinds.curator),
+          worker: kindLimitsOf(cfg.kinds.worker),
+        },
         ...options.limits,
       },
       dayKey: (now) => new Date(now - dayStart * 3_600_000).toISOString().slice(0, 10),
@@ -284,6 +297,7 @@ export class JobsHost {
       nameOf: (account) => agent.handleOf(account, account.id),
     });
     for (const tool of this.#tools) agent.tools.register(tool);
+    services.get(PromptContributorsKey)?.register(new JobsPrompt(this.delegator));
     // The `reflect` module runs its daily reflection through this, under the nightly figure.
     agent.ctx.provide(ReflectGuardKey, {
       run: async (run, signal, options) => {
@@ -339,6 +353,7 @@ export class JobsHost {
   stop(): void {
     this.#stopped = true;
     this.delegator.close();
+    this.#agent.ctx.services.get(PromptContributorsKey)?.unregister(JOBS_PROMPT_KEY);
     const registry = this.#agent.tools;
     for (const tool of this.#tools) registry.unregister(tool.spec.name);
   }

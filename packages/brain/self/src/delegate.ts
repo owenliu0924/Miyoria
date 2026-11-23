@@ -11,9 +11,14 @@
 // cap of its session), the day's cap of all jobs together, and the job's row. The day's cap stops
 // a running job at its next step, like the job's own cap does.
 //
-// Rows. A job's row (who asked, where, state, usage, summary) is kept in a `JobStore` while it
-// lives and after it ends, so a restart finds what was unfinished and reports it as failed by the
-// restart instead of losing it.
+// Rows. A job's row (who asked, where, state, usage, plan, summary) is kept in a `JobStore` while
+// it lives and after it ends, and saved after every step.
+//
+// Restarts. A job that was running when the process stopped goes on from its transcript on the
+// next start, with what is left of its rounds, time (the time it ran before counts, the gap does
+// not) and budget; one whose allowance is used up only writes what it has. A queued one starts as
+// if new. A job that a restart cut twice after resuming, or whose resumed run failed twice, ends as
+// failed with the reason.
 
 import { withLlmTag } from "@miyoria/llm/llm";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
@@ -24,40 +29,53 @@ import {
   DELEGATE_REFUSALS,
   listLine,
   NO_RESULT_NOTE,
+  PLAN_HEAD,
   RESTART_NOTE,
+  RESUME_AUTHOR,
+  RESUME_FAILED_NOTE,
+  RESUME_SPENT_NOTE,
   receipt,
   resultText,
+  resumeNote,
   SHUTDOWN_NOTE,
   spentText,
   WAKE_TOOL,
 } from "./delegate-texts.js";
 import { composeGuards } from "./guard.js";
+import {
+  currentStep,
+  PLAN_TOOL,
+  type PlanStep,
+  planCount,
+  planLines,
+  planOf,
+  planTool,
+} from "./plan.js";
 import type { LimitName, RunLimits } from "./profiles.js";
 import { SelfRunner } from "./run.js";
 import { SpendLedger } from "./spend.js";
 import {
+  type CallableKind,
+  defaultKindLimits,
   fixedTools,
   goalLine,
   helperGuard,
   helperPrompt,
+  helperSystem,
   isolatedTranscript,
   isSubagentKind,
+  type JobRegistry,
   jobBudget,
   jobTools,
   KINDS,
+  type KindLimits,
   noMouth,
   profileOf,
+  type RunAllowance,
   type SubagentKind,
+  TOKENS_PER_USD,
 } from "./subagents.js";
-import type {
-  Guard,
-  PromptInput,
-  RunEvent,
-  RunModel,
-  RunTools,
-  Wake,
-  WakeAuthor,
-} from "./types.js";
+import type { Guard, PromptInput, RunEvent, RunModel, Wake, WakeAuthor } from "./types.js";
 
 /** Characters of a goal. */
 export const MAX_GOAL_CHARS = 600;
@@ -122,7 +140,28 @@ export interface JobRow {
   session: string;
   /** Whether the place that asked is told when it ends. */
   told: boolean;
+  /** Its steps as the helper last set them (`plan`); empty: none yet. */
+  plan: PlanStep[];
+  /** What it did last (a call, a plan step), for her progress section. */
+  last_step: string | null;
+  /** Wall time it ran, every run of it together (ms): a restart's gap is not counted. */
+  ran_ms: number;
+  /** Times it went on after a restart or a failed run. */
+  resumes: number;
 }
+
+/** A row as kept by an older version (no plan, no resumes) made whole. */
+export function normaliseRow(row: JobRow): JobRow {
+  const r = row as Partial<JobRow> & JobRow;
+  row.plan = planOf(r.plan);
+  row.last_step = typeof r.last_step === "string" ? r.last_step : null;
+  row.ran_ms = typeof r.ran_ms === "number" && r.ran_ms >= 0 ? r.ran_ms : 0;
+  row.resumes = typeof r.resumes === "number" && r.resumes >= 0 ? r.resumes : 0;
+  return row;
+}
+
+/** A job goes on after a restart at most this many times. */
+export const MAX_RESUMES = 2;
 
 /** What a day's pool has taken in. */
 export interface DayState {
@@ -262,32 +301,51 @@ export interface DelegateLimits {
   /** Characters one `read` gives. */
   readChars: number;
   keepEnded: number;
+  /** What one job of each kind may use (`[modules.agent.delegate.kinds.<kind>]`). */
+  kinds: Record<CallableKind, KindLimits>;
 }
 
 export const DEFAULT_DELEGATE_LIMITS: DelegateLimits = {
-  maxRunning: 2,
-  maxQueued: 4,
-  dailyUsd: 3,
-  dailyTokens: 9_000_000,
+  maxRunning: 3,
+  maxQueued: 8,
+  dailyUsd: 10,
+  dailyTokens: 30_000_000,
   reflectDailyUsd: 0.5,
   reflectDailyTokens: 1_500_000,
   resultChars: 1500,
   readChars: 8000,
   keepEnded: 20,
+  kinds: defaultKindLimits(),
 };
+
+/** What `DelegatorPorts.limits` may set: any limit, and any field of a kind's. */
+export type DelegateLimitsInput = Partial<Omit<DelegateLimits, "kinds">> & {
+  kinds?: Partial<Record<CallableKind, Partial<KindLimits>>>;
+};
+
+/** `input` over the defaults, each kind's fields over that kind's. */
+export function delegateLimits(input: DelegateLimitsInput = {}): DelegateLimits {
+  const { kinds, ...rest } = input;
+  const base = defaultKindLimits();
+  const merged = { ...DEFAULT_DELEGATE_LIMITS, ...rest, kinds: base };
+  for (const kind of Object.keys(base) as CallableKind[]) {
+    merged.kinds[kind] = { ...base[kind], ...kinds?.[kind] };
+  }
+  return merged;
+}
 
 export interface DelegatorPorts {
   /** The real transcripts (jobs write through an isolated view of it). */
   transcript: TranscriptStore;
-  /** The registry; a job sees only its kind's list of it. */
-  tools: Pick<RunTools, "entry" | "run">;
+  /** The registry; a job sees only its kind's tools of it. */
+  tools: JobRegistry;
   model: RunModel;
   /** The real guard, asked after the helper's own. */
   guard: Guard;
   clock: Clock;
   log: Logger;
   store: JobStore;
-  limits?: Partial<DelegateLimits>;
+  limits?: DelegateLimitsInput;
   /** The key of a day (the pools reset when it changes). Default: the UTC date. */
   dayKey?: (now: number) => string;
   /** The owner's rules as the helper's block 3 (they bind it as they bind her); `null`: none. */
@@ -324,6 +382,11 @@ interface Live {
   controller: AbortController;
   /** Set when someone cancelled it: who. */
   cancelBy: "her" | null;
+  /** It goes on from its transcript (it ran before a restart or a failed run). */
+  resume: boolean;
+  /** When this process began running it, and what `row.ran_ms` was then. */
+  since: number;
+  ranBefore: number;
 }
 
 const utcDay = (now: number): string => new Date(now).toISOString().slice(0, 10);
@@ -333,6 +396,9 @@ const LIMIT_NOTES: Record<Exclude<LimitName, "spend">, string> = {
   time: "到了時間上限,這是做到那裡的結果",
   tokens: "到了這件工作能用的量,這是做到那裡的結果",
 };
+
+/** A job a restart found with its allowance used up: what it wrote at once. */
+const SPENT_BEFORE_NOTE = "重啟前就用完了能用的輪數、時間或預算,這是做到那裡的結果";
 
 export class Delegator {
   readonly #p: DelegatorPorts;
@@ -351,7 +417,7 @@ export class Delegator {
 
   constructor(ports: DelegatorPorts) {
     this.#p = ports;
-    this.#limits = { ...DEFAULT_DELEGATE_LIMITS, ...ports.limits };
+    this.#limits = delegateLimits(ports.limits);
     const dayKey = ports.dayKey ?? utcDay;
     this.#pool = new DayPool(
       { usd: this.#limits.dailyUsd, tokens: this.#limits.dailyTokens },
@@ -400,6 +466,23 @@ export class Delegator {
     return n;
   }
 
+  /** The limits of one job of `kind` (the reflection's are its profile's). */
+  kindLimits(kind: SubagentKind): KindLimits {
+    return kind === "reflect" ? KINDS.reflect.limits : this.#limits.kinds[kind];
+  }
+
+  /** How long a job has run (ms), this run included; a restart's gap is not counted. */
+  elapsedMs(row: JobRow): number {
+    const live = this.#live.get(row.id);
+    if (live === undefined || row.state !== "running") return row.ran_ms;
+    return live.ranBefore + Math.max(0, this.#now() - live.since);
+  }
+
+  #save(live: Live): void {
+    live.row.ran_ms = this.elapsedMs(live.row);
+    this.#p.store.saveJob(live.row);
+  }
+
   // ---- starting ---------------------------------------------------------------------------------
 
   start(spec: StartSpec): StartOutcome {
@@ -434,7 +517,7 @@ export class Delegator {
       context: spec.context,
       from: spec.from,
       state: "queued",
-      budget_usd: jobBudget(kind, spec.budget),
+      budget_usd: jobBudget(this.kindLimits(kind), spec.budget),
       rounds: 0,
       usage: noUsage(),
       created_at: this.#now(),
@@ -444,8 +527,12 @@ export class Delegator {
       note: null,
       session: `delegate:${id}`,
       told: true,
+      plan: [],
+      last_step: null,
+      ran_ms: 0,
+      resumes: 0,
     };
-    const live: Live = { row, tools, controller: new AbortController(), cancelBy: null };
+    const live = this.#liveOf(row, tools, false);
     this.#live.set(id, live);
     this.#p.store.saveJob(row);
     if (running < this.#limits.maxRunning) {
@@ -455,6 +542,18 @@ export class Delegator {
     this.#queue.push(live);
     const ahead = this.#queue.length;
     return { ok: true, job: row, state: "queued", ahead, text: receipt(kind, id, ahead) };
+  }
+
+  #liveOf(row: JobRow, tools: string[], resume: boolean): Live {
+    return {
+      row,
+      tools,
+      controller: new AbortController(),
+      cancelBy: null,
+      resume,
+      since: this.#now(),
+      ranBefore: row.ran_ms,
+    };
   }
 
   #pump(): void {
@@ -467,7 +566,9 @@ export class Delegator {
   #begin(live: Live): void {
     const row = live.row;
     row.state = "running";
-    row.started_at = this.#now();
+    row.started_at ??= this.#now();
+    live.since = this.#now();
+    live.ranBefore = row.ran_ms;
     this.#p.store.saveJob(row);
     this.#emit({ type: "started", job: row });
     // Never inside the call that started it: whoever started it learns its id first.
@@ -486,28 +587,124 @@ export class Delegator {
 
   // ---- running ----------------------------------------------------------------------------------
 
+  /**
+   * What the next run of a job may use: its kind's whole at the start; after a restart or a
+   * failed run, what is left of it (`reportOnly` when nothing is: it only writes what it has).
+   */
+  allowance(row: JobRow, resume: boolean): RunAllowance {
+    const k = this.kindLimits(row.kind);
+    const unpricedCap = Math.round(row.budget_usd * TOKENS_PER_USD);
+    if (!resume) {
+      return {
+        rounds: k.rounds,
+        callsPerRound: k.callsPerRound,
+        wallMs: k.wallMs,
+        toolMs: k.toolMs,
+        tokens: k.tokens,
+        usd: row.budget_usd,
+        unpricedTokens: unpricedCap,
+      };
+    }
+    const now = this.#now();
+    // The ledger holds what this process already counted of the job in the hour.
+    const hour = this.#ledger.hour(row.session, now);
+    const used = row.usage.prompt_tokens + row.usage.completion_tokens;
+    const left = {
+      rounds: k.rounds - row.rounds,
+      wallMs: k.wallMs - row.ran_ms,
+      tokens: k.tokens - used,
+      usd: row.budget_usd - row.usage.cost_usd,
+      unpriced: unpricedCap - row.usage.unpriced_tokens,
+    };
+    const priced = row.usage.unpriced_tokens === 0;
+    const spent =
+      left.rounds <= 0 ||
+      left.wallMs <= 0 ||
+      left.tokens <= 0 ||
+      (priced ? left.usd <= 0 : left.unpriced <= 0);
+    if (spent) {
+      // One step without tools; the day's pool still holds it.
+      return {
+        rounds: 1,
+        callsPerRound: 1,
+        wallMs: 2 * 60_000,
+        toolMs: k.toolMs,
+        tokens: Math.max(k.tokens, 1),
+        usd: 0,
+        unpricedTokens: 0,
+        reportOnly: true,
+      };
+    }
+    return {
+      rounds: left.rounds,
+      callsPerRound: k.callsPerRound,
+      wallMs: left.wallMs,
+      toolMs: k.toolMs,
+      tokens: left.tokens,
+      usd: left.usd + hour.usd,
+      unpricedTokens: Math.max(1, left.unpriced + (hour.basis === "tokens" ? hour.tokens : 0)),
+    };
+  }
+
+  /** Sets a job's plan (its `plan` tool). */
+  #setPlan(live: Live, steps: PlanStep[]): void {
+    const row = live.row;
+    row.plan = steps;
+    const now = currentStep(steps);
+    row.last_step =
+      now === null ? `計畫 ${planCount(steps)}` : `計畫 ${planCount(steps)}:${now.text}`;
+    this.#save(live);
+    this.#emit({ type: "progress", job: row, detail: row.last_step });
+  }
+
   async #run(live: Live): Promise<void> {
+    for (;;) {
+      const out = await this.#runOnce(live);
+      if (this.#closed) return;
+      const failed = out.outcome === null || out.outcome.outcome === "failed";
+      // A resumed run that failed is tried once more, up to the job's resumes.
+      if (failed && live.resume && live.cancelBy === null && live.row.resumes < MAX_RESUMES) {
+        live.row.resumes += 1;
+        this.#save(live);
+        continue;
+      }
+      this.#settle(live, out.outcome, out.failure, out.reportOnly);
+      return;
+    }
+  }
+
+  async #runOnce(live: Live): Promise<{
+    outcome: Awaited<ReturnType<SelfRunner["run"]>> | null;
+    failure: string | null;
+    reportOnly: boolean;
+  }> {
     const row = live.row;
     const kind = row.kind;
     const spec = KINDS[kind];
-    const names = new Set(live.tools);
     const context = row.context as ContextKey;
-    const profile = profileOf(kind, names, row.budget_usd);
-    const goal = goalLine(row.goal, spec);
+    const allowance = this.allowance(row, live.resume);
+    const profile = profileOf(kind, allowance);
     const wake: Wake =
       row.from === null
         ? { kind: "self", note: null }
         : { kind: "result", tool: WAKE_TOOL, job: row.id, ok: true, text: "", from: row.from };
+    const tools = fixedTools(
+      this.#p.tools,
+      live.tools,
+      [planTool((steps) => this.#setPlan(live, steps))],
+      kind,
+    );
     const runner = new SelfRunner(
       {
         transcript: this.#isolated,
-        tools: fixedTools(this.#p.tools, live.tools),
+        tools,
         model: this.#p.model,
-        prompt: helperPrompt(spec, async (input: PromptInput) => {
-          const text = (await this.#p.rules?.(input.session.context)) ?? null;
-          return text;
-        }),
-        guard: composeGuards(helperGuard(kind, names), this.#p.guard),
+        prompt: helperPrompt(
+          spec,
+          async (input: PromptInput) => (await this.#p.rules?.(input.session.context)) ?? null,
+          { system: helperSystem(spec, live.tools), plan: () => planLines(row.plan) },
+        ),
+        guard: composeGuards(helperGuard(kind, tools.listed), this.#p.guard),
         outlet: noMouth,
         clock: { now: () => this.#now() },
         log: this.#p.log,
@@ -518,10 +715,21 @@ export class Delegator {
     );
     let outcome: Awaited<ReturnType<SelfRunner["run"]>> | null = null;
     let failure: string | null = null;
+    const reportOnly = allowance.reportOnly === true;
     try {
-      this.#isolated.append(row.session, [
-        { kind: "other", author: goal.author, content: goal.content },
-      ]);
+      if (!live.resume) {
+        const goal = goalLine(row.goal, this.kindLimits(kind));
+        this.#isolated.append(row.session, [
+          { kind: "other", author: goal.author, content: goal.content },
+        ]);
+      } else {
+        const note = reportOnly
+          ? RESUME_SPENT_NOTE
+          : resumeNote(allowance.rounds, Math.max(1, Math.round(allowance.wallMs / 60_000)));
+        this.#isolated.append(row.session, [
+          { kind: "other", author: RESUME_AUTHOR, content: note },
+        ]);
+      }
       outcome = await withLlmTag({ module: "agent", label: `delegate:${kind}` }, () =>
         runner.run({
           session: { id: row.session, context },
@@ -535,8 +743,7 @@ export class Delegator {
       failure = errorMessage(error);
       this.#p.log.warn({ job: row.id, err: failure }, "a sub-agent run failed");
     }
-    if (this.#closed) return;
-    this.#settle(live, outcome, failure);
+    return { outcome, failure, reportOnly };
   }
 
   #onRunEvent(live: Live, event: RunEvent): void {
@@ -556,13 +763,14 @@ export class Delegator {
           row.usage.cost_usd += event.cost_usd;
         }
       }
+      // Every step is kept: a restart goes on from what the row says.
+      this.#save(live);
     } else if (event.type === "tool_call") {
       const mark = event.ok ? "" : "(沒做成)";
-      this.#emit({
-        type: "progress",
-        job: row,
-        detail: `第 ${event.round} 輪:${event.name}${mark}`,
-      });
+      // Its own plan is a progress event of its own.
+      if (event.name === PLAN_TOOL) return;
+      row.last_step = `第 ${row.rounds} 輪:${event.name}${mark}`;
+      this.#emit({ type: "progress", job: row, detail: row.last_step });
     }
   }
 
@@ -570,6 +778,7 @@ export class Delegator {
     live: Live,
     outcome: Awaited<ReturnType<SelfRunner["run"]>> | null,
     failure: string | null,
+    reportOnly = false,
   ): void {
     const row = live.row;
     const text = outcome?.text.trim() ?? "";
@@ -597,7 +806,9 @@ export class Delegator {
       state = "done";
       const hit = outcome.limits.find((l): l is Exclude<LimitName, "spend"> => l !== "spend");
       if (hit !== undefined) note = LIMIT_NOTES[hit];
+      else if (reportOnly) note = SPENT_BEFORE_NOTE;
     }
+    if (state === "failed" && live.resume) note = RESUME_FAILED_NOTE(note ?? NO_RESULT_NOTE);
     row.summary = text === "" ? null : text;
     row.note = note;
     this.#finish(live, state);
@@ -606,9 +817,16 @@ export class Delegator {
   #finish(live: Live, state: JobState): void {
     const row = live.row;
     if (!this.#live.has(row.id)) return;
+    row.ran_ms = this.elapsedMs(row);
     this.#live.delete(row.id);
     const at = this.#queue.indexOf(live);
     if (at >= 0) this.#queue.splice(at, 1);
+    this.#end(row, state);
+    this.#pump();
+  }
+
+  /** Keeps `row` as ended in `state`, and tells the place that asked when it is to be told. */
+  #end(row: JobRow, state: JobState): void {
     row.state = state;
     row.ended_at = this.#now();
     this.#p.store.saveJob(row);
@@ -621,7 +839,6 @@ export class Delegator {
         this.#p.log.warn({ job: row.id, err: errorMessage(error) }, "could not tell of a job");
       }
     }
-    this.#pump();
   }
 
   #remember(row: JobRow): void {
@@ -688,7 +905,16 @@ export class Delegator {
   lines(limit = 10): string[] {
     return this.jobs()
       .slice(0, limit)
-      .map((j) => listLine(j.id, j.state, j.kind, j.goal, this.spent(j)));
+      .map((j) =>
+        listLine(
+          j.id,
+          j.state,
+          j.kind,
+          j.goal,
+          this.spent(j),
+          j.plan.length === 0 ? "" : planCount(j.plan),
+        ),
+      );
   }
 
   /** What she is told when `row` ended: the data of a result wake. */
@@ -697,6 +923,7 @@ export class Delegator {
       id: row.id,
       kind: row.kind,
       goal: row.goal,
+      asker: row.from?.name ?? null,
       state: row.state,
       spent: this.spent(row) || "沒花什麼",
       note: row.note,
@@ -713,7 +940,11 @@ export class Delegator {
     const row = this.find(ref);
     if (row === null) return { ok: false, text: DELEGATE_REFUSALS.noJob(ref) };
     const body = what === "transcript" ? this.#steps(row) : (row.summary ?? "");
-    const head = `${row.kind} ${row.id}(${row.state}):${row.goal}`;
+    const plan =
+      row.plan.length === 0
+        ? ""
+        : `\n${PLAN_HEAD(planCount(row.plan))}\n${planLines(row.plan).join("\n")}`;
+    const head = `${row.kind} ${row.id}(${row.state}):${row.goal}${plan}`;
     if (what === "result" && body === "") {
       return { ok: true, text: dataBlock(DELEGATE_BLOCK, row.id, `${head}\n${NO_RESULT_NOTE}`) };
     }
@@ -737,7 +968,7 @@ export class Delegator {
     for (const e of this.#p.transcript.tail(row.session).entries) {
       switch (e.kind) {
         case "other":
-          out.push(`任務:${clip(e.content, 300)}`);
+          out.push(`${e.author === RESUME_AUTHOR ? "重啟" : "任務"}:${clip(e.content, 300)}`);
           break;
         case "tool_calls":
           if (e.content.trim() !== "") out.push(`寫了:${clip(e.content, 200)}`);
@@ -760,8 +991,10 @@ export class Delegator {
 
   /**
    * Reads what the last run left: the days' spending, the ended jobs (for the lists and `read`),
-   * and the jobs that never finished, which end here as failed by the restart and are told once.
-   * Returns how many were cut.
+   * and the jobs that never finished. A running one goes on from its transcript and a queued one
+   * waits its turn again; one that cannot (the reflection, a job of no place, one already resumed
+   * `MAX_RESUMES` times, one whose tools are gone) ends here as failed and is told once. Returns
+   * how many ended so.
    */
   async recover(): Promise<number> {
     const loaded = await this.#p.store.load();
@@ -769,34 +1002,65 @@ export class Delegator {
     this.#pool.restore(loaded.day, now);
     this.#reflectPool.restore(loaded.reflectDay, now);
     let cut = 0;
-    const rows = [...loaded.jobs].sort((a, b) => b.created_at - a.created_at);
+    const again: Live[] = [];
+    const rows = [...loaded.jobs].map(normaliseRow).sort((a, b) => b.created_at - a.created_at);
     for (const row of rows) {
       if (this.#live.has(row.id)) continue;
       if (isEnded(row.state)) {
         if (!this.#ended.some((j) => j.id === row.id)) this.#ended.push(row);
         continue;
       }
-      cut += 1;
-      row.state = "failed";
-      row.note = RESTART_NOTE;
-      row.ended_at = now;
-      row.told = row.kind !== "reflect" && row.context !== null;
-      this.#p.store.saveJob(row);
-      this.#remember(row);
-      this.#emit({ type: "ended", job: row });
-      if (row.told) {
-        try {
-          this.#p.ended?.(row);
-        } catch (error) {
-          this.#p.log.warn({ job: row.id, err: errorMessage(error) }, "could not tell of a job");
-        }
+      const why = this.#cannotResume(row);
+      if (why !== null) {
+        cut += 1;
+        row.note = why;
+        row.told = row.kind !== "reflect" && row.context !== null;
+        this.#end(row, "failed");
+        continue;
       }
+      const resume = row.state === "running";
+      if (resume) row.resumes += 1;
+      // It waits like any job; `#begin` makes it running again.
+      row.state = "queued";
+      again.push(
+        this.#liveOf(
+          row,
+          jobTools(row.kind, (n) => this.#p.tools.entry(n)),
+          resume,
+        ),
+      );
     }
     this.#ended.sort((a, b) => (b.ended_at ?? 0) - (a.ended_at ?? 0));
     const keep = Math.max(this.#limits.keepEnded, 1);
     for (const old of this.#ended.slice(keep)) this.#p.store.removeJob(old.id);
     this.#ended = this.#ended.slice(0, keep);
+    // The ones that were running go first, each group oldest first.
+    again.sort(
+      (a, b) => Number(b.resume) - Number(a.resume) || a.row.created_at - b.row.created_at,
+    );
+    for (const live of again) {
+      this.#live.set(live.row.id, live);
+      this.#queue.push(live);
+      this.#p.store.saveJob(live.row);
+    }
+    if (again.length > 0) {
+      this.#p.log.info({ count: again.length }, "sub-agent jobs go on after the restart");
+    }
+    this.#pump();
     return cut;
+  }
+
+  /** Why an unfinished job cannot go on after a restart; `null`: it can. */
+  #cannotResume(row: JobRow): string | null {
+    if (row.kind === "reflect" || row.context === null || this.#closed) return RESTART_NOTE;
+    if (!isSubagentKind(row.kind) || !KINDS[row.kind].callable) return RESTART_NOTE;
+    if (row.resumes >= MAX_RESUMES && row.state === "running") {
+      return RESUME_FAILED_NOTE(RESTART_NOTE);
+    }
+    if (jobTools(row.kind, (n) => this.#p.tools.entry(n)).length === 0) {
+      return DELEGATE_REFUSALS.noTools(row.kind);
+    }
+    return null;
   }
 
   // ---- the nightly reflection -------------------------------------------------------------------
@@ -837,6 +1101,10 @@ export class Delegator {
       note: null,
       session: `delegate:${id}`,
       told: false,
+      plan: [],
+      last_step: null,
+      ran_ms: 0,
+      resumes: 0,
     };
     const controller = new AbortController();
     const signal =
@@ -881,6 +1149,7 @@ export class Delegator {
       failure = errorMessage(error);
     }
     row.ended_at = this.#now();
+    row.ran_ms = Math.max(0, row.ended_at - (row.started_at ?? row.ended_at));
     if (budgetHit) {
       row.state = "out_of_budget";
       row.note = "今晚反思能花的額度用完了,後面的沒做";
@@ -906,7 +1175,7 @@ export class Delegator {
 
   /**
    * Stops everything: what runs is cut and what waits is dropped. Their rows stay as they were
-   * kept, so the next start reports them as failed by the restart.
+   * kept, so the next start goes on with them (`recover`).
    */
   close(): void {
     this.#closed = true;

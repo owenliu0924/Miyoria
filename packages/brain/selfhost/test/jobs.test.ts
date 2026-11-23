@@ -1,6 +1,11 @@
 import { defineTool, type Tool } from "@miyoria/llm/tools";
 import { sleep } from "@miyoria/runtime/kernel";
-import { type JsonValue, ReflectGuardKey } from "@miyoria/types";
+import {
+  type JsonValue,
+  PromptContributors,
+  PromptContributorsKey,
+  ReflectGuardKey,
+} from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 import { runReflect } from "../src/index.js";
@@ -40,7 +45,8 @@ function mark(into: string[]): string {
   return "sent";
 }
 
-const isHelper = (text: string) => text.includes("小幫手");
+/** A helper's block 1 opens with who it is; hers may name the helpers too. */
+const isHelper = (text: string) => text.includes("你是她(這個聊天角色)叫來");
 
 /** Her and the helper's steps share one script, so they are told apart by what the request holds. */
 function dispatcher(handlers: {
@@ -76,7 +82,7 @@ describe("a job she starts", () => {
       rig.model.push(
         dispatcher({
           her: (text) =>
-            text.includes("做完了")
+            text.includes("狀態:做完了")
               ? says("查好了:A 比較好")
               : text.includes("交給小幫手了")
                 ? says("我請小幫手去查了")
@@ -95,7 +101,7 @@ describe("a job she starts", () => {
     expect(rig.sink.strays).toEqual([]);
     expect(dms).toEqual([]);
     // Her run for the result carries the job as data, with the id and the goal.
-    const wake = rig.model.requests.map((r) => textOf(r)).find((t) => t.includes("做完了"));
+    const wake = rig.model.requests.map((r) => textOf(r)).find((t) => t.includes("狀態:做完了"));
     expect(wake).toContain("查 A 和 B 哪個好");
     expect(wake).toContain("結論:A 比較好。");
     // Nothing woke the other place, and the helper's lines went nowhere.
@@ -124,7 +130,7 @@ describe("a job she starts", () => {
       rig.model.push(
         dispatcher({
           her: (text) =>
-            text.includes("做完了")
+            text.includes("狀態:做完了")
               ? says("頁面叫小幫手傳訊息,它沒有照做")
               : text.includes("交給小幫手了")
                 ? says("好")
@@ -164,6 +170,47 @@ describe("a job she starts", () => {
   });
 });
 
+describe("the jobs going on", () => {
+  it("are in her prompt while they run, with who asked", async () => {
+    let release!: () => void;
+    const hold = new Promise<string>((resolve) => {
+      release = () => resolve("查到的清單");
+    });
+    const rig = await Rig.create({
+      provide: (sup, registry) => {
+        sup.services.provide("app", PromptContributorsKey, new PromptContributors());
+        registry.register(tool("web_search", "read", () => hold));
+      },
+    });
+    for (let i = 0; i < 8; i++) {
+      rig.model.push(
+        dispatcher({
+          her: (text) =>
+            text.includes("在做嗎")
+              ? says(text.includes("進行中的工作") ? "還在查" : "不知道")
+              : text.includes("交給小幫手了")
+                ? says("我請小幫手去查了")
+                : text.includes("狀態:做完了")
+                  ? says("查好了")
+                  : calls("delegate", { kind: "worker", goal: "整理一份清單" }),
+          helper: (text) =>
+            text.includes("查到的清單") ? says("好了") : calls("web_search", { q: "清單" }),
+        }),
+      );
+    }
+    rig.say(mention(C1, "amy", "@她 幫我整理一份清單"));
+    await until(() => rig.sink.texts().length === 1, 5_000, "the receipt");
+    rig.say(mention(C1, "amy", "@她 在做嗎"));
+    await until(() => rig.sink.texts().length === 2, 5_000, "the answer");
+    expect(rig.sink.texts()[1]).toBe("還在查");
+    const asked = rig.model.requests.map((r) => textOf(r)).find((t) => t.includes("在做嗎")) ?? "";
+    expect(asked).toContain("進行中的工作");
+    expect(asked).toContain("要的):整理一份清單");
+    release();
+    await until(() => rig.sink.texts().length === 3, 5_000, "the result");
+  });
+});
+
 describe("the old work lane's tools", () => {
   it("are gone: delegate and its friends start, list and stop the jobs", async () => {
     const rig = await Rig.create(tools([tool("web_search", "read", () => "x")]));
@@ -178,7 +225,7 @@ describe("the old work lane's tools", () => {
 });
 
 describe("a restart", () => {
-  it("tells the place that a job it was running was cut", async () => {
+  it("goes on with a job it was running, and its result wakes the place that asked", async () => {
     const hold = new Promise<string>(() => undefined);
     const first = await Rig.create(tools([tool("web_search", "read", () => hold)]));
     for (let i = 0; i < 4; i++) {
@@ -206,13 +253,25 @@ describe("a restart", () => {
       ...tools([tool("web_search", "read", () => "x")]),
       host: { delegate: { recoverDelayMs: 300 } },
     });
-    second.model.push({
-      events: (request) => says(textOf(request).includes("重啟") ? "上次的工作斷了" : "?"),
-    });
-    await until(() => second.sink.texts().length === 1, 5_000, "the restart notice");
-    expect(second.sink.sent()).toEqual([["c1", "上次的工作斷了"]]);
+    for (let i = 0; i < 4; i++) {
+      second.model.push(
+        dispatcher({
+          her: (text) => says(text.includes("接著查完了") ? "上次的工作查完了" : "?"),
+          // The helper goes on from its transcript, told of the restart.
+          helper: (text) => says(text.includes("系統重啟過") ? "接著查完了" : "不該從頭來"),
+        }),
+      );
+    }
+    await until(() => second.sink.texts().length === 1, 5_000, "the result after the restart");
+    expect(second.sink.sent()).toEqual([["c1", "上次的工作查完了"]]);
     const [job] = second.host?.jobs?.delegator.jobs() ?? [];
-    expect(job).toMatchObject({ kind: "research", state: "failed", goal: "查很久的東西" });
+    expect(job).toMatchObject({
+      kind: "research",
+      state: "done",
+      goal: "查很久的東西",
+      summary: "接著查完了",
+      resumes: 1,
+    });
     await first.store.close();
   });
 });

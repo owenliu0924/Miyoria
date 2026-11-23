@@ -8,8 +8,10 @@ export {
   DEFAULT_DELEGATE_LIMITS,
   type DelegateEvent,
   type DelegateLimits,
+  type DelegateLimitsInput,
   Delegator,
   type DelegatorPorts,
+  delegateLimits,
   ENDED_STATES,
   isEnded,
   type JobRow,
@@ -17,7 +19,9 @@ export {
   type JobStore,
   type JobUsage,
   MAX_GOAL_CHARS,
+  MAX_RESUMES,
   MemoryJobStore,
+  normaliseRow,
   noUsage,
   PoolLedger,
   type StartOutcome,
@@ -46,6 +50,16 @@ export {
   parseFeel,
 } from "./feel.js";
 export { composeGuards, permissiveGuard } from "./guard.js";
+export { JOBS_PROMPT_KEY, JobsPrompt, jobsBody } from "./jobs-prompt.js";
+export {
+  MAX_PLAN_STEPS,
+  PLAN_TOOL,
+  type PlanStep,
+  parsePlan,
+  planLines,
+  planOf,
+  type StepState,
+} from "./plan.js";
 export {
   HANDOFF_TOOL,
   HOUR_TOKENS,
@@ -93,20 +107,30 @@ export { floorKind, type ServiceGuardOptions, sayKind, serviceGuard } from "./se
 export { type Capped, type HourCap, type HourSpend, SpendLedger, stepCost } from "./spend.js";
 export {
   CALLABLE_KINDS,
+  type CallableKind,
+  CODE_TOOLS,
+  defaultKindLimits,
   fixedTools,
   helperGuard,
   helperPrompt,
   isolatedTranscript,
   isSubagentKind,
+  type JobRegistry,
   jobBudget,
   jobTools,
   KINDS,
+  type KindLimits,
+  type KindLimitsConfig,
   type KindSpec,
+  kindLimitsOf,
   noMouth,
   profileOf,
+  type RunAllowance,
   SUBAGENT_KINDS,
   type SubagentKind,
   TOKENS_PER_USD,
+  WORKER_ACT_GROUPS,
+  WORKER_EXTERNAL_GROUPS,
 } from "./subagents.js";
 export { modelSummarise, summaryText } from "./summarise.js";
 export {
