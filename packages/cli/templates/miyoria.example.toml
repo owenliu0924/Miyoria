@@ -1039,6 +1039,8 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # enabled = true
 # max_running = 3                # 同時跑幾個(1 到 8);多的排隊
 # max_queued = 8                 # 最多排幾個,更多的 delegate 被拒絕(她會知道)
+# per_person_running = 2         # 一個人要的工作同時跑幾個(1 到 8);他多的排隊,讓位子給別人。她自己開的和 owner 的不算
+# per_person_queued = 2          # 一個人要的工作最多排幾個,更多的 delegate 被拒絕(她會跟對方說)
 # reflect_daily_usd = 0.5        # 每晚的反思一天最多花多少美元,另外記(沒有價目的模型照 unpriced_usd_per_mtok 換算)
 # result_chars = 1500            # 結果叫醒她時放進去的字數;更長的用 delegate_read 讀
 # read_chars = 8000              # delegate_read 一次給她的字數
@@ -1559,11 +1561,12 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # cache_entries = 16             # 抽出的結果在記憶體留幾份(依附件 id;從快取讀不算額度)
 # 她自己的資料夾(v4 §8.3):檔案和腳本留得住,跨執行、跨 session。放在 <root>/profiles/<profile>/workspace,
 # 需要時以可寫入掛在 /workspace。替別人做的事只碰得到 people/<那個人>/ 底下(路徑從那裡算起,跑程式也只掛那個資料夾);
-# 她自己和 owner 看得到全部。限額管用工具寫的;程式留在裡面的東西會在執行後檢查,超過的刪掉
+# 她自己和 owner 看得到全部。限額管用工具寫的;程式留在裡面的東西會在執行後檢查,超過的只從那次執行自己的資料夾刪,
+# 不動別人的檔案。整個工作區滿了就不能再寫新的
 # [modules.sandbox.workspace]
 # enabled = true
-# max_mb = 4096                  # 全部檔案加起來,每個人的資料夾也算(MiB)
-# max_files = 20000
+# max_mb = 32768                 # 全部檔案加起來,每個人的資料夾也算(MiB);是上限,不是先佔好的空間
+# max_files = 200000             # 預設放得下 100 個人各用到自己的上限
 # max_file_kb = 8192             # 單一檔案(KiB)
 # person_max_mb = 256            # 一個人的資料夾(MiB)
 # person_max_files = 2000        # 一個人的資料夾最多幾個檔案

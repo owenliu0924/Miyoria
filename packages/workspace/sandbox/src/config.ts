@@ -131,10 +131,13 @@ export type SandboxFiles = z.output<typeof SandboxFilesSchema>;
  */
 export const SandboxWorkspaceSchema = z.object({
   enabled: z.boolean().default(true),
-  /** All files together, everyone's folders included, in MiB. */
-  max_mb: z.number().int().min(1).default(4096),
-  /** Files at most, everyone's folders included. */
-  max_files: z.number().int().min(1).default(20_000),
+  /**
+   * All files together, everyone's folders included, in MiB: an upper bound, not a reservation.
+   * The default fits 100 people at the per-person caps (256 MiB each) and her own files.
+   */
+  max_mb: z.number().int().min(1).default(32_768),
+  /** Files at most, everyone's folders included (the default: 100 people at 2000 each). */
+  max_files: z.number().int().min(1).default(200_000),
   /** One file at most, in KiB. */
   max_file_kb: z.number().int().min(1).default(8192),
   /** One person's folder at most, in MiB. */

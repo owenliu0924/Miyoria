@@ -104,6 +104,43 @@ describe("persistent workspace in runs", () => {
     expect((await ws.read("diary.md")).text).toBe("hers");
   });
 
+  it("a_person's_run_over_the_whole_total_takes_only_from_their_folder_never_others'", async () => {
+    const sbx = sandbox({ workspace: { max_files: 6, person_max_files: 10 } });
+    const ws = sbx.workspace;
+    if (!ws) throw new Error("no workspace");
+    const dir = join(root, "profiles", "deepseek-chan", "workspace");
+    const mia = join(dir, "people", "discord-300");
+    await mkdir(mia, { recursive: true });
+    await writeFile(join(mia, "old1.txt"), "1");
+    await writeFile(join(mia, "old2.txt"), "2");
+    await ws.write("diary.md", "hers");
+    runner.onRun = async (args) => {
+      const mounted = mountSource(args, "/workspace") as string;
+      for (const name of ["a.txt", "b.txt", "c.txt", "d.txt"]) {
+        await writeFile(join(mounted, name), name);
+        await new Promise((r) => setTimeout(r, 5));
+      }
+      // Someone else writes in their own folder while the run goes on.
+      await new Promise((r) => setTimeout(r, 5));
+      await writeFile(join(mia, "new.txt"), "mia's");
+      return result({ stdout: Buffer.from("ok\n") });
+    };
+    const out = await sbx.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      workspace_folder: "discord-200",
+    });
+    // Three were left of the whole's six: the run keeps three of its four.
+    expect((out.workspace_removed ?? []).map((r) => r.path)).toEqual(["d.txt"]);
+    expect((await ws.list("people/discord-200")).entries).toHaveLength(3);
+    expect(await readFile(join(mia, "new.txt"), "utf8")).toBe("mia's");
+    expect(await readFile(join(mia, "old1.txt"), "utf8")).toBe("1");
+    expect((await ws.read("diary.md")).text).toBe("hers");
+    // The whole workspace is full: a new file is refused, nothing is deleted for it.
+    expect((await errorOf(ws.write("more.md", "x"))).kind).toBe("limit");
+  });
+
   it("refuses_a_folder_that_is_a_link_or_not_a_folder_name", async () => {
     const sbx = sandbox();
     const ws = sbx.workspace;

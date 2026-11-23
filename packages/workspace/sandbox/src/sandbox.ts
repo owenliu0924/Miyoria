@@ -75,7 +75,13 @@ import {
   writeInputs,
   writeProgram,
 } from "./workspace.js";
-import { PersistentWorkspace, type Removed, type WorkspaceLimits } from "./workspace-store.js";
+import type {
+  PersistentWorkspace,
+  Removed,
+  WorkspaceLimits,
+  WorkspaceUsage,
+} from "./workspace-store.js";
+import { CountedWorkspace } from "./workspace-totals.js";
 
 const log = getLogger("sandbox");
 
@@ -216,6 +222,24 @@ interface Session {
 }
 
 /**
+ * The caps a person's run is held to afterwards: their folder's own, and no more than what the
+ * whole workspace has left. What is over is taken from what this run changed in their folder;
+ * nobody else's files are touched, and a whole workspace past its total refuses new writes.
+ */
+export function roomLeft(
+  own: WorkspaceLimits,
+  folder: WorkspaceUsage,
+  whole: WorkspaceLimits,
+  total: WorkspaceUsage,
+): WorkspaceLimits {
+  return {
+    maxFiles: Math.min(own.maxFiles, folder.files + Math.max(0, whole.maxFiles - total.files)),
+    maxBytes: Math.min(own.maxBytes, folder.bytes + Math.max(0, whole.maxBytes - total.bytes)),
+    maxFileBytes: own.maxFileBytes,
+  };
+}
+
+/**
  * `Sandbox` on the Docker CLI. A fresh run gets a fresh container (`buildRunArgs` has the flags)
  * and a fresh workspace directory, started for it or taken from the warm pool (the same container
  * started ahead of time, waiting for its one program; see `pool.ts`). A named session is one
@@ -225,7 +249,7 @@ interface Session {
  */
 export class DockerSandbox implements Sandbox {
   readonly tools: ToolsWorkspace;
-  readonly workspace: PersistentWorkspace | null;
+  readonly workspace: CountedWorkspace | null;
   readonly instance: string;
   readonly #config: SandboxConfig;
   readonly #root: string;
@@ -278,7 +302,7 @@ export class DockerSandbox implements Sandbox {
     });
     const ws = config.workspace;
     this.workspace = ws.enabled
-      ? new PersistentWorkspace(
+      ? new CountedWorkspace(
           join(this.#root, "profiles", profile, "workspace"),
           {
             maxBytes: ws.max_mb * MIB,
@@ -733,15 +757,17 @@ export class DockerSandbox implements Sandbox {
       const toolsDir = r.mount_tools ? await this.tools.ensure() : null;
       const root = r.mount_workspace ? this.workspace : null;
       // A run for someone mounts their folder only, under its own caps.
+      const folder =
+        root !== null && r.workspace_folder !== null ? `${PEOPLE_DIR}/${r.workspace_folder}` : null;
       const workspace =
-        root !== null && r.workspace_folder !== null
-          ? await root.subdir(`${PEOPLE_DIR}/${r.workspace_folder}`, this.#personLimits(root))
+        root !== null && folder !== null
+          ? await root.subdir(folder, this.#personLimits(root))
           : root;
       let workspaceDir: string | null = null;
       let before: Map<string, string> = new Map();
-      let rootBefore: Map<string, string> | null = null;
+      // What is checked after the run: the run's own folder, never anyone else's files.
+      let checked: PersistentWorkspace | null = workspace;
       if (workspace) {
-        if (workspace !== root && root !== null) rootBefore = await root.snapshot();
         workspaceDir = await workspace.ensure();
         const usage = await workspace.usage();
         if (usage.overflow) {
@@ -751,6 +777,12 @@ export class DockerSandbox implements Sandbox {
           );
         }
         before = await workspace.snapshot();
+        if (root !== null && folder !== null) {
+          checked = await root.subdir(
+            folder,
+            roomLeft(workspace.limits, usage, root.limits, await root.usage()),
+          );
+        }
       }
       const network = r.network === "allow" ? await this.#ensureEgress(signal) : null;
       const name = containerName(runId);
@@ -774,17 +806,17 @@ export class DockerSandbox implements Sandbox {
       const state: { removed?: Removed[] } = {};
       const enforce = async (): Promise<void> => {
         // Whatever happened to the run, the container may have written in the workspace.
-        if (!workspace) return;
-        const removed = await workspace.enforce(before).catch((error: unknown) => {
+        if (!checked) return;
+        const removed = await checked.enforce(before).catch((error: unknown) => {
           log.warn({ err: errorMessage(error) }, "could not check the workspace after a run");
           return undefined;
         });
-        // The folder fits its own caps; the whole workspace must still fit its total, taking
-        // from what this run changed first.
-        if (root !== null && rootBefore !== null) {
-          const more = await root.enforce(rootBefore).catch(() => []);
-          removed?.push(...more);
-        }
+        // The whole workspace's counts learn what the run left in its folder.
+        if (root !== null && folder !== null) {
+          const after = await checked.list().catch(() => null);
+          if (after === null) root.invalidate();
+          else root.replaceFolder(folder, after.entries, after.truncated);
+        } else root?.invalidate();
         if (removed === undefined) return;
         state.removed = removed;
         if (removed.length > 0) {
