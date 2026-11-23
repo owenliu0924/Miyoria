@@ -13,12 +13,13 @@
 // 1. pause: while paused only `command` and `panel` pass;
 // 2. hard prohibitions (config): forbidden capabilities, other guilds, DMs to strangers;
 // 3. consent: the target opted out (`/me privacy`);
-// 4. permission: a `user` principal's requester needs the capability's node; a `command` with
-//    `override` and the `panel` are allowed from here on;
+// 4. permission: a `user` principal's requester needs the capability's node (a work node: or a
+//    bond at `work_min_bond`, see `work.ts`); a `command` with `override` and the `panel` are
+//    allowed from here on;
 // 5. budget: no autonomous (`self` / `director`) actions while the LLM budget is exhausted;
 // 6. risk: `low` is allowed; `medium` and `high` must be within the rate limits (tightened
-//    while the budget is degraded); `high` then goes to the self-review, whose `uncertain` asks
-//    the owners.
+//    while the budget is degraded; work capabilities default to `[modules.actions.work]`);
+//    `high` then goes to the self-review, whose `uncertain` asks the owners.
 
 import { CommandRegistryKey, ReplySinkKey } from "@miyoria/commands";
 import { LlmRouterKey, withLlmTag } from "@miyoria/llm/llm";
@@ -26,6 +27,7 @@ import type { ToolRegistry } from "@miyoria/llm/tools";
 import { errorMessage, getLogger, type ServiceLookup } from "@miyoria/runtime/kernel";
 import { AuditLogKey, SettingsStoreKey } from "@miyoria/store";
 import {
+  type AccountRef,
   ActionSinkKey,
   type ActivityRequest,
   type ActuatorExecutor,
@@ -74,6 +76,7 @@ import { effectiveLimits, RateLimiter, type RateRun, tightened } from "./rate.js
 import { approvalCard, Escalations, parseReview, reviewMessages } from "./review.js";
 import { shareCapability } from "./share.js";
 import { CapabilityTool } from "./tools.js";
+import { type Permit, permit, permitted, WORK_BELOW_BOND } from "./work.js";
 
 const log = getLogger("actions");
 
@@ -399,6 +402,23 @@ export class ActuatorRegistry implements ActuatorExecutor {
 
   get(name: string): Capability | undefined {
     return this.#capabilities.get(name);
+  }
+
+  /**
+   * May `account` ask for what needs `node`: their own node, or for a work node a bond at
+   * `work_min_bond`. For checks outside the gate (a plain tool's permission, e.g. a helper).
+   * A refusal for the bond (`below_bond`) is told with `WORK_BELOW_BOND`.
+   */
+  permit(account: AccountRef, node: string): Permit {
+    return permit(
+      {
+        authorizer: this.#services.get(AuthorizerKey),
+        social: this.#services.get(SocialSignalsKey),
+        minBond: this.#config.work_min_bond,
+      },
+      account,
+      node,
+    );
   }
 
   /** Registered capability names, sorted. */
@@ -944,13 +964,10 @@ export class ActuatorRegistry implements ActuatorExecutor {
     // not needed then (consent above already lets a person reach themselves).
     const dmToAsker = capability.consent === "dm" && askedForThemselves;
     if (p.kind === "user" && capability.permission !== null && !dmToAsker) {
-      const authorizer = this.#services.get(AuthorizerKey);
       const requester = p.requester;
-      if (
-        !authorizer ||
-        requester === null ||
-        !authorizer.allows(requester, capability.permission)
-      ) {
+      const may = requester === null ? "no" : this.permit(requester, capability.permission);
+      if (may === "below_bond") return deny("permission", WORK_BELOW_BOND);
+      if (!permitted(may)) {
         return deny(
           "permission",
           "the person asking may not request this (if you want to do it yourself, set on_own)",
@@ -973,7 +990,7 @@ export class ActuatorRegistry implements ActuatorExecutor {
     }
     let limits = effectiveLimits(
       cfg.limits[capability.name],
-      cfg.medium,
+      capability.work === true ? cfg.work : cfg.medium,
       capability.limits ?? null,
     );
     if (budget === "degraded") limits = tightened(limits);

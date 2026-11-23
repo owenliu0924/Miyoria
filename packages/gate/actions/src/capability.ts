@@ -137,6 +137,11 @@ export interface Capability<A = unknown> {
    * set them; unset fields fall back to the tier defaults.
    */
   readonly limits?: Partial<Limit> | null;
+  /**
+   * A step of real work (writing a file, running code): its defaults are
+   * `[modules.actions.work]`'s, not the medium tier's, so a task of many steps is not throttled.
+   */
+  readonly work?: boolean;
   /** Guild the action happens in, for the cross-guild prohibition. */
   scope?(args: A, principal: Principal): string | null;
   /** Person the action is directed at (consent, strangers). */

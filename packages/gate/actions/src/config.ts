@@ -12,16 +12,39 @@ export const LimitSchema = z.object({
   per_person_per_day: z.number().int().nonnegative().nullable().default(null),
   /** Minimum time between two runs. A run whose executor failed starts none. */
   cooldown_ms: z.number().int().nonnegative().nullable().default(null),
+  /** Allowed runs in any rolling hour (all people together). Unset: the tier's. */
+  per_hour: z.number().int().nonnegative().optional(),
+  /** Allowed runs in any rolling hour involving one person. Unset: the tier's. */
+  per_person_per_hour: z.number().int().nonnegative().optional(),
 });
 export type Limit = z.output<typeof LimitSchema>;
+
+/** Hourly limits of a tier: unset is none. */
+const hourly = z.number().int().nonnegative().optional();
 
 /** Defaults for medium- and high-risk capabilities. */
 export const TierLimitSchema = z.object({
   per_day: z.number().int().nonnegative().default(30),
   per_person_per_day: z.number().int().nonnegative().default(8),
   cooldown_ms: z.number().int().nonnegative().default(20_000),
+  per_hour: hourly,
+  per_person_per_hour: hourly,
 });
 export type TierLimit = z.output<typeof TierLimitSchema>;
+
+/**
+ * `[modules.actions.work]`: defaults of the work capabilities (writing and deleting files,
+ * running code, saving scripts, writing skills) instead of the medium tier's. A task that writes
+ * ten files in a minute is ordinary, so there is no cooldown; the per-person AI quota and the
+ * folder caps bound the rest.
+ */
+export const WorkLimitSchema = z.object({
+  per_day: z.number().int().nonnegative().default(20_000),
+  per_person_per_day: z.number().int().nonnegative().default(3000),
+  cooldown_ms: z.number().int().nonnegative().default(0),
+  per_hour: hourly,
+  per_person_per_hour: z.number().int().nonnegative().optional().default(300),
+});
 
 /**
  * `[modules.actions.share]`: the `share` capability, which hands a file she made to the person who
@@ -34,6 +57,10 @@ export const ShareConfigSchema = z.object({
   per_day: z.number().int().nonnegative().default(60),
   /** Files shared to one person in any rolling 24 hours. */
   per_person_per_day: z.number().int().nonnegative().default(10),
+  /** A zip (or docx, xlsx, pptx) whose files unpack to more than this, in MiB, is refused. */
+  zip_max_unpacked_mb: z.number().int().positive().default(256),
+  /** A zip listing more files than this is refused. */
+  zip_max_entries: z.number().int().positive().default(5000),
 });
 export type ShareConfig = z.output<typeof ShareConfigSchema>;
 
@@ -78,8 +105,16 @@ export const ActionsConfigSchema = z.object({
   dm_strangers: z.boolean().default(false),
   /** Familiarity (0..100) from which someone is no longer a stranger. */
   stranger_familiarity: z.number().default(10),
+  /**
+   * Bond (-100..1000) from which someone may ask her for real work: files, code, skills and
+   * helpers (the work nodes). 15 is where 朋友 starts. Owners and anyone holding a node
+   * themselves need no bond; the bond only opens the door and work never changes it.
+   */
+  work_min_bond: z.number().min(-100).max(1000).default(15),
   /** Defaults for medium / high risk capabilities without their own `limits`. */
   medium: TierLimitSchema.prefault({}),
+  /** Defaults for the work capabilities (`Capability.work`) instead of `medium`. */
+  work: WorkLimitSchema.prefault({}),
   /** The `share` capability (files as attachments). */
   share: ShareConfigSchema.prefault({}),
   /** Per-capability limits, by capability name. */
