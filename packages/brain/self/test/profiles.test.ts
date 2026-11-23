@@ -31,8 +31,10 @@ describe("profiles", () => {
       wallMs: 300_000,
       toolMs: 60_000,
       tokens: 3_000_000,
-      sessionUsdPerHour: 1,
     });
+    // Money is the person's quota, not a limit of the profile.
+    expect(PROFILES.text.limits).not.toHaveProperty("sessionUsdPerHour");
+    expect(PROFILES.text.limits.usd).toBeUndefined();
     expect(PROFILES.text).toMatchObject({
       reasoning: null,
       reasoningPurpose: "chat_text",
@@ -47,8 +49,6 @@ describe("profiles", () => {
     expect(PROFILES.reflect).toMatchObject({ speaks: false, reasoning: "high" });
     for (const name of PROFILE_NAMES) {
       const l = PROFILES[name].limits;
-      expect(l.sessionUsdPerHour).toBe(1);
-      expect(l.sessionTokensPerHour).toBeGreaterThan(0);
       expect(l.callsPerRound).toBeGreaterThan(0);
       expect(l.toolMs).toBeLessThanOrEqual(l.wallMs);
     }

@@ -100,6 +100,8 @@ import {
   noteGlance,
   type OutgoingLine,
   type OutputChecks,
+  type PersonQuota,
+  PersonQuotaKey,
   PROFILES,
   type RunEvent,
   type RunModel,
@@ -132,11 +134,12 @@ import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
 import { type AdmittedInput, Lane, type LaneHost, type LaneRun, type ToolWork } from "./lane.js";
-import { hourCap, textLimits } from "./limits.js";
+import { textLimits } from "./limits.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
 import { HostPrompt } from "./prompt.js";
+import { hostQuota, payerOf } from "./quota.js";
 import { knownPeople, outletClaims } from "./repeat.js";
 import { PromptKeeper } from "./saved.js";
 import { askedLine, SAY_DM } from "./texts.js";
@@ -229,6 +232,8 @@ export class SelfHost implements TextRunner {
   readonly #o: SelfHostOptions;
   readonly transcript: TranscriptStore;
   readonly runner: SelfRunner;
+  /** Each person's AI quota (`[modules.agent.quota]`), shared by text, voice and helper jobs. */
+  readonly quota: PersonQuota;
   readonly prompt: HostPrompt;
   /** The voice conversations (`TextRunner.voice`). */
   readonly voice: VoiceHost;
@@ -335,6 +340,8 @@ export class SelfHost implements TextRunner {
         return model.stream(purpose, request, signal);
       },
     };
+    this.quota = options.runner?.quota ?? hostQuota(agent, options.quiet ?? null);
+    agent.ctx.provide(PersonQuotaKey, this.quota);
     this.runner = new SelfRunner(
       {
         transcript,
@@ -360,6 +367,7 @@ export class SelfHost implements TextRunner {
       },
       {
         ...options.runner,
+        quota: this.quota,
         checks: { ...checksOf(agent.config.corrections), ...options.runner?.checks },
       },
     );
@@ -396,6 +404,7 @@ export class SelfHost implements TextRunner {
             transcript,
             model,
             quiet: options.quiet ?? null,
+            quota: this.quota,
             wake: (context, wake) => {
               this.#wake(context, wake);
             },
@@ -1113,11 +1122,11 @@ export class SelfHost implements TextRunner {
           wake: run.wake,
           profile: withLimits(PROFILES.text, {
             pictureBytes: agent.config.vision.max_total_bytes,
-            ...hourCap(agent, context),
             ...textLimits(agent, context),
           }),
           signal: run.controller.signal,
           turn,
+          payer: payerOf(agent, run.wake),
         }),
       );
     } catch (e) {

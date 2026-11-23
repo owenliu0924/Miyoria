@@ -69,6 +69,9 @@ export {
   speakersOf,
   type WarmSlot,
 } from "./prompt.js";
+export { hostQuota, localQuotaDay, payerOf, payerOfAuthor, personKey } from "./quota.js";
+export { quotaSchema } from "./quota-migrations.js";
+export { QuotaStore, quotaTables } from "./quota-store.js";
 export {
   type ParseAt,
   parseWhen,

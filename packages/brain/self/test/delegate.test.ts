@@ -21,6 +21,7 @@ import {
 } from "../src/delegate-texts.js";
 import { DELEGATE, DELEGATE_READ, delegateTools } from "../src/delegate-tools.js";
 import { permissiveGuard } from "../src/guard.js";
+import { PersonQuota } from "../src/quota.js";
 import { REFUSALS } from "../src/rules.js";
 import { helperGuard, jobTools, KINDS } from "../src/subagents.js";
 import { CTX, calls, fakeTool, MODEL, OTHER, OWEN, promptText, rig, say } from "./harness.js";
@@ -376,39 +377,74 @@ describe("limits", () => {
     expect(s.delegator.jobs().find((j) => j.goal === "查")?.budget_usd).toBe(1);
   });
 
-  it("stops all jobs at the day's budget and refuses new ones until tomorrow", async () => {
-    const s = await setup([loop], [fakeTool("web_search")], {
-      limits: { dailyUsd: 0.001 },
+  it("charges a job to whoever asked, and refuses one they ask for past their quota", async () => {
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 0.001, usdPerDay: 0, unpricedUsdPerMtok: 1 }),
     });
-    await s.start({ kind: "research", goal: "一直查", budget: 1 });
+    const s = await setup([loop], [fakeTool("web_search")], {
+      quota,
+      payerOf: (from) => ({ person: `p-${from.account.id}` }),
+    });
+    expect((await s.start({ kind: "research", goal: "一直查", budget: 1 })).ok).toBe(true);
     await s.delegator.idle();
     const job = s.woke[0] as JobRow;
+    // The step that took Owen past the hour's limit is the last with tools; one writes the report.
     expect(job.state).toBe("out_of_budget");
-    expect(job.note).toContain("今天");
-    expect(s.delegator.spentToday().usd).toBeGreaterThanOrEqual(0.001);
+    expect(job.note).toContain("這個小時");
+    expect(job.summary).toBe("做到這裡:查了幾個來源。");
+    expect(job.rounds).toBe(4);
+    expect(quota.used("p-u1", s.r.clock.now()).hour).toBeCloseTo(4 * 0.00048, 6);
+    // A new job for Owen is refused at once, with a reason she can pass on.
     const more = await s.start({ kind: "research", goal: "再查" });
-    expect(more).toEqual({ ok: false, text: DELEGATE_REFUSALS.dayBudget });
-    // The next day the pool is empty again.
-    s.r.clock.tick(24 * 3_600_000);
+    expect(more).toEqual({ ok: false, text: DELEGATE_REFUSALS.quota("u1", "hour", "60 分鐘") });
+    expect(more.text).toBe(
+      "u1這個小時找你做的事已經到額度了,這件現在不能交給小幫手,大概 60 分鐘後才行。用你自己的話跟對方說一聲。",
+    );
+    // A job she starts herself is charged to nobody, and starts.
+    const start = (s.tools.get(DELEGATE) as Tool).result as NonNullable<Tool["result"]>;
+    const own = await start(
+      { ...ctxOf(), principal: Principals.self(CTX, null) },
+      { kind: "research", goal: "我自己想查" },
+    );
+    expect(own.ok).toBe(true);
+    await s.delegator.idle();
+    expect(s.woke.at(-1)?.from).toBeNull();
+    expect(quota.used("p-u1", s.r.clock.now()).hour).toBeCloseTo(4 * 0.00048, 6);
+    // An hour later Owen may ask again.
+    s.r.clock.tick(3_600_000);
     expect((await s.start({ kind: "research", goal: "再查" })).ok).toBe(true);
     await s.delegator.idle();
   });
 
-  it("counts tokens when a model has no price", async () => {
-    const s = await setup([loop], [fakeTool("web_search")], {
-      limits: { dailyUsd: 100, dailyTokens: 2_000 },
+  it("never caps the owner", async () => {
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 0.001, usdPerDay: 0.001, unpricedUsdPerMtok: 1 }),
     });
+    const s = await setup([loop], [fakeTool("web_search")], {
+      quota,
+      payerOf: (from) => ({ person: from.account.id, exempt: true }),
+    });
+    await s.start({ kind: "research", goal: "一直查" });
+    await s.delegator.idle();
+    expect(s.woke[0]?.state).toBe("done");
+    expect(quota.used("u1", s.r.clock.now()).hour).toBeGreaterThan(0.001);
+    expect((await s.start({ kind: "research", goal: "再查" })).ok).toBe(true);
+    await s.delegator.idle();
+  });
+
+  it("charges a model without a price at the fallback rate, against the job's budget", async () => {
+    const s = await setup([loop], [fakeTool("web_search")]);
     delete s.r.model.prices_[MODEL];
-    await s.start({ kind: "research", goal: "一直查", budget: 1 });
+    await s.start({ kind: "research", goal: "一直查", budget: 0.002 });
     await s.delegator.idle();
     const job = s.woke[0] as JobRow;
+    // 1,100 tokens a step at 1 USD a million: the second step passes 0.002.
     expect(job.state).toBe("out_of_budget");
+    expect(job.note).toContain("預算上限");
+    expect(job.rounds).toBe(3);
     expect(job.usage.cost_usd).toBe(0);
-    expect(job.usage.unpriced_tokens).toBeGreaterThanOrEqual(2_000);
-    expect(s.delegator.spentToday().unpriced_tokens).toBeGreaterThanOrEqual(2_000);
-    expect((await s.start({ kind: "research", goal: "再查" })).text).toBe(
-      DELEGATE_REFUSALS.dayBudget,
-    );
+    expect(job.usage.unpriced_tokens).toBe(3 * 1100);
+    expect(s.delegator.charged(job)).toBeCloseTo(0.0033, 6);
   });
 
   it("ends a job at its rounds as a result, with a note", async () => {
@@ -504,10 +540,9 @@ describe("restart", () => {
     store.saveJob(row("running1", "running", { plan: [{ text: "查 A", state: "in_progress" }] }));
     store.saveJob(row("queued01", "queued", { rounds: 0 }));
     store.saveJob(row("finished", "done"));
-    store.saveDay("delegate", { date: "2026-11-16", usd: 2.9, tokens: 5, unpriced_tokens: 0 });
     const s = await setup([say("接著做完了:A 比較好。")], [fakeTool("web_search")], {
       store,
-      limits: { dailyUsd: 3, maxRunning: 1 },
+      limits: { maxRunning: 1 },
       dayKey: () => "2026-11-16",
     });
     ranBefore(s, "running1");
@@ -535,9 +570,8 @@ describe("restart", () => {
     // The queued one started as if new: its goal opens its transcript, no note.
     const fresh = transcriptOf(s, s.woke[1] as JobRow);
     expect(fresh.filter((e) => e.kind === "other").map((e) => e.author)).toEqual(["她交代的工作"]);
-    // What ended before is still there to list and read; the day's spending came back.
+    // What ended before is still there to list and read.
     expect(s.delegator.find("finished")?.summary).toBe("之前的結果");
-    expect(s.delegator.spentToday().usd).toBeGreaterThanOrEqual(2.9);
     // A second restart finds nothing to go on with.
     const again = await setup([say("x")], [fakeTool("web_search")], { store });
     expect(await again.delegator.recover()).toBe(0);
@@ -725,8 +759,7 @@ describe("the nightly reflection", () => {
     });
     expect(ok.job?.usage.cost_usd).toBeCloseTo(0.2, 6);
     expect(s.delegator.reflectSpentToday().usd).toBeCloseTo(0.2, 6);
-    // Nothing of the day's job pool was touched, and nobody is told.
-    expect(s.delegator.spentToday().usd).toBe(0);
+    // Nobody is told.
     expect(s.woke).toEqual([]);
 
     // The next run goes past the cap on its second call: the third never starts.

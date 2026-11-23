@@ -21,6 +21,7 @@ import { type ContextKey, dataBlock, type JsonValue } from "@miyoria/types";
 import { z } from "zod";
 import { permissiveGuard } from "../src/guard.js";
 import { PROFILES, type RunProfile } from "../src/profiles.js";
+import type { Payer } from "../src/quota.js";
 import { type RunnerOptions, SelfRunner } from "../src/run.js";
 import type {
   Delivery,
@@ -218,7 +219,10 @@ export interface Rig {
   clock: { now: () => number; tick: (ms: number) => void };
   runner: SelfRunner;
   /** One run of the text profile (or `profile`) for `wake`. */
-  run(wake?: Wake, options?: { profile?: RunProfile; signal?: AbortSignal }): Promise<RunResult>;
+  run(
+    wake?: Wake,
+    options?: { profile?: RunProfile; signal?: AbortSignal; payer?: Payer | null },
+  ): Promise<RunResult>;
   /** Appends someone's line to the session's transcript. */
   line(author: string, content: string, extra?: Partial<EntryInput>): void;
 }
@@ -290,6 +294,7 @@ export async function rig(script: readonly ScriptStep[], options: RigOptions = {
         profile: o.profile ?? PROFILES.text,
         signal: o.signal ?? new AbortController().signal,
         turn: `t${++turns}`,
+        ...(o.payer === undefined ? {} : { payer: o.payer }),
       }),
     line: (author, content, extra = {}) => {
       transcript.append(

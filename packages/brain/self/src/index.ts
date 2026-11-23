@@ -23,7 +23,6 @@ export {
   MemoryJobStore,
   normaliseRow,
   noUsage,
-  PoolLedger,
   type StartOutcome,
   type StartSpec,
 } from "./delegate.js";
@@ -61,9 +60,8 @@ export {
   type StepState,
 } from "./plan.js";
 export {
+  CALLS_PER_ROUND,
   HANDOFF_TOOL,
-  HOUR_TOKENS,
-  HOUR_USD,
   type LimitName,
   PREFIX_PROFILE,
   PROFILE_NAMES,
@@ -86,9 +84,24 @@ export {
   toolSpecs,
   wakeLine,
 } from "./prompt.js";
-export * as rules from "./rules.js";
 export {
   capMinutes,
+  chargeOf,
+  type Payer,
+  PersonQuota,
+  PersonQuotaKey,
+  type PersonQuotaOptions,
+  QUOTA_DEFAULTS,
+  type QuotaBook,
+  type QuotaCap,
+  type QuotaDay,
+  type QuotaRules,
+  type QuotaUse,
+  stepCost,
+  utcQuotaDay,
+} from "./quota.js";
+export * as rules from "./rules.js";
+export {
   DEFAULT_COMPACTION,
   type RunnerOptions,
   SelfRunner,
@@ -104,7 +117,6 @@ export {
   type TextUnit,
 } from "./screens.js";
 export { floorKind, type ServiceGuardOptions, sayKind, serviceGuard } from "./service-guard.js";
-export { type Capped, type HourCap, type HourSpend, SpendLedger, stepCost } from "./spend.js";
 export {
   CALLABLE_KINDS,
   type CallableKind,
@@ -128,7 +140,6 @@ export {
   type RunAllowance,
   SUBAGENT_KINDS,
   type SubagentKind,
-  TOKENS_PER_USD,
   WORKER_ACT_GROUPS,
   WORKER_EXTERNAL_GROUPS,
 } from "./subagents.js";

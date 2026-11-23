@@ -141,7 +141,10 @@ export const DELEGATE_REFUSALS = {
   emptyGoal: "要寫清楚要做什麼(goal)。",
   longGoal: (max: number) => `goal 太長了(最多 ${max} 字):寫成做完時要有的東西就好。`,
   directive: (rule: string) => `主人的規則不准:${neutralize(rule)}`,
-  dayBudget: "今天小幫手能花的額度用完了,明天才能再開。",
+  /** The person who asked is at their AI quota (`[modules.agent.quota]`). */
+  quota: (who: string, which: "hour" | "day", wait: string) =>
+    `${safeName(who, 40)}${which === "day" ? "今天" : "這個小時"}找你做的事已經到額度了,` +
+    `這件現在不能交給小幫手,大概 ${wait}後才行。用你自己的話跟對方說一聲。`,
   llmBudget: "今天的模型額度用完了,現在不能開新的工作。",
   noTools: (kind: string) => `現在沒有 ${kind} 要用的工具(相關的功能沒開),開不了。`,
   full: (running: number, queued: number) =>

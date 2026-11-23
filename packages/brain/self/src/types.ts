@@ -30,6 +30,7 @@ import type {
   Timestamp,
 } from "@miyoria/types";
 import type { LimitName, ProfileName, RunProfile } from "./profiles.js";
+import type { Payer } from "./quota.js";
 
 /** One conversation she is part of: its transcript's name and the place it is. */
 export interface RunSession {
@@ -288,8 +289,8 @@ export type RunOutcome =
   /** The signal aborted the run. */
   | "cancelled"
   /**
-   * The session's hourly cap was reached before the first step: no model call was made. Someone
-   * waiting was told when she is back, once per capped stretch (`HOUR_CAP_LINE`).
+   * The person the run is for was at their AI quota before the first step: no model call was
+   * made. Someone waiting was told when it frees up, once per capped stretch (`quotaLine`).
    */
   | "over_budget";
 
@@ -370,7 +371,7 @@ export type RunEvent =
       calls: number;
       usage: RunUsage;
       cost_usd: number;
-      /** How the session's hourly cap was counted: `tokens` when its model has no price. */
+      /** `tokens` when a step's model had no price (charged at the quota's fallback rate). */
       spend_basis: "usd" | "tokens";
       limits: LimitName[];
       ms: number;
@@ -413,6 +414,11 @@ export interface RunInput {
   signal: AbortSignal;
   /** The turn id written on every entry and event; default: a new one. */
   turn?: string;
+  /**
+   * Whom its model calls are charged to (their AI quota): the person it answers or works for.
+   * `null` or unset: nobody (her own initiative).
+   */
+  payer?: Payer | null;
 }
 
 /** One tool call of a run and how it ended. */

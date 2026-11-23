@@ -13,6 +13,7 @@ import { z } from "zod";
 import { EXHAUSTED_LINE, FALLBACK_LINES } from "../../agent/src/index.js";
 import { PROFILES, withLimits } from "../src/profiles.js";
 import { serialiseMessages, serialiseTools, toolSpecs } from "../src/prompt.js";
+import { PersonQuota, QUOTA_DEFAULTS } from "../src/quota.js";
 import {
   BLOCKED_LABEL,
   HANDED_OFF_NOTE,
@@ -27,7 +28,6 @@ import {
   SAY_TOOL,
 } from "../src/rules.js";
 import { SAY, sayTool } from "../src/say.js";
-import { SpendLedger } from "../src/spend.js";
 import { ALLOW, type Guard, refuse } from "../src/types.js";
 import {
   addressed,
@@ -43,7 +43,6 @@ import {
   rig,
   SESSION,
   say,
-  USAGE,
 } from "./harness.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -489,19 +488,20 @@ describe("limits", () => {
     expect(result.calls[0]).toMatchObject({ ok: false, text: REFUSALS.timedOut });
   });
 
-  it("spend per session per hour: over it, no model call at all", async () => {
-    const spend = new SpendLedger();
-    spend.add(SESSION.id, Date.UTC(2026, 10, 16, 3, 30), 1.5, USAGE);
-    const r = await rig([say("嗨")], { runner: { compaction: null, spend } });
+  it("a person at their quota: no model call at all", async () => {
+    const quota = new PersonQuota({ rules: () => ({ ...QUOTA_DEFAULTS, usdPerHour: 1 }) });
+    quota.add("p1", Date.UTC(2026, 10, 16, 3, 30), 1.5);
+    const r = await rig([say("嗨")], { runner: { compaction: null, quota } });
     r.line("Owen", "@她 在嗎");
-    const result = await r.run();
+    const result = await r.run(addressed(), { payer: { person: "p1" } });
     expect(result.outcome).toBe("over_budget");
     expect(r.model.requests).toEqual([]);
     expect(result.limits).toEqual(["spend"]);
   });
 
-  it("spend reached within a run ends it like the other limits", async () => {
-    const r = await rig(looping());
+  it("a quota reached within a run ends it like the other limits", async () => {
+    const quota = new PersonQuota({ rules: () => ({ ...QUOTA_DEFAULTS, usdPerHour: 1 }) });
+    const r = await rig(looping(), { runner: { compaction: null, quota } });
     r.tools.register(fakeTool("look"));
     r.model.prices_[MODEL] = {
       input_per_mtok: 600,
@@ -509,7 +509,7 @@ describe("limits", () => {
       output_per_mtok: 0,
     };
     r.line("Owen", "@她 查");
-    const result = await r.run();
+    const result = await r.run(addressed(), { payer: { person: "p1" } });
     // 1,000 prompt tokens at 600 USD a million: 0.6 a step.
     expect(result.limits).toEqual(["spend"]);
     expect(r.model.requests).toHaveLength(3);
@@ -594,8 +594,9 @@ describe("limits", () => {
       expect(result.outcome).toBe("said");
     });
 
-    it("not at the hourly cap: a helper would spend past it", async () => {
-      const r = await rig([...looping(2), calls([hand])]);
+    it("not at the person's quota: a helper would spend past it", async () => {
+      const quota = new PersonQuota({ rules: () => ({ ...QUOTA_DEFAULTS, usdPerHour: 1 }) });
+      const r = await rig([...looping(2), calls([hand])], { runner: { compaction: null, quota } });
       r.tools.register(fakeTool("look"));
       delegate(r);
       r.model.prices_[MODEL] = {
@@ -604,8 +605,8 @@ describe("limits", () => {
         output_per_mtok: 0,
       };
       r.line("Owen", "@她 查");
-      const result = await r.run();
-      // 0.6 USD a step: over the cap of 1 after the second.
+      const result = await r.run(addressed(), { payer: { person: "p1" } });
+      // 0.6 USD a step: over the limit of 1 after the second.
       expect(result.limits).toEqual(["spend"]);
       expect(r.model.requests).toHaveLength(3);
       expect(contentText(r.model.requests[2]?.messages.at(-1)?.content ?? "")).toBe(
@@ -629,16 +630,15 @@ describe("limits", () => {
     });
   });
 
-  it("a model without a price is held to the token cap", async () => {
-    const r = await rig([say("嗨")]);
+  it("a model without a price is charged at the quota's fallback rate", async () => {
+    const quota = new PersonQuota({ rules: () => ({ ...QUOTA_DEFAULTS, unpricedUsdPerMtok: 2 }) });
+    const r = await rig([say("嗨")], { runner: { compaction: null, quota } });
     delete r.model.prices_[MODEL];
     r.line("Owen", "@她 在嗎");
-    await r.run();
+    await r.run(addressed(), { payer: { person: "p1" } });
     expect(r.events.at(-1)).toMatchObject({ type: "finished", spend_basis: "tokens", cost_usd: 0 });
-    expect(r.runner.spend.hour(SESSION.id, r.clock.now())).toMatchObject({
-      basis: "tokens",
-      tokens: 1100,
-    });
+    // 1,100 tokens at 2 USD a million.
+    expect(quota.used("p1", r.clock.now()).hour).toBeCloseTo(0.0022, 9);
   });
 });
 

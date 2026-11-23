@@ -11,9 +11,14 @@
 // an entry of its own, with the platform id it went out under.
 //
 // When a limit is reached one more step runs, told that only `delegate` runs any more (the rest of
-// the work to a helper; for a run that speaks and is not over its hourly cap) or that no tool does.
+// the work to a helper; for a run that speaks and is not at a money limit) or that no tool does.
 // The tools stay in the request (the prefix cache) and any other call is refused. A hand-off made
 // without a word gets one more step, without tools, to tell the person.
+//
+// Money. Every step is charged in USD (`chargeOf`: a model without a price at the quota's fallback
+// rate) to the run's own budget (`RunLimits.usd`, a helper job's) and to the person the run is
+// for (`RunInput.payer`, their quota). A person already at their quota gets one fixed line and no
+// model call; one who reaches it during a run gets the last step at a limit.
 
 import {
   BudgetExhaustedError,
@@ -26,6 +31,7 @@ import {
   toolResultMessage,
   type Usage,
   userMessage,
+  withLlmTag,
 } from "@miyoria/llm/llm";
 import {
   LoadedToolsSchema,
@@ -61,12 +67,21 @@ import {
   EXHAUSTED_LINE,
   FALLBACK_LINES,
   FOR_ARG,
-  HOUR_CAP_LINE,
+  quotaLine,
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
 import { HANDOFF_TOOL, type LimitName, type RunLimits, type RunProfile } from "./profiles.js";
 import { gatherBlocks, type RunMessages, runMessages, toolSpecs } from "./prompt.js";
+import {
+  capMinutes,
+  chargeOf,
+  type Payer,
+  type PersonQuota,
+  QUOTA_DEFAULTS,
+  type QuotaCap,
+  stepCost,
+} from "./quota.js";
 import {
   BLOCKED_LABEL,
   blockedNote,
@@ -82,7 +97,6 @@ import {
 } from "./rules.js";
 import type { Spoken } from "./say.js";
 import { ALL_CHECKS, type OutputChecks, type ScreenedLine, StepText } from "./screens.js";
-import { type Capped, SpendLedger, stepCost } from "./spend.js";
 import { modelSummarise } from "./summarise.js";
 import {
   type CallRecord,
@@ -110,8 +124,13 @@ export const DEFAULT_COMPACTION: CompactionBudget = { thresholdTokens: 32_000, k
 export const STATE_VERSION = 1;
 
 export interface RunnerOptions {
-  /** What sessions spent in the last hour; shared by every run of the runner. Default: its own. */
-  spend?: SpendLedger;
+  /** Each person's AI quota, shared by every run; `null` or unset: nobody is capped. */
+  quota?: PersonQuota | null;
+  /**
+   * USD per million tokens of a model without a price; default the quota's rate, else
+   * `QUOTA_DEFAULTS`.
+   */
+  unpricedUsdPerMtok?: () => number;
   /** When to compact a transcript after a run; `null`: never. Default `DEFAULT_COMPACTION`. */
   compaction?: CompactionBudget | null;
   /** A new turn id. Default `newId`. */
@@ -123,7 +142,7 @@ export interface RunnerOptions {
 /** Runs her turns. One per process; runs of different sessions may go on at the same time. */
 export class SelfRunner {
   readonly #ports: RunPorts;
-  readonly #spend: SpendLedger;
+  readonly #money: Money;
   readonly #compaction: CompactionBudget | null;
   readonly #newId: () => string;
   readonly #checks: OutputChecks;
@@ -132,14 +151,21 @@ export class SelfRunner {
 
   constructor(ports: RunPorts, options: RunnerOptions = {}) {
     this.#ports = ports;
-    this.#spend = options.spend ?? new SpendLedger();
+    const quota = options.quota ?? null;
+    this.#money = {
+      quota,
+      rate:
+        options.unpricedUsdPerMtok ??
+        (() => quota?.rules().unpricedUsdPerMtok ?? QUOTA_DEFAULTS.unpricedUsdPerMtok),
+    };
     this.#compaction = options.compaction === undefined ? DEFAULT_COMPACTION : options.compaction;
     this.#newId = options.newId ?? newId;
     this.#checks = { ...ALL_CHECKS, ...options.checks };
   }
 
-  get spend(): SpendLedger {
-    return this.#spend;
+  /** Each person's AI quota; `null`: none. */
+  get quota(): PersonQuota | null {
+    return this.#money.quota;
   }
 
   /**
@@ -150,7 +176,7 @@ export class SelfRunner {
     (await this.#active.get(turn)?.speakElsewhere(place, text)) ?? null;
 
   async run(input: RunInput): Promise<RunResult> {
-    const run = new Run(this.#ports, input, input.turn ?? this.#newId(), this.#spend, this.#checks);
+    const run = new Run(this.#ports, input, input.turn ?? this.#newId(), this.#money, this.#checks);
     this.#active.set(run.turn, run);
     try {
       return await run.execute(this.#compaction);
@@ -158,6 +184,13 @@ export class SelfRunner {
       this.#active.delete(run.turn);
     }
   }
+}
+
+/** What a run charges its steps to. */
+interface Money {
+  quota: PersonQuota | null;
+  /** USD per million tokens of a model without a price. */
+  rate: () => number;
 }
 
 /** One of the people a run answers, with their line. */
@@ -242,14 +275,6 @@ function reportedJob(data: JsonValue): string | null {
   return null;
 }
 
-/**
- * The whole minutes from `now` until a capped session is under its cap again, rounded up and at
- * least one: never a time already past.
- */
-export function capMinutes(capped: Pick<Capped, "until">, now: number): number {
-  return Math.max(1, Math.ceil((capped.until - now) / 60_000));
-}
-
 /** Pictures of her tools one step offers the model (the rest are said to be left out). */
 const PICTURES_PER_STEP = 2;
 /** What `RunLimits.pictureBytes` is when a profile does not say (the vision cap). */
@@ -267,7 +292,8 @@ class Run {
   readonly #in: RunInput;
   readonly #profile: RunProfile;
   readonly #limits: RunLimits;
-  readonly #spend: SpendLedger;
+  readonly #money: Money;
+  readonly #payer: Payer | null;
   readonly #wake: Wake;
   /** Where `find_tools` loads what it finds (`toolSession`). */
   readonly #offerKey: string;
@@ -278,6 +304,8 @@ class Run {
   readonly #entries: EntryInput[] = [];
   #usage: RunUsage = { ...ZERO_USAGE };
   #cost = 0;
+  /** What the run's steps were charged (USD, unpriced ones at the fallback rate). */
+  #charged = 0;
   #basis: "usd" | "tokens" = "usd";
   #rounds = 0;
   /** The `speaking` event went out. */
@@ -303,20 +331,15 @@ class Run {
   /** Bytes of the pictures her tools fetched in this run (they count against `pictureBytes`). */
   #pictureBytes = 0;
 
-  constructor(
-    ports: RunPorts,
-    input: RunInput,
-    turn: string,
-    spend: SpendLedger,
-    checks: OutputChecks,
-  ) {
+  constructor(ports: RunPorts, input: RunInput, turn: string, money: Money, checks: OutputChecks) {
     this.turn = turn;
     this.#checks = checks;
     this.#p = ports;
     this.#in = input;
     this.#profile = input.profile;
     this.#limits = input.profile.limits;
-    this.#spend = spend;
+    this.#money = money;
+    this.#payer = input.payer ?? null;
     this.#wake = input.wake;
     this.#offerKey = toolSession(input.session.context);
     this.#startedAt = ports.clock.now();
@@ -448,9 +471,10 @@ class Run {
   async #loop(): Promise<RunOutcome> {
     this.#signal.throwIfAborted();
     const session = this.#session;
-    if (this.#spend.over(session.id, this.#now(), this.#limits)) {
+    const capped = this.#capped();
+    if (capped !== null) {
       this.#hit.push("spend");
-      await this.#capNotice(this.#capped());
+      await this.#capNotice(capped);
       return "over_budget";
     }
     const input = {
@@ -565,55 +589,55 @@ class Run {
     if (this.#rounds >= l.rounds) return "rounds";
     if (this.#now() - this.#startedAt >= l.wallMs) return "time";
     if (this.#usage.prompt_tokens + this.#usage.completion_tokens >= l.tokens) return "tokens";
-    if (this.#spend.over(this.#session.id, this.#now(), l)) {
-      // She is told in the last step; the stretch starts here (the warning, and a later notice).
-      this.#capped();
-      return "spend";
-    }
+    if (l.usd !== undefined && l.usd > 0 && this.#charged >= l.usd) return "spend";
+    // She is told in the last step; the stretch starts here (the warning, and a later notice).
+    if (this.#capped() !== null) return "spend";
     return null;
   }
 
   /**
-   * The session's hourly cap as the ledger counts it (`null`: not its own cap that stopped the
-   * run, e.g. a sub-agent's day pool). The first refusal of a stretch of a conversation is a
-   * warning for the owner; a sub-agent's job budget (its own `sessionUsdPerHour`) is reported by
-   * its job instead.
+   * The run's person at their quota, or `null` (nobody to charge, exempt, or under it). The first
+   * refusal of a stretch of a run that speaks is a warning for the owner; a helper's job reports
+   * its own end.
    */
-  #capped(): Capped | null {
+  #capped(): QuotaCap | null {
+    const quota = this.#money.quota;
+    if (quota === null || this.#payer === null) return null;
     const now = this.#now();
-    const capped = this.#spend.capped(this.#session.id, now, this.#limits);
+    const capped = quota.capped(this.#payer, now);
     if (capped?.first === true && this.#profile.speaks) {
-      const usd = capped.spent.basis === "usd";
       this.#p.log.warn(
         {
           turn: this.turn,
           session: this.#session.id,
-          basis: capped.spent.basis,
-          spent: usd ? capped.spent.usd : capped.spent.tokens,
-          cap: capped.cap,
+          person: this.#payer.person,
+          which: capped.which,
+          spent: capped.which === "day" ? capped.used.day : capped.used.hour,
+          cap: capped.limit,
           minutes: capMinutes(capped, now),
         },
-        "a conversation reached its hourly cap: she does not answer here until it is under it",
+        "a person reached their AI quota: she answers them with a fixed line until it frees up",
       );
     }
     return capped;
   }
 
   /**
-   * The one fixed line of a capped stretch for someone waiting: when she is back. Said once per
-   * stretch of the session (`SpendLedger.claimNotice`), never for a run nobody waits on, and
+   * The one fixed line of a capped stretch for someone waiting: about when it frees up. Said once
+   * per stretch of the person (`PersonQuota.claimNotice`), never for a run nobody waits on, and
    * without a model call.
    */
-  async #capNotice(capped: Capped | null): Promise<void> {
+  async #capNotice(capped: QuotaCap): Promise<void> {
     const owed =
       this.#profile.speaks &&
       someoneWaits(this.#wake) &&
       this.#lines.length === 0 &&
       !this.#signal.aborted;
-    if (capped === null || !owed) return;
-    const session = this.#session.id;
-    if (!this.#spend.claimNotice(session)) return;
-    const line = HOUR_CAP_LINE(capMinutes(capped, this.#now()));
+    const quota = this.#money.quota;
+    const person = this.#payer?.person;
+    if (!owed || quota === null || person === undefined) return;
+    if (!quota.claimNotice(person)) return;
+    const line = quotaLine(capped.which, capMinutes(capped, this.#now()));
     let said = false;
     try {
       const out = await this.#deliver(this.#session.context, line, null, "fixed");
@@ -632,14 +656,14 @@ class Run {
       if (error instanceof Cancelled || this.#signal.aborted) throw error;
       this.#p.log.warn({ turn: this.turn, err: errorMessage(error) }, "no cap notice either");
     } finally {
-      if (!said) this.#spend.releaseNotice(session);
+      if (!said) quota.releaseNotice(person);
     }
   }
 
   /**
    * Whether the last step at `limit` may hand the rest of the work to a helper: a run that speaks
-   * and is offered `HANDOFF_TOOL`, unless the conversation's hourly cap is what ended it (a helper
-   * would spend past that cap).
+   * and is offered `HANDOFF_TOOL`, unless a money limit is what ended it (a helper would spend
+   * past it).
    */
   #mayHandOff(limit: LimitName, offered: readonly ToolEntry[]): boolean {
     return (
@@ -916,7 +940,7 @@ class Run {
     return step;
   }
 
-  /** Counts a step's tokens and cost, for the run and for the session's hour; returns the cost. */
+  /** Counts a step's tokens and cost, for the run and for its person's quota; returns the cost. */
   #account(model: string | null, usage: Usage | null): number | null {
     this.#usage = { ...this.#usage, calls: this.#usage.calls + 1 };
     if (usage === null) return null;
@@ -930,9 +954,24 @@ class Run {
     const cost = stepCost(this.#p.model.prices?.(), model, usage);
     if (cost === null) this.#basis = "tokens";
     else this.#cost += cost;
-    this.#spend.add(this.#session.id, this.#now(), cost, usage);
+    const charged = chargeOf(cost, usage, this.#money.rate());
+    this.#charged += charged;
+    if (this.#payer !== null) this.#money.quota?.add(this.#payer.person, this.#now(), charged);
     return cost;
   }
+
+  /** Charges a model call one of the run's tools made, once it ended. */
+  readonly #chargeToolCall = (call: {
+    cost_usd: number | null;
+    status: string;
+    usage?: { prompt_tokens: number; completion_tokens: number } | null;
+  }): void => {
+    if (call.status === "streaming") return;
+    const usage = call.usage ?? { prompt_tokens: 0, completion_tokens: 0 };
+    const charged = chargeOf(call.cost_usd, usage, this.#money.rate());
+    this.#charged += charged;
+    if (this.#payer !== null) this.#money.quota?.add(this.#payer.person, this.#now(), charged);
+  };
 
   // ---- lines ------------------------------------------------------------------------------
 
@@ -1159,16 +1198,19 @@ class Run {
       if (!verdict.allow) return this.#refused(call, "refused", verdict.code, verdict.text);
       this.#emit({ type: "tool_start", turn: this.turn, name: call.name });
       result = await timeout(this.#limits.toolMs, this.#signal, (signal) =>
-        this.#p.tools.run(
-          call.name,
-          this.#toolContext(
-            signal,
-            (data) => {
-              job = reportedJob(data) ?? job;
-            },
-            target.caller,
+        // A model call a tool makes for the run's person (a look at a stream) is theirs too.
+        withLlmTag({ onCall: this.#chargeToolCall }, () =>
+          this.#p.tools.run(
+            call.name,
+            this.#toolContext(
+              signal,
+              (data) => {
+                job = reportedJob(data) ?? job;
+              },
+              target.caller,
+            ),
+            args,
           ),
-          args,
         ),
       );
     } catch (error) {

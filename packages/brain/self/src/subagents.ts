@@ -1,7 +1,8 @@
 // The kinds of sub-agent (docs/design/v5-brain.md 「子代理」, v5-architecture.md §7.3, §14,
 // v6-agent.md 第一批), each a row of one typed table: who it is (its system text), the tools it
 // starts with, what its tools may do to the world, and its default limits and budget (the config
-// `[modules.agent.delegate.kinds.<kind>]` replaces them). A sub-agent runs on the same turn runner
+// `[modules.agent.delegate.kinds.<kind>]` replaces them, but for the fixed calls per step and the
+// token ceiling). A sub-agent runs on the same turn runner
 // as she does, on the `subagent` profile, and differs from her only here:
 //
 // - its tools are its kind's list, plus `plan`; a `worker` may load more with its own `find_tools`,
@@ -34,7 +35,7 @@ import {
   WORKER_SYSTEM,
 } from "./delegate-texts.js";
 import { PLAN_TOOL } from "./plan.js";
-import { PROFILES, type RunProfile, withLimits } from "./profiles.js";
+import { CALLS_PER_ROUND, PROFILES, type RunProfile, withLimits } from "./profiles.js";
 import {
   ALLOW,
   type Delivery,
@@ -52,22 +53,17 @@ export type SubagentKind = "research" | "curator" | "worker" | "reflect";
 
 export const SUBAGENT_KINDS: readonly SubagentKind[] = ["research", "curator", "worker", "reflect"];
 
-/** Tokens a USD buys when a model has no price: `profiles.ts` counts 3M an hour for 1 USD. */
-export const TOKENS_PER_USD = 3_000_000;
-
 /** What one job of a kind may use: `[modules.agent.delegate.kinds.<kind>]`. */
 export interface KindLimits {
   /** Model steps that may call tools. */
   rounds: number;
-  /** Tool calls of one step. */
-  callsPerRound: number;
   /** Wall time of the whole job, a restart's gap not counted (ms). */
   wallMs: number;
   /** One tool call may take this long (ms). */
   toolMs: number;
-  /** Prompt and completion tokens of the job. */
+  /** Prompt and completion tokens of the job: a fixed safety ceiling, not a setting. */
   tokens: number;
-  /** USD a job may spend when she does not say. */
+  /** USD a job may spend when she does not say: the size of one task, hers to pick. */
   defaultUsd: number;
   /** USD a job may spend at most, whatever she asks for. */
   maxUsd: number;
@@ -132,7 +128,6 @@ export const KINDS: Readonly<Record<SubagentKind, KindSpec>> = {
     allows: (e) => e.name === PLAN_TOOL || e.effect === "read",
     limits: {
       rounds: 16,
-      callsPerRound: 4,
       wallMs: 8 * 60_000,
       toolMs: 45_000,
       tokens: 500_000,
@@ -149,7 +144,6 @@ export const KINDS: Readonly<Record<SubagentKind, KindSpec>> = {
     allows: (e) => e.name === PLAN_TOOL || e.effect === "read" || e.effect === "act",
     limits: {
       rounds: 20,
-      callsPerRound: 6,
       wallMs: 8 * 60_000,
       toolMs: 30_000,
       tokens: 500_000,
@@ -185,7 +179,6 @@ export const KINDS: Readonly<Record<SubagentKind, KindSpec>> = {
     },
     limits: {
       rounds: 60,
-      callsPerRound: 8,
       wallMs: 30 * 60_000,
       toolMs: 180_000,
       tokens: 4_000_000,
@@ -202,7 +195,6 @@ export const KINDS: Readonly<Record<SubagentKind, KindSpec>> = {
     allows: (e) => e.effect === "read",
     limits: {
       rounds: PROFILES.reflect.limits.rounds,
-      callsPerRound: PROFILES.reflect.limits.callsPerRound,
       wallMs: PROFILES.reflect.limits.wallMs,
       toolMs: PROFILES.reflect.limits.toolMs,
       tokens: PROFILES.reflect.limits.tokens,
@@ -233,21 +225,19 @@ export function defaultKindLimits(): Record<CallableKind, KindLimits> {
 /** A kind's limits as `[modules.agent.delegate.kinds.<kind>]` writes them. */
 export interface KindLimitsConfig {
   rounds: number;
-  calls_per_round: number;
   minutes: number;
   tool_seconds: number;
-  tokens: number;
   usd_default: number;
   usd_max: number;
 }
 
-export function kindLimitsOf(c: KindLimitsConfig): KindLimits {
+/** `kind`'s limits from its config; the token ceiling is the kind's own. */
+export function kindLimitsOf(kind: CallableKind, c: KindLimitsConfig): KindLimits {
   return {
     rounds: c.rounds,
-    callsPerRound: c.calls_per_round,
     wallMs: Math.round(c.minutes * 60_000),
     toolMs: c.tool_seconds * 1000,
-    tokens: c.tokens,
+    tokens: KINDS[kind].limits.tokens,
     defaultUsd: c.usd_default,
     maxUsd: c.usd_max,
   };
@@ -265,13 +255,11 @@ export function jobBudget(limits: KindLimits, asked: number | null | undefined):
 /** What one run of a job may use; a resumed job's is what is left of its whole. */
 export interface RunAllowance {
   rounds: number;
-  callsPerRound: number;
   wallMs: number;
   toolMs: number;
   tokens: number;
-  /** Its own cap: USD for priced calls, tokens for the rest (0: none, the day's pool still holds). */
+  /** Its own budget (USD; 0: none, the asker's quota and the daily budget still hold). */
   usd: number;
-  unpricedTokens: number;
   /** Nothing is offered: the run only writes what it has (a job whose allowance is used up). */
   reportOnly?: boolean;
 }
@@ -283,12 +271,11 @@ export function profileOf(kind: SubagentKind, allowance: RunAllowance): RunProfi
   return {
     ...withLimits(base, {
       rounds: allowance.rounds,
-      callsPerRound: allowance.callsPerRound,
+      callsPerRound: CALLS_PER_ROUND,
       wallMs: allowance.wallMs,
       toolMs: allowance.toolMs,
       tokens: allowance.tokens,
-      sessionUsdPerHour: allowance.usd,
-      sessionTokensPerHour: allowance.unpricedTokens,
+      usd: allowance.usd,
     }),
     offers: allowance.reportOnly === true ? () => false : (tool) => spec.allows(tool),
   };

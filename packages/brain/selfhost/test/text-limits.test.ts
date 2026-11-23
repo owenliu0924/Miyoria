@@ -1,6 +1,6 @@
-// One text run's limits in the text host: `[modules.agent]` `text_rounds`, `text_calls_per_round`,
-// `text_seconds`, `text_tool_seconds` and `text_tokens` are what the run is held to, and their
-// defaults are the text profile's.
+// One text run's limits in the text host: `[modules.agent]` `text_rounds`, `text_seconds` and
+// `text_tool_seconds` are what the run is held to, and their defaults are the text profile's; the
+// calls of a step and the token ceiling are the profile's own.
 
 import { defineTool } from "@miyoria/llm/tools";
 import { afterEach, describe, expect, it } from "vitest";
@@ -36,11 +36,16 @@ describe("one text run's limits", () => {
     const config = defaultAgentConfig();
     expect({
       rounds: config.text_rounds,
-      callsPerRound: config.text_calls_per_round,
       wallMs: config.text_seconds * 1000,
       toolMs: config.text_tool_seconds * 1000,
-      tokens: config.text_tokens,
-    }).toEqual(TEXT_LIMITS);
+    }).toEqual({
+      rounds: TEXT_LIMITS.rounds,
+      wallMs: TEXT_LIMITS.wallMs,
+      toolMs: TEXT_LIMITS.toolMs,
+    });
+    expect(TEXT_LIMITS).toMatchObject({ callsPerRound: 8, tokens: 3_000_000 });
+    expect(config).not.toHaveProperty("text_calls_per_round");
+    expect(config).not.toHaveProperty("text_tokens");
   });
 
   it("are the ones [modules.agent] sets", async () => {

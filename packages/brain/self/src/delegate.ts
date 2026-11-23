@@ -6,10 +6,11 @@
 // most `maxRunning` run at once and `maxQueued` wait; a start past that is refused with a text she
 // can read.
 //
-// Money. Every call a job makes is counted in the router's prices (USD) or, for a model with no
-// price, in tokens, in three places: the job's own cap (its budget, through the runner's hourly
-// cap of its session), the day's cap of all jobs together, and the job's row. The day's cap stops
-// a running job at its next step, like the job's own cap does.
+// Money. Every call a job makes is charged in USD (a model with no price at the quota's fallback
+// rate) to the job's own budget (the size of the task, hers to pick within the kind's maximum), to
+// the person who asked (their AI quota: a job acts for them; none when she started it herself),
+// and to the job's row. A person at their quota cannot start a job; a running job that takes them
+// past it stops at its next step and writes what it has. The router's daily budget holds over all.
 //
 // Rows. A job's row (who asked, where, state, usage, plan, summary) is kept in a `JobStore` while
 // it lives and after it ends, and saved after every step.
@@ -24,6 +25,7 @@ import { withLlmTag } from "@miyoria/llm/llm";
 import type { TranscriptStore } from "@miyoria/memory/transcript";
 import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
 import { type AccountRef, type Clock, type ContextKey, dataBlock, newId } from "@miyoria/types";
+import { roughWait } from "../../agent/src/index.js";
 import {
   DELEGATE_BLOCK,
   DELEGATE_REFUSALS,
@@ -51,9 +53,9 @@ import {
   planOf,
   planTool,
 } from "./plan.js";
-import type { LimitName, RunLimits } from "./profiles.js";
+import type { LimitName } from "./profiles.js";
+import { capMinutes, chargeOf, type Payer, type PersonQuota, QUOTA_DEFAULTS } from "./quota.js";
 import { SelfRunner } from "./run.js";
-import { SpendLedger } from "./spend.js";
 import {
   type CallableKind,
   defaultKindLimits,
@@ -73,7 +75,6 @@ import {
   profileOf,
   type RunAllowance,
   type SubagentKind,
-  TOKENS_PER_USD,
 } from "./subagents.js";
 import type { Guard, PromptInput, RunEvent, RunModel, Wake, WakeAuthor } from "./types.js";
 
@@ -163,9 +164,10 @@ export function normaliseRow(row: JobRow): JobRow {
 /** A job goes on after a restart at most this many times. */
 export const MAX_RESUMES = 2;
 
-/** What a day's pool has taken in. */
+/** What the nightly reflection's pool has taken in. */
 export interface DayState {
   date: string;
+  /** USD, the calls without a price at the fallback rate. */
   usd: number;
   /** Tokens of every call, priced or not. */
   tokens: number;
@@ -178,12 +180,12 @@ export type DelegateEvent =
   | { type: "progress"; job: JobRow; detail: string }
   | { type: "ended"; job: JobRow };
 
-/** Where jobs and the days' spending are kept. Writes are fire-and-forget; the store orders them. */
+/** Where jobs and the reflection's day are kept. Writes are fire-and-forget; the store orders them. */
 export interface JobStore {
-  load(): Promise<{ jobs: JobRow[]; day: DayState | null; reflectDay: DayState | null }>;
+  load(): Promise<{ jobs: JobRow[]; reflectDay: DayState | null }>;
   saveJob(row: JobRow): void;
   removeJob(id: string): void;
-  saveDay(pool: "delegate" | "reflect", day: DayState): void;
+  saveDay(pool: "reflect", day: DayState): void;
 }
 
 /** A store that keeps nothing past the process (tests, and a run without a settings store). */
@@ -194,7 +196,6 @@ export class MemoryJobStore implements JobStore {
   async load() {
     return {
       jobs: [...this.jobs.values()].map((j) => structuredClone(j)),
-      day: this.days.get("delegate") ?? null,
       reflectDay: this.days.get("reflect") ?? null,
     };
   }
@@ -207,19 +208,19 @@ export class MemoryJobStore implements JobStore {
     this.jobs.delete(id);
   }
 
-  saveDay(pool: "delegate" | "reflect", day: DayState): void {
+  saveDay(pool: "reflect", day: DayState): void {
     this.days.set(pool, { ...day });
   }
 }
 
 // ---- the money ---------------------------------------------------------------------------------
 
-/** What one pool of jobs may spend in a day: USD for priced calls, tokens for the rest. */
+/** What the nightly reflection may spend in a day (USD). */
 export class DayPool {
   #state: DayState = { date: "", usd: 0, tokens: 0, unpriced_tokens: 0 };
 
   constructor(
-    readonly cap: { usd: number; tokens: number },
+    readonly cap: { usd: number },
     readonly dayKey: (now: number) => string,
   ) {}
 
@@ -228,17 +229,17 @@ export class DayPool {
     if (this.#state.date !== date) this.#state = { date, usd: 0, tokens: 0, unpriced_tokens: 0 };
   }
 
-  add(now: number, usd: number | null, tokens: number): void {
+  /** `usd`: what the call was charged; `priced`: whether its model had a price. */
+  add(now: number, usd: number, tokens: number, priced: boolean): void {
     this.#roll(now);
     this.#state.tokens += tokens;
-    if (usd === null) this.#state.unpriced_tokens += tokens;
-    else this.#state.usd += usd;
+    if (!priced) this.#state.unpriced_tokens += tokens;
+    this.#state.usd += usd;
   }
 
-  /** Whether the day's cap is reached: priced spending in USD, unpriced in tokens. */
   over(now: number): boolean {
     this.#roll(now);
-    return this.#state.usd >= this.cap.usd || this.#state.unpriced_tokens >= this.cap.tokens;
+    return this.#state.usd >= this.cap.usd;
   }
 
   state(now: number): DayState {
@@ -259,43 +260,13 @@ export class DayPool {
   }
 }
 
-/**
- * The runner's hourly ledger, held also to the day's pool: a run whose pool is used up stops at
- * its next step (`over`), and every call it makes is added to the pool.
- */
-export class PoolLedger extends SpendLedger {
-  constructor(
-    readonly pool: DayPool,
-    private readonly changed: () => void,
-  ) {
-    super();
-  }
-
-  override add(
-    session: string,
-    at: number,
-    usd: number | null,
-    usage: Parameters<SpendLedger["add"]>[3],
-  ): void {
-    super.add(session, at, usd, usage);
-    this.pool.add(at, usd, usage.prompt_tokens + usage.completion_tokens);
-    this.changed();
-  }
-
-  override over(session: string, now: number, limits: RunLimits): boolean {
-    return this.pool.over(now) || super.over(session, now, limits);
-  }
-}
-
 // ---- the engine --------------------------------------------------------------------------------
 
 export interface DelegateLimits {
   maxRunning: number;
   maxQueued: number;
-  dailyUsd: number;
-  dailyTokens: number;
+  /** What the nightly reflection may spend in a day (USD). */
   reflectDailyUsd: number;
-  reflectDailyTokens: number;
   /** Characters of a summary the place that asked is told. */
   resultChars: number;
   /** Characters one `read` gives. */
@@ -308,10 +279,7 @@ export interface DelegateLimits {
 export const DEFAULT_DELEGATE_LIMITS: DelegateLimits = {
   maxRunning: 3,
   maxQueued: 8,
-  dailyUsd: 10,
-  dailyTokens: 30_000_000,
   reflectDailyUsd: 0.5,
-  reflectDailyTokens: 1_500_000,
   resultChars: 1500,
   readChars: 8000,
   keepEnded: 20,
@@ -346,8 +314,14 @@ export interface DelegatorPorts {
   log: Logger;
   store: JobStore;
   limits?: DelegateLimitsInput;
-  /** The key of a day (the pools reset when it changes). Default: the UTC date. */
+  /** The key of a day (the reflection's pool resets when it changes). Default: the UTC date. */
   dayKey?: (now: number) => string;
+  /** Each person's AI quota: whoever asked for a job pays for it. Unset: nobody is capped. */
+  quota?: PersonQuota | null;
+  /** The person behind whoever asked (`Payer`); `null`: nobody to charge. Unset: nobody. */
+  payerOf?: (from: WakeAuthor) => Payer | null;
+  /** USD per million tokens of a model without a price; default the quota's rate. */
+  unpricedUsdPerMtok?: () => number;
   /** The owner's rules as the helper's block 3 (they bind it as they bind her); `null`: none. */
   rules?: (context: ContextKey) => Promise<string | null> | string | null;
   /** The owner's rule that forbids the goal, if one does. */
@@ -403,9 +377,7 @@ const SPENT_BEFORE_NOTE = "重啟前就用完了能用的輪數、時間或預�
 export class Delegator {
   readonly #p: DelegatorPorts;
   readonly #limits: DelegateLimits;
-  readonly #pool: DayPool;
   readonly #reflectPool: DayPool;
-  readonly #ledger: PoolLedger;
   readonly #isolated: TranscriptStore;
   readonly #live = new Map<string, Live>();
   readonly #queue: Live[] = [];
@@ -419,28 +391,13 @@ export class Delegator {
     this.#p = ports;
     this.#limits = delegateLimits(ports.limits);
     const dayKey = ports.dayKey ?? utcDay;
-    this.#pool = new DayPool(
-      { usd: this.#limits.dailyUsd, tokens: this.#limits.dailyTokens },
-      dayKey,
-    );
-    this.#reflectPool = new DayPool(
-      { usd: this.#limits.reflectDailyUsd, tokens: this.#limits.reflectDailyTokens },
-      dayKey,
-    );
-    this.#ledger = new PoolLedger(this.#pool, () =>
-      ports.store.saveDay("delegate", this.#pool.state(ports.clock.now())),
-    );
+    this.#reflectPool = new DayPool({ usd: this.#limits.reflectDailyUsd }, dayKey);
     this.#isolated = isolatedTranscript(ports.transcript);
     this.#newId = ports.newId ?? (() => newId().slice(-8).toLowerCase());
   }
 
   get limits(): DelegateLimits {
     return this.#limits;
-  }
-
-  /** What the day's jobs have spent so far. */
-  spentToday(): DayState {
-    return this.#pool.state(this.#p.clock.now());
   }
 
   /** What today's reflection has spent so far. */
@@ -450,6 +407,32 @@ export class Delegator {
 
   #now(): number {
     return this.#p.clock.now();
+  }
+
+  /** USD per million tokens of a model without a price. */
+  #rate(): number {
+    return (
+      this.#p.unpricedUsdPerMtok?.() ??
+      this.#p.quota?.rules().unpricedUsdPerMtok ??
+      QUOTA_DEFAULTS.unpricedUsdPerMtok
+    );
+  }
+
+  /** Whom a job's calls are charged to: whoever asked; `null`: she started it herself. */
+  payerOf(row: Pick<JobRow, "from">): Payer | null {
+    return row.from === null ? null : (this.#p.payerOf?.(row.from) ?? null);
+  }
+
+  /** What a job was charged so far (USD, unpriced tokens at the fallback rate). */
+  charged(row: JobRow): number {
+    return (
+      row.usage.cost_usd +
+      chargeOf(
+        null,
+        { prompt_tokens: row.usage.unpriced_tokens, completion_tokens: 0 },
+        this.#rate(),
+      )
+    );
   }
 
   #emit(event: DelegateEvent): void {
@@ -500,7 +483,11 @@ export class Delegator {
     }
     const rule = this.#p.forbids?.(goal, spec.context) ?? null;
     if (rule !== null) return no("directive", DELEGATE_REFUSALS.directive(rule));
-    if (this.#pool.over(this.#now())) return no("day_budget", DELEGATE_REFUSALS.dayBudget);
+    const capped = this.#p.quota?.capped(this.payerOf(spec), this.#now()) ?? null;
+    if (capped !== null) {
+      const wait = roughWait(capMinutes(capped, this.#now()));
+      return no("quota", DELEGATE_REFUSALS.quota(spec.from?.name ?? "", capped.which, wait));
+    }
     if (this.#p.llmExhausted?.() === true) return no("llm_budget", DELEGATE_REFUSALS.llmBudget);
     const tools = jobTools(kind, (name) => this.#p.tools.entry(name));
     if (tools.length === 0) return no("tools", DELEGATE_REFUSALS.noTools(kind));
@@ -593,56 +580,40 @@ export class Delegator {
    */
   allowance(row: JobRow, resume: boolean): RunAllowance {
     const k = this.kindLimits(row.kind);
-    const unpricedCap = Math.round(row.budget_usd * TOKENS_PER_USD);
     if (!resume) {
       return {
         rounds: k.rounds,
-        callsPerRound: k.callsPerRound,
         wallMs: k.wallMs,
         toolMs: k.toolMs,
         tokens: k.tokens,
         usd: row.budget_usd,
-        unpricedTokens: unpricedCap,
       };
     }
-    const now = this.#now();
-    // The ledger holds what this process already counted of the job in the hour.
-    const hour = this.#ledger.hour(row.session, now);
     const used = row.usage.prompt_tokens + row.usage.completion_tokens;
     const left = {
       rounds: k.rounds - row.rounds,
       wallMs: k.wallMs - row.ran_ms,
       tokens: k.tokens - used,
-      usd: row.budget_usd - row.usage.cost_usd,
-      unpriced: unpricedCap - row.usage.unpriced_tokens,
+      usd: row.budget_usd - this.charged(row),
     };
-    const priced = row.usage.unpriced_tokens === 0;
-    const spent =
-      left.rounds <= 0 ||
-      left.wallMs <= 0 ||
-      left.tokens <= 0 ||
-      (priced ? left.usd <= 0 : left.unpriced <= 0);
+    const spent = left.rounds <= 0 || left.wallMs <= 0 || left.tokens <= 0 || left.usd <= 0;
     if (spent) {
-      // One step without tools; the day's pool still holds it.
+      // One step without tools; the asker's quota and the daily budget still hold it.
       return {
         rounds: 1,
-        callsPerRound: 1,
         wallMs: 2 * 60_000,
         toolMs: k.toolMs,
         tokens: Math.max(k.tokens, 1),
         usd: 0,
-        unpricedTokens: 0,
         reportOnly: true,
       };
     }
     return {
       rounds: left.rounds,
-      callsPerRound: k.callsPerRound,
       wallMs: left.wallMs,
       toolMs: k.toolMs,
       tokens: left.tokens,
-      usd: left.usd + hour.usd,
-      unpricedTokens: Math.max(1, left.unpriced + (hour.basis === "tokens" ? hour.tokens : 0)),
+      usd: left.usd,
     };
   }
 
@@ -711,7 +682,11 @@ export class Delegator {
         onEvent: (event) => this.#onRunEvent(live, event),
         ...(this.#p.selfAccount === undefined ? {} : { selfAccount: this.#p.selfAccount }),
       },
-      { spend: this.#ledger, compaction: null },
+      {
+        quota: this.#p.quota ?? null,
+        unpricedUsdPerMtok: () => this.#rate(),
+        compaction: null,
+      },
     );
     let outcome: Awaited<ReturnType<SelfRunner["run"]>> | null = null;
     let failure: string | null = null;
@@ -730,13 +705,15 @@ export class Delegator {
           { kind: "other", author: RESUME_AUTHOR, content: note },
         ]);
       }
-      outcome = await withLlmTag({ module: "agent", label: `delegate:${kind}` }, () =>
+      // Its own steps are charged by its runner: not to a tool call that may have started it.
+      outcome = await withLlmTag({ module: "agent", label: `delegate:${kind}`, onCall: null }, () =>
         runner.run({
           session: { id: row.session, context },
           wake,
           profile,
           signal: live.controller.signal,
           turn: `delegate-${row.id}`,
+          payer: this.payerOf(row),
         }),
       );
     } catch (error) {
@@ -793,9 +770,11 @@ export class Delegator {
       note = failure === null ? null : `出錯了:${failure}`;
     } else if (outcome.outcome === "over_budget" || outcome.limits.includes("spend")) {
       state = "out_of_budget";
-      note = this.#pool.over(this.#now())
-        ? "今天小幫手能花的額度用完了"
-        : "到了這件工作的預算上限,這是做到那裡的結果";
+      const capped = this.#p.quota?.capped(this.payerOf(row), this.#now()) ?? null;
+      note =
+        capped === null
+          ? "到了這件工作的預算上限,這是做到那裡的結果"
+          : `${capped.which === "day" ? "今天" : "這個小時"}為要這件工作的人花的額度到了,這是做到那裡的結果`;
     } else if (outcome.outcome === "failed") {
       state = "failed";
       note = "模型沒有回答";
@@ -990,7 +969,7 @@ export class Delegator {
   // ---- restart ----------------------------------------------------------------------------------
 
   /**
-   * Reads what the last run left: the days' spending, the ended jobs (for the lists and `read`),
+   * Reads what the last run left: the reflection's day, the ended jobs (for the lists and `read`),
    * and the jobs that never finished. A running one goes on from its transcript and a queued one
    * waits its turn again; one that cannot (the reflection, a job of no place, one already resumed
    * `MAX_RESUMES` times, one whose tools are gone) ends here as failed and is told once. Returns
@@ -999,7 +978,6 @@ export class Delegator {
   async recover(): Promise<number> {
     const loaded = await this.#p.store.load();
     const now = this.#now();
-    this.#pool.restore(loaded.day, now);
     this.#reflectPool.restore(loaded.reflectDay, now);
     let cut = 0;
     const again: Live[] = [];
@@ -1127,7 +1105,12 @@ export class Delegator {
               tokens === null || tokens === undefined
                 ? 0
                 : tokens.prompt_tokens + tokens.completion_tokens;
-            this.#reflectPool.add(now, call.cost_usd, count);
+            const usd = chargeOf(
+              call.cost_usd,
+              { prompt_tokens: count, completion_tokens: 0 },
+              this.#rate(),
+            );
+            this.#reflectPool.add(now, usd, count, call.cost_usd !== null);
             row.rounds += 1;
             row.usage.calls += 1;
             if (call.cost_usd === null) row.usage.unpriced_tokens += count;

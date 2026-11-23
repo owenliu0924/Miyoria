@@ -211,7 +211,7 @@ export function outcomeText(o: TurnOutcome): string {
     case "cancelled":
       return `${CANCEL_LABEL[o.cause] ?? o.cause}${o.by ? `(${o.by})` : ""}`;
     case "error":
-      // The runner's hourly cap of one conversation (`[modules.agent]` `session_usd_per_hour`).
-      return o.error === "over_budget" ? "這個對話這一小時的花費到上限了" : `出錯:${o.error}`;
+      // The person she answers is at their AI quota (`[modules.agent.quota]`).
+      return o.error === "over_budget" ? "對方的 AI 額度到上限了" : `出錯:${o.error}`;
   }
 }

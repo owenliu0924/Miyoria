@@ -6,7 +6,7 @@
 import { authTables } from "@miyoria/auth";
 import { DirectiveModule, DirectiveService, directiveTables } from "@miyoria/brain/directive";
 import { reportTables } from "@miyoria/brain/report";
-import { initiativeTables } from "@miyoria/brain/selfhost";
+import { initiativeTables, quotaTables } from "@miyoria/brain/selfhost";
 import { ClusterModule, type ClusterTables, clusterTables } from "@miyoria/cluster";
 import {
   BountyStoreKey,
@@ -127,6 +127,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   marketTables,
   memoryTables,
   notesTables,
+  quotaTables,
   reportTables,
   transcriptTables,
 ];

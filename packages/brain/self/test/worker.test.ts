@@ -19,6 +19,7 @@ import { DELEGATE, DELEGATE_LIST, DELEGATE_READ, delegateTools } from "../src/de
 import { permissiveGuard } from "../src/guard.js";
 import { JobsPrompt, jobsBody } from "../src/jobs-prompt.js";
 import { MAX_PLAN_STEPS, parsePlan } from "../src/plan.js";
+import { CALLS_PER_ROUND } from "../src/profiles.js";
 import { wakeLine } from "../src/prompt.js";
 import { REFUSALS } from "../src/rules.js";
 import { defaultKindLimits, helperGuard, jobTools, KINDS, kindLimitsOf } from "../src/subagents.js";
@@ -233,24 +234,30 @@ describe("limits per kind", () => {
   it("come from the config, and its defaults are the kinds' own", () => {
     const cfg = DelegateConfigSchema.parse({});
     expect({
-      research: kindLimitsOf(cfg.kinds.research),
-      curator: kindLimitsOf(cfg.kinds.curator),
-      worker: kindLimitsOf(cfg.kinds.worker),
+      research: kindLimitsOf("research", cfg.kinds.research),
+      curator: kindLimitsOf("curator", cfg.kinds.curator),
+      worker: kindLimitsOf("worker", cfg.kinds.worker),
     }).toEqual(defaultKindLimits());
     expect(KINDS.worker.limits).toMatchObject({
       rounds: 60,
-      callsPerRound: 8,
       wallMs: 30 * 60_000,
       defaultUsd: 1,
       maxUsd: 3,
     });
-    expect(cfg).toMatchObject({ max_running: 3, max_queued: 8, daily_usd: 10 });
+    expect(cfg).toMatchObject({ max_running: 3, max_queued: 8 });
+    // Calls per step and the token ceiling are fixed, not settings; nor is a day's cap of all jobs.
+    expect(cfg).not.toHaveProperty("daily_usd");
+    expect(cfg).not.toHaveProperty("daily_tokens");
+    expect(cfg.kinds.worker).not.toHaveProperty("calls_per_round");
+    expect(cfg.kinds.worker).not.toHaveProperty("tokens");
+    const tokens = DelegateConfigSchema.parse({ kinds: { worker: { tokens: 5 } } });
+    expect(kindLimitsOf("worker", tokens.kinds.worker).tokens).toBe(KINDS.worker.limits.tokens);
     const set = DelegateConfigSchema.parse({ kinds: { worker: { rounds: 5, usd_max: 2 } } });
     expect(set.kinds.worker).toMatchObject({ rounds: 5, usd_max: 2, minutes: 30 });
     expect(set.kinds.research.rounds).toBe(16);
   });
 
-  it("hold a job to its kind's rounds, budget and calls as configured", async () => {
+  it("hold a job to its kind's rounds and budget as configured, and 8 calls a step", async () => {
     const s = await setup(
       [
         (request) =>
@@ -262,7 +269,7 @@ describe("limits per kind", () => {
       {
         limits: {
           maxRunning: 1,
-          kinds: { research: { rounds: 2, callsPerRound: 2, defaultUsd: 0.5, maxUsd: 0.6 } },
+          kinds: { research: { rounds: 2, defaultUsd: 0.5, maxUsd: 0.6 } },
         },
       },
     );
@@ -275,8 +282,9 @@ describe("limits per kind", () => {
     expect(a.rounds).toBe(3);
     expect(a.note).toContain("輪數上限");
     const results = s.r.transcript.tail(a.session).entries.filter((e) => e.kind === "tool_result");
-    // Two calls of three ran each round.
-    expect(results.filter((e) => e.content === REFUSALS.tooMany(2))).toHaveLength(2);
+    // All three calls ran each round: a step may make eight.
+    expect(results.filter((e) => e.content === REFUSALS.tooMany(CALLS_PER_ROUND))).toHaveLength(0);
+    expect(results).toHaveLength(6);
     // The opening entry says the job's own rounds.
     expect(s.r.transcript.tail(a.session).entries[0]?.content).toContain("最多 2 輪工具");
   });

@@ -16,8 +16,11 @@
 // (`delegate.task.started|progress|done|failed`), so the fact layer and the panel's task list show
 // it like any task; its transcript is the session `delegate:<id>`.
 //
-// Keeping. Jobs and the days' spending are rows of the settings store (`delegate:job:<id>`,
-// `delegate:day:<pool>`), the store the work lane keeps its task rows in.
+// Keeping. Jobs and the reflection's day are rows of the settings store (`delegate:job:<id>`,
+// `delegate:day:reflect`), the store the work lane keeps its task rows in.
+//
+// Money. A job is charged to whoever asked (their AI quota, `quota.ts`), never to the owner's cap;
+// one she started herself to nobody.
 
 import { LlmRouterKey } from "@miyoria/llm/llm";
 import type { Tool } from "@miyoria/llm/tools";
@@ -53,10 +56,12 @@ import {
   type JobStore,
   JobsPrompt,
   kindLimitsOf,
+  type PersonQuota,
   type RunModel,
   serviceGuard,
   type Wake,
 } from "../../self/src/index.js";
+import { payerOfAuthor } from "./quota.js";
 
 /** The owner of the jobs' task events: `delegate.task.started|progress|done|failed`. */
 export const DELEGATE_OWNER = "delegate";
@@ -126,7 +131,6 @@ export function settingsJobStore(
       }
       return {
         jobs,
-        day: parseDay(await store.get(profile, `${DAY_PREFIX}delegate`)),
         reflectDay: parseDay(await store.get(profile, `${DAY_PREFIX}reflect`)),
       };
     },
@@ -200,7 +204,8 @@ export interface RunReflectDeps<T> {
 
 /**
  * Runs the nightly reflection under the sub-agents' accounting, as a job of kind `reflect`: its
- * calls count against the nightly figure (`[modules.agent.delegate] reflect_daily_usd`), a call
+ * calls count against the nightly figure (`[modules.agent.delegate] reflect_daily_usd`; a model
+ * without a price at the quota's fallback rate), a call
  * that takes the figure past its cap cuts the run, and nothing runs once the day's figure is used
  * up. The reflection itself is not changed: it still calls the router with its own prompt and no
  * tools, so it does not run on `SelfRunner` yet.
@@ -233,6 +238,8 @@ export interface JobsHostDeps {
   quiet: LocalTime | null;
   /** Wakes `context`'s lane. */
   wake: (context: ContextKey, wake: Wake) => void;
+  /** Each person's AI quota: a job is charged to whoever asked. `null` or unset: nobody's. */
+  quota?: PersonQuota | null;
 }
 
 export class JobsHost {
@@ -266,21 +273,20 @@ export class JobsHost {
       limits: {
         maxRunning: cfg.max_running,
         maxQueued: cfg.max_queued,
-        dailyUsd: cfg.daily_usd,
-        dailyTokens: cfg.daily_tokens,
         reflectDailyUsd: cfg.reflect_daily_usd,
-        reflectDailyTokens: cfg.reflect_daily_tokens,
         resultChars: cfg.result_chars,
         readChars: cfg.read_chars,
         keepEnded: cfg.keep_ended,
         kinds: {
-          research: kindLimitsOf(cfg.kinds.research),
-          curator: kindLimitsOf(cfg.kinds.curator),
-          worker: kindLimitsOf(cfg.kinds.worker),
+          research: kindLimitsOf("research", cfg.kinds.research),
+          curator: kindLimitsOf("curator", cfg.kinds.curator),
+          worker: kindLimitsOf("worker", cfg.kinds.worker),
         },
         ...options.limits,
       },
       dayKey: (now) => new Date(now - dayStart * 3_600_000).toISOString().slice(0, 10),
+      quota: deps.quota ?? null,
+      payerOf: (from) => payerOfAuthor(agent, from),
       rules: (context) =>
         pinnedSection(agent.mainline.ownerRules(context), [], agent.ctx.clock.now(), 0),
       forbids: (goal, context) =>
@@ -361,7 +367,7 @@ export class JobsHost {
 
 function emptyStore(): JobStore {
   return {
-    load: async () => ({ jobs: [], day: null, reflectDay: null }),
+    load: async () => ({ jobs: [], reflectDay: null }),
     saveJob: () => undefined,
     removeJob: () => undefined,
     saveDay: () => undefined,
