@@ -472,7 +472,15 @@ export const DelegateKindsSchema = z.object({
     tool_seconds: 180,
     usd_default: 1,
     usd_max: 3,
-  }).prefault({}),
+  })
+    .extend({
+      /**
+       * MCP and plugin tools a worker may call besides its own list, by exact name. Such a tool
+       * says nothing of what it does; naming it here is the owner vouching for it.
+       */
+      extra_tools: z.array(z.string().trim().min(1).max(128)).max(200).default([]),
+    })
+    .prefault({}),
 });
 export type DelegateKindsConfig = z.output<typeof DelegateKindsSchema>;
 
@@ -483,6 +491,10 @@ export const DelegateConfigSchema = z.object({
   max_running: z.number().int().min(1).max(8).default(3),
   /** Jobs waiting at most; a start past it is refused (she hears so). */
   max_queued: z.number().int().nonnegative().default(8),
+  /** Jobs of one person (who asked) running at once; more of theirs wait. Owners are not held. */
+  per_person_running: z.number().int().min(1).max(8).default(2),
+  /** Jobs of one person waiting at most; past it their start is refused (she hears so). */
+  per_person_queued: z.number().int().nonnegative().default(2),
   /**
    * What the nightly reflection may spend in a day (USD; a model without a price at
    * `[modules.agent.quota] unpriced_usd_per_mtok`), so one night cannot use up the day's budget.

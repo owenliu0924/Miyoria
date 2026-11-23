@@ -5,7 +5,7 @@ import { contentText } from "@miyoria/llm/llm";
 import type { Tool, ToolContext } from "@miyoria/llm/tools";
 import { getLogger } from "@miyoria/runtime/kernel";
 import { type ContextKey, type JsonValue, Principals } from "@miyoria/types";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { DelegateConfigSchema } from "../../agent/src/config.js";
 import {
   type DelegateEvent,
@@ -22,7 +22,15 @@ import { MAX_PLAN_STEPS, parsePlan } from "../src/plan.js";
 import { CALLS_PER_ROUND } from "../src/profiles.js";
 import { wakeLine } from "../src/prompt.js";
 import { REFUSALS } from "../src/rules.js";
-import { defaultKindLimits, helperGuard, jobTools, KINDS, kindLimitsOf } from "../src/subagents.js";
+import {
+  defaultKindLimits,
+  helperGuard,
+  jobTools,
+  KINDS,
+  kindLimitsOf,
+  setWorkerExtraTools,
+  workerExtraTools,
+} from "../src/subagents.js";
 import { CTX, calls, fakeTool, OTHER, OWEN, promptText, rig, say } from "./harness.js";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -89,6 +97,8 @@ const workspace = (wrote: string[] = []) => [
   fakeTool("workspace_export", "產物 a1", { core: false, effect: "act", group: "files" }),
 ];
 
+afterEach(() => setWorkerExtraTools([]));
+
 describe("the worker", () => {
   it("is a kind she may start, with files, the web and the notebook, and says code cannot run", async () => {
     const wrote: string[] = [];
@@ -136,7 +146,7 @@ describe("the worker", () => {
     expect(jobTools("worker", (n) => s.r.tools.entry(n))).toContain("code_run");
   });
 
-  it("may read, write files and run code, never speak, spend or act on Discord", async () => {
+  it("calls only the tools of its list by name, never by group or effect", async () => {
     const guard = helperGuard("worker", () => true);
     const ctx = { session: { id: "delegate:x", context: CTX } } as never;
     const check = async (name: string, effect: string, group: string) =>
@@ -150,14 +160,39 @@ describe("the worker", () => {
           ctx,
         )
       ).allow;
-    expect(await check("workspace_write", "act", "workspace")).toBe(true);
-    expect(await check("workspace_export", "act", "files")).toBe(true);
-    expect(await check("notebook_write", "act", "notebook")).toBe(true);
-    expect(await check("code_run", "external", "code")).toBe(true);
-    expect(await check("ext_tool", "external", "extension")).toBe(true);
-    expect(await check("web_read", "read", "web")).toBe(true);
-    expect(await check("plan", "act", "work")).toBe(true);
     for (const [name, effect, group] of [
+      ["workspace_list", "read", "workspace"],
+      ["workspace_read", "read", "workspace"],
+      ["workspace_write", "act", "workspace"],
+      ["workspace_delete", "act", "workspace"],
+      ["workspace_export", "act", "files"],
+      ["notebook_read", "read", "notebook"],
+      ["recall", "read", "memory"],
+      ["code_run", "external", "code"],
+      ["code_session", "external", "code"],
+      ["workspace_run", "external", "workspace"],
+      ["web_search", "external", "web"],
+      ["web_read", "read", "web"],
+      ["web_image", "read", "web"],
+      ["plan", "act", "work"],
+      ["find_tools", "read", "core"],
+    ] as const) {
+      expect(await check(name, effect, group), name).toBe(true);
+    }
+    for (const [name, effect, group] of [
+      // What a web page could make it do to her memory of people.
+      ["notebook_write", "act", "notebook"],
+      ["notebook_delete", "act", "notebook"],
+      // Read tools of other groups: her jobs, her schedule, the stream, her skills.
+      ["delegate_read", "read", "work"],
+      ["delegate_list", "read", "work"],
+      ["schedule_list", "read", "schedule"],
+      ["watch_look", "read", "stream"],
+      ["skill", "read", "skills"],
+      // Plugin and MCP tools say nothing of what they do.
+      ["ext_tool", "external", "extension"],
+      ["mcp_tool", "external", "mcp"],
+      ["workspace_save_script", "act", "workspace"],
       ["say", "say", "core"],
       ["message_dm", "say", "chat"],
       ["share", "say", "files"],
@@ -169,7 +204,7 @@ describe("the worker", () => {
       ["remind_me", "act", "schedule"],
       ["unknown_thing", "external", "other"],
     ] as const) {
-      expect(await check(name, effect, group)).toBe(false);
+      expect(await check(name, effect, group), name).toBe(false);
     }
     // The research helper still only reads.
     const research = helperGuard("research", new Set(KINDS.research.tools));
@@ -184,14 +219,48 @@ describe("the worker", () => {
     expect(r.allow).toBe(false);
   });
 
-  it("loads more with its own find_tools, only what it may call, never into her list", async () => {
+  it("calls an MCP or plugin tool only when the owner names it in extra_tools", async () => {
+    const cfg = DelegateConfigSchema.parse({
+      kinds: { worker: { extra_tools: ["ext_tool", "mcp_tool", "notebook_write"] } },
+    });
+    expect(cfg.kinds.worker.extra_tools).toEqual(["ext_tool", "mcp_tool", "notebook_write"]);
+    expect(kindLimitsOf("worker", cfg.kinds.worker).extraTools).toEqual(
+      cfg.kinds.worker.extra_tools,
+    );
+    expect(workerExtraTools()).toEqual(["ext_tool", "mcp_tool", "notebook_write"]);
+    const guard = helperGuard("worker", () => true);
+    const ctx = { session: { id: "delegate:x", context: CTX } } as never;
+    const check = async (name: string, effect: string, group: string) =>
+      (
+        await guard.checkCall(
+          {
+            call: { id: "c", name, arguments: "{}" },
+            args: {},
+            entry: { name, effect, group, tool: fakeTool(name) } as never,
+          },
+          ctx,
+        )
+      ).allow;
+    expect(await check("ext_tool", "external", "extension")).toBe(true);
+    expect(await check("mcp_tool", "external", "mcp")).toBe(true);
+    expect(await check("other_ext", "external", "extension")).toBe(false);
+    // Only MCP and plugin tools: naming a core tool there does not open it.
+    expect(await check("notebook_write", "act", "notebook")).toBe(false);
+    // Nor one that speaks or spends.
+    setWorkerExtraTools(["ext_say"]);
+    expect(await check("ext_say", "say", "extension")).toBe(false);
+    expect(DelegateConfigSchema.parse({}).kinds.worker.extra_tools).toEqual([]);
+  });
+
+  it("finds with its own find_tools only what its list and extra_tools hold, never into her list", async () => {
     const dms: string[] = [];
+    setWorkerExtraTools(["ext_render"]);
     const s = await setup(
       [
         calls([{ name: "find_tools", args: { query: "腳本" } }]),
-        calls([{ name: "workspace_save_script", args: { q: "a.py" } }]),
+        calls([{ name: "ext_render", args: { q: "a.py" } }]),
         calls([{ name: "voice_join", args: {} }]),
-        say("存好腳本了"),
+        say("畫好了"),
       ],
       [
         ...workspace(),
@@ -200,6 +269,24 @@ describe("the worker", () => {
           effect: "act",
           group: "workspace",
           description: "把腳本存進工作區。",
+        }),
+        fakeTool("ext_render", "畫好了", {
+          core: false,
+          effect: "external",
+          group: "extension",
+          description: "用插件把腳本畫成圖。",
+        }),
+        fakeTool("ext_other", "x", {
+          core: false,
+          effect: "external",
+          group: "extension",
+          description: "插件的另一個腳本工具。",
+        }),
+        fakeTool("skill", "x", {
+          core: false,
+          effect: "read",
+          group: "skills",
+          description: "載入一個技能和它的腳本。",
         }),
         fakeTool("voice_join", "x", {
           core: false,
@@ -210,21 +297,23 @@ describe("the worker", () => {
         }),
       ],
     );
-    await s.call(DELEGATE, { kind: "worker", goal: "存一支腳本" });
+    await s.call(DELEGATE, { kind: "worker", goal: "把腳本畫成圖" });
     await s.delegator.idle();
     const job = s.woke[0] as JobRow;
-    expect(job.summary).toBe("存好腳本了");
+    expect(job.summary).toBe("畫好了");
     const results = s.r.transcript
       .tail(job.session)
       .entries.filter((e) => e.kind === "tool_result")
       .map((e) => e.content);
-    expect(results[0]).toContain("workspace_save_script");
-    expect(results[0]).not.toContain("voice_join");
-    expect(results[1]).toBe("存好了");
+    for (const never of ["voice_join", "workspace_save_script", "ext_other", "skill"]) {
+      expect(results[0]).not.toContain(never);
+    }
+    expect(results[1]).toBe("畫好了");
     expect(results[2]).toBe(REFUSALS.notOffered("voice_join"));
     expect(dms).toEqual([]);
-    // The second step offered what it found; her own session loaded nothing.
-    expect(s.r.model.requests[1]?.tools?.map((t) => t.name)).toContain("workspace_save_script");
+    // The extra tool is in its list from the start; her own session loaded nothing.
+    expect(s.r.model.requests[0]?.tools?.map((t) => t.name)).toContain("ext_render");
+    expect(s.r.model.requests[0]?.tools?.map((t) => t.name)).not.toContain("ext_other");
     expect(s.r.tools.loaded.loaded("discord:g1:c1")).toEqual([]);
     expect(s.r.tools.loaded.toJSON()).toEqual({});
   });

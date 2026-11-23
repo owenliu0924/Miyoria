@@ -1053,6 +1053,8 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # tool_seconds = 180             # 一次工具呼叫最多等幾秒(跑程式要的時間)
 # usd_default = 1                # 預設的預算(美元)
 # usd_max = 3                    # 她能要的最多預算(美元)
+# extra_tools = []               # worker 另外能叫的 MCP 和插件工具,寫完整的工具名(例如 "mcp_github_search");預設一個都沒有
+#                                # 這些工具沒說自己會做什麼,寫進來就是你替它們擔保:網頁上的字也可能叫小幫手用它們
 # [modules.agent.delegate.kinds.research]
 # rounds = 16
 # minutes = 8

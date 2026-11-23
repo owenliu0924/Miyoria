@@ -9,8 +9,11 @@
 //   and finds only what its kind may call;
 // - nothing with effect `say` or `spend` is ever offered to it, and a call of one is refused even
 //   if the model makes it. `research` may only read; `curator` reads and writes the notebook; a
-//   `worker` reads, writes files and the notebook, runs code and reaches the web, and never acts on
-//   Discord, her voice, games, coins or her schedule;
+//   `worker` has a list of tools by name (`WORKER_TOOLS`): the web, her memory search, reading the
+//   notebook, the workspace and the sandbox, plus the MCP and plugin tools the owner names in
+//   `[modules.agent.delegate.kinds.worker] extra_tools`. It never acts on Discord, her voice, games,
+//   coins or her schedule, never loads tools into her session, and never rewrites what she keeps
+//   about people: what it reads on the web may be written by anyone;
 // - it has no way out: a line it writes is a result, never said to anyone.
 
 import {
@@ -67,6 +70,8 @@ export interface KindLimits {
   defaultUsd: number;
   /** USD a job may spend at most, whatever she asks for. */
   maxUsd: number;
+  /** A worker's MCP and plugin tools besides its list (`extra_tools`). */
+  extraTools?: readonly string[];
 }
 
 export interface KindSpec {
@@ -88,31 +93,60 @@ export interface KindSpec {
 /** The kinds she may start. */
 export type CallableKind = Exclude<SubagentKind, "reflect">;
 
-/** Groups of `act` tools a worker may call: files, the notebook, saved code. */
-export const WORKER_ACT_GROUPS: ReadonlySet<string> = new Set([
-  "workspace",
-  "files",
-  "notebook",
-  "code",
-]);
-
-/**
- * Groups of `external` tools a worker may call: the web, the sandbox, and the owner's plugins and
- * MCP servers (whose tools say nothing more about themselves).
- */
-export const WORKER_EXTERNAL_GROUPS: ReadonlySet<string> = new Set([
-  "web",
-  "code",
-  "workspace",
-  "files",
-  "extension",
-  "mcp",
-]);
-
 /** The sandbox's tools: a worker has them when they are registered. */
 export const CODE_TOOLS: readonly string[] = ["code_run", "code_session", "workspace_run"];
 
+/**
+ * What a worker may call, by name (besides its `plan` and its own `find_tools`). A group or an
+ * effect says too little: `read` tools include her job list and her loading of skills, and the
+ * notebook's writes would let a web page rewrite what she keeps about people.
+ */
+export const WORKER_TOOLS: readonly string[] = [
+  "web_search",
+  "web_read",
+  "web_image",
+  "recall",
+  "notebook_read",
+  "workspace_list",
+  "workspace_read",
+  "workspace_write",
+  "workspace_delete",
+  "workspace_export",
+  ...CODE_TOOLS,
+];
+
+/** The groups `extra_tools` may name tools of: MCP servers and plugins. */
+export const WORKER_EXTRA_GROUPS: ReadonlySet<string> = new Set(["mcp", "extension"]);
+
+/**
+ * The MCP and plugin tools a worker may call besides its list, by exact name
+ * (`[modules.agent.delegate.kinds.worker] extra_tools`): set when the config is read
+ * (`kindLimitsOf("worker", …)`), for the process, as there is one config.
+ */
+let workerExtras: ReadonlySet<string> = new Set();
+
+/** Sets the worker's extra tools (the config's `extra_tools`). */
+export function setWorkerExtraTools(names: readonly string[]): void {
+  workerExtras = new Set(names.map((n) => n.trim()).filter((n) => n !== ""));
+}
+
+/** The worker's extra tools as set. */
+export function workerExtraTools(): string[] {
+  return [...workerExtras];
+}
+
 const never = (e: Pick<ToolEntry, "effect">): boolean => e.effect === "say" || e.effect === "spend";
+
+/** Whether a worker may call `e`: its list by name, or an extra MCP or plugin tool. */
+export function workerAllows(
+  e: Pick<ToolEntry, "name" | "effect" | "group">,
+  extras: ReadonlySet<string> = workerExtras,
+): boolean {
+  if (e.name === PLAN_TOOL || e.name === FIND_TOOLS) return true;
+  if (never(e)) return false;
+  if (WORKER_TOOLS.includes(e.name)) return true;
+  return extras.has(e.name) && WORKER_EXTRA_GROUPS.has(e.group);
+}
 
 /**
  * Tools of a helper by name, never by the registry's core flag: a helper has what its row says.
@@ -155,28 +189,9 @@ export const KINDS: Readonly<Record<SubagentKind, KindSpec>> = {
     kind: "worker",
     callable: true,
     system: WORKER_SYSTEM,
-    tools: [
-      "web_search",
-      "web_read",
-      "web_image",
-      "recall",
-      "notebook_read",
-      "notebook_write",
-      "workspace_list",
-      "workspace_read",
-      "workspace_write",
-      "workspace_delete",
-      "workspace_export",
-      ...CODE_TOOLS,
-    ],
+    tools: WORKER_TOOLS,
     finds: true,
-    allows: (e) => {
-      if (e.name === PLAN_TOOL || e.name === FIND_TOOLS) return true;
-      if (never(e)) return false;
-      if (e.effect === "read") return true;
-      if (e.effect === "act") return WORKER_ACT_GROUPS.has(e.group);
-      return WORKER_EXTERNAL_GROUPS.has(e.group);
-    },
+    allows: (e) => workerAllows(e),
     limits: {
       rounds: 60,
       wallMs: 30 * 60_000,
@@ -184,6 +199,7 @@ export const KINDS: Readonly<Record<SubagentKind, KindSpec>> = {
       tokens: 4_000_000,
       defaultUsd: 1,
       maxUsd: 3,
+      extraTools: [],
     },
   },
   reflect: {
@@ -218,7 +234,7 @@ export function defaultKindLimits(): Record<CallableKind, KindLimits> {
   return {
     research: { ...KINDS.research.limits },
     curator: { ...KINDS.curator.limits },
-    worker: { ...KINDS.worker.limits },
+    worker: { ...KINDS.worker.limits, extraTools: [] },
   };
 }
 
@@ -229,11 +245,16 @@ export interface KindLimitsConfig {
   tool_seconds: number;
   usd_default: number;
   usd_max: number;
+  /** A worker's only: MCP and plugin tools it may call besides its list. */
+  extra_tools?: readonly string[];
 }
 
-/** `kind`'s limits from its config; the token ceiling is the kind's own. */
+/**
+ * `kind`'s limits from its config; the token ceiling is the kind's own. A worker's `extra_tools`
+ * are also set for the process here (`setWorkerExtraTools`), where its guard reads them.
+ */
 export function kindLimitsOf(kind: CallableKind, c: KindLimitsConfig): KindLimits {
-  return {
+  const limits: KindLimits = {
     rounds: c.rounds,
     wallMs: Math.round(c.minutes * 60_000),
     toolMs: c.tool_seconds * 1000,
@@ -241,6 +262,10 @@ export function kindLimitsOf(kind: CallableKind, c: KindLimitsConfig): KindLimit
     defaultUsd: c.usd_default,
     maxUsd: c.usd_max,
   };
+  if (kind !== "worker") return limits;
+  const extra = [...(c.extra_tools ?? [])];
+  setWorkerExtraTools(extra);
+  return { ...limits, extraTools: extra };
 }
 
 /** The USD a job may spend: what was asked, within the kind's maximum; the default when unset. */
@@ -282,15 +307,17 @@ export function profileOf(kind: SubagentKind, allowance: RunAllowance): RunProfi
 }
 
 /**
- * The tools of one job at its start: the row's list, as far as each is registered and its kind
- * may call it. A worker's list may grow with its own `find_tools`; the others' never does.
+ * The tools of one job at its start: the row's list (a worker's with its extra tools), as far as
+ * each is registered and its kind may call it. A worker's list may grow with its own
+ * `find_tools`; the others' never does.
  */
 export function jobTools(
   kind: SubagentKind,
   entry: (name: string) => ToolEntry | undefined,
 ): string[] {
   const spec = KINDS[kind];
-  return spec.tools.filter((name) => {
+  const names = kind === "worker" ? [...new Set([...spec.tools, ...workerExtras])] : spec.tools;
+  return names.filter((name) => {
     const e = entry(name);
     return e !== undefined && spec.allows(e);
   });

@@ -141,8 +141,11 @@ export {
   type RunAllowance,
   SUBAGENT_KINDS,
   type SubagentKind,
-  WORKER_ACT_GROUPS,
-  WORKER_EXTERNAL_GROUPS,
+  setWorkerExtraTools,
+  WORKER_EXTRA_GROUPS,
+  WORKER_TOOLS,
+  workerAllows,
+  workerExtraTools,
 } from "./subagents.js";
 export { modelSummarise, summaryText } from "./summarise.js";
 export {
