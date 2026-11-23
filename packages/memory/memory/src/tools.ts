@@ -10,6 +10,7 @@ import {
 import type { MemoryKind } from "@miyoria/store";
 import {
   type Clock,
+  type HandleEntry,
   isJsonObject,
   type JsonValue,
   type PersonId,
@@ -21,7 +22,7 @@ import { formatLines, PROMPT_KINDS } from "./contributor.js";
 import type { MemoryEngine } from "./engine.js";
 import { LINE_REF_PREFIX, nameWords, supporting } from "./evidence.js";
 import type { NotesRecall } from "./notes-recall.js";
-import { noteAbout, scopeForNew, visibleScopes } from "./scope.js";
+import { namesIn, noteAbout, scopeForNew, visibleScopes } from "./scope.js";
 
 export const REMEMBER = "remember";
 export const RECALL = "recall";
@@ -89,8 +90,14 @@ export class RememberTool implements Tool {
     // Who said it: read back as "X 說過…", never as a plain fact or an instruction.
     const name = (await this.#engine.nameOf(ctx.account)) ?? ctx.account.id;
     const kind: MemoryKind = aboutSelf ? "self_note" : "fact";
-    let subjects: PersonId[] = aboutSelf || person === null ? [] : [person];
-    const globalPerson = global && !aboutSelf ? person : null;
+    // `about` left out and the words name someone else she knows, not the speaker: about them.
+    const others =
+      arg(args, "about") === undefined
+        ? othersNamed(content, person, name, this.#engine.handles?.list() ?? [])
+        : [];
+    const whom = others.length > 0 ? others : person === null ? [] : [person];
+    let subjects: PersonId[] = aboutSelf ? [] : whom;
+    const globalPerson = global && !aboutSelf && whom.length === 1 ? (whom[0] ?? null) : null;
     // Something about her that someone told her in a server: global only when about her alone,
     // the person's when about them alone (the teller, say), else the server's.
     const about = aboutSelf
@@ -159,6 +166,25 @@ export class RememberTool implements Tool {
           : "我沒有聽到有人這樣說過,所以沒有記下來。";
     }
   }
+}
+
+/** The people `content` names besides the speaker; none when it names the speaker too. */
+function othersNamed(
+  content: string,
+  speaker: PersonId | null,
+  speakerName: string,
+  entries: readonly HandleEntry[],
+): PersonId[] {
+  const namesOf = (e: HandleEntry) => [e.handle, e.display_name, ...(e.names ?? [])];
+  const theirs = speaker === null ? [] : entries.filter((e) => e.person === speaker);
+  const own = [speakerName, ...theirs.flatMap(namesOf)];
+  if (namesIn(content, own)) return [];
+  const out: PersonId[] = [];
+  for (const e of entries) {
+    if (e.person === null || e.person === speaker || out.includes(e.person)) continue;
+    if (namesIn(content, namesOf(e))) out.push(e.person);
+  }
+  return out;
 }
 
 const RecallParams = z.object({

@@ -252,6 +252,26 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     expect(await e.engine.recall(group, [owen], "拉麵店員", PROMPT_KINDS, 8, t0())).toEqual([]);
   });
 
+  it("remember tags the person the words name, when that is not the speaker", async () => {
+    const handles = new FakeHandles();
+    const e = await envWith(backend, memoryConfig(), null, null, handles);
+    const owen = await e.person(acct("2"), "Owen");
+    const amy = await e.person(acct("3"), "Amy");
+    handles.add("Owen", owen, acct("2")).add("Amy", amy, acct("3"));
+    const remember = new RememberTool(e.engine, { now: () => T0_MS });
+    const guild = toolCtx(guildCtx("g1", "c1"), acct("2"));
+    await remember.call(guild, { content: "Amy 下週要搬家" });
+    await remember.call(guild, { content: "Owen 跟 Amy 去看電影" });
+    await remember.call(guild, { content: "Amy 喜歡貓", about: "speaker" });
+    await remember.call(guild, { content: "最近在學吉他" });
+    const subjectsOf = async (needle: string) =>
+      (await e.all()).find((r) => r.content.includes(needle))?.subjects;
+    expect(await subjectsOf("搬家")).toEqual([amy]);
+    expect(await subjectsOf("看電影"), "names the speaker too").toEqual([owen]);
+    expect(await subjectsOf("喜歡貓"), "said to be about the speaker").toEqual([owen]);
+    expect(await subjectsOf("吉他")).toEqual([owen]);
+  });
+
   it("remember_and_recall_tools_respect_scopes", async () => {
     const e = await env(backend);
     const owenAcct = acct("2");
