@@ -76,6 +76,7 @@ import { type Asker, RealDesk } from "./real/desk.js";
 import { MarketLists } from "./real/lists.js";
 import type { LocalSignalFeed } from "./real/local.js";
 import type { QuoteProvider } from "./real/provider.js";
+import type { YahooStream } from "./real/yahoo-stream.js";
 import {
   type AccountRecord,
   type ExchangeStore,
@@ -140,6 +141,10 @@ export interface ExchangeDeps {
    * `exchange_colors:<platform>:<id>` to `persons.prefs`, one value per person); none: memory only.
    */
   settings?: () => ChoiceStore | null;
+  /** US quotes pushed by Yahoo's streamer (none: polled only). */
+  stream?: YahooStream;
+  /** Quotes of these codes were taken (the module tells the member pages' push). */
+  quoted?: (codes: readonly string[]) => void;
 }
 
 /** The two calls of a settings store the colours of up and down need. */
@@ -466,6 +471,8 @@ export class ExchangeService {
       ...(deps.signals ? { signals: deps.signals } : {}),
       ...(deps.currency ? { currency: deps.currency } : {}),
       ...(deps.pronoun ? { pronoun: deps.pronoun } : {}),
+      ...(deps.stream ? { stream: deps.stream } : {}),
+      ...(deps.quoted ? { quoted: deps.quoted } : {}),
     });
     this.lists = new MarketLists(this.real, deps.store, () => deps.config, deps.now);
   }

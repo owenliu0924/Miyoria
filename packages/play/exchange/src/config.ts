@@ -266,6 +266,18 @@ export const ExchangeConfigSchema = z
         daily_budget: z.number().int().min(10).max(100_000).default(3000),
         timeout_ms: z.number().int().min(1000).max(30_000).default(8000),
         max_backoff_seconds: z.number().int().min(15).max(86_400).default(1800),
+        /**
+         * US quotes pushed by Yahoo's streamer (`real/yahoo-stream.ts`): every active US ticker,
+         * seconds old. While it is healthy those tickers leave the quick poll (a slow one stays for
+         * the previous close and names); while it is down or off the poll works as without it.
+         */
+        stream: z.boolean().default(true),
+        stream_host: z
+          .string()
+          .regex(/^[a-z0-9.-]+$/i)
+          .default("streamer.finance.yahoo.com"),
+        /** No frame at all for this long while the US market is open: unhealthy, polled again. */
+        stream_unhealthy_seconds: z.number().int().min(5).max(3600).default(30),
       })
       .prefault({}),
     /**

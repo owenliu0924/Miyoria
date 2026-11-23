@@ -9,6 +9,9 @@
 // of what is held, ordered or viewed are fetched, waiting orders fill, margins are checked, the
 // wallets are paid; a member's notices go to them by DM (`ReplySink.sendDirect`, a neutral card with
 // the small print; their page has them too). The market is off until the owner turns `open` on.
+// US quotes also come pushed by Yahoo's streamer (`real/yahoo-stream.ts`, `[modules.exchange.yahoo]
+// stream`), made with the module and stopped with it; quotes taken are announced on the bus as
+// `exchange.quotes` (at most once a second), so the member pages' push follows the price.
 //
 // The local stocks' signals (`real/signals.ts`) are built here from the event log
 // (`real/sources.ts`): each company's module is looked up by a service key it provides (the
@@ -46,6 +49,7 @@ import {
   DEFAULT_CURRENCY,
   DeliveryLedgerKey,
   EventLogKey,
+  Events,
   ExchangeWalletKey,
   GameResumeKey,
   isOwnerAccount,
@@ -67,6 +71,7 @@ import { LocalSignalBook, type LocalSources } from "./real/signals.js";
 import { DEFAULT_KEEPING, eventLogSources } from "./real/sources.js";
 import { TaiwanQuotes, TwseProvider } from "./real/twse.js";
 import { YahooProvider } from "./real/yahoo.js";
+import { YahooStream } from "./real/yahoo-stream.js";
 import { ExchangeService, type Traders } from "./service.js";
 import { exchangeTables } from "./store.js";
 
@@ -85,6 +90,11 @@ export interface ExchangeModuleOptions {
   seed?: string;
   /** Quote providers in place of the configured ones (tests). */
   providers?: ReadonlyMap<string, QuoteProvider>;
+  /**
+   * Yahoo's US quote stream in place of the configured one (tests; `null`: none). Without it, the
+   * configured one is used only with the configured providers, never beside test ones.
+   */
+  stream?: YahooStream | null;
   /** The local stocks' count sources in place of the event log's (tests). */
   sources?: LocalSources;
   /**
@@ -107,6 +117,8 @@ export class ExchangeModule implements Module {
   readonly #options: ExchangeModuleOptions;
   #mount: CommandMount | null = null;
   #running: { service: ExchangeService; clock: Clock } | null = null;
+  #stream: YahooStream | null = null;
+  #notice: QuotesNotice | null = null;
 
   constructor(options: ExchangeModuleOptions = {}) {
     this.#options = options;
@@ -178,6 +190,26 @@ export class ExchangeModule implements Module {
         return names.map.get(person) ?? null;
       },
     };
+    const stream =
+      this.#options.stream !== undefined
+        ? this.#options.stream
+        : this.#options.providers === undefined && config.yahoo.stream
+          ? new YahooStream({
+              config: {
+                host: config.yahoo.stream_host,
+                unhealthy_ms: config.yahoo.stream_unhealthy_seconds * 1000,
+              },
+              now: () => clock.now(),
+              log: (what, detail) => ctx.log.info(detail ?? {}, `exchange: ${what}`),
+            })
+          : null;
+    this.#stream = stream;
+    // The member pages' push builds the ticker views again when quotes were taken.
+    const notice = new QuotesNotice(
+      (codes) => ctx.publish(Events.ExchangeQuotes, { codes }),
+      () => clock.now(),
+    );
+    this.#notice = notice;
     const service = new ExchangeService({
       config,
       name: () => exchangeName(ctx),
@@ -208,6 +240,8 @@ export class ExchangeModule implements Module {
       ...(this.#options.seed === undefined ? {} : { seed: this.#options.seed }),
       providers: this.#options.providers ?? providersOf(config),
       signals: book,
+      ...(stream ? { stream } : {}),
+      quoted: (codes) => notice.add(codes),
     });
     ctx.provide(ExchangeKey, service);
     this.#running = { service, clock };
@@ -302,6 +336,10 @@ export class ExchangeModule implements Module {
   }
 
   async stop(): Promise<void> {
+    this.#stream?.stop();
+    this.#stream = null;
+    this.#notice?.stop();
+    this.#notice = null;
     this.#running = null;
     this.#mount?.detach();
     this.#mount = null;
@@ -381,6 +419,58 @@ function tell(
       ],
     },
   );
+}
+
+/** `exchange.quotes` at most this often. */
+export const QUOTES_NOTICE_MS = 1_000;
+
+/**
+ * Says which codes' quotes were taken, at most once a `QUOTES_NOTICE_MS` (the codes since the
+ * last time, together); the last one is never lost, and `stop` leaves no timer.
+ */
+export class QuotesNotice {
+  readonly #codes = new Set<string>();
+  #last = Number.NEGATIVE_INFINITY;
+  #timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(
+    private readonly send: (codes: string[]) => void,
+    private readonly now: () => number,
+    private readonly everyMs = QUOTES_NOTICE_MS,
+  ) {}
+
+  add(codes: readonly string[]): void {
+    for (const c of codes) this.#codes.add(c);
+    if (this.#codes.size === 0 || this.#timer !== undefined) return;
+    const wait = this.#last + this.everyMs - this.now();
+    if (wait <= 0) {
+      this.#flush();
+      return;
+    }
+    this.#timer = setTimeout(() => {
+      this.#timer = undefined;
+      this.#flush();
+    }, wait);
+    this.#timer.unref?.();
+  }
+
+  stop(): void {
+    if (this.#timer !== undefined) clearTimeout(this.#timer);
+    this.#timer = undefined;
+    this.#codes.clear();
+  }
+
+  #flush(): void {
+    if (this.#codes.size === 0) return;
+    this.#last = this.now();
+    const codes = [...this.#codes].sort();
+    this.#codes.clear();
+    try {
+      this.send(codes);
+    } catch {
+      // The bus is gone (the module stops): nothing to tell.
+    }
+  }
 }
 
 /**
