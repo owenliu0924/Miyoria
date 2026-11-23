@@ -10,8 +10,10 @@
 // cancelled or fails leaves every call paired with its answer. Each line of hers that went out is
 // an entry of its own, with the platform id it went out under.
 //
-// When a limit is reached one more step runs, told that no tool runs any more; the tools stay in
-// the request (the prefix cache) and a call made anyway is refused.
+// When a limit is reached one more step runs, told that only `delegate` runs any more (the rest of
+// the work to a helper; for a run that speaks and is not over its hourly cap) or that no tool does.
+// The tools stay in the request (the prefix cache) and any other call is refused. A hand-off made
+// without a word gets one more step, without tools, to tell the person.
 
 import {
   BudgetExhaustedError,
@@ -63,16 +65,19 @@ import {
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
-import type { LimitName, RunLimits, RunProfile } from "./profiles.js";
+import { HANDOFF_TOOL, type LimitName, type RunLimits, type RunProfile } from "./profiles.js";
 import { gatherBlocks, type RunMessages, runMessages, toolSpecs } from "./prompt.js";
 import {
   BLOCKED_LABEL,
   blockedNote,
+  HANDED_OFF_NOTE,
+  HANDOFF_NOTES,
   LIMIT_NOTE_QUIET,
   LIMIT_NOTES,
   LINE_REFUSALS,
   longReceipt,
   NO_MORE_CALLS,
+  ONLY_HANDOFF,
   REFUSALS,
 } from "./rules.js";
 import type { Spoken } from "./say.js";
@@ -468,13 +473,23 @@ class Run {
     let failure: unknown = null;
     let empty = false;
     let retriedBlocked = false;
+    /** The limit that ended the loop, once one did. */
+    let ended: LimitName | null = null;
+    /** The last step tried to hand the rest off and said nothing: one more step, without tools. */
+    let handed: "ok" | "failed" | null = null;
     for (;;) {
-      const limit = this.#rounds === 0 ? null : this.#limitReached();
-      if (limit !== null) this.#hit.push(limit);
+      const limit: LimitName | null = ended ?? (this.#rounds === 0 ? null : this.#limitReached());
+      if (limit !== null && ended === null) {
+        this.#hit.push(limit);
+        ended = limit;
+      }
       const offered = this.#offered();
+      const handoff: boolean =
+        limit !== null && handed === null && this.#mayHandOff(limit, offered);
       this.#rounds += 1;
       this.#stepPictures = [];
-      const step = await this.#step(this.#request(base, offered, limit), limit !== null);
+      const note = limit === null ? null : this.#limitNote(limit, handoff, handed);
+      const step = await this.#step(this.#request(base, offered, note), limit !== null);
       if (step.error !== null) {
         failure = step.error;
         break;
@@ -492,12 +507,14 @@ class Run {
       if (step.calls.length > 0) {
         const quiet = this.#lines.length === 0 && !this.#spokeViaTool;
         const callsAt = this.#now();
-        const records =
-          limit !== null
-            ? step.calls.map((call) =>
-                this.#refused(call, "refused", "no_more_calls", NO_MORE_CALLS),
-              )
-            : await this.#runCalls(step.calls, offered);
+        const records: CallRecord[] =
+          limit === null
+            ? await this.#runCalls(step.calls, offered)
+            : handoff
+              ? await this.#handOff(step.calls, offered)
+              : step.calls.map((call) =>
+                  this.#refused(call, "refused", "no_more_calls", NO_MORE_CALLS),
+                );
         const wait = this.#profile.silentWaitMs;
         if (wait !== null && quiet && this.#now() - callsAt >= wait) this.#silentWaits += 1;
         this.#record(assistant, records, step.blocked, step);
@@ -508,8 +525,16 @@ class Run {
           ]);
         }
         if (this.#signal.aborted) throw new Cancelled();
-        if (limit !== null) break;
-        continue;
+        if (limit === null) continue;
+        const tried: CallRecord | undefined = handoff
+          ? records.find((r) => r.name === HANDOFF_TOOL)
+          : undefined;
+        // She handed off (or tried) without a word: one more step tells the person.
+        if (tried !== undefined && step.lines.length === 0) {
+          handed = tried.ok ? "ok" : "failed";
+          continue;
+        }
+        break;
       }
       this.#record(assistant, [], step.blocked, step);
       // A line that did not go out is hers to know about: one more step reads the note.
@@ -611,7 +636,51 @@ class Run {
     }
   }
 
-  #request(base: RunMessages, offered: readonly ToolEntry[], limit: LimitName | null): ChatRequest {
+  /**
+   * Whether the last step at `limit` may hand the rest of the work to a helper: a run that speaks
+   * and is offered `HANDOFF_TOOL`, unless the conversation's hourly cap is what ended it (a helper
+   * would spend past that cap).
+   */
+  #mayHandOff(limit: LimitName, offered: readonly ToolEntry[]): boolean {
+    return (
+      this.#profile.speaks && limit !== "spend" && offered.some((e) => e.name === HANDOFF_TOOL)
+    );
+  }
+
+  /** The system note of a step after `limit` was reached. */
+  #limitNote(limit: LimitName, handoff: boolean, handed: "ok" | "failed" | null): string {
+    if (!this.#profile.speaks) return LIMIT_NOTE_QUIET;
+    if (handed === "ok") return HANDED_OFF_NOTE;
+    if (handoff && limit !== "spend") return HANDOFF_NOTES[limit];
+    return LIMIT_NOTES[limit];
+  }
+
+  /**
+   * The calls of the last step at a limit: the first `HANDOFF_TOOL` call runs, every other call is
+   * refused. On a cancel the calls not answered yet are answered as cancelled.
+   */
+  async #handOff(calls: readonly ToolCall[], offered: readonly ToolEntry[]): Promise<CallRecord[]> {
+    const shown = new Map(offered.map((e) => [e.name, e]));
+    const out: (CallRecord | null)[] = calls.map(() => null);
+    let used = false;
+    try {
+      for (const [i, call] of calls.entries()) {
+        if (!used && call.name === HANDOFF_TOOL) {
+          used = true;
+          out[i] = await this.#call(call, shown);
+        } else {
+          out[i] = this.#refused(call, "refused", "no_more_calls", ONLY_HANDOFF);
+        }
+      }
+    } catch (error) {
+      if (!this.#signal.aborted && !(error instanceof Cancelled)) throw error;
+    }
+    return calls.map(
+      (call, i) => out[i] ?? this.#refused(call, "dropped", "cancelled", REFUSALS.cancelled),
+    );
+  }
+
+  #request(base: RunMessages, offered: readonly ToolEntry[], note: string | null): ChatRequest {
     const own = toMessages(
       {
         session: this.#session.id,
@@ -625,9 +694,7 @@ class Run {
       messages.push(this.#pictures);
       this.#pictures = null;
     }
-    if (limit !== null) {
-      messages.push(systemMessage(this.#profile.speaks ? LIMIT_NOTES[limit] : LIMIT_NOTE_QUIET));
-    }
+    if (note !== null) messages.push(systemMessage(note));
     const tools: ToolSpec[] = toolSpecs(offered);
     return {
       messages,

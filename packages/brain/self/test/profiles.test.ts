@@ -14,6 +14,7 @@ import {
   PROFILE_NOTES,
   RULES,
   rulesFor,
+  WORK_RULES,
 } from "../src/rules.js";
 import { addressed, calls, fakeTool, rig, say } from "./harness.js";
 
@@ -23,16 +24,26 @@ const entry = (name: string, effect: ToolEntry["effect"]): ToolEntry =>
 describe("profiles", () => {
   it("has the four, with their limits", () => {
     expect(PROFILE_NAMES).toEqual(["text", "voice", "subagent", "reflect"]);
-    expect(PROFILES.text.limits).toMatchObject({ rounds: 10, sessionUsdPerHour: 1 });
+    // A text run may do a piece of work: 20 steps of 8 calls in 300 s, 60 s a tool.
+    expect(PROFILES.text.limits).toMatchObject({
+      rounds: 20,
+      callsPerRound: 8,
+      wallMs: 300_000,
+      toolMs: 60_000,
+      tokens: 3_000_000,
+      sessionUsdPerHour: 1,
+    });
     expect(PROFILES.text).toMatchObject({
       reasoning: null,
       reasoningPurpose: "chat_text",
       speaks: true,
     });
+    // Voice is real time: it hands longer work to a helper instead.
     expect(PROFILES.voice.limits).toMatchObject({ rounds: 2, wallMs: 12_000 });
     expect(PROFILES.voice).toMatchObject({ reasoning: "off", maxStepTokens: 600, speaks: true });
     expect(PROFILES.subagent).toMatchObject({ speaks: false, reasoning: "high" });
-    expect(PROFILES.subagent.limits.tokens).toBeGreaterThan(PROFILES.text.limits.tokens);
+    // A helper's tokens are its kind's (`KINDS`); the profile's are only what a kind leaves unset.
+    expect(PROFILES.subagent.limits.tokens).toBeGreaterThan(0);
     expect(PROFILES.reflect).toMatchObject({ speaks: false, reasoning: "high" });
     for (const name of PROFILE_NAMES) {
       const l = PROFILES[name].limits;
@@ -49,6 +60,8 @@ describe("profiles", () => {
     expect(PROFILES.voice.offers(entry("react", "say"))).toBe(true);
     expect(PREFIX_PROFILE.voice).toBe("text");
     expect([...VOICE_TOOLS]).toContain("find_tools");
+    expect([...VOICE_TOOLS]).toContain("delegate");
+    expect(PROFILE_NOTES.voice).toContain("delegate");
     expect([...VOICE_TOOLS]).toContain("sing_start");
     // She decides on her own to watch a friend's stream, in voice, so the three tools are allowed.
     expect([...VOICE_TOOLS]).toEqual(
@@ -65,7 +78,7 @@ describe("profiles", () => {
   it("withLimits replaces only what it is given", () => {
     const p = withLimits(PROFILES.text, { rounds: 3 });
     expect(p.limits).toEqual({ ...PROFILES.text.limits, rounds: 3 });
-    expect(PROFILES.text.limits.rounds).toBe(10);
+    expect(PROFILES.text.limits.rounds).toBe(20);
   });
 
   it("each profile adds its note to the rules", () => {
@@ -77,6 +90,14 @@ describe("profiles", () => {
       expect(rulesFor(profile).startsWith(BASE_RULES)).toBe(true);
     }
     expect(RULES).toContain("<feel>");
+    // The way of working is for the runs that speak; a helper has its own.
+    expect(rulesFor("text")).toContain(WORK_RULES);
+    expect(rulesFor("voice")).toContain(WORK_RULES);
+    expect(WORK_RULES).toContain("worker");
+    expect(WORK_RULES).toContain("share");
+    for (const profile of ["subagent", "reflect"] as const) {
+      expect(rulesFor(profile)).not.toContain("## 做事");
+    }
   });
 
   it("voice: two rounds, no reasoning, a cap on a step", async () => {

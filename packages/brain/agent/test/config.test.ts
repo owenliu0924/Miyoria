@@ -105,6 +105,11 @@ describe("config", () => {
       language: null,
       session_usd_per_hour: 1,
       session_tokens_per_hour: 3_000_000,
+      text_rounds: 20,
+      text_calls_per_round: 8,
+      text_seconds: 300,
+      text_tool_seconds: 60,
+      text_tokens: 3_000_000,
       respond_to_bots: false,
       reply_ttl_ms: 120_000,
       max_message_chars: 1900,
@@ -203,6 +208,11 @@ describe("config", () => {
       ["voice.activeness_level", "room"],
       ["session_usd_per_hour", "room"],
       ["session_tokens_per_hour", "room"],
+      ["text_rounds", "room"],
+      ["text_calls_per_round", "room"],
+      ["text_seconds", "room"],
+      ["text_tool_seconds", "room"],
+      ["text_tokens", "room"],
     ]);
   });
 });

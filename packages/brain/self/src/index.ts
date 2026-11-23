@@ -47,6 +47,7 @@ export {
 } from "./feel.js";
 export { composeGuards, permissiveGuard } from "./guard.js";
 export {
+  HANDOFF_TOOL,
   HOUR_TOKENS,
   HOUR_USD,
   type LimitName,
@@ -57,6 +58,7 @@ export {
   type RunLimits,
   type RunProfile,
   SILENT_WAIT_MS,
+  TEXT_LIMITS,
   VOICE_TOOLS,
   withLimits,
 } from "./profiles.js";

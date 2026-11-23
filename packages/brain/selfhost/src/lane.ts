@@ -11,7 +11,8 @@
 // - one run per place at a time. A line during a run goes by `inputDisposition`: the person the
 //   run answers adding something substantial restarts it (at most `MAX_TURN_RESTARTS` times), and
 //   someone calling her cuts a run she started herself (a glance, a timer); anything else waits
-//   for the next run. Once a line of the run reached someone, nothing restarts it;
+//   for the next run. Once a line of the run reached someone, nothing restarts it, nor once its
+//   tools did work (`keepsRun`): the follow-up waits and the next run answers it;
 // - a glance (triage said one is due) waits for the same quiet as a line said to her, and a run
 //   for someone who called her takes it along;
 // - results and due timers wait until nothing runs and nobody is waiting for an answer;
@@ -105,19 +106,47 @@ export interface LaneHost {
   idleMs(): number;
   /** A new turn id. */
   newTurn(): string;
-  /** The wake of a run for `inputs`, the lines one caller said to her (with what came between). */
-  addressedWake(inputs: readonly IncomingMessage[]): Wake | null;
+  /**
+   * The wake of a run for `inputs`, the lines one caller said to her (with what came between).
+   * `follows`: lines among them that call her though they do not name her (what the person a
+   * working run answered added meanwhile).
+   */
+  addressedWake(
+    inputs: readonly IncomingMessage[],
+    follows: ReadonlySet<IncomingMessage>,
+  ): Wake | null;
   /** The wake of a glance, or `null` when it is not due any more. */
   glanceWake(): Wake | null;
   /** Runs `run` to its end (never throws). */
   execute(run: LaneRun): Promise<void>;
   /** Lines of `turn` that reached someone so far. */
   delivered(turn: string): number;
+  /** The tool work `turn` finished so far (`ToolWork`). */
+  toolWork(turn: string): ToolWork;
   /** Drops what `turn` still has queued in the scheduler. */
   cancelQueued(turn: string): Promise<void>;
   /** The handle of who cut a run. */
   handleOf(author: IncomingMessage["author"]): string;
   warn(what: string, error: unknown): void;
+}
+
+/** The tool calls a run finished so far. */
+export interface ToolWork {
+  /** One of them changed something (not a read, not a reaction). */
+  acted: boolean;
+  /** Their time, added up. */
+  ms: number;
+}
+
+/**
+ * A run whose tools ran this long (or that changed something) is not restarted by a follow-up:
+ * the line waits for the next run, so the work is not thrown away or done twice.
+ */
+export const KEEP_WORK_MS = 10_000;
+
+/** Whether a follow-up line leaves the run that did `work` running. */
+export function keepsRun(work: ToolWork): boolean {
+  return work.acted || work.ms >= KEEP_WORK_MS;
 }
 
 /** How long an aborted run is given to end before the next one starts anyway. */
@@ -231,6 +260,8 @@ export class Lane {
     let running: Running | null = null;
     let restarts = 0;
     const queued: Wake[] = [];
+    /** Follow-ups held behind a working run: the next run answers them as said to her. */
+    const follows = new Set<IncomingMessage>();
     const kind = (m: IncomingMessage): CallKind => calls.get(m) ?? null;
     try {
       for (;;) {
@@ -258,7 +289,7 @@ export class Lane {
               // The next caller's run starts as soon as this one is done.
               if (later.length > 0) window = { opened: now, deadline: now };
               glance = false;
-              const wake = host.addressedWake(inputs);
+              const wake = host.addressedWake(inputs, follows);
               if (wake !== null) {
                 running = this.#start(
                   wake,
@@ -295,7 +326,16 @@ export class Lane {
                     restarts: r.run.restarts,
                     selfStarted: r.selfStarted,
                   });
-                  if (disposition === "restart") {
+                  if (
+                    disposition === "restart" &&
+                    !r.selfStarted &&
+                    keepsRun(host.toolWork(r.run.turn))
+                  ) {
+                    // Her tools already did work for them: the line waits for the next run.
+                    follows.add(msg);
+                    if (!said) calls.set(msg, "address");
+                    merged = !said;
+                  } else if (disposition === "restart") {
                     const cause: TurnCancelCause = r.selfStarted ? "superseded" : "input";
                     await this.#abort(r, cause, host.handleOf(msg.author));
                     running = null;
@@ -360,6 +400,7 @@ export class Lane {
                 running = null;
                 pending = [];
                 calls.clear();
+                follows.clear();
                 glance = false;
                 window = null;
                 queued.length = 0;
@@ -375,6 +416,7 @@ export class Lane {
         }
         const kept = new Set([...pending, ...((running as Running | null)?.run.inputs ?? [])]);
         for (const m of [...calls.keys()]) if (!kept.has(m)) calls.delete(m);
+        for (const m of [...follows]) if (!kept.has(m)) follows.delete(m);
       }
     } finally {
       this.ended = true;

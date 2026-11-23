@@ -5,18 +5,23 @@ import {
   contentText,
   type ImagePart,
 } from "@miyoria/llm/llm";
-import { FIND_TOOLS, type Tool, ToolRegistry } from "@miyoria/llm/tools";
+import { defineTool, FIND_TOOLS, type Tool, ToolRegistry } from "@miyoria/llm/tools";
 import { toMessages } from "@miyoria/memory/transcript";
 import { contextKeyString } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { EXHAUSTED_LINE, FALLBACK_LINES } from "../../agent/src/index.js";
 import { PROFILES, withLimits } from "../src/profiles.js";
-import { serialiseMessages, serialiseTools } from "../src/prompt.js";
+import { serialiseMessages, serialiseTools, toolSpecs } from "../src/prompt.js";
 import {
   BLOCKED_LABEL,
+  HANDED_OFF_NOTE,
+  HANDOFF_NOTES,
+  LIMIT_NOTE_QUIET,
   LIMIT_NOTES,
   longReceipt,
   NO_MORE_CALLS,
+  ONLY_HANDOFF,
   REFUSALS,
   RULES,
   SAY_TOOL,
@@ -34,6 +39,7 @@ import {
   OTHER,
   OWEN,
   promptText,
+  type Rig,
   rig,
   SESSION,
   say,
@@ -450,7 +456,7 @@ describe("limits", () => {
     r.tools.register(
       fakeTool("look", "", {
         call: () => {
-          r.clock.tick(70_000);
+          r.clock.tick(160_000);
           return "ok";
         },
       }),
@@ -508,6 +514,119 @@ describe("limits", () => {
     expect(result.limits).toEqual(["spend"]);
     expect(r.model.requests).toHaveLength(3);
     expect(result.cost_usd).toBeCloseTo(1.8);
+  });
+
+  describe("the last step may hand the rest to a helper", () => {
+    const delegate = (r: Rig, ok = true) => {
+      const tool = fakeTool("delegate", "受理了,代號 j1。", {
+        effect: "act",
+        speed: "long",
+        call: () => {
+          if (!ok) throw new Error("沒有這種小幫手");
+          return "受理了,代號 j1。";
+        },
+      });
+      r.tools.register(tool);
+    };
+    const hand = { name: "delegate", args: { kind: "worker", goal: "查完剩下的三家店" } };
+
+    it("only delegate runs there, and she is told so", async () => {
+      const r = await rig([...looping(2), calls([hand, { name: "look" }], "剩下的交給小幫手了")]);
+      r.tools.register(fakeTool("look"));
+      delegate(r);
+      r.line("Owen", "@她 幫我查五家店");
+      const result = await r.run(addressed(), {
+        profile: withLimits(PROFILES.text, { rounds: 2 }),
+      });
+      expect(r.model.requests).toHaveLength(3);
+      expect(contentText(r.model.requests[2]?.messages.at(-1)?.content ?? "")).toBe(
+        HANDOFF_NOTES.rounds,
+      );
+      expect(result.calls.slice(2).map((c) => [c.name, c.ok])).toEqual([
+        ["delegate", true],
+        ["look", false],
+      ]);
+      expect(result.calls[3]?.text).toBe(ONLY_HANDOFF);
+      expect(r.outlet.lines.map((l) => l.text)).toEqual(["剩下的交給小幫手了"]);
+      expect(result.limits).toEqual(["rounds"]);
+    });
+
+    it("a hand-off without a word gets one more step without tools", async () => {
+      const r = await rig([...looping(2), calls([hand]), calls([{ name: "look" }], "交出去了")]);
+      r.tools.register(fakeTool("look"));
+      delegate(r);
+      r.line("Owen", "@她 幫我查五家店");
+      const result = await r.run(addressed(), {
+        profile: withLimits(PROFILES.text, { rounds: 2 }),
+      });
+      expect(r.model.requests).toHaveLength(4);
+      expect(contentText(r.model.requests[3]?.messages.at(-1)?.content ?? "")).toBe(
+        HANDED_OFF_NOTE,
+      );
+      expect(result.calls.slice(2).map((c) => [c.name, c.ok, c.text])).toEqual([
+        ["delegate", true, longReceipt("受理了,代號 j1。", null)],
+        ["look", false, NO_MORE_CALLS],
+      ]);
+      expect(r.outlet.lines.map((l) => l.text)).toEqual(["交出去了"]);
+    });
+
+    it("a refused hand-off: the step after it is told what it is told today", async () => {
+      const r = await rig([...looping(2), calls([hand]), say("我查到兩家,剩下的還沒查")]);
+      r.tools.register(fakeTool("look"));
+      delegate(r, false);
+      r.line("Owen", "@她 幫我查五家店");
+      await r.run(addressed(), { profile: withLimits(PROFILES.text, { rounds: 2 }) });
+      expect(r.model.requests).toHaveLength(4);
+      expect(contentText(r.model.requests[3]?.messages.at(-1)?.content ?? "")).toBe(
+        LIMIT_NOTES.rounds,
+      );
+    });
+
+    it("without a delegate call it ends as before", async () => {
+      const r = await rig([...looping(2), say("我查到兩家")]);
+      r.tools.register(fakeTool("look"));
+      delegate(r);
+      r.line("Owen", "@她 幫我查五家店");
+      const result = await r.run(addressed(), {
+        profile: withLimits(PROFILES.text, { rounds: 2 }),
+      });
+      expect(r.model.requests).toHaveLength(3);
+      expect(result.outcome).toBe("said");
+    });
+
+    it("not at the hourly cap: a helper would spend past it", async () => {
+      const r = await rig([...looping(2), calls([hand])]);
+      r.tools.register(fakeTool("look"));
+      delegate(r);
+      r.model.prices_[MODEL] = {
+        input_per_mtok: 600,
+        cached_input_per_mtok: 600,
+        output_per_mtok: 0,
+      };
+      r.line("Owen", "@她 查");
+      const result = await r.run();
+      // 0.6 USD a step: over the cap of 1 after the second.
+      expect(result.limits).toEqual(["spend"]);
+      expect(r.model.requests).toHaveLength(3);
+      expect(contentText(r.model.requests[2]?.messages.at(-1)?.content ?? "")).toBe(
+        LIMIT_NOTES.spend,
+      );
+      expect(result.calls[2]).toMatchObject({ name: "delegate", ok: false, text: NO_MORE_CALLS });
+    });
+
+    it("a quiet profile does not hand off", async () => {
+      const r = await rig([...looping(1), calls([hand])]);
+      r.tools.register(fakeTool("look"));
+      delegate(r);
+      const result = await r.run(
+        { kind: "self", note: null },
+        { profile: withLimits(PROFILES.subagent, { rounds: 1 }) },
+      );
+      expect(contentText(r.model.requests[1]?.messages.at(-1)?.content ?? "")).toBe(
+        LIMIT_NOTE_QUIET,
+      );
+      expect(result.calls[1]).toMatchObject({ name: "delegate", ok: false, text: NO_MORE_CALLS });
+    });
   });
 
   it("a model without a price is held to the token cap", async () => {
@@ -898,5 +1017,38 @@ describe("pictures her tools fetch", () => {
     const result = await r.run(undefined, { profile });
     expect(imageParts(r.model.requests[1]?.messages)).toHaveLength(1);
     expect(result.calls[0]?.text).toContain("放不進去");
+  });
+});
+
+describe("the tools as they are sent", () => {
+  it("keep `why` on a high-risk tool, whose review reads it, and drop it elsewhere", () => {
+    const tools = new ToolRegistry();
+    const params = z.object({ code: z.string(), why: z.string().optional() });
+    for (const risk of ["high", "medium"] as const) {
+      tools.register(
+        defineTool({
+          name: `run_${risk}`,
+          description: "跑一段程式。",
+          parameters: params,
+          effect: "external",
+          speed: "instant",
+          risk,
+          group: "test",
+          core: true,
+          async call() {
+            return "ok";
+          },
+        }),
+      );
+    }
+    const sent = toolSpecs(tools.entries().filter((e) => e.name.startsWith("run_")));
+    const props = sent.map((s) => [
+      s.name,
+      Object.keys((s.parameters as { properties: object }).properties),
+    ]);
+    expect(props).toEqual([
+      ["run_high", ["code", "why"]],
+      ["run_medium", ["code"]],
+    ]);
   });
 });

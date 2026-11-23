@@ -1349,7 +1349,7 @@
     },
     {
       "name": "react",
-      "description": "對觸發這次對話的那則訊息加上 emoji 反應。只想表達情緒、不需要多說話時可以只按反應然後輸出 <silence/>。Discord 一則訊息可以按很多個不同的反應:想按好幾個就用 emojis 列出來(最多 5 個)。",
+      "description": "對觸發這次對話的那則訊息加上 emoji 反應。聊天時只想表達情緒、不需要多說話,可以只按反應然後輸出 <silence/>;有人要你做事或在等答案時,反應代替不了回答。Discord 一則訊息可以按很多個不同的反應:想按好幾個就用 emojis 列出來(最多 5 個)。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -2770,6 +2770,10 @@
             "type": "string",
             "description": "\"fresh\"(預設,用完即丟)或工作階段名稱(小寫英文開頭,可用英文、數字、_、-,最多 48 字)"
           },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
           "on_own": {
             "type": "boolean"
           }
@@ -3504,7 +3508,7 @@
     },
     {
       "name": "react",
-      "description": "對觸發這次對話的那則訊息加上 emoji 反應。只想表達情緒、不需要多說話時可以只按反應然後輸出 <silence/>。Discord 一則訊息可以按很多個不同的反應:想按好幾個就用 emojis 列出來(最多 5 個)。",
+      "description": "對觸發這次對話的那則訊息加上 emoji 反應。聊天時只想表達情緒、不需要多說話,可以只按反應然後輸出 <silence/>;有人要你做事或在等答案時,反應代替不了回答。Discord 一則訊息可以按很多個不同的反應:想按好幾個就用 emojis 列出來(最多 5 個)。",
       "parameters": {
         "type": "object",
         "properties": {
@@ -3960,6 +3964,10 @@
             "type": "object",
             "description": "JSON Schema,type 必須是 \"object\";不能用 why / on_own 當參數名"
           },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
+          },
           "on_own": {
             "type": "boolean"
           }
@@ -4283,6 +4291,10 @@
           "content": {
             "type": "string",
             "description": "完整的腳本"
+          },
+          "why": {
+            "type": "string",
+            "description": "你為什麼要這樣做(一句話,會記錄下來)"
           },
           "on_own": {
             "type": "boolean"

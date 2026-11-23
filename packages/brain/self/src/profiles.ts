@@ -14,7 +14,10 @@ export const PROFILE_NAMES: readonly ProfileName[] = ["text", "voice", "subagent
 export type LimitName = "rounds" | "time" | "tokens" | "spend";
 
 export interface RunLimits {
-  /** Model steps that may call tools; one more step, without tools, follows when they are used up. */
+  /**
+   * Model steps that may call tools; one more step follows when they are used up, in which only
+   * `HANDOFF_TOOL` runs (the rest of the work to a helper).
+   */
   rounds: number;
   /** Tool calls run of one step; the rest are refused. */
   callsPerRound: number;
@@ -133,6 +136,27 @@ export const HOUR_USD = 1;
  */
 export const HOUR_TOKENS = 3_000_000;
 
+/**
+ * The one tool the last step at a limit may call: the rest of the work goes to a helper. Every
+ * other call of that step is refused.
+ */
+export const HANDOFF_TOOL = "delegate";
+
+/**
+ * A text run's limits when its place sets none (`[modules.agent]` `text_rounds`,
+ * `text_calls_per_round`, `text_seconds`, `text_tool_seconds`, `text_tokens` have these defaults).
+ * Tokens: every step resends the prompt, so 20 steps over a prompt of about 30,000 tokens that
+ * grows by six pages or files of 12,000 characters (up to 12,000 tokens each) come to about 1.9
+ * million; the cap leaves room above that.
+ */
+export const TEXT_LIMITS = {
+  rounds: 20,
+  callsPerRound: 8,
+  wallMs: 300_000,
+  toolMs: 60_000,
+  tokens: 3_000_000,
+} as const satisfies Partial<RunLimits>;
+
 export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
   text: {
     name: "text",
@@ -141,11 +165,7 @@ export const PROFILES: Readonly<Record<ProfileName, RunProfile>> = {
     reasoning: null,
     speaks: true,
     limits: {
-      rounds: 10,
-      callsPerRound: 6,
-      wallMs: 120_000,
-      toolMs: 30_000,
-      tokens: 400_000,
+      ...TEXT_LIMITS,
       sessionUsdPerHour: HOUR_USD,
       sessionTokensPerHour: HOUR_TOKENS,
     },

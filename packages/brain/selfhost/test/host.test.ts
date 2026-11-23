@@ -12,6 +12,7 @@ import {
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
+import { KEEP_WORK_MS, keepsRun } from "../src/lane.js";
 import {
   account,
   calls,
@@ -152,6 +153,45 @@ describe("the waits of a place", () => {
     const cut = outcomes(rig).find((o) => o.outcome.type === "cancelled");
     expect(cut?.outcome).toEqual({ type: "cancelled", cause: "input", by: "amy" });
     expect(rig.sink.cancelled).toContain(cut?.turn);
+  });
+
+  it("a run whose tools already did work is not restarted: the next line waits for the next run", async () => {
+    const save = defineTool({
+      name: "save_note",
+      description: "存一份筆記。",
+      parameters: z.object({}),
+      effect: "act",
+      speed: "instant",
+      risk: "low",
+      group: "test",
+      core: true,
+      next: true,
+      async call() {
+        return "存好了 notes/names.md";
+      },
+    });
+    const rig = await Rig.create({ provide: (_sup, tools) => tools.register(save) });
+    rig.model.push(
+      calls("save_note", {}),
+      { events: says("名字清單存好了"), delay: 400 },
+      says("跟海有關的再給你三個"),
+    );
+    rig.say(mention(C1, "amy", "@她 幫我想幾個名字存起來"));
+    await until(() => rig.model.requests.length === 2, 3_000, "the step after the tool");
+    rig.say(line(C1, "amy", "要可愛一點的,跟海有關"));
+    await until(() => rig.sink.texts().length === 2, 3_000, "both replies");
+    expect(rig.sink.texts()).toEqual(["名字清單存好了", "跟海有關的再給你三個"]);
+    expect(outcomes(rig).map((o) => o.outcome.type)).toEqual(["sent", "sent"]);
+    // The next run answers her line, though it does not name her.
+    expect(textOf(rig.model.requests[2])).toContain("跟海有關");
+    expect(textOf(rig.model.requests[2])).toContain("amy 在叫你");
+  });
+
+  it("a follow-up keeps a run once it changed something or its tools ran a while", () => {
+    expect(keepsRun({ acted: false, ms: 0 })).toBe(false);
+    expect(keepsRun({ acted: false, ms: KEEP_WORK_MS - 1 })).toBe(false);
+    expect(keepsRun({ acted: false, ms: KEEP_WORK_MS })).toBe(true);
+    expect(keepsRun({ acted: true, ms: 0 })).toBe(true);
   });
 
   it("someone else calling her during a run waits for the next one", async () => {

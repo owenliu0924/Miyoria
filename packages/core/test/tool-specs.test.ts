@@ -114,8 +114,8 @@ describe("the tools of a run", () => {
     const tools = offered();
     const snapshot = {
       tools: tools.map(view),
-      // What is sent: each spec cut to its budget.
-      sent: tools.map((t) => slimTool(t.spec, slim)),
+      // What is sent: each spec cut to its budget, `why` kept where the review reads it.
+      sent: tools.map((t) => slimTool(t.spec, slim, t.meta?.risk)),
     };
     await expect(`${JSON.stringify(snapshot, null, 2)}\n`).toMatchFileSnapshot(SNAPSHOT);
   });

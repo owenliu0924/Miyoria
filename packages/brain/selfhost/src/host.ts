@@ -131,8 +131,8 @@ import { startIdleCompaction } from "./idle-compaction.js";
 import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
-import { type AdmittedInput, Lane, type LaneHost, type LaneRun } from "./lane.js";
-import { hourCap } from "./limits.js";
+import { type AdmittedInput, Lane, type LaneHost, type LaneRun, type ToolWork } from "./lane.js";
+import { hourCap, textLimits } from "./limits.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
@@ -210,7 +210,12 @@ interface TurnState {
   typing: AbortController | null;
   /** Her first visible text of the run streamed. */
   spoke: boolean;
+  /** The tool calls of the run that finished (a follow-up does not restart a run that worked). */
+  work: ToolWork;
 }
+
+/** Calls that are not work a restart would throw away: a reaction is redone at no cost. */
+const NOT_WORK: ReadonlySet<string> = new Set(["react"]);
 
 /** Something she started that has not come back. */
 interface Job {
@@ -573,10 +578,11 @@ export class SelfHost implements TextRunner {
       oneCallerPerTurn: () => cfg.one_caller_per_turn,
       idleMs: () => cfg.session_idle_ms,
       newTurn: () => newId(),
-      addressedWake: (inputs) => this.#addressedWake(inputs),
+      addressedWake: (inputs, follows) => this.#addressedWake(inputs, follows),
       glanceWake: () => this.#glanceWake(context),
       execute: (run) => this.#execute(context, run),
       delivered: (turn) => this.#turns.get(turn)?.lines ?? 0,
+      toolWork: (turn) => this.#turns.get(turn)?.work ?? { acted: false, ms: 0 },
       cancelQueued: async (turn) => {
         await agent.ctx.services.get(ActionSinkKey)?.cancelTurn(turn);
         agent.mainline.lines.cancelUnstarted(turn, "the run was cut");
@@ -914,9 +920,12 @@ export class SelfHost implements TextRunner {
     };
   }
 
-  #addressedWake(inputs: readonly IncomingMessage[]): Wake | null {
+  #addressedWake(
+    inputs: readonly IncomingMessage[],
+    follows: ReadonlySet<IncomingMessage> = new Set(),
+  ): Wake | null {
     const names = this.#agent.persona.names();
-    const calling = inputs.filter((m) => callsHer(this.#call(m)));
+    const calling = inputs.filter((m) => follows.has(m) || callsHer(this.#call(m)));
     // A line someone asked her to answer from its menu leads, worded as such.
     const asked = calling.find((m) => this.#asked.has(m.id.id));
     if (asked !== undefined) this.#asked.delete(asked.id.id);
@@ -1050,6 +1059,7 @@ export class SelfHost implements TextRunner {
       attached: null,
       typing: null,
       spoke: false,
+      work: { acted: false, ms: 0 },
     };
     agent.mainline.own(turn);
     agent.ctx.publish(Events.AgentTurnStarted, { turn, context }, { turn });
@@ -1104,6 +1114,7 @@ export class SelfHost implements TextRunner {
           profile: withLimits(PROFILES.text, {
             pictureBytes: agent.config.vision.max_total_bytes,
             ...hourCap(agent, context),
+            ...textLimits(agent, context),
           }),
           signal: run.controller.signal,
           turn,
@@ -1272,6 +1283,10 @@ export class SelfHost implements TextRunner {
         // Discord has no "stop typing", a notice lingers about ten seconds. A reaction with no
         // word yet is most often all she does: stop the notices now; `speaking` starts them again.
         if (event.name === "react" && !state.spoke) state.typing?.abort();
+        if (event.ok && !NOT_WORK.has(event.name)) {
+          state.work.ms += event.ms;
+          if (agent.tools.entry(event.name)?.effect !== "read") state.work.acted = true;
+        }
         if (event.job !== null) {
           this.#jobs.set(event.job, {
             context,

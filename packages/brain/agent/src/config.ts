@@ -592,6 +592,95 @@ export const AgentConfigSchema = z
           group: "spend",
         }),
       ),
+    /**
+     * One text run (the runner's `RunLimits` of the text profile): model steps that may call tools.
+     * At the end one more step runs that may only hand the rest to a helper. Voice keeps its own.
+     */
+    text_rounds: z
+      .number()
+      .int()
+      .positive()
+      .default(20)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "一次最多幾步",
+          help: "文字頻道裡她一次能連續用工具幾步;到了可以把剩下的交給小幫手。語音另外算",
+          step: 1,
+          group: "run",
+        }),
+      ),
+    /** Tool calls one step of a text run may make; the rest are refused. */
+    text_calls_per_round: z
+      .number()
+      .int()
+      .positive()
+      .default(8)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "每步最多幾個工具",
+          help: "她一步裡同時呼叫的工具最多幾個",
+          step: 1,
+          group: "run",
+        }),
+      ),
+    /** Wall time of one text run, checked between steps. */
+    text_seconds: z
+      .number()
+      .int()
+      .positive()
+      .default(300)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "一次最長幾秒",
+          help: "她一次做事最多花多久;更久的事她會交給小幫手",
+          unit: "s",
+          step: 10,
+          group: "run",
+        }),
+      ),
+    /** One tool call of a text run may take this long. */
+    text_tool_seconds: z
+      .number()
+      .int()
+      .positive()
+      .default(60)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "一個工具最長幾秒",
+          help: "一個工具多久沒回就不等了",
+          unit: "s",
+          step: 5,
+          group: "run",
+        }),
+      ),
+    /**
+     * Prompt and completion tokens of one text run, all steps together. Every step sends the whole
+     * prompt again, so a run that reads several long pages or files counts each of them once per
+     * later step.
+     */
+    text_tokens: z
+      .number()
+      .int()
+      .positive()
+      .default(3_000_000)
+      .meta(
+        setting({
+          kind: "number",
+          scope: "room",
+          label: "一次最多幾個 token",
+          help: "她一次做事所有步驟加起來的 token(每一步都會重送整份提示詞)",
+          step: 100_000,
+          group: "run",
+        }),
+      ),
     /** Treat messages from other bots as input (they are always recorded). */
     respond_to_bots: z.boolean().default(false),
     /** Reply messages are dropped if not sent within this time. */
@@ -638,6 +727,7 @@ export const AgentConfigSchema = z
     settingGroups([
       { id: "levels", label: "每個地方的聊天等級" },
       { id: "spend", label: "每個對話的花費上限" },
+      { id: "run", label: "她一次做事的上限" },
     ]),
   );
 export type AgentConfig = z.output<typeof AgentConfigSchema>;

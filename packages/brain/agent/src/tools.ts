@@ -38,7 +38,8 @@ export class ReactTool implements Tool {
   readonly spec: ToolSpec = {
     name: ReactTool.NAME,
     description:
-      "對觸發這次對話的那則訊息加上 emoji 反應。只想表達情緒、不需要多說話時可以只按反應然後輸出 <silence/>。" +
+      "對觸發這次對話的那則訊息加上 emoji 反應。聊天時只想表達情緒、不需要多說話,可以只按反應然後輸出 <silence/>;" +
+      "有人要你做事或在等答案時,反應代替不了回答。" +
       `Discord 一則訊息可以按很多個不同的反應:想按好幾個就用 emojis 列出來(最多 ${MAX_REACTIONS} 個)。`,
     parameters: toolParameters(ReactParams),
   };

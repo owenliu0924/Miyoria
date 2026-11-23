@@ -971,6 +971,14 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # 也可以在面板替某個伺服器或頻道另外設;私訊用這裡的值
 # session_usd_per_hour = 1
 # session_tokens_per_hour = 3000000
+# 文字頻道裡她一次做事的上限:能連續用工具幾步、每步最多幾個工具、最長幾秒、一個工具最長幾秒、所有步驟加起來幾個 token
+# (每一步都會重送整份提示詞,讀了好幾個長網頁或檔案的一次大約一兩百萬)。到了上限,最後一步可以用 delegate
+# 把剩下的交給小幫手。語音另外算(兩步、12 秒)。也可以在面板替某個伺服器或頻道另外設
+# text_rounds = 20
+# text_calls_per_round = 8
+# text_seconds = 300
+# text_tool_seconds = 60
+# text_tokens = 3000000
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
 # × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
