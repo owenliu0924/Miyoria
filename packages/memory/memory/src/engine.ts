@@ -88,6 +88,7 @@ import {
   isPrivate,
   mayRecall,
   type NamedPerson,
+  namesIn,
   noteAbout,
   privateScope,
   pronounOnly,
@@ -1011,11 +1012,10 @@ export class MemoryEngine implements FollowupSource {
    */
   #turnPeople(turn: TurnQuery | undefined, text: string): PersonId[] {
     const out = new Set<PersonId>(turn?.people ?? []);
-    const lower = text.toLowerCase();
     for (const entry of this.#handles?.list() ?? []) {
       if (entry.person === null || out.has(entry.person)) continue;
-      const handle = entry.handle.toLowerCase();
-      if ([...handle].length >= 2 && lower.includes(handle)) out.add(entry.person);
+      // A whole word: a short Latin handle inside another word is nobody (`namesIn`).
+      if (namesIn(text, [entry.handle])) out.add(entry.person);
     }
     return [...out].slice(0, 16);
   }
@@ -2272,10 +2272,9 @@ function resolveName(raw: string, speakers: readonly Speaker[]): PersonId | null
 }
 
 /** People whose names appear in `text`. */
-function mentioned(raw: string, speakers: readonly Speaker[]): PersonId[] {
-  const text = raw.toLowerCase();
+function mentioned(text: string, speakers: readonly Speaker[]): PersonId[] {
   return speakers
-    .filter((s) => s.names.some((n) => charCount(n) >= 2 && text.includes(n.toLowerCase())))
+    .filter((s) => namesIn(text, s.names))
     .flatMap((s) => (s.person !== null ? [s.person] : []));
 }
 

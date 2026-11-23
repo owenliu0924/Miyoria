@@ -291,11 +291,11 @@ export class NotesRecall implements MemoryRetrieval {
   /** The people present, talking with her, or named in what is said or just before it. */
   #people(ask: RecallAsk, viewer: NotesViewer): PersonId[] {
     const out = new Set<PersonId>([...viewer.present, ...(ask.talkingWith ?? [])]);
-    const said = `${ask.text}\n${(ask.recent ?? []).join("\n")}`.toLowerCase();
+    const said = `${ask.text}\n${(ask.recent ?? []).join("\n")}`;
     for (const entry of this.#d.engine.handles?.list() ?? []) {
       if (entry.person === null) continue;
-      const handle = entry.handle.toLowerCase();
-      if ([...handle].length >= 2 && said.includes(handle)) out.add(entry.person);
+      // A whole word: a short Latin handle inside another word is nobody (`namesIn`).
+      if (namesIn(said, [entry.handle])) out.add(entry.person);
     }
     return [...out].slice(0, 16);
   }

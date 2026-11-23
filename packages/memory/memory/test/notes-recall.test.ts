@@ -230,6 +230,20 @@ describe("NotesRecall", () => {
     expect(text).toContain(RECALL_WEAK);
   });
 
+  it("counts a person as named only by a whole word of their handle", async () => {
+    const handles = new FakeHandles().add("Al", AMY, acct("u-al"));
+    const r = await rig(memoryConfig(), handles);
+    // Unscoped, the topic's line holds more of what is said and comes first.
+    line(r, personSubject(AMY), "喜歡拉麵", "Al");
+    line(r, topicSubject("拉麵店"), "拉麵很好吃", "拉麵店");
+    await switchOver(r, Date.now() + 60_000);
+    const first = async (text: string) =>
+      (await r.recall.recollect({ ...ask(text, []), accounts: [] })).memories[0]?.content;
+    // Named, her document's line comes first; a word holding "al" names nobody.
+    expect(await first("Al 說拉麵很好吃")).toBe("Al:喜歡拉麵");
+    expect(await first("always 說拉麵很好吃")).toBe("拉麵店:拉麵很好吃");
+  });
+
   it("says who a self line's 他 is, and leaves one nobody can tell out", async () => {
     const handles = new FakeHandles().add("Owen", OWEN, OWEN_ACCOUNT);
     const r = await rig(memoryConfig(), handles);

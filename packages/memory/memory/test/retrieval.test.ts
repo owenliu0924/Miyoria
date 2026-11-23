@@ -211,6 +211,23 @@ describe.each(BACKENDS)("retrieval (%s store)", (backend) => {
     expect(there.map((r) => r.record.content)).toContain("我答應他週末一起加班");
   });
 
+  it("a short handle inside another word does not bring that person's memories", async () => {
+    const handles = new FakeHandles();
+    const e = await envWith(backend, memoryConfig(), null, null, handles);
+    const al = await e.person(acct("5"), "Al");
+    handles.add("Al", al, acct("5"));
+    const exam = await e.add("fact", G1, [al], "Al 下週三要考期末考", 0.9, t0(-DAY));
+    const scopes = visibleScopes(guildCtx("g1", "c1"), [acct("6")], []);
+    const named = await e.engine.recall(scopes, [], "好啊", PROMPT_KINDS, 8, t0(), undefined, {
+      context: "Al 最近好嗎",
+    });
+    expect(named.map((r) => r.record.id)).toEqual([exam]);
+    const inside = await e.engine.recall(scopes, [], "好啊", PROMPT_KINDS, 8, t0(), undefined, {
+      context: "always 這樣",
+    });
+    expect(inside).toEqual([]);
+  });
+
   it("remember_and_recall_tools_respect_scopes", async () => {
     const e = await env(backend);
     const owenAcct = acct("2");
