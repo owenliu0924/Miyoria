@@ -262,6 +262,95 @@ export const LlmPricingSchema = z
   .meta({ id: "ApiLlmPricing" });
 export type LlmPricing = z.output<typeof LlmPricingSchema>;
 
+/** One API key's part in a call, by position (`1` = `#1`); never the key itself. */
+export const LlmKeyAttemptSchema = z
+  .object({
+    provider: z.string(),
+    key: z.number(),
+    result: z.enum(["ok", "failed", "skipped"]),
+    /**
+     * `failed`: `connect_timeout`, `auth`, `rate_limit`, `http_5xx`, `network` (the breaker
+     * counts these) or `http_4xx`, `aborted`, `error`; `skipped`: `cooling` or `bad`.
+     */
+    kind: z.string().nullable(),
+  })
+  .meta({ id: "ApiLlmKeyAttempt" });
+export type LlmKeyAttempt = z.output<typeof LlmKeyAttemptSchema>;
+
+/** What the breaker knows of a key (or of a provider without keys) now. */
+const BreakerFields = {
+  /**
+   * `cooling`: skipped after failures in a row; `bad`: the provider refused it (401 / 403);
+   * `disabled`: a panel key taken out of the rotation.
+   */
+  state: z.enum(["ok", "cooling", "bad", "disabled"]),
+  /** Skipped until then; `null` when it is not (or its probe is due). */
+  until: TimestampSchema.nullable(),
+  /** Failures in a row. */
+  failures: z.number(),
+  last_error: z.string().nullable(),
+  last_error_at: TimestampSchema.nullable(),
+};
+
+/** One API key of a provider. Never its value. */
+export const LlmKeyRowSchema = z
+  .object({
+    /** `config:<n>` for one of the config file, `panel:<uuid>` for one added in the panel. */
+    id: z.string(),
+    /** Its place in the rotation (`#1` = 1); `null` while disabled. */
+    position: z.number().nullable(),
+    label: z.string().nullable(),
+    source: z.enum(["config", "panel"]),
+    ...BreakerFields,
+    /** When it was added in the panel; `null` for the config file's. */
+    added_at: TimestampSchema.nullable(),
+    /** `…` and its last four characters, only for a key of 24 characters or more. */
+    hint: z.string().nullable(),
+  })
+  .meta({ id: "ApiLlmKeyRow" });
+export type LlmKeyRow = z.output<typeof LlmKeyRowSchema>;
+
+/** A provider's keys: the config file's first, then the panel's in the order added. */
+export const LlmProviderKeyListSchema = z
+  .object({
+    provider: z.string(),
+    /** Keys can be added, disabled and deleted here (the provider takes keys while running). */
+    editable: z.boolean(),
+    /** The model a test request goes to; `null` when no purpose uses the provider. */
+    test_model: z.string().nullable(),
+    keys: z.array(LlmKeyRowSchema),
+    /** A provider without keys in rotation: its own breaker; else `null`. */
+    breaker: z.object(BreakerFields).nullable(),
+  })
+  .meta({ id: "ApiLlmProviderKeyList" });
+export type LlmProviderKeyList = z.output<typeof LlmProviderKeyListSchema>;
+
+/** `GET /api/llm/keys`. */
+export const LlmKeysViewSchema = z
+  .object({ providers: z.array(LlmProviderKeyListSchema) })
+  .meta({ id: "ApiLlmKeysView" });
+export type LlmKeysView = z.output<typeof LlmKeysViewSchema>;
+
+/** `POST /api/llm/keys/{provider}`: the key is checked by the server, never echoed. */
+export const LlmKeyAddRequestSchema = z
+  .object({ key: z.string(), label: z.string().nullable().optional() })
+  .meta({ id: "ApiLlmKeyAddRequest" });
+export type LlmKeyAddRequest = z.output<typeof LlmKeyAddRequestSchema>;
+
+/** How a key's test request went: one request of one token, no retries. */
+export const LlmKeyTestResultSchema = z
+  .object({
+    ok: z.boolean(),
+    /** Why it failed: `auth`, `rate_limit`, `http_5xx`, `http_4xx`, `connect_timeout`, ... */
+    kind: z.string().nullable(),
+    /** The HTTP status of a refusal. */
+    status: z.number().nullable(),
+    model: z.string(),
+    ms: z.number(),
+  })
+  .meta({ id: "ApiLlmKeyTestResult" });
+export type LlmKeyTestResult = z.output<typeof LlmKeyTestResultSchema>;
+
 /** One routed call, as the call inspector lists it. */
 export const LlmCallRecordSchema = z
   .object({
@@ -280,6 +369,12 @@ export const LlmCallRecordSchema = z
     fallbacks: z.array(z.object({ model: z.string(), error: z.string(), kind: z.string() })),
     /** HTTP retries of the answering request. */
     retries: z.array(z.string()),
+    /**
+     * What the call did with each API key of the providers it tried, by position only: the one
+     * that answered (`ok`), those that failed, and those skipped as cooling. Empty for providers
+     * without keys.
+     */
+    keys: z.array(LlmKeyAttemptSchema),
     thinking: z.boolean(),
     /** The reasoning level the request was sent with (`off` when it did not think). */
     reasoning: z.enum(["off", "low", "medium", "high"]),
@@ -490,6 +585,11 @@ const ThinkingQuery = z.object({
   before: z.string().optional(),
 });
 
+/** The node of the provider key routes: as strict as editing settings (owners and admins). */
+export const LLM_KEYS_NODE = "admin.llm.keys";
+const KeyProviderParams = z.object({ provider: z.string() });
+const KeyParams = z.object({ provider: z.string(), id: z.string() });
+
 /** `minutes`: only the last so many minutes (`0` or none: everything kept). */
 const StatsQuery = z.object({
   minutes: DigitsQuery.optional(),
@@ -534,4 +634,42 @@ export const llm = {
     .route({ method: "GET", path: "/api/llm/stats" })
     .input(z.object({ query: StatsQuery }))
     .output(LlmCallStatsSchema),
+  /** Each provider's API keys by position, label and state; never a key's value. */
+  keys: route
+    .meta({ audience: "admin", permission: LLM_KEYS_NODE })
+    .route({ method: "GET", path: "/api/llm/keys" })
+    .output(LlmKeysViewSchema),
+  /**
+   * Adds a key to the provider's rotation at once. `400` for an empty key, one with white space or
+   * too long; `409` for one the provider already has (the config file's too) or a provider that
+   * cannot change keys while running; `503` without a database.
+   */
+  addKey: route
+    .meta({ audience: "admin", permission: LLM_KEYS_NODE })
+    .route({ method: "POST", path: "/api/llm/keys/{provider}" })
+    .input(z.object({ params: KeyProviderParams, body: LlmKeyAddRequestSchema }))
+    .output(LlmKeyRowSchema),
+  /** Takes a panel key out of the rotation; the config file's cannot be (`400`). */
+  disableKey: route
+    .meta({ audience: "admin", permission: LLM_KEYS_NODE })
+    .route({ method: "POST", path: "/api/llm/keys/{provider}/{id}/disable" })
+    .input(z.object({ params: KeyParams }))
+    .output(LlmKeyRowSchema),
+  enableKey: route
+    .meta({ audience: "admin", permission: LLM_KEYS_NODE })
+    .route({ method: "POST", path: "/api/llm/keys/{provider}/{id}/enable" })
+    .input(z.object({ params: KeyParams }))
+    .output(LlmKeyRowSchema),
+  /** Deletes a panel key; the config file's cannot be (`400`). */
+  deleteKey: route
+    .meta({ audience: "admin", permission: LLM_KEYS_NODE })
+    .route({ method: "DELETE", path: "/api/llm/keys/{provider}/{id}" })
+    .input(z.object({ params: KeyParams }))
+    .output(z.object({ deleted: z.boolean() })),
+  /** One request of one token with this key alone, to the provider's first model in a purpose. */
+  testKey: route
+    .meta({ audience: "admin", permission: LLM_KEYS_NODE })
+    .route({ method: "POST", path: "/api/llm/keys/{provider}/{id}/test" })
+    .input(z.object({ params: KeyParams }))
+    .output(LlmKeyTestResultSchema),
 };

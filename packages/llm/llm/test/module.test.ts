@@ -3,6 +3,7 @@ import { type LlmCallStore, type Store, StoreKey } from "@miyoria/store";
 import { describe, expect, it } from "vitest";
 import {
   type ChatProvider,
+  DEFAULT_KEY_BREAKER,
   LlmConfigSchema,
   LlmModule,
   LlmRouterKey,
@@ -31,6 +32,8 @@ describe("LlmModule", () => {
       kind: "mock",
       base_url: null,
       api_key: null,
+      api_keys: [],
+      breaker: DEFAULT_KEY_BREAKER,
       extra: { some_setting: 1 },
     });
     const mock = new MockProvider("m").reply("嗨");

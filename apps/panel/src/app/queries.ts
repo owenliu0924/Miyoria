@@ -976,6 +976,34 @@ export function useLlmCall(id: string | undefined) {
 }
 
 /** Breakdowns of the calls in the last `minutes` (`null`: every kept call). */
+const LLM_KEYS = ["llm", "keys"] as const;
+
+/** Each provider's API keys: position, label, source and state, never a value. */
+export function useLlmKeys() {
+  const api = useApi();
+  return useQuery({ queryKey: LLM_KEYS, queryFn: ({ signal }) => api.rpc.llm.keys(undefined, { signal }), refetchInterval: poll(15_000) });
+}
+
+export function useLlmKeyMutations() {
+  const api = useApi();
+  const qc = useQueryClient();
+  const refresh = () => void qc.invalidateQueries({ queryKey: LLM_KEYS });
+  type Key = { provider: string; id: string };
+  return {
+    add: useMutation({
+      mutationFn: ({ provider, key, label }: { provider: string; key: string; label: string | null }) => api.rpc.llm.addKey({ params: { provider }, body: { key, label } }),
+      onSuccess: refresh,
+    }),
+    setDisabled: useMutation({
+      mutationFn: ({ provider, id, disabled }: Key & { disabled: boolean }) =>
+        disabled ? api.rpc.llm.disableKey({ params: { provider, id } }) : api.rpc.llm.enableKey({ params: { provider, id } }),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({ mutationFn: ({ provider, id }: Key) => api.rpc.llm.deleteKey({ params: { provider, id } }), onSuccess: refresh }),
+    test: useMutation({ mutationFn: ({ provider, id }: Key) => api.rpc.llm.testKey({ params: { provider, id } }), onSuccess: refresh }),
+  };
+}
+
 export function useLlmStats(minutes: number | null) {
   const api = useApi();
   return useQuery({

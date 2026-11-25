@@ -71,6 +71,21 @@ export {
   pricing,
 } from "./cost.js";
 export {
+  CallKeys,
+  configKeyIds,
+  DEFAULT_KEY_BREAKER,
+  KEY_FAILURE_KINDS,
+  type KeyAttempt,
+  type KeyBreakerSettings,
+  KeyPool,
+  type KeyState,
+  type KeyStatus,
+  keyBreakerSettings,
+  type ProviderKeys,
+  plainKeys,
+  usableKeys,
+} from "./keys.js";
+export {
   errorKind,
   FIRST_TOKEN_BUCKETS,
   type LlmMetrics,
@@ -80,6 +95,7 @@ export { MockProvider } from "./mock.js";
 export {
   type LlmConfig,
   LlmConfigSchema,
+  LlmKeysKey,
   LlmModule,
   type LlmModuleOptions,
   LlmRouterKey,
@@ -88,6 +104,24 @@ export {
   type ProviderFactory,
 } from "./module.js";
 export * from "./openai/index.js";
+export {
+  HINT_MIN_LENGTH,
+  type KeyErrorCode,
+  KeyManageError,
+  type KeyRef,
+  type KeyRow,
+  type KeySource,
+  type KeyStateStore,
+  type KeyTestResult,
+  keyProblem,
+  LlmKeys,
+  MAX_KEY_LENGTH,
+  MAX_LABEL_LENGTH,
+  PANEL_KEYS_PLUGIN,
+  PANEL_KEYS_STATE,
+  type ProviderKeyList,
+  testKind,
+} from "./panel-keys.js";
 export { LlmRouter, type LlmRouterOptions, RoutedStream, type UsageRecord } from "./router.js";
 export { contextHash, contextSession, sessionId } from "./session.js";
 export {
@@ -123,16 +157,21 @@ export {
   IMAGE_PLACEHOLDER,
   type ImageDetail,
   type ImagePart,
+  type KeyChooser,
+  type KeyFailure,
+  type KeyOutcome,
   LlmError,
   type MessageContent,
   type ModelRef,
   ModelRefSchema,
   modelRefString,
   NoImageModelError,
+  ProviderCoolingError,
   ProviderHttpError,
   ProviderTimeoutError,
   parseModelRef,
   type StreamEvent,
+  type StreamOptions,
   systemMessage,
   type TextPart,
   type ToolCall,

@@ -53,6 +53,7 @@ export {
   EconomyGift,
   EconomyRoomPlaced,
   EconomyScreen,
+  ExchangeQuotes,
   ExtensionEvent,
   FeedbackSignal,
   GameAdapterEvent,

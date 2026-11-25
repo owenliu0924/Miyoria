@@ -646,6 +646,90 @@
             "path": "/api/llm/stats"
           }
         }
+      },
+      "keys": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.llm.keys"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "GET",
+            "path": "/api/llm/keys"
+          }
+        }
+      },
+      "addKey": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.llm.keys"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/llm/keys/{provider}"
+          }
+        }
+      },
+      "disableKey": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.llm.keys"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/llm/keys/{provider}/{id}/disable"
+          }
+        }
+      },
+      "enableKey": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.llm.keys"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/llm/keys/{provider}/{id}/enable"
+          }
+        }
+      },
+      "deleteKey": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.llm.keys"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "DELETE",
+            "path": "/api/llm/keys/{provider}/{id}"
+          }
+        }
+      },
+      "testKey": {
+        "~orpc": {
+          "errorMap": {},
+          "meta": {
+            "audience": "admin",
+            "permission": "admin.llm.keys"
+          },
+          "route": {
+            "inputStructure": "detailed",
+            "method": "POST",
+            "path": "/api/llm/keys/{provider}/{id}/test"
+          }
+        }
       }
     },
     "channels": {

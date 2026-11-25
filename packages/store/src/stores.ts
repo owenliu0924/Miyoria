@@ -22,6 +22,7 @@ import {
 import type { ArtifactStore } from "./artifacts/store.js";
 import type { PlaceSettings } from "./config/places.js";
 import type { ConfigModuleState } from "./config/revisions.js";
+import type { PluginState } from "./config/state.js";
 import type { DataCategoryId, DataExport, DataInventory, WipeCounts, WipeOptions } from "./data.js";
 import type { ChatLogStore } from "./events/chat.js";
 import type { LlmCallStore } from "./events/llm.js";
@@ -386,7 +387,11 @@ export interface Store {
    * The per-place settings (`config/places.ts`) Core's `PlaceConfig` reads. Optional for test
    * doubles, like `places`.
    */
-  readonly config?: { readonly places: PlaceSettings };
+  readonly config?: {
+    readonly places: PlaceSettings;
+    /** Plugins' small persistent values (`config/state.ts`); optional for test doubles. */
+    readonly state?: PluginState;
+  };
   /**
    * A plugin's tables on this database and its code over them (`plugin.ts`): migrated when the
    * store opened with it, or the first time it is asked for; built once per store.

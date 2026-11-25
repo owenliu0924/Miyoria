@@ -10,6 +10,7 @@
 
 import type { ReasoningLevel } from "@miyoria/types";
 import type { Pricing } from "./cost.js";
+import type { KeyAttempt } from "./keys.js";
 import type { LlmCallTag } from "./trace.js";
 import { type ChatMessage, contentText, type ToolCall, type Usage } from "./types.js";
 
@@ -96,6 +97,11 @@ export interface LlmCallRecord {
   fallbacks: LlmFallback[];
   /** HTTP retries of the answering request (`429`, `503`, network). */
   retries: string[];
+  /**
+   * What the call did with each API key of the providers it tried (by position): the key that
+   * answered (`ok`), those that failed and those skipped as cooling. Empty for keyless providers.
+   */
+  keys: KeyAttempt[];
   thinking: boolean;
   /** Reasoning level the request was sent with (`off` when it did not think). */
   reasoning: ReasoningLevel;
@@ -421,6 +427,7 @@ export class LlmCallLog {
       status: "streaming",
       fallbacks: [],
       retries: [],
+      keys: [],
       thinking,
       reasoning,
       json_mode: request.json_mode ?? false,
@@ -501,7 +508,8 @@ export class LlmCallLog {
     for (const r of records) {
       if (known.has(r.id)) continue;
       known.add(r.id);
-      fresh.push({ ...structuredClone(r), has_detail: false });
+      // Lines written before keys were recorded have none.
+      fresh.push({ ...structuredClone(r), keys: r.keys ?? [], has_detail: false });
     }
     const room = Math.max(0, this.maxCalls - this.#calls.length);
     const kept = fresh.slice(Math.max(0, fresh.length - room));

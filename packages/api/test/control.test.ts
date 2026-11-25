@@ -304,8 +304,31 @@ describe("telemetry", () => {
           { name: "miyoria_llm_first_token_seconds_sum", labels: { model: "a" }, value: 2.5 },
         ],
       },
+      {
+        name: "miyoria_llm_errors_total",
+        help: "",
+        type: "counter",
+        samples: [
+          {
+            name: "miyoria_llm_errors_total",
+            labels: { model: "a", stage: "request", kind: "cooling" },
+            value: 2,
+          },
+          {
+            name: "miyoria_llm_errors_total",
+            labels: { model: "a", stage: "stream", kind: "error" },
+            value: 1,
+          },
+          // One key failing while the call moved on to another is no failed call.
+          {
+            name: "miyoria_llm_errors_total",
+            labels: { model: "a", stage: "key", kind: "auth" },
+            value: 7,
+          },
+        ],
+      },
     ]);
-    expect(totals).toMatchObject({ prompt_tokens: 15, completion_tokens: 3 });
+    expect(totals).toMatchObject({ prompt_tokens: 15, completion_tokens: 3, errors: 3 });
     expect(totals.first_token).toEqual({
       count: 4,
       sum_s: 2.5,

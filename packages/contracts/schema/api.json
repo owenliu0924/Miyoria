@@ -12717,6 +12717,12 @@
             "type": "string"
           }
         },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmKeyAttempt"
+          }
+        },
         "thinking": {
           "type": "boolean"
         },
@@ -12889,6 +12895,7 @@
         "status",
         "fallbacks",
         "retries",
+        "keys",
         "thinking",
         "reasoning",
         "json_mode",
@@ -13219,6 +13226,183 @@
         "by_purpose"
       ]
     },
+    "ApiLlmKeyAddRequest": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "key"
+      ]
+    },
+    "ApiLlmKeyAttempt": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "key": {
+          "type": "number"
+        },
+        "result": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "failed",
+            "skipped"
+          ]
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "key",
+        "result",
+        "kind"
+      ]
+    },
+    "ApiLlmKeyRow": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "position": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "config",
+            "panel"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "cooling",
+            "bad",
+            "disabled"
+          ]
+        },
+        "until": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "failures": {
+          "type": "number"
+        },
+        "last_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_error_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "added_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hint": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "position",
+        "label",
+        "source",
+        "state",
+        "until",
+        "failures",
+        "last_error",
+        "last_error_at",
+        "added_at",
+        "hint"
+      ]
+    },
+    "ApiLlmKeyTestResult": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "kind": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ok",
+        "kind",
+        "status",
+        "model",
+        "ms"
+      ]
+    },
+    "ApiLlmKeysView": {
+      "type": "object",
+      "properties": {
+        "providers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmProviderKeyList"
+          }
+        }
+      },
+      "required": [
+        "providers"
+      ]
+    },
     "ApiLlmPricing": {
       "type": "object",
       "properties": {
@@ -13239,6 +13423,85 @@
         "input_per_mtok",
         "cached_input_per_mtok",
         "output_per_mtok"
+      ]
+    },
+    "ApiLlmProviderKeyList": {
+      "type": "object",
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "editable": {
+          "type": "boolean"
+        },
+        "test_model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiLlmKeyRow"
+          }
+        },
+        "breaker": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "state": {
+                  "type": "string",
+                  "enum": [
+                    "ok",
+                    "cooling",
+                    "bad",
+                    "disabled"
+                  ]
+                },
+                "until": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "failures": {
+                  "type": "number"
+                },
+                "last_error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_error_at": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "state",
+                "until",
+                "failures",
+                "last_error",
+                "last_error_at"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "provider",
+        "editable",
+        "test_model",
+        "keys",
+        "breaker"
       ]
     },
     "ApiLlmThinking": {

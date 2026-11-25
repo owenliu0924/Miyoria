@@ -230,14 +230,59 @@ export async function collectResponse(stream: ChatStream): Promise<ChatResponse>
   return out;
 }
 
+/** Why an attempt on a key failed in a way another key, or a moment later, could fix. */
+export type KeyFailure = "connect_timeout" | "auth" | "rate_limit" | "server" | "network";
+
+/** How an attempt on one key ended. */
+export type KeyOutcome =
+  /** A 2xx response arrived. */
+  | { type: "ok" }
+  /** It failed in a way the breaker counts; `retryAfterMs`: a 429's `Retry-After`. */
+  | { type: "failed"; failure: KeyFailure; retryAfterMs?: number | null }
+  /** Neither: the request itself was refused (4xx), could not be built, or was aborted. */
+  | { type: "ended"; kind: string };
+
+/**
+ * The API keys of one call (the router's breaker, `keys.ts`). Keys are named by position, from 0.
+ * Every key `next` returns gets exactly one `report` per attempt sent with it.
+ */
+export interface KeyChooser {
+  /** The next key to send with, never one already tried in this call; `null`: none left. */
+  next(): number | null;
+  /**
+   * How the attempt on `key` went; whether the same key may be sent again in this call (not
+   * once the breaker opened it, unless for a 429, whose `Retry-After` the retry waits out).
+   */
+  report(key: number, outcome: KeyOutcome): boolean;
+  /** Every key is cooling and nothing else is left: one attempt, no retries. */
+  readonly lastResort: boolean;
+}
+
+export interface StreamOptions {
+  /** Which keys to send with; without it a provider tries its keys in order. */
+  keys?: KeyChooser;
+}
+
 export interface ChatProvider {
   /** Provider instance name from config, e.g. `"deepseek"`. */
   readonly name: string;
   /**
+   * How many API keys it sends with (0: none). Providers that set it take their keys from
+   * `StreamOptions.keys`; the others are left to themselves.
+   */
+  readonly keyCount?: number;
+  /**
    * Starts a response. Rejects for failures before the stream exists (HTTP errors after
    * retries); later failures are thrown by the stream.
    */
-  stream(request: ChatRequest, signal?: AbortSignal): Promise<ChatStream>;
+  stream(request: ChatRequest, signal?: AbortSignal, options?: StreamOptions): Promise<ChatStream>;
+  /**
+   * Sends with these keys from the next request on (keys added or removed in the panel). A
+   * provider without it keeps the keys it was built with.
+   */
+  setKeys?(keys: readonly string[]): void;
+  /** One cheap request to `model` with `key` alone, no retries; throws what it failed with. */
+  check?(key: string, model: string, signal?: AbortSignal): Promise<void>;
 }
 
 /** `stream` + `collectResponse`. */
@@ -303,6 +348,26 @@ export class ProviderTimeoutError extends LlmError {
     options?: ErrorOptions,
   ) {
     super(message, options);
+  }
+}
+
+/**
+ * Every API key of the provider is cooling after recent failures (`keys.ts`), so it was not
+ * asked. Its message names the provider, never a key.
+ */
+export class ProviderCoolingError extends LlmError {
+  override name = "ProviderCoolingError";
+
+  constructor(
+    readonly provider: string,
+    /** When the first key may be tried again (ms), if known. */
+    readonly until: number | null = null,
+  ) {
+    super(
+      `${provider}: skipped, every API key is cooling down after recent failures${
+        until === null ? "" : ` (until ${new Date(until).toISOString()})`
+      }`,
+    );
   }
 }
 

@@ -193,6 +193,17 @@ const StoredRecordSchema = z.looseObject({
   status: z.enum(["ok", "error", "aborted"]),
   fallbacks: z.array(z.looseObject({ model: z.string(), error: z.string(), kind: z.string() })),
   retries: z.array(z.string()),
+  /** Not in lines written before keys were recorded. */
+  keys: z
+    .array(
+      z.looseObject({
+        provider: z.string(),
+        key: z.number(),
+        result: z.enum(["ok", "failed", "skipped"]),
+        kind: z.string().nullable(),
+      }),
+    )
+    .default([]),
   tools: z.array(z.string()),
   reasoning_chars: z.number(),
 });

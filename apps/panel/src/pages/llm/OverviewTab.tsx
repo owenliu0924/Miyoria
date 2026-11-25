@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fmtCompact, fmtInt, fmtTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ERROR_LABEL, FINISH_LABEL, fmtCost, fmtMs, fmtPerMtok, hitRate, moduleLabel, purposeLabel, STATUS_TONE } from "./labels";
+import { ProviderKeysCard } from "./ProviderKeys";
 
 const RANGES = [
   { value: "60", label: "1 小時", minutes: 60 },
@@ -235,6 +236,7 @@ export function OverviewTab() {
       ) : s ? (
         <div className={cn("grid gap-(--stage-gap) transition-opacity", stats.isPlaceholderData && "opacity-60")}>
           <Kpis s={s} />
+          <ProviderKeysCard />
           <div className="grid gap-(--stage-gap) lg:grid-cols-2">
             <CostByHour s={s} />
             <TokensByHour s={s} />

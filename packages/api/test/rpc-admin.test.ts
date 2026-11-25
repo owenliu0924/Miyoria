@@ -32,6 +32,9 @@ import {
   type LlmCallDetail as ContractLlmCallDetail,
   type LlmCallRecord as ContractLlmCallRecord,
   type LlmCallStats as ContractLlmCallStats,
+  type LlmKeyRow as ContractLlmKeyRow,
+  type LlmKeyTestResult as ContractLlmKeyTestResult,
+  type LlmProviderKeyList as ContractLlmProviderKeyList,
   type LlmThinkingPage as ContractLlmThinkingPage,
   type LogEvent as ContractLogEvent,
   type McpServerInfo as ContractMcpServerInfo,
@@ -74,11 +77,14 @@ import type { Economy2 } from "@miyoria/economy";
 import { NODE_APPROVE, type PendingApproval } from "@miyoria/gate/actions";
 import type {
   CostReport,
+  KeyRow,
+  KeyTestResult,
   LlmCallDetail,
   LlmCallRecord,
   LlmCallStats,
   LlmThinkingPage,
   Pricing,
+  ProviderKeyList,
 } from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/play/queue";
 import type { ServerStatus } from "@miyoria/plugin-host/mcp";
@@ -180,6 +186,37 @@ const CASES: Case[] = [
   { name: "llm.callDetail", method: "GET", path: "/api/llm/calls/:id" },
   { name: "llm.thinking", method: "GET", path: "/api/llm/thinking" },
   { name: "llm.stats", method: "GET", path: "/api/llm/stats" },
+  { name: "llm.keys", method: "GET", path: "/api/llm/keys", permission: "admin.llm.keys" },
+  {
+    name: "llm.addKey",
+    method: "POST",
+    path: "/api/llm/keys/:provider",
+    permission: "admin.llm.keys",
+  },
+  {
+    name: "llm.disableKey",
+    method: "POST",
+    path: "/api/llm/keys/:provider/:id/disable",
+    permission: "admin.llm.keys",
+  },
+  {
+    name: "llm.enableKey",
+    method: "POST",
+    path: "/api/llm/keys/:provider/:id/enable",
+    permission: "admin.llm.keys",
+  },
+  {
+    name: "llm.deleteKey",
+    method: "DELETE",
+    path: "/api/llm/keys/:provider/:id",
+    permission: "admin.llm.keys",
+  },
+  {
+    name: "llm.testKey",
+    method: "POST",
+    path: "/api/llm/keys/:provider/:id/test",
+    permission: "admin.llm.keys",
+  },
   { name: "channels.levels", method: "GET", path: "/api/channels/levels" },
   {
     name: "channels.setLevel",
@@ -427,6 +464,10 @@ describe("the schemas agree with the types of the packages that own the shapes",
       true;
     const stats: Same<ContractLlmCallStats, LlmCallStats & { prices: Record<string, Pricing> }> =
       true;
+    const keys: Same<ContractLlmProviderKeyList, ProviderKeyList> = true;
+    const row: Same<ContractLlmKeyRow, KeyRow> = true;
+    const tested: Same<ContractLlmKeyTestResult, KeyTestResult> = true;
+    expect([keys, row, tested]).toEqual([true, true, true]);
     const thought: Same<ContractThought, Thought> = true;
     expect([call, detail, thinking, stats, thought]).toEqual(Array(5).fill(true));
   });

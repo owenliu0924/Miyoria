@@ -66,7 +66,8 @@ export function llmTotals(families: readonly MetricFamily[]): TelemetryLlm {
     completion_tokens: tokens("completion"),
     cached_prompt_tokens: tokens("cached_prompt"),
     cost_usd: sum(families, "miyoria_llm_cost_usd_total"),
-    errors: sum(families, "miyoria_llm_errors_total"),
+    // A key's failed attempt is not a failed call: the call moved on to another key.
+    errors: sum(families, "miyoria_llm_errors_total", (l) => l.stage !== "key"),
     first_token: {
       count: sum(families, `${FIRST_TOKEN}_count`),
       sum_s: sum(families, `${FIRST_TOKEN}_sum`),
