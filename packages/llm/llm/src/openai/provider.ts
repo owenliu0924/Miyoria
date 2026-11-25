@@ -7,7 +7,7 @@ import { inspect } from "node:util";
 import { errorMessage, getLogger, isAbortError, sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
-import { plainKeys, usableKeys } from "../keys.js";
+import { cleanMessage, plainKeys, usableKeys } from "../keys.js";
 import type { ProviderConfig, ProviderFactory } from "../module.js";
 import { noteProviderRetry } from "../trace.js";
 import {
@@ -43,6 +43,8 @@ export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
 export const OPENCODE_BASE_URL = "https://opencode.ai/inference/go/v1";
 /** Header OpenCode reads the conversation id from. */
 export const OPENCODE_SESSION_HEADER = "x-opencode-session";
+/** The session a key's test request is sent under (`OpenAiProvider.check`). */
+export const KEY_TEST_SESSION = "key-test";
 /** Identifies Miyoria (not the HTTP library) to every provider. */
 export const DEFAULT_USER_AGENT = `miyoria/${MIYORIA_VERSION}`;
 /** Default of `connect_timeout_secs`. */
@@ -384,8 +386,8 @@ export class OpenAiProvider implements ChatProvider {
    * Whether `key` works: one request of one token to `model` with it, no retries. Throws what
    * the request failed with (never naming the key); resolves once the answer has been read.
    */
-  async check(key: string, model: string, signal?: AbortSignal): Promise<void> {
-    const set = this.#keySet([key]);
+  async check(key: string, model: string, signal?: AbortSignal, name = "#1"): Promise<void> {
+    const set = { ...this.#keySet([key]), names: [name] };
     let given = false;
     const once: KeyChooser = {
       lastResort: true,
@@ -402,6 +404,8 @@ export class OpenAiProvider implements ChatProvider {
       max_tokens: 1,
       thinking: false,
       reasoning: "off",
+      // Sent like any request: a provider with a session header (OpenCode) refuses one without.
+      session: KEY_TEST_SESSION,
     };
     await collectResponse(await this.#run(request, signal, once, set));
   }
@@ -430,6 +434,11 @@ export class OpenAiProvider implements ChatProvider {
    * would, so with any number of keys a call makes at most `1 + maxRetries` attempts, of which
    * at most `1 + connectRetries` wait out a connect timeout. A last resort (every key cooling)
    * is one attempt.
+   *
+   * Another 4xx (400, 404, 422, ...) is also sent once with the next usable key, within the same
+   * allowance: when that key gets through, the refused key is counted as failed (its account,
+   * not the request, is the problem); when it is refused too, the call fails with the first
+   * refusal and neither key is counted. With one key it fails at once, as before.
    */
   stream(
     request: ChatRequest,
@@ -469,10 +478,21 @@ export class OpenAiProvider implements ChatProvider {
       request,
       signal,
     );
-    let key = keys.next();
-    if (key === null) throw new ProviderCoolingError(this.name);
+    const firstKey = keys.next();
+    if (firstKey === null) throw new ProviderCoolingError(this.name);
+    let key: number = firstKey;
     const once = keys.lastResort;
     let connectAttempt = 0;
+    /**
+     * A key that answered with a 4xx another key might not get (400, 404, 422, ...), not reported
+     * yet: the next key's answer says whether the key or the request is the problem.
+     */
+    let suspect: { key: number; fatal: ProviderHttpError } | null = null;
+    /** The suspect is not to blame after all (or nobody can tell): nothing is counted. */
+    const acquit = () => {
+      if (suspect !== null) keys.report(suspect.key, { type: "ended", kind: "http_4xx" });
+      suspect = null;
+    };
     for (let attempt = 0; ; attempt++) {
       const sent = new Sent();
       const sendWith = key;
@@ -487,6 +507,16 @@ export class OpenAiProvider implements ChatProvider {
       try {
         // Nothing is streamed before the response arrives: `first` only wins by failing.
         await Promise.race([sent.responded.then(() => RESPONDED), first]);
+        const blamed = suspect as { key: number; fatal: ProviderHttpError } | null;
+        if (blamed !== null) {
+          // Another key got through: the one that was refused is the problem.
+          keys.report(blamed.key, {
+            type: "failed",
+            failure: "rejected",
+            message: blamed.fatal.detail,
+          });
+          suspect = null;
+        }
         keys.report(key, { type: "ok" });
         return this.#events(events, first, sent, signal, set);
       } catch (caught) {
@@ -495,6 +525,7 @@ export class OpenAiProvider implements ChatProvider {
       await events.return(undefined).catch(() => undefined);
       const failure = error instanceof StepError ? error.failure : null;
       if (signal?.aborted || failure?.kind === "aborted") {
+        acquit();
         keys.report(key, { type: "ended", kind: "aborted" });
         if (signal?.aborted) throw signal.reason;
         throw abortError();
@@ -508,13 +539,18 @@ export class OpenAiProvider implements ChatProvider {
       let reason: string;
       let again: { delay: number; note: () => void } | null;
       if (sent.connectTimedOut) {
+        acquit();
         reason = "connect timeout";
         fatal = new ProviderTimeoutError(
           `${this.name}${which}: request failed: no response within ${this.#connectTimeoutMs} ms (connect timeout)`,
           "connect",
           { cause: sent.fetchError },
         );
-        outcome = { type: "failed", failure: "connect_timeout" };
+        outcome = {
+          type: "failed",
+          failure: "connect_timeout",
+          message: `no response within ${this.#connectTimeoutMs} ms`,
+        };
         allowed = connectAttempt < this.#connectRetries;
         if (allowed) connectAttempt++;
         const delay = this.#backoff(attempt);
@@ -526,19 +562,50 @@ export class OpenAiProvider implements ChatProvider {
       } else if (failure?.kind === "http") {
         const status = failure.status;
         reason = `HTTP ${status}`;
-        fatal = new ProviderHttpError(
-          `${this.name}${which}: HTTP ${statusText(status)}: ${snippet(redact(failure.body, set))}`,
+        const body = redact(failure.body, set);
+        const refused = new ProviderHttpError(
+          `${this.name}${which}: HTTP ${statusText(status)}: ${snippet(body)}`,
           status,
+          providerMessage(body),
         );
+        fatal = refused;
         allowed = attempt < this.#maxRetries;
         again = null;
+        if (isKeyNeutral4xx(status)) {
+          if (suspect !== null) {
+            // A second key refused it too: the request is the problem, not either key.
+            const firstRefusal = (suspect as { fatal: ProviderHttpError }).fatal;
+            acquit();
+            keys.report(key, { type: "ended", kind: "http_4xx" });
+            throw firstRefusal;
+          }
+          const other = allowed && !once ? keys.next() : null;
+          if (other !== null) {
+            // Maybe only this key is refused (its account's region, plan, ...): ask another.
+            suspect = { key, fatal: refused };
+            log.warn(
+              { provider: this.name, status, from: `#${key + 1}`, to: `#${other + 1}` },
+              "LLM request refused, trying it with the next API key",
+            );
+            noteProviderRetry(`${reason} → 金鑰 #${other + 1}`);
+            key = other;
+            continue;
+          }
+          keys.report(key, { type: "ended", kind: "http_4xx" });
+          throw fatal;
+        }
+        // Not a refusal of the request itself: whatever the suspect was, nobody can tell now.
+        acquit();
         if (status === 401 || status === 403) {
-          outcome = { type: "failed", failure: "auth" };
+          outcome = { type: "failed", failure: "auth", message: refused.detail };
+        } else if (status === 402) {
+          outcome = { type: "failed", failure: "quota", message: refused.detail };
         } else if (isRetryable(status)) {
           outcome = {
             type: "failed",
             failure: status === 429 ? "rate_limit" : "server",
             retryAfterMs: status === 429 ? retryAfterMs(failure.headers, Infinity) : null,
+            message: refused.detail,
           };
           const delay = retryAfterMs(failure.headers) ?? this.#backoff(attempt);
           again = {
@@ -554,13 +621,14 @@ export class OpenAiProvider implements ChatProvider {
           allowed = false;
         }
       } else {
+        acquit();
         const cause = sent.fetchError ?? (error instanceof StepError ? error.cause : error);
         fatal = new LlmError(`${this.name}${which}: request failed: ${describeFetchError(cause)}`, {
           cause,
         });
         // A request the SDK could not build fails the same way every time.
         outcome = sent.called
-          ? { type: "failed", failure: "network" }
+          ? { type: "failed", failure: "network", message: redact(describeFetchError(cause), set) }
           : { type: "ended", kind: "error" };
         allowed = sent.called && attempt < this.#maxRetries;
         reason = describeFetchError(cause);
@@ -724,6 +792,8 @@ export class OpenAiProvider implements ChatProvider {
 interface KeySet {
   readonly keys: readonly string[];
   readonly auth: readonly string[];
+  /** What each key is called in a message; default its position (`#1`). */
+  readonly names?: readonly string[];
 }
 
 /** `text` with any of the keys of `set` in it replaced by its position. */
@@ -731,7 +801,7 @@ function redact(text: string, set: KeySet): string {
   let out = text;
   set.keys.forEach((key, i) => {
     const k = key.trim();
-    if (k.length >= 4) out = out.split(k).join(`#${i + 1}`);
+    if (k.length >= 4) out = out.split(k).join(set.names?.[i] ?? `#${i + 1}`);
   });
   return out;
 }
@@ -804,6 +874,41 @@ function guarded(
 
 function abortError(): DOMException {
   return new DOMException("This operation was aborted", "AbortError");
+}
+
+/**
+ * A 4xx that says nothing about the key by itself (400, 404, 422, ...): not 401/403 (the key),
+ * 402 (its quota) or 429 (its rate).
+ */
+function isKeyNeutral4xx(status: number): boolean {
+  return status >= 400 && status < 500 && ![401, 402, 403, 429].includes(status);
+}
+
+/**
+ * What the provider said in an error body (keys already replaced): `error.message` (or a string
+ * `error`, or `message`) of a JSON body, else its start.
+ */
+/** How much of a provider's message an error keeps (the panel clips it again, keys replaced). */
+const DETAIL_CHARS = 1000;
+
+function providerMessage(body: string): string | null {
+  const text = body.trim();
+  if (text === "") return null;
+  try {
+    const json = JSON.parse(text) as unknown;
+    if (typeof json === "object" && json !== null) {
+      const o = json as { error?: unknown; message?: unknown };
+      const inner = o.error as { message?: unknown } | string | undefined;
+      if (typeof inner === "object" && inner !== null && typeof inner.message === "string") {
+        return cleanMessage(inner.message, DETAIL_CHARS);
+      }
+      if (typeof inner === "string") return cleanMessage(inner, DETAIL_CHARS);
+      if (typeof o.message === "string") return cleanMessage(o.message, DETAIL_CHARS);
+    }
+  } catch {
+    // Not JSON: its start.
+  }
+  return cleanMessage(text, DETAIL_CHARS);
 }
 
 function isRetryable(status: number): boolean {

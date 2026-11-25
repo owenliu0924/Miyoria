@@ -72,6 +72,7 @@ export {
 } from "./cost.js";
 export {
   CallKeys,
+  cleanMessage,
   configKeyIds,
   DEFAULT_KEY_BREAKER,
   KEY_FAILURE_KINDS,

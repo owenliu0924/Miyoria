@@ -289,6 +289,8 @@ const BreakerFields = {
   /** Failures in a row. */
   failures: z.number(),
   last_error: z.string().nullable(),
+  /** What the provider said with it, keys replaced by their positions (at most 300 characters). */
+  last_message: z.string().nullable(),
   last_error_at: TimestampSchema.nullable(),
 };
 
@@ -345,6 +347,11 @@ export const LlmKeyTestResultSchema = z
     kind: z.string().nullable(),
     /** The HTTP status of a refusal. */
     status: z.number().nullable(),
+    /**
+     * What the provider said: the body's `error.message`, else its start, else the error's own
+     * message; keys replaced by their positions, control characters out, at most 300 characters.
+     */
+    message: z.string().nullable(),
     model: z.string(),
     ms: z.number(),
   })
