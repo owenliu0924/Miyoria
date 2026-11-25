@@ -28,17 +28,23 @@ import {
 } from "./call-writer.js";
 import { LlmCallLog, MAX_CALLS } from "./calls.js";
 import { BudgetConfigSchema, CostTracker, PricingSchema, periodStarts } from "./cost.js";
+import { KeyBreakerFieldsSchema, type KeyBreakerSettings, keyBreakerSettings } from "./keys.js";
 import { LlmRouter } from "./router.js";
 import { type ChatProvider, LlmError, type ModelRef, ModelRefSchema } from "./types.js";
 
 /**
- * `[llm.providers.<name>]`: `kind` picks the factory; `base_url` and `api_key` are common;
- * every other key is provider-specific (`extra`).
+ * `[llm.providers.<name>]`: `kind` picks the factory; `base_url`, `api_key`, `api_keys` and the
+ * breaker settings (`breaker_failures`, `breaker_cooldown_secs`, `breaker_max_cooldown_secs`,
+ * `bad_key_cooldown_secs`) are common; every other key is provider-specific (`extra`).
  */
 export interface ProviderConfig {
   kind: string;
   base_url: string | null;
   api_key: string | null;
+  /** More keys of the same provider, used in turn (see `usableKeys`). */
+  api_keys: string[];
+  /** When the router stops sending with a key that keeps failing (`keys.ts`). */
+  breaker: KeyBreakerSettings;
   extra: Record<string, JsonValue>;
 }
 
@@ -47,12 +53,31 @@ export const ProviderConfigSchema = z
     kind: z.string(),
     base_url: z.string().nullable().optional(),
     api_key: z.string().nullable().optional(),
+    api_keys: z.array(z.string()).nullable().optional(),
+    ...KeyBreakerFieldsSchema.shape,
   })
   .transform(
-    ({ kind, base_url, api_key, ...extra }): ProviderConfig => ({
+    ({
+      kind,
+      base_url,
+      api_key,
+      api_keys,
+      breaker_failures,
+      breaker_cooldown_secs,
+      breaker_max_cooldown_secs,
+      bad_key_cooldown_secs,
+      ...extra
+    }): ProviderConfig => ({
       kind,
       base_url: base_url ?? null,
       api_key: api_key ?? null,
+      api_keys: api_keys ?? [],
+      breaker: keyBreakerSettings({
+        breaker_failures,
+        breaker_cooldown_secs,
+        breaker_max_cooldown_secs,
+        bad_key_cooldown_secs,
+      }),
       extra: extra as Record<string, JsonValue>,
     }),
   );
@@ -178,9 +203,10 @@ export class LlmModule implements Module {
 
   /**
    * The router; `sink` receives every finished call (the running module's on-disk log and bus),
-   * `tracker` keeps its spending (default: a new one from `[llm.pricing]` and `[llm.budget]`).
+   * `tracker` keeps its spending (default: a new one from `[llm.pricing]` and `[llm.budget]`),
+   * `clock` times its calls and key cooldowns (default: the system clock).
    */
-  buildRouter(sink?: LlmCallSink, tracker?: CostTracker): LlmRouter {
+  buildRouter(sink?: LlmCallSink, tracker?: CostTracker, clock?: Clock): LlmRouter {
     const providers = new Map<string, ChatProvider>();
     for (const [name, cfg] of Object.entries(this.#config.providers)) {
       const factory = this.#factories.find((f) => f.kinds.includes(cfg.kind));
@@ -192,9 +218,11 @@ export class LlmModule implements Module {
       budget: this.#config.budget,
       reasoning: new Map(Object.entries(this.#config.reasoning)),
       imageInput: new Map(Object.entries(this.#config.image_input)),
+      breakers: new Map(Object.entries(this.#config.providers).map(([n, c]) => [n, c.breaker])),
       calls: this.#calls,
       ...(sink ? { sink } : {}),
       ...(tracker ? { tracker } : {}),
+      ...(clock ? { clock } : {}),
     });
     router.setPurposes(this.#overrides);
     return router;
@@ -231,7 +259,7 @@ export class LlmModule implements Module {
       this.#config.budget,
       ctx.clock,
     );
-    const router = this.buildRouter(sink, this.#tracker);
+    const router = this.buildRouter(sink, this.#tracker, ctx.clock);
     router.setEventSink(ctx.publisher);
     const calls = ctx.services.get(StoreKey)?.llmCalls;
     if (fresh && calls) {

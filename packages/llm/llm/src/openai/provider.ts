@@ -7,16 +7,21 @@ import { inspect } from "node:util";
 import { errorMessage, getLogger, isAbortError, sleep } from "@miyoria/runtime/kernel";
 import type { JsonValue } from "@miyoria/types";
 import { z } from "zod";
+import { plainKeys, usableKeys } from "../keys.js";
 import type { ProviderConfig, ProviderFactory } from "../module.js";
 import { noteProviderRetry } from "../trace.js";
 import {
   type ChatProvider,
   type ChatRequest,
   type ChatStream,
+  type KeyChooser,
+  type KeyOutcome,
   LlmError,
+  ProviderCoolingError,
   ProviderHttpError,
   ProviderTimeoutError,
   type StreamEvent,
+  type StreamOptions,
 } from "../types.js";
 import { MIYORIA_VERSION } from "../version.js";
 import { prepareStep, StepError } from "./sdk.js";
@@ -57,6 +62,12 @@ export class OpenAiConfig {
   baseUrl: string;
   /** Sent as `Authorization: Bearer ...` when set. */
   apiKey: string | null = null;
+  /**
+   * More keys of the same provider (after `apiKey`; blank ones and repeats are dropped). Calls
+   * take turns over them, and an attempt that fails in a way another key could fix (connect
+   * timeout, 401/403, 429, 5xx, network) moves to the next.
+   */
+  apiKeys: string[] = [];
   /** Extra request headers. */
   headers: Record<string, string> = {};
   /** `User-Agent` of every request. A `User-Agent` entry in `headers` takes precedence. */
@@ -102,8 +113,8 @@ export class OpenAiConfig {
   }
 
   /**
-   * Reads `base_url`, `api_key` and the extras `timeout_secs`, `connect_timeout_secs`,
-   * `max_retries`, `headers`, `user_agent` and `session_header`.
+   * Reads `base_url`, `api_key`, `api_keys` and the extras `timeout_secs`,
+   * `connect_timeout_secs`, `max_retries`, `headers`, `user_agent` and `session_header`.
    *
    * `openai`, `deepseek` and `opencode` default `base_url` to the official endpoints.
    * `opencode` also requires an API key and defaults `session_header` to
@@ -126,10 +137,12 @@ export class OpenAiConfig {
     const out = new OpenAiConfig(baseUrl);
     const kind = PROVIDER_KINDS.find((k) => k === config.kind);
     if (kind !== undefined) out.kind = kind;
-    out.apiKey = config.api_key?.trim() ? config.api_key : null;
+    const keys = usableKeys(config.api_key, config.api_keys);
+    out.apiKey = keys[0] ?? null;
+    out.apiKeys = keys.slice(1);
     out.headers = { ...(extra.headers ?? {}) };
     if (config.kind === "opencode" && out.apiKey === null) {
-      throw new LlmError("`api_key` is required for kind `opencode`");
+      throw new LlmError("`api_key` (or `api_keys`) is required for kind `opencode`");
     }
     const ua = extra.user_agent?.trim();
     if (ua) out.userAgent = ua;
@@ -168,6 +181,7 @@ export class OpenAiConfig {
       kind: this.kind,
       baseUrl: this.baseUrl,
       apiKey: this.apiKey === null ? null : REDACTED,
+      apiKeys: this.apiKeys.map(() => REDACTED),
       headers: Object.keys(this.headers),
       userAgent: this.userAgent,
       sessionHeader: this.sessionHeader,
@@ -276,7 +290,13 @@ export class OpenAiProvider implements ChatProvider {
   readonly url: string;
   readonly #kind: ProviderKind;
   readonly #baseUrl: string;
-  readonly #apiKey: string | null;
+  /** The API keys, in order (none for a keyless server). */
+  readonly #keys: readonly string[];
+  /** `Authorization` of each key. */
+  readonly #auth: readonly string[];
+  /** Where a call without the router's chooser starts, so such calls take turns too. */
+  #nextKey = 0;
+  /** Headers of every request, without `Authorization`. */
   readonly #headers: Readonly<Record<string, string>>;
   readonly #sessionHeader: string | null;
   readonly #thinkingOff: Record<string, JsonValue> | null;
@@ -299,18 +319,31 @@ export class OpenAiProvider implements ChatProvider {
     if (config.sessionHeader !== null && !TOKEN.test(config.sessionHeader)) {
       throw new LlmError(`invalid \`session_header\` name \`${config.sessionHeader}\``);
     }
-    if (config.apiKey !== null) {
-      const value = `Bearer ${config.apiKey}`;
-      if (!HEADER_VALUE.test(value)) throw new LlmError("API key contains invalid characters");
-      headers.authorization = value;
-    }
+    const keys = usableKeys(config.apiKey, config.apiKeys);
+    const auth = keys.map((key, i) => {
+      const value = `Bearer ${key}`;
+      if (!HEADER_VALUE.test(value)) {
+        throw new LlmError(
+          keys.length > 1
+            ? `API key #${i + 1} contains invalid characters`
+            : "API key contains invalid characters",
+        );
+      }
+      return value;
+    });
+    let custom: string | null = null;
     for (const [k, v] of Object.entries(config.headers)) {
       if (!TOKEN.test(k)) throw new LlmError(`invalid header name \`${k}\``);
       if (!HEADER_VALUE.test(v)) throw new LlmError(`invalid value for header \`${k}\``);
-      headers[k.toLowerCase()] = v;
+      if (k.toLowerCase() === "authorization") custom = v;
+      else headers[k.toLowerCase()] = v;
     }
     this.#kind = config.kind;
-    this.#apiKey = config.apiKey;
+    this.#keys = keys;
+    // An `Authorization` entry in `headers` wins over the keys, as it always did.
+    const fixed = custom;
+    this.#auth =
+      fixed === null ? auth : Array.from({ length: Math.max(1, keys.length) }, () => fixed);
     this.#headers = headers;
     this.#sessionHeader = config.sessionHeader?.toLowerCase() ?? null;
     this.#thinkingOff = config.thinkingOff;
@@ -323,6 +356,10 @@ export class OpenAiProvider implements ChatProvider {
     this.#fetch = options.fetch ?? fetch;
     this.#baseUrl = config.baseUrl.replace(/\/+$/, "");
     this.url = `${this.#baseUrl}/chat/completions`;
+  }
+
+  get keyCount(): number {
+    return this.#keys.length;
   }
 
   toString(): string {
@@ -342,8 +379,19 @@ export class OpenAiProvider implements ChatProvider {
    * Sends the request, retrying transient failures. Resolves once a 2xx response arrives,
    * i.e. before any of the stream is consumed. A connect timeout is retried `connectRetries`
    * times, then rejects with `ProviderTimeoutError` so the router can try the next model.
+   *
+   * With several keys (`options.keys` picks them), an attempt that failed in a way another key
+   * could fix (connect timeout, 401/403, 429, 5xx, network) is sent again right away with the
+   * next usable key instead of the same one. Switching spends the same retry allowance a retry
+   * would, so with any number of keys a call makes at most `1 + maxRetries` attempts, of which
+   * at most `1 + connectRetries` wait out a connect timeout. A last resort (every key cooling)
+   * is one attempt.
    */
-  async stream(request: ChatRequest, signal?: AbortSignal): Promise<ChatStream> {
+  async stream(
+    request: ChatRequest,
+    signal?: AbortSignal,
+    options: StreamOptions = {},
+  ): Promise<ChatStream> {
     log.debug(
       { provider: this.name, model: request.model, url: this.url },
       "chat completion request",
@@ -353,7 +401,8 @@ export class OpenAiProvider implements ChatProvider {
       {
         kind: this.#kind,
         baseUrl: this.#baseUrl,
-        apiKey: this.#apiKey,
+        // Replaced by our own `Authorization` per attempt (`#send`).
+        apiKey: this.#keys[0] ?? null,
         headers: this.#headers,
         requestHeaders:
           this.#sessionHeader !== null && session !== null
@@ -365,11 +414,16 @@ export class OpenAiProvider implements ChatProvider {
       request,
       signal,
     );
+    const keys = options.keys ?? this.#plainKeys();
+    let key = keys.next();
+    if (key === null) throw new ProviderCoolingError(this.name);
+    const once = keys.lastResort;
     let connectAttempt = 0;
     for (let attempt = 0; ; attempt++) {
       const sent = new Sent();
+      const sendWith = key;
       const events = step.open({
-        fetch: (_input, init) => this.#send(sent, step.patch, init),
+        fetch: (_input, init) => this.#send(sent, step.patch, init, sendWith),
         sawDone: () => sent.sawDone(),
       });
       const first = events.next();
@@ -379,58 +433,130 @@ export class OpenAiProvider implements ChatProvider {
       try {
         // Nothing is streamed before the response arrives: `first` only wins by failing.
         await Promise.race([sent.responded.then(() => RESPONDED), first]);
+        keys.report(key, { type: "ok" });
         return this.#events(events, first, sent, signal);
       } catch (caught) {
         error = caught;
       }
       await events.return(undefined).catch(() => undefined);
-      if (signal?.aborted) throw signal.reason;
       const failure = error instanceof StepError ? error.failure : null;
-      if (failure?.kind === "aborted") throw abortError();
+      if (signal?.aborted || failure?.kind === "aborted") {
+        keys.report(key, { type: "ended", kind: "aborted" });
+        if (signal?.aborted) throw signal.reason;
+        throw abortError();
+      }
+      const which = this.#keys.length > 1 ? ` (key #${key + 1})` : "";
+      // What failed, how the key is reported, whether another attempt is allowed, and how the
+      // same key would be sent again (`null`: it would not).
+      let fatal: Error;
+      let outcome: KeyOutcome;
+      let allowed: boolean;
+      let reason: string;
+      let again: { delay: number; note: () => void } | null;
       if (sent.connectTimedOut) {
-        if (connectAttempt < this.#connectRetries) {
-          connectAttempt++;
-          const delay = this.#backoff(attempt);
-          log.warn({ provider: this.name, delay_ms: delay }, "LLM connect timed out, retrying");
-          noteProviderRetry("connect timeout");
-          await sleep(delay, signal);
-          continue;
-        }
-        throw new ProviderTimeoutError(
-          `${this.name}: request failed: no response within ${this.#connectTimeoutMs} ms (connect timeout)`,
+        reason = "connect timeout";
+        fatal = new ProviderTimeoutError(
+          `${this.name}${which}: request failed: no response within ${this.#connectTimeoutMs} ms (connect timeout)`,
           "connect",
           { cause: sent.fetchError },
         );
-      }
-      if (failure?.kind === "http") {
-        if (attempt < this.#maxRetries && isRetryable(failure.status)) {
-          const delay = retryAfterMs(failure.headers) ?? this.#backoff(attempt);
-          log.warn(
-            { provider: this.name, status: failure.status, delay_ms: delay },
-            "LLM request failed, retrying",
-          );
-          noteProviderRetry(`HTTP ${failure.status}`);
-          await sleep(delay, signal);
-          continue;
-        }
-        throw new ProviderHttpError(
-          `${this.name}: HTTP ${statusText(failure.status)}: ${snippet(failure.body)}`,
-          failure.status,
+        outcome = { type: "failed", failure: "connect_timeout" };
+        allowed = connectAttempt < this.#connectRetries;
+        if (allowed) connectAttempt++;
+        const delay = this.#backoff(attempt);
+        again = {
+          delay,
+          note: () =>
+            log.warn({ provider: this.name, delay_ms: delay }, "LLM connect timed out, retrying"),
+        };
+      } else if (failure?.kind === "http") {
+        const status = failure.status;
+        reason = `HTTP ${status}`;
+        fatal = new ProviderHttpError(
+          `${this.name}${which}: HTTP ${statusText(status)}: ${snippet(this.#redact(failure.body))}`,
+          status,
         );
+        allowed = attempt < this.#maxRetries;
+        again = null;
+        if (status === 401 || status === 403) {
+          outcome = { type: "failed", failure: "auth" };
+        } else if (isRetryable(status)) {
+          outcome = {
+            type: "failed",
+            failure: status === 429 ? "rate_limit" : "server",
+            retryAfterMs: status === 429 ? retryAfterMs(failure.headers, Infinity) : null,
+          };
+          const delay = retryAfterMs(failure.headers) ?? this.#backoff(attempt);
+          again = {
+            delay,
+            note: () =>
+              log.warn(
+                { provider: this.name, status, delay_ms: delay },
+                "LLM request failed, retrying",
+              ),
+          };
+        } else {
+          outcome = { type: "ended", kind: "http_4xx" };
+          allowed = false;
+        }
+      } else {
+        const cause = sent.fetchError ?? (error instanceof StepError ? error.cause : error);
+        fatal = new LlmError(`${this.name}${which}: request failed: ${describeFetchError(cause)}`, {
+          cause,
+        });
+        // A request the SDK could not build fails the same way every time.
+        outcome = sent.called
+          ? { type: "failed", failure: "network" }
+          : { type: "ended", kind: "error" };
+        allowed = sent.called && attempt < this.#maxRetries;
+        reason = describeFetchError(cause);
+        const delay = this.#backoff(attempt);
+        again = {
+          delay,
+          note: () =>
+            log.warn(
+              { provider: this.name, err: describeFetchError(cause), delay_ms: delay },
+              "LLM request failed, retrying",
+            ),
+        };
       }
-      const cause = sent.fetchError ?? (error instanceof StepError ? error.cause : error);
-      // A request the SDK could not build fails the same way every time.
-      if (!sent.called || attempt >= this.#maxRetries) {
-        throw new LlmError(`${this.name}: request failed: ${describeFetchError(cause)}`, { cause });
+      // A key the breaker just opened (or whose probe failed) is not sent again in this call.
+      if (!keys.report(key, outcome)) again = null;
+      if (!allowed || once) throw fatal;
+      const other = outcome.type === "failed" ? keys.next() : null;
+      if (other !== null) {
+        log.warn(
+          { provider: this.name, from: `#${key + 1}`, to: `#${other + 1}`, reason },
+          "LLM request failed, trying the next API key",
+        );
+        noteProviderRetry(`${reason} → 金鑰 #${other + 1}`);
+        key = other;
+        continue;
       }
-      const delay = this.#backoff(attempt);
-      log.warn(
-        { provider: this.name, err: describeFetchError(cause), delay_ms: delay },
-        "LLM request failed, retrying",
-      );
-      noteProviderRetry(describeFetchError(cause));
-      await sleep(delay, signal);
+      // 401 / 403: the same key would be refused again; or it is cooling now.
+      if (again === null) throw fatal;
+      again.note();
+      noteProviderRetry(reason);
+      await sleep(again.delay, signal);
     }
+  }
+
+  /** Every key once, starting with the next one in turn (a call without the router). */
+  #plainKeys(): KeyChooser {
+    const n = Math.max(1, this.#keys.length);
+    const start = this.#nextKey;
+    this.#nextKey = (start + 1) % n;
+    return plainKeys(n, start);
+  }
+
+  /** `text` with any of the keys in it replaced by its position. */
+  #redact(text: string): string {
+    let out = text;
+    this.#keys.forEach((key, i) => {
+      const k = key.trim();
+      if (k.length >= 4) out = out.split(k).join(`#${i + 1}`);
+    });
+    return out;
   }
 
   /**
@@ -458,11 +584,18 @@ export class OpenAiProvider implements ChatProvider {
    * `Authorization` for a provider without a key). The connect timeout runs until the response
    * headers arrive, the idle timeout whenever bytes are awaited.
    */
-  async #send(sent: Sent, patch: BodyPatch, init: RequestInit | undefined): Promise<Response> {
+  async #send(
+    sent: Sent,
+    patch: BodyPatch,
+    init: RequestInit | undefined,
+    key: number,
+  ): Promise<Response> {
     sent.called = true;
     const headers = Object.fromEntries(new Headers(init?.headers));
     delete headers.authorization;
     Object.assign(headers, this.#headers, { accept: "text/event-stream" });
+    const auth = this.#auth[key];
+    if (auth !== undefined) headers.authorization = auth;
     const body = finalBody(String(init?.body ?? "{}"), patch);
     const idle = new IdleTimer(this.#timeoutMs);
     const connectMs = this.#connectTimeoutMs;
@@ -531,10 +664,10 @@ export class OpenAiProvider implements ChatProvider {
         return new LlmError(`${this.name}: stream ended unexpectedly`);
       case "chunk":
         return new LlmError(
-          `${this.name}: invalid stream chunk (${failure.reason}): ${snippet(failure.payload)}`,
+          `${this.name}: invalid stream chunk (${failure.reason}): ${snippet(this.#redact(failure.payload))}`,
         );
       case "provider":
-        return new LlmError(`${this.name}: error in stream: ${failure.detail}`);
+        return new LlmError(`${this.name}: error in stream: ${this.#redact(failure.detail)}`);
       default: {
         const cause = sent.bodyError ?? (error instanceof StepError ? error.cause : error);
         return new LlmError(`${this.name}: stream interrupted: ${errorMessage(cause)}`, { cause });
@@ -617,10 +750,14 @@ function isRetryable(status: number): boolean {
   return status === 429 || status >= 500;
 }
 
-function retryAfterMs(headers: Readonly<Record<string, string>>): number | null {
+/** `Retry-After` in seconds, as ms up to `cap`. */
+function retryAfterMs(
+  headers: Readonly<Record<string, string>>,
+  cap = MAX_RETRY_AFTER_MS,
+): number | null {
   const raw = headers["retry-after"]?.trim();
   if (!raw || !/^\d+$/.test(raw)) return null;
-  return Math.min(Number(raw) * 1000, MAX_RETRY_AFTER_MS);
+  return Math.min(Number(raw) * 1000, cap);
 }
 
 /** Status code and reason phrase: `"401 Unauthorized"`. */

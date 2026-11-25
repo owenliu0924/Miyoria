@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
-import type { LlmCallRecord, LlmCallStats, LlmGroupStats } from "@miyoria/contracts/api";
+import type { LlmCallRecord, LlmCallStats, LlmGroupStats, LlmKeyStatus, LlmProviderKeys } from "@miyoria/contracts/api";
 import { useLlmStats } from "@/app/queries";
 import type { LlmSearch } from "@/app/router";
 import { BarList, ChartBlock, ChartEmpty, ColumnChart } from "@/components/charts/charts";
@@ -12,7 +12,7 @@ import { Segmented } from "@/components/ui/segmented";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fmtCompact, fmtInt, fmtTime } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import { ERROR_LABEL, FINISH_LABEL, fmtCost, fmtMs, fmtPerMtok, hitRate, moduleLabel, purposeLabel, STATUS_TONE } from "./labels";
+import { ERROR_LABEL, FINISH_LABEL, fmtCost, fmtMs, fmtPerMtok, hitRate, KEY_STATE_TONE, moduleLabel, purposeLabel, STATUS_TONE } from "./labels";
 
 const RANGES = [
   { value: "60", label: "1 小時", minutes: 60 },
@@ -215,6 +215,45 @@ function OutcomesBlock({ s }: { s: LlmCallStats }) {
   );
 }
 
+function keyStateText(k: LlmKeyStatus): string {
+  if (k.state === "ok") return "正常";
+  if (k.state === "bad") return k.until ? `無效,${fmtTime(k.until)} 再試` : "無效,下一次呼叫再試";
+  return k.until ? `冷卻到 ${fmtTime(k.until)}` : "試探中";
+}
+
+/** Each provider's keys by position, as the router's breaker sees them now. */
+function ProviderKeysCard({ providers }: { providers: LlmProviderKeys[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>供應商與金鑰</CardTitle>
+      </CardHeader>
+      <ul aria-label="供應商與金鑰" className="divide-y divide-line-soft">
+        {providers.map((p) => (
+          <li key={p.provider} className="flex flex-wrap items-baseline gap-x-6 gap-y-1.5 py-(--row-y) text-sm">
+            <code className="w-32 shrink-0 truncate text-[13px]">{p.provider}</code>
+            <span className="flex min-w-0 flex-1 flex-wrap gap-x-6 gap-y-1.5">
+              {p.keys.map((k) => (
+                <span key={k.key} className="flex items-center gap-1.5">
+                  <Dot tone={KEY_STATE_TONE[k.state]} />
+                  {p.keyed ? <span className="font-mono text-[12px]">#{k.key}</span> : <span className="text-muted-foreground">不用金鑰</span>}
+                  <span className={cn(k.state !== "ok" && "text-primary")}>{keyStateText(k)}</span>
+                  {k.last_error && (
+                    <span className="text-xs text-muted-foreground">
+                      上次失敗:{ERROR_LABEL[k.last_error] ?? k.last_error}
+                      {k.last_error_at && ` · ${fmtTime(k.last_error_at)}`}
+                    </span>
+                  )}
+                </span>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export function OverviewTab() {
   const [range, setRange] = useState<RangeValue>("1440");
   const minutes = RANGES.find((r) => r.value === range)?.minutes ?? null;
@@ -235,6 +274,7 @@ export function OverviewTab() {
       ) : s ? (
         <div className={cn("grid gap-(--stage-gap) transition-opacity", stats.isPlaceholderData && "opacity-60")}>
           <Kpis s={s} />
+          {s.providers.length > 0 && <ProviderKeysCard providers={s.providers} />}
           <div className="grid gap-(--stage-gap) lg:grid-cols-2">
             <CostByHour s={s} />
             <TokensByHour s={s} />

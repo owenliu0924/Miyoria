@@ -16,6 +16,10 @@ const CALL: LlmCallRecord = {
   status: "ok",
   fallbacks: [{ model: "local:qwen3-4b", error: "HTTP 503", kind: "http_5xx" }],
   retries: ["HTTP 429"],
+  keys: [
+    { provider: "deepseek", key: 1, result: "failed", kind: "rate_limit" },
+    { provider: "deepseek", key: 2, result: "ok", kind: null },
+  ],
   thinking: true,
   reasoning: "off",
   json_mode: true,
@@ -58,6 +62,17 @@ const STATS: LlmCallStats = {
   kept: 1,
   oldest: CALL.at,
   prices: { "deepseek:deepseek-v4.1-flash": { input_per_mtok: 0.15, cached_input_per_mtok: null, output_per_mtok: 0.6 } },
+  providers: [
+    {
+      provider: "deepseek",
+      keyed: true,
+      keys: [
+        { key: 1, state: "cooling", until: "2026-11-03T10:05:00.000Z", failures: 2, last_error: "connect_timeout", last_error_at: "2026-11-03T10:04:00.000Z" },
+        { key: 2, state: "bad", until: "2026-11-03T11:00:00.000Z", failures: 1, last_error: "auth", last_error_at: "2026-11-03T10:00:00.000Z" },
+        { key: 3, state: "ok", until: null, failures: 0, last_error: null, last_error_at: null },
+      ],
+    },
+  ],
 };
 
 describe("LLM call inspector", () => {
@@ -101,6 +116,8 @@ describe("LLM call inspector", () => {
     expect(within(sheet).getAllByText("$0.150").length).toBeGreaterThan(0);
     expect(within(sheet).getByText("換下一個模型")).toBeInTheDocument();
     expect(within(sheet).getByText("重送第 1 次")).toBeInTheDocument();
+    expect(within(sheet).getByText("被限流(429)")).toBeInTheDocument();
+    expect(within(sheet).getByText("回答")).toBeInTheDocument();
     expect(within(sheet).getByRole("link", { name: /她的想法/ })).toHaveAttribute("href", "/inner?tab=thoughts&thought=t1");
   });
 
@@ -150,6 +167,12 @@ describe("LLM call inspector", () => {
     const models = await screen.findByRole("table", { name: "依模型" });
     expect(within(models).getByText("$0.150 / $0.600")).toBeInTheDocument();
     expect(screen.getByLabelText("LLM 概況")).toHaveTextContent("60%");
+    const keys = screen.getByRole("list", { name: "供應商與金鑰" });
+    expect(keys).toHaveTextContent("#1");
+    expect(keys).toHaveTextContent("冷卻到");
+    expect(keys).toHaveTextContent("上次失敗:連線逾時");
+    expect(keys).toHaveTextContent(/#2無效,.+再試/);
+    expect(keys).toHaveTextContent("#3正常");
   });
 });
 

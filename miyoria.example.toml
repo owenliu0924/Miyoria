@@ -22,6 +22,17 @@ log = "info,miyoria=debug"
 kind = "deepseek"                  # deepseek | openai | openai-compatible
 base_url = "${LLM_BASE_URL:-https://api.deepseek.com}"
 api_key = "${LLM_API_KEY:-}"
+# 同一個 provider 有好幾把金鑰(例如兩份訂閱)時,其他的寫在這裡,和 api_key 輪流用;
+# 空字串(沒設的環境變數)和重複的不算。一把連線逾時、401/403、429、5xx 時,同一次呼叫直接換下一把,
+# 重試次數照舊(換金鑰也算一次),所以金鑰多也不會等更久
+# api_keys = ["${LLM_API_KEY_2:-}"]
+# 斷路器:一把金鑰連續失敗幾次就先跳過它一陣子;全部金鑰都在冷卻時,這個 provider 的模型直接換
+# purposes 裡的下一個(沒有下一個時,還是用最久沒失敗的那把試一次,不重試)。冷卻過後先放一個請求
+# 去試:成功就恢復,失敗就冷卻加倍。429 有 Retry-After 時照它冷卻;401/403 當成金鑰無效,記一次警告
+# breaker_failures = 2               # 連續失敗幾次開始冷卻;0 = 關掉
+# breaker_cooldown_secs = 60         # 第一次冷卻多久
+# breaker_max_cooldown_secs = 600    # 最久冷卻多久(Retry-After 也不超過這個)
+# bad_key_cooldown_secs = 3600       # 被拒絕(401/403)的金鑰跳過多久
 
 # 全域預設;profile.toml 的 [llm.purposes] 會覆寫
 [llm.purposes]

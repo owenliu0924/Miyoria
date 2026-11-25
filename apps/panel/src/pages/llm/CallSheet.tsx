@@ -18,6 +18,7 @@ import {
   fmtMs,
   fmtPerMtok,
   hitRate,
+  keyAttemptLabel,
   moduleLabel,
   purposeLabel,
   STATUS_LABEL,
@@ -134,6 +135,23 @@ function CallBody({ call, detail }: { call: LlmCallRecord; detail: LlmCallDetail
           ["時間", <span key="t" className="font-mono text-[13px]">{fmtDateTime(call.at)}</span>],
           ["用途", <span key="p">{purposeLabel(call.purpose)} <code className="ml-1 text-xs text-muted-foreground">{call.purpose}{call.chain !== call.purpose && ` → ${call.chain} 的模型鏈`}</code></span>],
           ["模型", call.model ? <code key="m" className="text-[13px]">{call.model}</code> : "—"],
+          ...(call.keys.length > 0
+            ? [
+                [
+                  "金鑰",
+                  <span key="k" className="flex flex-wrap gap-1.5">
+                    {call.keys.map((k, i) => (
+                      <Badge key={i} variant={k.result === "ok" ? "outline" : k.result === "failed" ? "warning" : "secondary"}>
+                        <span className="font-mono">
+                          {k.provider} #{k.key}
+                        </span>{" "}
+                        {keyAttemptLabel(k)}
+                      </Badge>
+                    ))}
+                  </span>,
+                ] as [string, ReactNode],
+              ]
+            : []),
           ["誰呼叫的", <span key="w">{moduleLabel(call.module)}{call.label && <span className="text-muted-foreground"> · {call.label}</span>}{call.repair !== null && <Badge variant="warning" className="ml-2">修正第 {call.repair} 次</Badge>}</span>],
           [
             "屬於",

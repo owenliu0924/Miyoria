@@ -79,6 +79,7 @@ import type {
   LlmCallStats,
   LlmThinkingPage,
   Pricing,
+  ProviderKeys,
 } from "@miyoria/llm/llm";
 import type { ItemState } from "@miyoria/play/queue";
 import type { ServerStatus } from "@miyoria/plugin-host/mcp";
@@ -425,8 +426,10 @@ describe("the schemas agree with the types of the packages that own the shapes",
     const detail: Same<ContractLlmCallDetail, LlmCallDetail> = true;
     const thinking: Same<ContractLlmThinkingPage, Omit<LlmThinkingPage, never> & { kept: number }> =
       true;
-    const stats: Same<ContractLlmCallStats, LlmCallStats & { prices: Record<string, Pricing> }> =
-      true;
+    const stats: Same<
+      ContractLlmCallStats,
+      LlmCallStats & { prices: Record<string, Pricing>; providers: ProviderKeys[] }
+    > = true;
     const thought: Same<ContractThought, Thought> = true;
     expect([call, detail, thinking, stats, thought]).toEqual(Array(5).fill(true));
   });

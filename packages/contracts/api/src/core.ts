@@ -262,6 +262,43 @@ export const LlmPricingSchema = z
   .meta({ id: "ApiLlmPricing" });
 export type LlmPricing = z.output<typeof LlmPricingSchema>;
 
+/** One API key's part in a call, by position (`1` = `#1`); never the key itself. */
+export const LlmKeyAttemptSchema = z
+  .object({
+    provider: z.string(),
+    key: z.number(),
+    result: z.enum(["ok", "failed", "skipped"]),
+    /**
+     * `failed`: `connect_timeout`, `auth`, `rate_limit`, `http_5xx`, `network` (the breaker
+     * counts these) or `http_4xx`, `aborted`, `error`; `skipped`: `cooling` or `bad`.
+     */
+    kind: z.string().nullable(),
+  })
+  .meta({ id: "ApiLlmKeyAttempt" });
+export type LlmKeyAttempt = z.output<typeof LlmKeyAttemptSchema>;
+
+/** One API key of a provider, by position, and its breaker. */
+export const LlmKeyStatusSchema = z
+  .object({
+    key: z.number(),
+    /** `cooling`: skipped after failures in a row; `bad`: the provider refused it (401 / 403). */
+    state: z.enum(["ok", "cooling", "bad"]),
+    /** Skipped until then; `null` when it is not (or its probe is due). */
+    until: TimestampSchema.nullable(),
+    /** Failures in a row. */
+    failures: z.number(),
+    last_error: z.string().nullable(),
+    last_error_at: TimestampSchema.nullable(),
+  })
+  .meta({ id: "ApiLlmKeyStatus" });
+export type LlmKeyStatus = z.output<typeof LlmKeyStatusSchema>;
+
+/** A provider's keys; one without keys (`keyed: false`) has one entry standing for itself. */
+export const LlmProviderKeysSchema = z
+  .object({ provider: z.string(), keyed: z.boolean(), keys: z.array(LlmKeyStatusSchema) })
+  .meta({ id: "ApiLlmProviderKeys" });
+export type LlmProviderKeys = z.output<typeof LlmProviderKeysSchema>;
+
 /** One routed call, as the call inspector lists it. */
 export const LlmCallRecordSchema = z
   .object({
@@ -280,6 +317,12 @@ export const LlmCallRecordSchema = z
     fallbacks: z.array(z.object({ model: z.string(), error: z.string(), kind: z.string() })),
     /** HTTP retries of the answering request. */
     retries: z.array(z.string()),
+    /**
+     * What the call did with each API key of the providers it tried, by position only: the one
+     * that answered (`ok`), those that failed, and those skipped as cooling. Empty for providers
+     * without keys.
+     */
+    keys: z.array(LlmKeyAttemptSchema),
     thinking: z.boolean(),
     /** The reasoning level the request was sent with (`off` when it did not think). */
     reasoning: z.enum(["off", "low", "medium", "high"]),
@@ -460,6 +503,8 @@ export const LlmCallStatsSchema = z
     oldest: TimestampSchema.nullable(),
     /** Every `[llm.pricing]` entry, by `provider:model`. */
     prices: z.record(z.string(), LlmPricingSchema),
+    /** Each provider's API keys now (not over the window). */
+    providers: z.array(LlmProviderKeysSchema),
   })
   .meta({ id: "ApiLlmCallStats" });
 export type LlmCallStats = z.output<typeof LlmCallStatsSchema>;

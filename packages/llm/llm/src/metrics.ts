@@ -9,7 +9,7 @@ import {
   type MetricsRegistry,
   metrics,
 } from "@miyoria/runtime/kernel";
-import { ProviderHttpError, ProviderTimeoutError } from "./types.js";
+import { ProviderCoolingError, ProviderHttpError, ProviderTimeoutError } from "./types.js";
 
 /** Bucket bounds (seconds) of `miyoria_llm_first_token_seconds`. */
 export const FIRST_TOKEN_BUCKETS: readonly number[] = [
@@ -18,9 +18,11 @@ export const FIRST_TOKEN_BUCKETS: readonly number[] = [
 
 /**
  * Error classes counted by `miyoria_llm_errors_total`: `connect_timeout`, `timeout`,
- * `http_4xx`, `http_5xx`, `aborted` or `error`.
+ * `http_4xx`, `http_5xx`, `cooling` (skipped: every key of the provider is cooling), `aborted`
+ * or `error`.
  */
 export function errorKind(error: unknown): string {
+  if (error instanceof ProviderCoolingError) return "cooling";
   if (error instanceof ProviderTimeoutError) {
     return error.phase === "connect" ? "connect_timeout" : "timeout";
   }
@@ -67,7 +69,11 @@ export function llmMetrics(registry: MetricsRegistry = metrics): LlmMetrics {
       buckets: FIRST_TOKEN_BUCKETS,
     }),
     errors: registry.counter("miyoria_llm_errors_total", {
-      help: "Failed LLM calls; stage request falls back to the next model, stream does not.",
+      help:
+        "Failed LLM calls; stage request falls back to the next model (kind cooling: skipped, " +
+        "every key of its provider is cooling), stream does not; stage key is one API key's " +
+        "attempt failing (kind connect_timeout, auth, rate_limit, http_5xx or network), after " +
+        "which the call moves to another key or retries.",
       labels: ["model", "purpose", "stage", "kind"],
     }),
   };

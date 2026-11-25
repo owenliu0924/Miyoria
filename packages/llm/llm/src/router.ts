@@ -9,7 +9,7 @@ import {
   systemClock,
 } from "@miyoria/types";
 import type { LlmCallSink, LlmLoggedResponse } from "./call-writer.js";
-import { callUsage, LlmCallLog, type LlmCallRecord } from "./calls.js";
+import { callUsage, LlmCallLog, type LlmCallRecord, type LlmFallback } from "./calls.js";
 import {
   type BudgetConfig,
   type BudgetState,
@@ -19,6 +19,14 @@ import {
   type EventSink,
   type Pricing,
 } from "./cost.js";
+import {
+  DEFAULT_KEY_BREAKER,
+  KEY_FAILURE_KINDS,
+  type KeyAttempt,
+  type KeyBreakerSettings,
+  KeyPool,
+  type ProviderKeys,
+} from "./keys.js";
 import { errorKind, type LlmMetrics, llmMetrics } from "./metrics.js";
 import { collectRetries, currentLlmTag, type LlmCallTag } from "./trace.js";
 import {
@@ -27,18 +35,24 @@ import {
   type ChatResponse,
   collectResponse,
   hasImages,
+  type KeyChooser,
   LlmError,
   type ModelRef,
   modelRefString,
   NoImageModelError,
+  ProviderCoolingError,
   ProviderHttpError,
   type StreamEvent,
   type ToolCall,
   textOnlyRequest,
+  tryParseModelRef,
   type Usage,
 } from "./types.js";
 
 const log = getLogger("llm.router");
+
+/** Kinds of a key's attempt the breaker counts (`miyoria_llm_errors_total{stage="key"}`). */
+const KEY_KINDS: ReadonlySet<string> = new Set(Object.values(KEY_FAILURE_KINDS));
 
 /** Calls and tokens per `provider:model` since startup. */
 export interface UsageRecord {
@@ -69,6 +83,8 @@ export interface LlmRouterOptions {
   calls?: LlmCallLog;
   /** Where every finished call also goes (the on-disk call log). */
   sink?: LlmCallSink;
+  /** Breaker settings per provider name (`[llm.providers.<name>]`); default `DEFAULT_KEY_BREAKER`. */
+  breakers?: ReadonlyMap<string, KeyBreakerSettings>;
 }
 
 /** HTTP statuses with which a provider may refuse image parts it does not support. */
@@ -156,6 +172,8 @@ export class LlmRouter {
   readonly #refusedImages = new Set<string>();
   readonly #calls: LlmCallLog;
   readonly #sink: LlmCallSink | undefined;
+  /** Each provider's keys and their breakers, on this router's clock. */
+  readonly #pools = new Map<string, KeyPool>();
 
   constructor(
     providers: ReadonlyMap<string, ChatProvider>,
@@ -172,6 +190,18 @@ export class LlmRouter {
     this.#imageInput = options.imageInput ?? new Map();
     this.#calls = options.calls ?? new LlmCallLog();
     this.#sink = options.sink;
+    for (const [name, provider] of providers) {
+      const settings = options.breakers?.get(name) ?? DEFAULT_KEY_BREAKER;
+      this.#pools.set(name, new KeyPool(name, provider.keyCount ?? 0, settings, this.#clock));
+    }
+  }
+
+  /**
+   * Each provider's keys by position: `ok`, `cooling` (until when) or `bad` (refused), and the
+   * last failure. A provider without keys has one entry standing for itself.
+   */
+  providerKeys(): ProviderKeys[] {
+    return [...this.#pools.values()].map((p) => p.status());
   }
 
   /**
@@ -337,7 +367,19 @@ export class LlmRouter {
     let blind = 0;
     let refusedWith: number | null = null;
     let lastError: unknown;
-    for (const model of chain) {
+    /** The fallback entry of `lastError`. */
+    let lastEntry: LlmFallback | undefined;
+    /** The first model skipped because every key of its provider was cooling. */
+    let cooled: ModelRef | null = null;
+    /** Providers this call sent a request to. */
+    const asked = new Set<string>();
+    // The chain, then, when nothing in it answered, the cooled model once as a last resort.
+    const plan = function* (): Generator<{ model: ModelRef; lastResort: boolean }> {
+      for (const model of chain) yield { model, lastResort: false };
+      const resort = cooled as ModelRef | null;
+      if (resort !== null && !signal?.aborted) yield { model: resort, lastResort: true };
+    };
+    for (const { model, lastResort } of plan()) {
       const key = modelRefString(model);
       record.model = key;
       record.provider = model.provider;
@@ -345,7 +387,8 @@ export class LlmRouter {
       if (!provider) {
         log.warn({ model: key }, "unknown provider in model chain");
         lastError = new LlmError(`unknown provider \`${model.provider}\``);
-        record.fallbacks.push({ model: key, error: errorMessage(lastError), kind: "error" });
+        lastEntry = { model: key, error: errorMessage(lastError), kind: "error" };
+        record.fallbacks.push(lastEntry);
         continue;
       }
       if (required && !this.modelTakesImages(model)) {
@@ -353,6 +396,51 @@ export class LlmRouter {
         record.fallbacks.push({ model: key, error: "does not take images", kind: "error" });
         continue;
       }
+      const pool = this.#pools.get(model.provider) as KeyPool;
+      if (!lastResort && !pool.usable()) {
+        // Its keys failed just now: straight to the next model, without waiting on it again.
+        const error = new ProviderCoolingError(model.provider, pool.reopensAt());
+        const entry: LlmFallback = { model: key, error: errorMessage(error), kind: "cooling" };
+        record.fallbacks.push(entry);
+        if (pool.keyed) {
+          for (const k of pool.status().keys) {
+            record.keys.push({
+              provider: model.provider,
+              key: k.key,
+              result: "skipped",
+              kind: k.state === "bad" ? "bad" : "cooling",
+            });
+          }
+        }
+        this.#metrics.errors.inc({ model: key, purpose, stage: "request", kind: "cooling" });
+        // What a model that was asked said tells more than that another was skipped.
+        if (lastError === undefined || lastError instanceof ProviderCoolingError) {
+          lastError = error;
+          lastEntry = entry;
+        }
+        // A provider this call already waited on gets no last resort.
+        if (!asked.has(model.provider)) cooled ??= model;
+        continue;
+      }
+      asked.add(model.provider);
+      if (lastResort) {
+        log.warn({ model: key }, "every key is cooling and nothing else is left, trying it once");
+      }
+      const onAttempt = (a: KeyAttempt) => {
+        if (pool.keyed) record.keys.push(a);
+        if (a.result === "failed" && a.kind !== null && KEY_KINDS.has(a.kind)) {
+          this.#metrics.errors.inc({ model: key, purpose, stage: "key", kind: a.kind });
+        }
+      };
+      /** One `provider.stream`, with its own pick of keys. */
+      const open = async (req: ChatRequest) => {
+        const keys = pool.chooser(lastResort, onAttempt);
+        try {
+          return await this.#open(provider, req, signal, keys);
+        } finally {
+          keys.close();
+        }
+      };
       let iterator: AsyncIterator<StreamEvent>;
       let first: IteratorResult<StreamEvent>;
       const sentAt = this.#clock.now();
@@ -367,9 +455,7 @@ export class LlmRouter {
       sent = routed;
       try {
         try {
-          [iterator, first] = await collectRetries(record.retries, () =>
-            this.#open(provider, routed, signal),
-          );
+          [iterator, first] = await collectRetries(record.retries, () => open(routed));
         } catch (error) {
           // A provider that cannot take image parts: once more as text, and remember it.
           const downgrade =
@@ -382,9 +468,7 @@ export class LlmRouter {
           record.retries.push("圖片被拒,改用文字");
           const textOnly = textOnlyRequest(routed);
           sent = textOnly;
-          [iterator, first] = await collectRetries(record.retries, () =>
-            this.#open(provider, textOnly, signal),
-          );
+          [iterator, first] = await collectRetries(record.retries, () => open(textOnly));
           this.#refusedImages.add(key);
           log.warn({ model: key }, "sending this model text only from now on");
         }
@@ -397,7 +481,8 @@ export class LlmRouter {
           stage: "request",
           kind: errorKind(error),
         });
-        record.fallbacks.push({ model: key, error: errorMessage(error), kind: errorKind(error) });
+        lastEntry = { model: key, error: errorMessage(error), kind: errorKind(error) };
+        record.fallbacks.push(lastEntry);
         lastError = error;
         if (required && rejectsImages(error)) {
           blind++;
@@ -422,8 +507,13 @@ export class LlmRouter {
       if (!first.done) this.#observe(call, first.value);
       return new RoutedStream(call, this.#track(call, first, iterator, signal));
     }
-    const failed = record.fallbacks.pop();
-    if (failed) record.model = failed.model;
+    // The model whose error the call ends with is no fallback.
+    const failed = lastEntry ?? record.fallbacks.at(-1);
+    if (failed) {
+      record.fallbacks.splice(record.fallbacks.lastIndexOf(failed), 1);
+      record.model = failed.model;
+      record.provider = tryParseModelRef(failed.model)?.provider ?? record.provider;
+    }
     if (required && blind === chain.length) {
       return fail(new NoImageModelError(purpose, refusedWith));
     }
@@ -455,8 +545,9 @@ export class LlmRouter {
     provider: ChatProvider,
     request: ChatRequest,
     signal: AbortSignal | undefined,
+    keys: KeyChooser,
   ): Promise<[AsyncIterator<StreamEvent>, IteratorResult<StreamEvent>]> {
-    const stream = await provider.stream(request, signal);
+    const stream = await provider.stream(request, signal, { keys });
     const iterator = stream[Symbol.asyncIterator]();
     return [iterator, await iterator.next()];
   }

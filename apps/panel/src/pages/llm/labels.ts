@@ -1,4 +1,4 @@
-import type { LlmCallKind, LlmCallRecord, LlmCallStatus, LlmPricing } from "@miyoria/contracts/api";
+import type { LlmCallKind, LlmCallRecord, LlmCallStatus, LlmKeyAttempt, LlmKeyStatus, LlmPricing } from "@miyoria/contracts/api";
 import type { Tone } from "@/components/status";
 
 /** Purposes in words; unknown ones show their key. */
@@ -70,6 +70,23 @@ export const ERROR_LABEL: Record<string, string> = {
   http_5xx: "HTTP 5xx",
   aborted: "取消",
   error: "其他錯誤",
+  cooling: "金鑰都在冷卻,跳過",
+  auth: "金鑰被拒(401/403)",
+  rate_limit: "被限流(429)",
+  network: "網路錯誤",
+};
+
+/** A key's part in one call. */
+export function keyAttemptLabel(k: LlmKeyAttempt): string {
+  if (k.result === "ok") return "回答";
+  if (k.result === "skipped") return k.kind === "bad" ? "無效,跳過" : "冷卻中,跳過";
+  return k.kind ? (ERROR_LABEL[k.kind] ?? k.kind) : "失敗";
+}
+
+export const KEY_STATE_TONE: Record<LlmKeyStatus["state"], Tone> = {
+  ok: "success",
+  cooling: "warning",
+  bad: "danger",
 };
 
 export const purposeLabel = (p: string) => PURPOSE_LABEL[p] ?? p;

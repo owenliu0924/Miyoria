@@ -8,7 +8,8 @@
 //   matched, by_kind, kept }`: calls with their chain of thought and answer, newest first, and
 //   how many calls of each kind (`mind`, `chat`, `voice`, ...) match the rest of the filter
 // * `GET /api/llm/stats?minutes=` → breakdowns per purpose, model, module and hour, the latency
-//   distribution, error kinds, the most expensive and slowest calls, and the prices
+//   distribution, error kinds, the most expensive and slowest calls, the prices, and each
+//   provider's API keys by position (ok / cooling until … / bad, the last error)
 // * `GET /api/mind/thoughts/{id}` → one thought with what it saw and its calls
 
 import { LlmRouterKey } from "@miyoria/llm/llm";
@@ -77,7 +78,7 @@ export const llmCallsRpc = {
     const minutes = countOf(q.minutes);
     const since = minutes ? new Date(context.state.now() - minutes * 60_000).toISOString() : null;
     const stats = r.calls.stats(since, { purpose: given(q.purpose), model: given(q.model) });
-    return { ...stats, prices: r.prices() };
+    return { ...stats, prices: r.prices(), providers: r.providerKeys() };
   }),
 };
 
