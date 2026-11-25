@@ -142,7 +142,13 @@ export class HeartService implements HeartPeople {
     const requests: HeartChangeRequest[] = [];
     for (const p of proposals) {
       if (!isProposalField(p.field)) continue;
-      requests.push({ type: "propose", field: p.field, direction: p.direction, quote: p.quote });
+      requests.push({
+        type: "propose",
+        field: p.field,
+        direction: p.direction,
+        quote: p.quote,
+        ...(p.amount === undefined ? {} : { amount: p.amount }),
+      });
     }
     if (requests.length === 0) return 0;
     return this.#people.applyAll(person, requests, {

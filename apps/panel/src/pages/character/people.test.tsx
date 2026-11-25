@@ -73,7 +73,7 @@ const profile = (over: Partial<PersonProfile> = {}): PersonProfile => ({
     next_before: "E2",
   },
   ledger: [
-    { field: "bond", used_up: 3.5, used_down: 0, cap_up: 6, cap_down: 18, proposed_up: 2, proposed_down: 0 },
+    { field: "bond", used_up: 3.5, used_down: 40, cap_up: 6, cap_down: null, proposed_up: 2, proposed_down: 1 },
     { field: "trust", used_up: 0, used_down: 0, cap_up: 2, cap_down: 6, proposed_up: 0, proposed_down: 0 },
   ],
   evidence: [{ id: "V1", at: AT, kind: "voice_together", detail: "在你的語音頻道一起待了 42 分鐘", weight: 42 }],
@@ -133,6 +133,8 @@ describe("person sheet", () => {
     }
     // Today's caps: only the numbers that moved today.
     expect(within(heart).getByRole("meter", { name: "羈絆 今天往上 3.5 / 6" })).toBeInTheDocument();
+    // The bond's fall has no cap: only what went.
+    expect(heart).toHaveTextContent("+3.5 / 6 · −40");
     expect(within(heart).queryByRole("meter", { name: /^信任 今天/ })).toBeNull();
     expect(screen.getByRole("region", { name: "證據" })).toHaveTextContent("在你的語音頻道一起待了 42 分鐘");
   });

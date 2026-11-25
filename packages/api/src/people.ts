@@ -30,6 +30,7 @@ import {
   type HeartHistoryEntry as HistoryEntry,
   hasTag,
   heldTier,
+  isBondFall,
   labelOf,
   newPerson,
   OWNER_TAG,
@@ -317,14 +318,17 @@ function ledgerOf(heart: HeartStore, p: HeartPerson, now: number): FieldLedger[]
   for (const field of HEART_FIELDS) {
     const capUp = dailyCap(field, "up", rules, p.bond);
     const capDown = dailyCap(field, "down", rules, p.bond);
-    if (!Number.isFinite(capUp) || !Number.isFinite(capDown)) continue;
+    // The bond's fall has no cap: it is listed for its rise, with `cap_down` null.
+    if (!Number.isFinite(capUp) || (!Number.isFinite(capDown) && !isBondFall(field, "down"))) {
+      continue;
+    }
     const l = ledger.fields[field];
     out.push({
       field,
       used_up: l.up,
       used_down: l.down,
       cap_up: capUp,
-      cap_down: capDown,
+      cap_down: Number.isFinite(capDown) ? capDown : null,
       proposed_up: l.proposed_up,
       proposed_down: l.proposed_down,
     });

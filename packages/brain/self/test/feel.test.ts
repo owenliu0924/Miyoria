@@ -5,6 +5,7 @@ import { toMessages } from "@miyoria/memory/transcript";
 import { describe, expect, it } from "vitest";
 import { isFeelLine, limitProposals, parseFeel } from "../src/feel.js";
 import { PROFILES } from "../src/profiles.js";
+import { FEEL_RULES } from "../src/rules.js";
 import { StepText } from "../src/screens.js";
 import { addressed, calls, done, fakeTool, rig, SESSION, say } from "./harness.js";
 
@@ -62,6 +63,70 @@ describe("reading a feel block", () => {
     ]);
   });
 
+  it("reads the bond she takes off after a bond minus, and a bare minus as no number", () => {
+    const parsed = parseFeel(
+      [
+        "小林: 羈絆 -30「一直叫我閉嘴」",
+        "小林: 羈絆 - 5 「又拿我的歌開玩笑」",
+        "小林: 羈絆 －３００「騙我」",
+        "小林: 羈絆 −40分 說我是工具",
+        "小林: 羈絆 -1,000「x」",
+        "小林: 羈絆 -2.6「四捨五入」",
+        "小林: 羈絆 -「沒寫數字」",
+        "小林: 羈絆 --「兩個減號」",
+        "小林: 羈絆 - - -「空格隔開的減號」",
+        "小林: 羈絆 ----20「四個減號」",
+        "小林: 羈絆 -0「零」",
+        "小林: 羈絆 - 3次放我鴿子",
+        "",
+      ].join("\n"),
+    );
+    expect(parsed.dropped).toEqual([]);
+    expect(parsed.lines.map((l) => [l.direction, l.amount, l.quote])).toEqual([
+      ["down", 30, "一直叫我閉嘴"],
+      ["down", 5, "又拿我的歌開玩笑"],
+      ["down", 300, "騙我"],
+      ["down", 40, "說我是工具"],
+      ["down", 1000, "x"],
+      ["down", 3, "四捨五入"],
+      ["down", undefined, "沒寫數字"],
+      ["down", undefined, "兩個減號"],
+      ["down", undefined, "空格隔開的減號"],
+      ["down", 20, "四個減號"],
+      ["down", undefined, "零"],
+      // A digit that starts the quote is the quote's, not a number.
+      ["down", undefined, "3次放我鴿子"],
+    ]);
+    // No number, no key: the line reads as it always did.
+    expect(parsed.lines[6]).toEqual({
+      name: "小林",
+      field: "bond",
+      direction: "down",
+      quote: "沒寫數字",
+    });
+  });
+
+  it("reads a number after a plus, or after another value's sign, past it by direction", () => {
+    const parsed = parseFeel(
+      [
+        "小林: 羈絆 +30「陪我練歌」",
+        "小林: 羈絆 ++「很開心」",
+        "小林: 信任 --「說話不算話」",
+        "小林: 心結 +50「又來了」",
+        "小林: 好感 －１０「嫌我」",
+        "",
+      ].join("\n"),
+    );
+    expect(parsed.dropped).toEqual([]);
+    expect(parsed.lines).toEqual([
+      { name: "小林", field: "bond", direction: "up", quote: "陪我練歌" },
+      { name: "小林", field: "bond", direction: "up", quote: "很開心" },
+      { name: "小林", field: "trust", direction: "down", quote: "說話不算話" },
+      { name: "小林", field: "grudge", direction: "up", quote: "又來了" },
+      { name: "小林", field: "warmth", direction: "down", quote: "嫌我" },
+    ]);
+  });
+
   it("reads calm as no emotion, and a strength written onto the word", () => {
     expect(parseFeel("我: 平靜 弱").self).toEqual({
       word: "平靜",
@@ -95,6 +160,7 @@ describe("reading a feel block", () => {
       "我: 開心 中",
       "我：難過強",
       "小明: 羈絆 + 「謝謝」",
+      "小明: 羈絆 -30「閉嘴」",
       "Owen：心結 -",
       "</feel>",
     ]) {
@@ -103,6 +169,36 @@ describe("reading a feel block", () => {
     for (const line of ["我覺得還好", "我: 今天好累", "小明說他很信任你", "好感度+1 哈哈"]) {
       expect(isFeelLine(line), line).toBe(false);
     }
+  });
+});
+
+describe("the rules of a feel block", () => {
+  it("count only what was done to her, and tell good pestering from bad", () => {
+    expect(FEEL_RULES).toContain("只算對你做的事。群友之間互罵、互虧、吵架是他們自己的事");
+    expect(FEEL_RULES).toContain("好的鬧:");
+    expect(FEEL_RULES).toContain("這種不扣分");
+    expect(FEEL_RULES).toContain("壞的鬧:");
+    expect(FEEL_RULES).toContain("這種要寫「羈絆 -」,不要只記心結");
+    // Members' fights with each other are not hers to count.
+    expect(FEEL_RULES).not.toContain("欺負別人");
+  });
+
+  it("let her write how much bond goes, weighed against the bond they had, and only that", () => {
+    expect(FEEL_RULES).toContain("羈絆要扣多少你自己決定");
+    expect(FEEL_RULES).toContain("沒有上限");
+    expect(FEEL_RULES).toContain("也看你們原本的羈絆");
+    expect(FEEL_RULES).toContain("除了羈絆的 -,其他都只寫方向");
+    // The example has a bond minus with a number, and it reads.
+    const example = FEEL_RULES.slice(
+      FEEL_RULES.lastIndexOf("<feel>") + "<feel>".length,
+      FEEL_RULES.lastIndexOf("</feel>"),
+    );
+    const parsed = parseFeel(example);
+    expect(parsed.dropped).toEqual([]);
+    expect(parsed.lines.map((l) => [l.field, l.direction, l.amount])).toEqual([
+      ["bond", "up", undefined],
+      ["bond", "down", 20],
+    ]);
   });
 });
 

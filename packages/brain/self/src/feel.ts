@@ -5,7 +5,8 @@
 //     小明: 羈絆 + 「他記得我上次說想吃的東西」
 //
 // The first kind of line is her own emotion now and how strong; the second a proposal about
-// someone: a value, a direction, and a quote as the reason. A line that does not read is dropped
+// someone: a value, a direction (a bond minus may carry the bond she takes off: 「羈絆 -30」), and
+// a quote as the reason. A line that does not read is dropped
 // with why, never an error. Who a name is, and the caps of a turn (two people, three lines), are
 // the host's: it knows who is there (`limitProposals`).
 
@@ -14,8 +15,10 @@ import {
   type EmotionName,
   FEEL_EMOTION_WORDS,
   FEEL_FIELD_WORDS,
+  FEEL_SIGNS,
   FEEL_STRENGTH_WORDS,
   type FeelField,
+  feelAmount,
 } from "@miyoria/types";
 
 /** Her own emotion line. */
@@ -33,6 +36,8 @@ export interface FeelLine {
   field: FeelField;
   direction: "up" | "down";
   quote: string;
+  /** A bond minus only: the bond she takes off as she wrote it; absent: no number (the default). */
+  amount?: number;
 }
 
 export type FeelDropReason =
@@ -66,7 +71,16 @@ const FIELD_BY_WORD = new Map<string, FeelField>(
 );
 
 const SELF_LINE = /^(?:我自己|我|自己)\s*[:：]\s*(.*)$/u;
-const PERSON_LINE = /^(.+?)\s*[:：]\s*([^\s+＋\-－−]+)\s*([+＋\-－−])\s*(.*)$/u;
+/**
+ * `名字: 值 符號 [數字] 引用`: more signs than one (`--`, `- -`) are read as the first; a number
+ * right after them (`-30`, `- 30`, `－３０`, `-30分`) counts only when a space, a quote or the end
+ * follows it, so a quote that starts with a digit (`- 3次放我鴿子`) stays whole.
+ */
+const PERSON_LINE = new RegExp(
+  `^(.+?)\\s*[:：]\\s*([^\\s${FEEL_SIGNS}]+)\\s*([${FEEL_SIGNS}])(?:\\s*[${FEEL_SIGNS}])*\\s*` +
+    `(?:([0-9０-９][0-9０-９.．,，]*[分點]?)(?=\\s|[「『“"'‘]|$))?\\s*(.*)$`,
+  "u",
+);
 /** Bullets she may put in front of a line. */
 const BULLET = /^(?:[-*•・]\s+)/u;
 
@@ -150,7 +164,7 @@ export function parseFeel(raw: string): ParsedFeel {
       out.dropped.push({ line, why: "unknown_field" });
       continue;
     }
-    const quote = quoteOf(person[4] ?? "", index !== last);
+    const quote = quoteOf(person[5] ?? "", index !== last);
     if (quote === null) {
       out.dropped.push({ line, why: "cut" });
       continue;
@@ -160,12 +174,13 @@ export function parseFeel(raw: string): ParsedFeel {
       continue;
     }
     const sign = person[3] ?? "+";
-    out.lines.push({
-      name,
-      field,
-      direction: sign === "+" || sign === "＋" ? "up" : "down",
-      quote,
-    });
+    const direction = sign === "+" || sign === "＋" ? "up" : "down";
+    // A number is hers to write for a bond minus only; after anything else it is read past.
+    const amount =
+      field === "bond" && direction === "down" && person[4] !== undefined
+        ? feelAmount(person[4])
+        : null;
+    out.lines.push({ name, field, direction, quote, ...(amount === null ? {} : { amount }) });
   }
   return out;
 }

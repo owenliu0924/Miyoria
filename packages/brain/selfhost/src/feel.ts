@@ -238,6 +238,7 @@ export function readFeel(
       field: line.field,
       direction: line.direction,
       quote: line.quote,
+      ...(line.amount === undefined ? {} : { amount: line.amount }),
     });
   }
   const { kept, over } = limitProposals(matched);
@@ -250,7 +251,8 @@ const STRENGTH_WORDS: Readonly<Record<string, string>> = Object.fromEntries(
 
 /**
  * Her journal's line for a feel block: her emotion as she wrote it (`開心 中`) and one line per
- * proposal kept (`小明 羈絆 +「他記得」`). What the heart's caps did to them is the heart's log.
+ * proposal kept (`小明 羈絆 +「他記得」`, `阿哲 羈絆 -30「…」` with the bond she took off). What
+ * the heart's caps did to them is the heart's log.
  */
 export function journalEntry(read: Pick<FeelOutcome, "self" | "proposals">): {
   text: string;
@@ -260,7 +262,7 @@ export function journalEntry(read: Pick<FeelOutcome, "self" | "proposals">): {
   const text = self === null ? "" : `${self.word} ${STRENGTH_WORDS[self.strength] ?? ""}`.trim();
   const changes = read.proposals.map(
     (p) =>
-      `${p.name} ${FEEL_FIELD_WORDS[p.field]} ${p.direction === "up" ? "+" : "-"}「${p.quote}」`,
+      `${p.name} ${FEEL_FIELD_WORDS[p.field]} ${p.direction === "up" ? "+" : "-"}${p.amount ?? ""}「${p.quote}」`,
   );
   return { text: text === "" ? (changes[0] ?? "") : text, changes };
 }
@@ -295,7 +297,12 @@ export function applyFeel(deps: FeelDeps, input: FeelInput): FeelOutcome {
     const byPerson = new Map<PersonId, FeelProposal[]>();
     for (const p of read.proposals) {
       const list = byPerson.get(p.person) ?? [];
-      list.push({ field: p.field, direction: p.direction, quote: p.quote });
+      list.push({
+        field: p.field,
+        direction: p.direction,
+        quote: p.quote,
+        ...(p.amount === undefined ? {} : { amount: p.amount }),
+      });
       byPerson.set(p.person, list);
     }
     for (const [person, proposals] of byPerson) {

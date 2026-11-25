@@ -183,7 +183,8 @@ export const FieldLedgerSchema = z
     used_down: z.number(),
     /** The most it may rise today (at the current bond). */
     cap_up: z.number(),
-    cap_down: z.number(),
+    /** The most it may fall today; `null`: no cap (the bond's fall, which she sizes herself). */
+    cap_down: z.number().nullable(),
     /** How many `feel` proposals she made today in each direction. */
     proposed_up: z.number(),
     proposed_down: z.number(),

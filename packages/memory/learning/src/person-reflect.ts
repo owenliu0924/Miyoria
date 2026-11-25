@@ -3,7 +3,8 @@
 // that person's row (words and numbers), the day's changes with their quotes, the day's evidence,
 // the memories of the day that involve them and the words she wrote about them before, and
 // answers with the words rewritten, corrections as proposals (a direction and a quote; the heart's
-// rules size and cap them, cause `reflect`) and, when the bond is held under a tier for want of a
+// rules size and cap them, cause `reflect`; a bond minus may carry the bond she takes off, `-30`,
+// as in `feel`) and, when the bond is held under a tier for want of a
 // shared memory, the memory it rests on.
 //
 // This file is the pure part: the prompt, the reply's schema, the data block and the check that
@@ -15,6 +16,7 @@ import {
   FEEL_FIELD_WORDS,
   type FeelField,
   type FeelProposal,
+  feelSign,
   type HeartDay,
   type HeartReflection,
   type HeartTextField,
@@ -53,7 +55,13 @@ export const PersonReflectionSchema = z.object({
     .array(
       z.object({
         value: z.string().min(1),
-        direction: z.enum(["+", "-"]),
+        /** `+` or `-`; a bond minus may carry the bond she takes off (`-30`). */
+        direction: z
+          .union([z.string(), z.number()])
+          .transform((d) => String(d).trim())
+          .refine((d) => feelSign(d) !== null, {
+            message: "direction 要是 + 或 -(羈絆的 - 後面可以寫數字)",
+          }),
         quote: z.string().trim().min(1),
       }),
     )
@@ -95,7 +103,7 @@ export function personRules(name: string, held: string | null): string {
 - dislikes:你不喜歡他的地方。
 - 上面五項都是整段改寫:舊的還成立就照原文留著,過時了才改;不用改就給 null,要清掉就給空字串。
 - public_feeling:他本人會在會員頁讀到的一句話,一定是對他說的,只談你和他,不提任何其他人(不寫別人的名字,也不寫「另一個人」「某人」),不寫數字、不寫你的內心盤算;不用改就給 null。
-- changes:回頭看今天,你對他的感覺有沒有要修正的地方,每項 {"value": ${values} 其中一個, "direction": "+" 或 "-", "quote": 讓你這樣想的那件事或那句話}。白天提過、後來覺得過頭的,可以往回修。只寫有根據的,一個值最多一項;沒有就給空陣列。大小由系統決定。
+- changes:回頭看今天,你對他的感覺有沒有要修正的地方,每項 {"value": ${values} 其中一個, "direction": "+" 或 "-", "quote": 讓你這樣想的那件事或那句話}。白天提過、後來覺得過頭的,可以往回修。只寫有根據的,一個值最多一項;沒有就給空陣列。羈絆的 - 可以在後面寫要扣多少(例如 "-30",沒有上限;不寫就是扣一點點),只算他對你做的事,群友之間互罵不算;其他的大小由系統決定。
 ${anchor}
 - 只能用資料裡的代號;人一律用名字。
 - 回覆格式裡的空值只是格式,不是建議。
@@ -246,10 +254,15 @@ export function reflectionOf(
     if (field === undefined) throw new PersonReflectionError(`unknown value \`${c.value}\``);
     if (seen.has(field)) throw new PersonReflectionError(`two corrections of \`${c.value}\``);
     seen.add(field);
+    const sign = feelSign(String(c.direction));
+    if (sign === null) throw new PersonReflectionError(`not a direction \`${c.direction}\``);
+    // A number is hers to write for a bond minus only; after anything else it is read past.
+    const amount = field === "bond" && sign.direction === "down" ? sign.amount : null;
     proposals.push({
       field,
-      direction: c.direction === "+" ? "up" : "down",
+      direction: sign.direction,
       quote: cut(c.quote, MAX_QUOTE),
+      ...(amount === null ? {} : { amount }),
     });
   }
   let anchor: HeartReflection["anchor"] = null;

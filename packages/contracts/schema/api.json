@@ -7689,7 +7689,10 @@
           "type": "number"
         },
         "cap_down": {
-          "type": "number"
+          "type": [
+            "number",
+            "null"
+          ]
         },
         "proposed_up": {
           "type": "number"

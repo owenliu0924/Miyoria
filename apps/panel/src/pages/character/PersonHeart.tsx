@@ -64,7 +64,11 @@ function Caps({ ledger }: { ledger: FieldLedger[] }) {
         {used.map((l) => {
           const { label } = FIELD[l.field];
           const up = `${amount(l.field, l.used_up)} / ${amount(l.field, l.cap_up)}`;
-          const down = `${amount(l.field, l.used_down)} / ${amount(l.field, l.cap_down)}`;
+          // The bond's fall has no cap (`cap_down` null): only what went.
+          const down =
+            l.cap_down === null
+              ? amount(l.field, l.used_down)
+              : `${amount(l.field, l.used_down)} / ${amount(l.field, l.cap_down)}`;
           return (
             <div key={l.field} className="contents">
               <dt className="text-muted-foreground">{label}</dt>
