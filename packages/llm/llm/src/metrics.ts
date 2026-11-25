@@ -72,7 +72,8 @@ export function llmMetrics(registry: MetricsRegistry = metrics): LlmMetrics {
       help:
         "Failed LLM calls; stage request falls back to the next model (kind cooling: skipped, " +
         "every key of its provider is cooling), stream does not; stage key is one API key's " +
-        "attempt failing (kind connect_timeout, auth, rate_limit, http_5xx or network), after " +
+        "attempt failing (kind connect_timeout, auth, rate_limit, http_5xx, network, quota, or " +
+        "http_4xx when another key got through), after " +
         "which the call moves to another key or retries.",
       labels: ["model", "purpose", "stage", "kind"],
     }),

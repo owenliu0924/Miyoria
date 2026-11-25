@@ -246,6 +246,90 @@ describe("several keys", () => {
     });
   });
 
+  it("asks another key after a 400 and blames the refused key when that one gets through", async () => {
+    const region = JSON.stringify({
+      error: {
+        type: "invalid_request_error",
+        message: "Model hosted outside your region for key-one",
+      },
+    });
+    const api = fakeApi((key) => (key === "key-one" ? { status: 400, body: region } : "ok"));
+    const { router, ask, last, metrics } = rig(
+      [provider("p", ["key-one", "key-two"], api.fetch)],
+      ["p:m"],
+    );
+    const { stream } = await ask();
+    expect(stream.model).toBe("p:m");
+    expect(api.sent).toEqual(["key-one", "key-two"]);
+    expect(last()).toMatchObject({ status: "ok", retries: ["HTTP 400 → 金鑰 #2"] });
+    expect(last().keys).toEqual([
+      { provider: "p", key: 1, result: "failed", kind: "http_4xx" },
+      { provider: "p", key: 2, result: "ok", kind: null },
+    ]);
+    expect(
+      metrics.errors.get({ model: "p:m", purpose: "chat", stage: "key", kind: "http_4xx" }),
+    ).toBe(1);
+    expect(keysOf(router, "p")[0]).toMatchObject({
+      state: "ok",
+      failures: 1,
+      last_error: "http_4xx",
+      last_message: "Model hosted outside your region for #1",
+    });
+    // The next call starts on key two; the one after on key one, refused again: it cools.
+    await ask();
+    await ask();
+    expect(api.sent).toEqual(["key-one", "key-two", "key-two", "key-one", "key-two"]);
+    expect(keysOf(router, "p")[0]).toMatchObject({ state: "cooling", failures: 2 });
+  });
+
+  it("fails a request both keys refuse with the first refusal, blaming neither", async () => {
+    const api = fakeApi(() => ({ status: 400, body: '{"error":{"message":"bad request"}}' }));
+    const { router, ask, last, metrics } = rig(
+      [provider("p", ["key-one", "key-two"], api.fetch)],
+      ["p:m"],
+    );
+    const error = await ask().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProviderHttpError);
+    expect((error as ProviderHttpError).message).toMatch(/^p \(key #1\): HTTP 400 Bad Request/);
+    expect((error as ProviderHttpError).detail).toBe("bad request");
+    // Exactly two attempts, and both keys stay healthy.
+    expect(api.sent).toEqual(["key-one", "key-two"]);
+    expect(keysOf(router, "p").map((k) => [k.state, k.failures])).toEqual([
+      ["ok", 0],
+      ["ok", 0],
+    ]);
+    expect(last().keys.map((k) => [k.key, k.result, k.kind])).toEqual([
+      [1, "failed", "http_4xx"],
+      [2, "failed", "http_4xx"],
+    ]);
+    expect(
+      metrics.errors.get({ model: "p:m", purpose: "chat", stage: "key", kind: "http_4xx" }),
+    ).toBe(0);
+  });
+
+  it("fails a 400 at once with one key, as before", async () => {
+    const api = fakeApi(() => ({ status: 400, body: "nope" }));
+    const { router, ask } = rig([provider("p", ["key-one"], api.fetch)], ["p:m"]);
+    await expect(ask()).rejects.toBeInstanceOf(ProviderHttpError);
+    expect(api.sent).toEqual(["key-one"]);
+    expect(keysOf(router, "p")[0]).toMatchObject({ state: "ok", failures: 0 });
+  });
+
+  it("counts a 402 against the key and moves to the next", async () => {
+    const api = fakeApi((key) =>
+      key === "key-one" ? { status: 402, body: '{"error":{"message":"quota used up"}}' } : "ok",
+    );
+    const { router, ask, last } = rig([provider("p", ["key-one", "key-two"], api.fetch)], ["p:m"]);
+    await ask();
+    expect(api.sent).toEqual(["key-one", "key-two"]);
+    expect(last().keys[0]).toEqual({ provider: "p", key: 1, result: "failed", kind: "quota" });
+    expect(keysOf(router, "p")[0]).toMatchObject({
+      failures: 1,
+      last_error: "quota",
+      last_message: "quota used up",
+    });
+  });
+
   it("never switches keys once the stream started", async () => {
     const api = fakeApi((key) => (key === "key-one" ? "break" : "ok"));
     const { router } = rig([provider("p", ["key-one", "key-two"], api.fetch)], ["p:m"]);

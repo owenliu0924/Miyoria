@@ -14,7 +14,7 @@
 import { randomUUID } from "node:crypto";
 import { errorMessage, getLogger } from "@miyoria/runtime/kernel";
 import { type Clock, type JsonValue, systemClock, toTimestamp } from "@miyoria/types";
-import { configKeyIds, KEYLESS_SLOT, type KeyState } from "./keys.js";
+import { cleanMessage, configKeyIds, KEYLESS_SLOT, type KeyState } from "./keys.js";
 import { errorKind } from "./metrics.js";
 import type { LlmRouter } from "./router.js";
 import { ProviderHttpError } from "./types.js";
@@ -66,6 +66,8 @@ export interface KeyRow {
   until: string | null;
   failures: number;
   last_error: string | null;
+  /** What the provider said with it, keys replaced by their positions (at most 300 characters). */
+  last_message: string | null;
   last_error_at: string | null;
   /** When it was added in the panel; `null` for the config file's. */
   added_at: string | null;
@@ -81,7 +83,10 @@ export interface ProviderKeyList {
   test_model: string | null;
   keys: KeyRow[];
   /** A provider without keys in rotation: its own breaker; else `null`. */
-  breaker: Pick<KeyRow, "state" | "until" | "failures" | "last_error" | "last_error_at"> | null;
+  breaker: Pick<
+    KeyRow,
+    "state" | "until" | "failures" | "last_error" | "last_message" | "last_error_at"
+  > | null;
 }
 
 /** How a key's test request went. */
@@ -91,6 +96,11 @@ export interface KeyTestResult {
   kind: string | null;
   /** The HTTP status of a refusal. */
   status: number | null;
+  /**
+   * What the provider said (the body's `error.message`, else its start, else the error's own
+   * message), every key of the provider replaced by its position, at most 300 characters.
+   */
+  message: string | null;
   model: string;
   ms: number;
 }
@@ -206,6 +216,34 @@ export class LlmKeys {
     ];
   }
 
+  /**
+   * What a failed test says, with every key of `provider` (the config file's and the panel's,
+   * disabled ones too) replaced by its position, or its id when it has none.
+   */
+  #scrub(provider: string, error: unknown): string | null {
+    const raw =
+      error instanceof ProviderHttpError && error.detail !== null
+        ? error.detail
+        : errorMessage(error);
+    let text = raw;
+    const rotation = this.#rotation(provider);
+    const all = [
+      ...this.#configOf(provider).map((value, i) => ({ id: `config:${i + 1}`, value })),
+      ...this.#keys
+        .filter((k) => k.provider === provider)
+        .map((k) => ({ id: `panel:${k.id}`, value: k.value })),
+    ];
+    // Longest first, so a key that contains another is replaced whole.
+    for (const k of all.sort((a, b) => b.value.length - a.value.length)) {
+      const value = k.value.trim();
+      if (value.length < 4) continue;
+      const at = rotation.findIndex((r) => r.id === k.id);
+      text = text.split(value).join(at >= 0 ? `#${at + 1}` : "(停用的金鑰)");
+    }
+    const clean = cleanMessage(text);
+    return clean === "" ? null : clean;
+  }
+
   #apply(provider: string): void {
     this.#router.setProviderKeys(provider, this.#rotation(provider));
   }
@@ -254,6 +292,7 @@ export class LlmKeys {
       until: status?.until ?? null,
       failures: status?.failures ?? 0,
       last_error: status?.last_error ?? null,
+      last_message: status?.last_message ?? null,
       last_error_at: status?.last_error_at ?? null,
       added_at: null,
       hint: hintOf(value),
@@ -287,6 +326,7 @@ export class LlmKeys {
                 until: own.until,
                 failures: own.failures,
                 last_error: own.last_error,
+                last_message: own.last_message,
                 last_error_at: own.last_error_at,
               },
         keys: [
@@ -437,14 +477,24 @@ export class LlmKeys {
       throw new KeyManageError("unsupported", `沒有用途用到 \`${provider}\`,不知道用哪個模型測試`);
     }
     const started = this.#clock.now();
+    const full = id.startsWith("config:") || id.startsWith("panel:") ? id : `panel:${id}`;
+    const at = this.#rotation(provider).findIndex((k) => k.id === full);
     try {
-      await this.#router.checkKey(provider, value, signal);
-      return { ok: true, kind: null, status: null, model, ms: this.#clock.now() - started };
+      await this.#router.checkKey(provider, value, signal, at >= 0 ? `#${at + 1}` : "(停用的金鑰)");
+      return {
+        ok: true,
+        kind: null,
+        status: null,
+        message: null,
+        model,
+        ms: this.#clock.now() - started,
+      };
     } catch (error) {
       return {
         ok: false,
         kind: testKind(error),
         status: error instanceof ProviderHttpError ? error.status : null,
+        message: this.#scrub(provider, error),
         model,
         ms: this.#clock.now() - started,
       };
@@ -456,6 +506,7 @@ export class LlmKeys {
 export function testKind(error: unknown): string {
   if (error instanceof ProviderHttpError) {
     if (error.status === 401 || error.status === 403) return "auth";
+    if (error.status === 402) return "quota";
     if (error.status === 429) return "rate_limit";
   }
   return errorKind(error);

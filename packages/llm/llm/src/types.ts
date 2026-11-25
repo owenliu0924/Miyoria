@@ -231,14 +231,26 @@ export async function collectResponse(stream: ChatStream): Promise<ChatResponse>
 }
 
 /** Why an attempt on a key failed in a way another key, or a moment later, could fix. */
-export type KeyFailure = "connect_timeout" | "auth" | "rate_limit" | "server" | "network";
+export type KeyFailure =
+  | "connect_timeout"
+  | "auth"
+  | "rate_limit"
+  | "server"
+  | "network"
+  /** 402: the key's quota or payment. */
+  | "quota"
+  /** Another 4xx that another key of the same call did not get: the key is the problem. */
+  | "rejected";
 
 /** How an attempt on one key ended. */
 export type KeyOutcome =
   /** A 2xx response arrived. */
   | { type: "ok" }
-  /** It failed in a way the breaker counts; `retryAfterMs`: a 429's `Retry-After`. */
-  | { type: "failed"; failure: KeyFailure; retryAfterMs?: number | null }
+  /**
+   * It failed in a way the breaker counts; `retryAfterMs`: a 429's `Retry-After`; `message`:
+   * what the provider said, with the keys replaced by their positions.
+   */
+  | { type: "failed"; failure: KeyFailure; retryAfterMs?: number | null; message?: string | null }
   /** Neither: the request itself was refused (4xx), could not be built, or was aborted. */
   | { type: "ended"; kind: string };
 
@@ -282,7 +294,7 @@ export interface ChatProvider {
    */
   setKeys?(keys: readonly string[]): void;
   /** One cheap request to `model` with `key` alone, no retries; throws what it failed with. */
-  check?(key: string, model: string, signal?: AbortSignal): Promise<void>;
+  check?(key: string, model: string, signal?: AbortSignal, name?: string): Promise<void>;
 }
 
 /** `stream` + `collectResponse`. */
@@ -314,6 +326,11 @@ export class ProviderHttpError extends LlmError {
   constructor(
     message: string,
     readonly status: number,
+    /**
+     * What the provider said: the body's `error.message` when it is JSON with one, else its start;
+     * keys replaced by their positions. `null` when not known.
+     */
+    readonly detail: string | null = null,
   ) {
     super(message);
   }

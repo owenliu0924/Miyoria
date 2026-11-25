@@ -205,6 +205,42 @@ describe("panel keys", () => {
     await expect(keys.test("p", "config:9")).rejects.toThrow("沒有這把金鑰");
   });
 
+  it("tests the way real requests go, and says what the provider answered", async () => {
+    const sessions: (string | null)[] = [];
+    const fetch: typeof globalThis.fetch = async (_url, init) => {
+      const headers = new Headers(init?.headers);
+      sessions.push(headers.get("x-opencode-session"));
+      const key = (headers.get("authorization") ?? "").replace(/^Bearer /, "");
+      if (headers.get("x-opencode-session") === null) {
+        return new Response('{"error":{"message":"MissingSessionID"}}', { status: 400 });
+      }
+      if (key === "key-config-one") return new Response(REPLY, { status: 200 });
+      const message = `Hosted outside your region.\u0007 Key ${key} or key-config-one: select Global. ${"x".repeat(400)}`;
+      return new Response(JSON.stringify({ error: { type: "invalid_request_error", message } }), {
+        status: 400,
+      });
+    };
+    const config = new OpenAiConfig("http://provider.invalid/v1");
+    config.kind = "opencode";
+    config.apiKey = "key-config-one";
+    config.sessionHeader = "x-opencode-session";
+    const router = new LlmRouter(
+      new Map([["p", new OpenAiProvider("p", config, { fetch })]]),
+      new Map([["chat", [parseModelRef("p:model-a")]]]),
+    );
+    const keys = new LlmKeys(router, new Map([["p", ["key-config-one"]]]), new MemoryState());
+    const added = keys.add("p", "key-region-bound-2", null, "x");
+    expect(await keys.test("p", "config:1")).toMatchObject({ ok: true, message: null });
+    const refused = await keys.test("p", added.id);
+    expect(sessions).toEqual(["key-test", "key-test"]);
+    expect(refused).toMatchObject({ ok: false, kind: "http_4xx", status: 400 });
+    expect(refused.message).toMatch(
+      /^Hosted outside your region\. Key #2 or #1: select Global\. x+…$/,
+    );
+    expect([...(refused.message ?? "")].length).toBe(300);
+    expect(JSON.stringify(refused)).not.toMatch(/key-region-bound-2|key-config-one/);
+  });
+
   it("lists keys but takes none without a store", () => {
     const api = fakeApi();
     const router = new LlmRouter(
@@ -220,7 +256,14 @@ describe("panel keys", () => {
         editable: false,
         test_model: null,
         keys: [],
-        breaker: { state: "ok", until: null, failures: 0, last_error: null, last_error_at: null },
+        breaker: {
+          state: "ok",
+          until: null,
+          failures: 0,
+          last_error: null,
+          last_message: null,
+          last_error_at: null,
+        },
       },
     ]);
     expect(() => keys.add("p", "key-panel-x", null, "x")).toThrow("沒有資料庫,不能存金鑰");

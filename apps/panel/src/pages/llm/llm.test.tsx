@@ -64,7 +64,7 @@ const STATS: LlmCallStats = {
   prices: { "deepseek:deepseek-v4.1-flash": { input_per_mtok: 0.15, cached_input_per_mtok: null, output_per_mtok: 0.6 } },
 };
 
-const KEY_ROW = { label: null, failures: 0, last_error: null, last_error_at: null, until: null, added_at: null, hint: null } as const;
+const KEY_ROW = { label: null, failures: 0, last_error: null, last_message: null, last_error_at: null, until: null, added_at: null, hint: null } as const;
 
 const KEYS: LlmKeysView = {
   providers: [
@@ -74,12 +74,12 @@ const KEYS: LlmKeysView = {
       test_model: "deepseek-v4.1-flash",
       breaker: null,
       keys: [
-        { ...KEY_ROW, id: "config:1", position: 1, source: "config", state: "cooling", until: "2026-11-03T10:05:00.000Z", failures: 2, last_error: "connect_timeout", last_error_at: "2026-11-03T10:04:00.000Z" },
+        { ...KEY_ROW, id: "config:1", position: 1, source: "config", state: "cooling", until: "2026-11-03T10:05:00.000Z", failures: 2, last_error: "connect_timeout", last_message: "no response within 15000 ms", last_error_at: "2026-11-03T10:04:00.000Z" },
         { ...KEY_ROW, id: "panel:a", position: 2, source: "panel", state: "bad", label: "朋友的訂閱", until: "2026-11-03T11:00:00.000Z", last_error: "auth", added_at: "2026-11-03T09:00:00.000Z", hint: "…WXYZ" },
         { ...KEY_ROW, id: "panel:b", position: null, source: "panel", state: "disabled", label: "備用", added_at: "2026-11-03T09:30:00.000Z" },
       ],
     },
-    { provider: "local", editable: true, test_model: null, breaker: { state: "ok", until: null, failures: 0, last_error: null, last_error_at: null }, keys: [] },
+    { provider: "local", editable: true, test_model: null, breaker: { state: "ok", until: null, failures: 0, last_error: null, last_message: null, last_error_at: null }, keys: [] },
   ],
 };
 
@@ -188,6 +188,7 @@ describe("provider keys", () => {
     expect(rows[0]).toHaveTextContent("設定檔");
     expect(rows[0]).toHaveTextContent("冷卻到");
     expect(rows[0]).toHaveTextContent("連線逾時");
+    expect(within(rows[0] as HTMLElement).getByTitle("no response within 15000 ms")).toBeInTheDocument();
     expect(rows[1]).toHaveTextContent("朋友的訂閱");
     expect(rows[1]).toHaveTextContent(/無效,.+再試/);
     expect(rows[1]).toHaveTextContent("…WXYZ");
@@ -204,7 +205,7 @@ describe("provider keys", () => {
       if (url.pathname.startsWith("/api/llm/keys/")) {
         sent.push({ method, path: decodeURIComponent(url.pathname), body });
         if (method === "DELETE") return { body: { deleted: true } };
-        if (url.pathname.endsWith("/test")) return { body: { ok: false, kind: "auth", status: 401, model: "deepseek-v4.1-flash", ms: 120 } };
+        if (url.pathname.endsWith("/test")) return { body: { ok: false, kind: "http_4xx", status: 400, message: "Hosted outside your region. <b>Select Global</b>", model: "deepseek-v4.1-flash", ms: 120 } };
         return { body: { ...KEY_ROW, id: "panel:c", position: 3, source: "panel", state: "ok", label: "新的" } };
       }
       return undefined;
@@ -228,6 +229,8 @@ describe("provider keys", () => {
     expect(screen.queryByRole("menuitem", { name: /刪除/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("menuitem", { name: /測試/ }));
     await waitFor(() => expect(sent.at(-1)?.path).toBe("/api/llm/keys/deepseek/config:1/test"));
+    // What the provider said, as plain text.
+    expect(await screen.findByText("Hosted outside your region. <b>Select Global</b>")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "deepseek #2 的動作" }));
     await user.click(screen.getByRole("menuitem", { name: /刪除/ }));
