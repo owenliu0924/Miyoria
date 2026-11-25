@@ -28,7 +28,13 @@ import {
 } from "./call-writer.js";
 import { LlmCallLog, MAX_CALLS } from "./calls.js";
 import { BudgetConfigSchema, CostTracker, PricingSchema, periodStarts } from "./cost.js";
-import { KeyBreakerFieldsSchema, type KeyBreakerSettings, keyBreakerSettings } from "./keys.js";
+import {
+  KeyBreakerFieldsSchema,
+  type KeyBreakerSettings,
+  keyBreakerSettings,
+  usableKeys,
+} from "./keys.js";
+import { LlmKeys } from "./panel-keys.js";
 import { LlmRouter } from "./router.js";
 import { type ChatProvider, LlmError, type ModelRef, ModelRefSchema } from "./types.js";
 
@@ -151,6 +157,8 @@ export interface ProviderFactory {
 }
 
 export const LlmRouterKey = serviceKey<LlmRouter>("LlmRouter");
+/** The panel's API keys of the running router (`panel-keys.ts`). */
+export const LlmKeysKey = serviceKey<LlmKeys>("LlmKeys");
 
 export interface LlmModuleOptions {
   /** Purpose overrides from the active profile (`profile.toml` `[llm.purposes]`). */
@@ -284,8 +292,23 @@ export class LlmModule implements Module {
         for await (const _ of interval(CALL_LOG_PRUNE_INTERVAL_MS, signal)) await writer.prune();
       });
     }
+    // The keys added in the panel, on top of the config file's.
+    const keys = new LlmKeys(
+      router,
+      new Map(
+        Object.entries(this.#config.providers).map(([n, c]) => [
+          n,
+          usableKeys(c.api_key, c.api_keys),
+        ]),
+      ),
+      ctx.services.get(StoreKey)?.config?.state ?? null,
+      ctx.clock,
+    );
+    const added = keys.load();
+    if (added > 0) ctx.log.info({ keys: added }, "using API keys added in the panel");
     router.announceBudget();
     ctx.provide(LlmRouterKey, router);
+    ctx.provide(LlmKeysKey, keys);
     this.#running = { router, clock: ctx.clock };
   }
 

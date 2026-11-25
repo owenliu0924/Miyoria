@@ -117,6 +117,8 @@ export interface ProviderKeys {
 }
 
 interface Slot {
+  /** Stable across reshapes: `config:<n>` for a key of the config file, `panel:<id>` for one added in the panel. */
+  id: string;
   failures: number;
   /** Skipped until then; past it, the next pick probes the key. `null`: closed. */
   openUntil: number | null;
@@ -130,11 +132,30 @@ interface Slot {
   lastError: string | null;
 }
 
+const slot = (id: string): Slot => ({
+  id,
+  failures: 0,
+  openUntil: null,
+  level: 0,
+  bad: false,
+  probing: false,
+  lastFailureAt: null,
+  lastError: null,
+});
+
+/** The ids of a provider's keys as the config file gives them (before the panel adds any). */
+export const configKeyIds = (count: number): string[] =>
+  Array.from({ length: count }, (_, i) => `config:${i + 1}`);
+
+/** The id of the one slot of a provider without keys. */
+export const KEYLESS_SLOT = "provider";
+
 /** The keys of one provider and their breakers. */
 export class KeyPool {
   readonly provider: string;
-  readonly keyed: boolean;
-  readonly #slots: Slot[];
+  #keyed: boolean;
+  /** Replaced, never changed in place, by `reshape`: a call keeps the slots it started with. */
+  #slots: readonly Slot[];
   readonly #settings: KeyBreakerSettings;
   readonly #clock: Clock;
   /** Where the next call's round-robin starts. */
@@ -143,31 +164,46 @@ export class KeyPool {
   /** `count`: the provider's API keys (0: a keyless provider, one slot for the provider). */
   constructor(provider: string, count: number, settings: KeyBreakerSettings, clock: Clock) {
     this.provider = provider;
-    this.keyed = count > 0;
     this.#settings = settings;
     this.#clock = clock;
-    this.#slots = Array.from({ length: Math.max(1, count) }, () => ({
-      failures: 0,
-      openUntil: null,
-      level: 0,
-      bad: false,
-      probing: false,
-      lastFailureAt: null,
-      lastError: null,
-    }));
+    this.#keyed = count > 0;
+    this.#slots = count > 0 ? configKeyIds(count).map(slot) : [slot(KEYLESS_SLOT)];
+  }
+
+  get keyed(): boolean {
+    return this.#keyed;
   }
 
   get size(): number {
     return this.#slots.length;
   }
 
+  /** The ids of the keys in rotation, in order (position = index + 1). */
+  ids(): string[] {
+    return this.#keyed ? this.#slots.map((s) => s.id) : [];
+  }
+
+  /**
+   * The provider's keys are now `ids`, in this order (none: keyless). A key that stays keeps what
+   * the breaker knows about it; a new one starts closed. Calls under way finish on the keys they
+   * started with.
+   */
+  reshape(ids: readonly string[]): void {
+    const old = new Map(this.#slots.map((s) => [s.id, s]));
+    this.#keyed = ids.length > 0;
+    this.#slots = this.#keyed
+      ? ids.map((id) => old.get(id) ?? slot(id))
+      : [old.get(KEYLESS_SLOT) ?? slot(KEYLESS_SLOT)];
+    this.#cursor %= this.#slots.length;
+  }
+
   get #off(): boolean {
     return this.#settings.failures <= 0;
   }
 
-  #usable(slot: Slot, now: number): boolean {
+  #usable(s: Slot, now: number): boolean {
     if (this.#off) return true;
-    return !slot.probing && (slot.openUntil === null || now >= slot.openUntil);
+    return !s.probing && (s.openUntil === null || now >= s.openUntil);
   }
 
   /** Whether some key may be sent with now (closed, or due for its probe). */
@@ -184,69 +220,68 @@ export class KeyPool {
   }
 
   /**
-   * The keys of one call. `lastResort`: every key is cooling and nothing else is left, so the
-   * least recently failed one is tried once (`KeyChooser.lastResort`). `onAttempt` hears every
-   * pick's outcome and every key passed over.
+   * The keys of one call (the slots in rotation now). `lastResort`: every key is cooling and
+   * nothing else is left, so the least recently failed one is tried once
+   * (`KeyChooser.lastResort`). `onAttempt` hears every pick's outcome and every key passed over.
    */
   chooser(lastResort: boolean, onAttempt: (attempt: KeyAttempt) => void): CallKeys {
-    return new CallKeys(this, lastResort, onAttempt);
+    return new CallKeys(this, this.#slots, lastResort, onAttempt);
   }
 
-  /** @internal The next key of a call, not in `tried`; `null` when none is left. */
+  /** @internal The next key of a call among `slots`, not in `tried`; `null` when none is left. */
   pick(
+    slots: readonly Slot[],
     tried: ReadonlySet<number>,
     lastResort: boolean,
     skipped: (index: number, kind: KeyState) => void,
   ): { index: number; probe: boolean } | null {
     const now = this.#clock.now();
-    const n = this.#slots.length;
+    const n = slots.length;
     if (lastResort) {
       let best: number | null = null;
       for (let i = 0; i < n; i++) {
         if (tried.has(i)) continue;
-        const s = this.#slots[i] as Slot;
-        const b = best === null ? null : (this.#slots[best] as Slot);
+        const s = slots[i] as Slot;
+        const b = best === null ? null : (slots[best] as Slot);
         if (b === null || (s.lastFailureAt ?? -1) < (b.lastFailureAt ?? -1)) best = i;
       }
       if (best === null) return null;
-      return { index: best, probe: this.#claim(best) };
+      return { index: best, probe: this.#claim(slots[best] as Slot) };
     }
     // After the key a call last started with, so calls take turns over the usable keys.
     for (let step = 0; step < n; step++) {
       const i = (this.#cursor + step) % n;
       if (tried.has(i)) continue;
-      const s = this.#slots[i] as Slot;
+      const s = slots[i] as Slot;
       if (!this.#usable(s, now)) {
         skipped(i, s.bad ? "bad" : "cooling");
         continue;
       }
       if (tried.size === 0) this.#cursor = (i + 1) % n;
-      return { index: i, probe: this.#claim(i) };
+      return { index: i, probe: this.#claim(s) };
     }
     return null;
   }
 
   /** Marks an open key as being probed; whether it was open. */
-  #claim(index: number): boolean {
-    const s = this.#slots[index] as Slot;
+  #claim(s: Slot): boolean {
     if (this.#off || s.openUntil === null) return false;
     s.probing = true;
     return true;
   }
 
   /**
-   * @internal How an attempt on `index` ended; `probe`: it was the key's probe. Whether the
-   * same key may be sent again in the call: not once this failure left it open (a 429 aside).
+   * @internal How an attempt on `s` (at `position`) ended; `probe`: it was the key's probe.
+   * Whether the same key may be sent again in the call: not once this failure left it open (a
+   * 429 aside).
    */
-  settle(index: number, outcome: KeyOutcome, probe: boolean): boolean {
-    const s = this.#slots[index];
-    if (!s) return true;
-    this.#apply(s, index, outcome, probe);
+  settle(s: Slot, position: number, outcome: KeyOutcome, probe: boolean): boolean {
+    this.#apply(s, position, outcome, probe);
     if (outcome.type !== "failed" || outcome.failure === "rate_limit" || this.#off) return true;
     return s.openUntil === null || this.#clock.now() >= s.openUntil;
   }
 
-  #apply(s: Slot, index: number, outcome: KeyOutcome, probe: boolean): void {
+  #apply(s: Slot, position: number, outcome: KeyOutcome, probe: boolean): void {
     if (probe) s.probing = false;
     const now = this.#clock.now();
     if (outcome.type === "ok") {
@@ -262,11 +297,11 @@ export class KeyPool {
     if (this.#off) return;
     const st = this.#settings;
     if (outcome.failure === "auth") {
-      if (!s.bad && this.keyed) {
+      if (!s.bad && s.id !== KEYLESS_SLOT) {
         log.warn(
           {
             provider: this.provider,
-            key: `#${index + 1}`,
+            key: `#${position}`,
             cooldown_s: Math.round(st.badKeyCooldownMs / 1000),
           },
           "the provider refused this API key (401/403); skipping it",
@@ -293,24 +328,33 @@ export class KeyPool {
     if (s.failures >= st.failures) s.openUntil = now + Math.min(st.cooldownMs, st.maxCooldownMs);
   }
 
+  #statusOf(s: Slot, position: number, now: number): KeyStatus {
+    const cooling = s.probing || (s.openUntil !== null && now < s.openUntil);
+    const state: KeyState = s.bad && s.openUntil !== null ? "bad" : cooling ? "cooling" : "ok";
+    return {
+      key: position,
+      state,
+      until: s.openUntil !== null && now < s.openUntil ? toTimestamp(s.openUntil) : null,
+      failures: s.failures,
+      last_error: s.lastError,
+      last_error_at: s.lastFailureAt === null ? null : toTimestamp(s.lastFailureAt),
+    };
+  }
+
   status(): ProviderKeys {
     const now = this.#clock.now();
     return {
       provider: this.provider,
-      keyed: this.keyed,
-      keys: this.#slots.map((s, i) => {
-        const cooling = s.probing || (s.openUntil !== null && now < s.openUntil);
-        const state: KeyState = s.bad && s.openUntil !== null ? "bad" : cooling ? "cooling" : "ok";
-        return {
-          key: i + 1,
-          state,
-          until: s.openUntil !== null && now < s.openUntil ? toTimestamp(s.openUntil) : null,
-          failures: s.failures,
-          last_error: s.lastError,
-          last_error_at: s.lastFailureAt === null ? null : toTimestamp(s.lastFailureAt),
-        };
-      }),
+      keyed: this.#keyed,
+      keys: this.#slots.map((s, i) => this.#statusOf(s, i + 1, now)),
     };
+  }
+
+  /** The breaker state of the key `id` while it is in rotation, else `null`. */
+  statusOf(id: string): KeyStatus | null {
+    const i = this.#slots.findIndex((s) => s.id === id);
+    if (i < 0) return null;
+    return this.#statusOf(this.#slots[i] as Slot, i + 1, this.#clock.now());
   }
 }
 
@@ -318,20 +362,28 @@ export class KeyPool {
 export class CallKeys implements KeyChooser {
   readonly lastResort: boolean;
   readonly #pool: KeyPool;
+  /** The slots in rotation when the call started: the provider's keys at that moment, in order. */
+  readonly #slots: readonly Slot[];
   readonly #onAttempt: (attempt: KeyAttempt) => void;
   readonly #tried = new Set<number>();
   /** Picks not reported yet, and whether each is a probe. */
   readonly #open = new Map<number, boolean>();
   readonly #skipped = new Set<number>();
 
-  constructor(pool: KeyPool, lastResort: boolean, onAttempt: (attempt: KeyAttempt) => void) {
+  constructor(
+    pool: KeyPool,
+    slots: readonly Slot[],
+    lastResort: boolean,
+    onAttempt: (attempt: KeyAttempt) => void,
+  ) {
     this.#pool = pool;
+    this.#slots = slots;
     this.lastResort = lastResort;
     this.#onAttempt = onAttempt;
   }
 
   next(): number | null {
-    const picked = this.#pool.pick(this.#tried, this.lastResort, (i, kind) => {
+    const picked = this.#pool.pick(this.#slots, this.#tried, this.lastResort, (i, kind) => {
       if (this.#skipped.has(i)) return;
       this.#skipped.add(i);
       this.#onAttempt({ provider: this.#pool.provider, key: i + 1, result: "skipped", kind });
@@ -343,9 +395,11 @@ export class CallKeys implements KeyChooser {
   }
 
   report(key: number, outcome: KeyOutcome): boolean {
+    const s = this.#slots[key];
+    if (s === undefined) return false;
     const probe = this.#open.get(key) ?? false;
     this.#open.delete(key);
-    const again = this.#pool.settle(key, outcome, probe);
+    const again = this.#pool.settle(s, key + 1, outcome, probe);
     this.#onAttempt({
       provider: this.#pool.provider,
       key: key + 1,
@@ -362,8 +416,10 @@ export class CallKeys implements KeyChooser {
 
   /** Settles picks the provider never reported (so a probe never stays claimed). */
   close(): void {
-    for (const [key, probe] of this.#open)
-      this.#pool.settle(key, { type: "ended", kind: "error" }, probe);
+    for (const [key, probe] of this.#open) {
+      const s = this.#slots[key];
+      if (s) this.#pool.settle(s, key + 1, { type: "ended", kind: "error" }, probe);
+    }
     this.#open.clear();
   }
 }

@@ -276,6 +276,13 @@ export interface ChatProvider {
    * retries); later failures are thrown by the stream.
    */
   stream(request: ChatRequest, signal?: AbortSignal, options?: StreamOptions): Promise<ChatStream>;
+  /**
+   * Sends with these keys from the next request on (keys added or removed in the panel). A
+   * provider without it keeps the keys it was built with.
+   */
+  setKeys?(keys: readonly string[]): void;
+  /** One cheap request to `model` with `key` alone, no retries; throws what it failed with. */
+  check?(key: string, model: string, signal?: AbortSignal): Promise<void>;
 }
 
 /** `stream` + `collectResponse`. */

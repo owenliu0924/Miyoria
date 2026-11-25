@@ -72,6 +72,7 @@ export {
 } from "./cost.js";
 export {
   CallKeys,
+  configKeyIds,
   DEFAULT_KEY_BREAKER,
   KEY_FAILURE_KINDS,
   type KeyAttempt,
@@ -94,6 +95,7 @@ export { MockProvider } from "./mock.js";
 export {
   type LlmConfig,
   LlmConfigSchema,
+  LlmKeysKey,
   LlmModule,
   type LlmModuleOptions,
   LlmRouterKey,
@@ -102,6 +104,24 @@ export {
   type ProviderFactory,
 } from "./module.js";
 export * from "./openai/index.js";
+export {
+  HINT_MIN_LENGTH,
+  type KeyErrorCode,
+  KeyManageError,
+  type KeyRef,
+  type KeyRow,
+  type KeySource,
+  type KeyStateStore,
+  type KeyTestResult,
+  keyProblem,
+  LlmKeys,
+  MAX_KEY_LENGTH,
+  MAX_LABEL_LENGTH,
+  PANEL_KEYS_PLUGIN,
+  PANEL_KEYS_STATE,
+  type ProviderKeyList,
+  testKind,
+} from "./panel-keys.js";
 export { LlmRouter, type LlmRouterOptions, RoutedStream, type UsageRecord } from "./router.js";
 export { contextHash, contextSession, sessionId } from "./session.js";
 export {

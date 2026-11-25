@@ -14,6 +14,7 @@ import {
   type ChatProvider,
   type ChatRequest,
   type ChatStream,
+  collectResponse,
   type KeyChooser,
   type KeyOutcome,
   LlmError,
@@ -290,10 +291,13 @@ export class OpenAiProvider implements ChatProvider {
   readonly url: string;
   readonly #kind: ProviderKind;
   readonly #baseUrl: string;
-  /** The API keys, in order (none for a keyless server). */
-  readonly #keys: readonly string[];
-  /** `Authorization` of each key. */
-  readonly #auth: readonly string[];
+  /**
+   * The API keys in rotation and their `Authorization`s. Replaced as a whole (`setKeys`), so a
+   * request goes on with the keys it started with.
+   */
+  #set: KeySet;
+  /** An `Authorization` entry of `headers`: it wins over the keys, as it always did. */
+  readonly #fixedAuth: string | null;
   /** Where a call without the router's chooser starts, so such calls take turns too. */
   #nextKey = 0;
   /** Headers of every request, without `Authorization`. */
@@ -319,18 +323,6 @@ export class OpenAiProvider implements ChatProvider {
     if (config.sessionHeader !== null && !TOKEN.test(config.sessionHeader)) {
       throw new LlmError(`invalid \`session_header\` name \`${config.sessionHeader}\``);
     }
-    const keys = usableKeys(config.apiKey, config.apiKeys);
-    const auth = keys.map((key, i) => {
-      const value = `Bearer ${key}`;
-      if (!HEADER_VALUE.test(value)) {
-        throw new LlmError(
-          keys.length > 1
-            ? `API key #${i + 1} contains invalid characters`
-            : "API key contains invalid characters",
-        );
-      }
-      return value;
-    });
     let custom: string | null = null;
     for (const [k, v] of Object.entries(config.headers)) {
       if (!TOKEN.test(k)) throw new LlmError(`invalid header name \`${k}\``);
@@ -339,11 +331,8 @@ export class OpenAiProvider implements ChatProvider {
       else headers[k.toLowerCase()] = v;
     }
     this.#kind = config.kind;
-    this.#keys = keys;
-    // An `Authorization` entry in `headers` wins over the keys, as it always did.
-    const fixed = custom;
-    this.#auth =
-      fixed === null ? auth : Array.from({ length: Math.max(1, keys.length) }, () => fixed);
+    this.#fixedAuth = custom;
+    this.#set = this.#keySet(usableKeys(config.apiKey, config.apiKeys));
     this.#headers = headers;
     this.#sessionHeader = config.sessionHeader?.toLowerCase() ?? null;
     this.#thinkingOff = config.thinkingOff;
@@ -359,7 +348,62 @@ export class OpenAiProvider implements ChatProvider {
   }
 
   get keyCount(): number {
-    return this.#keys.length;
+    return this.#set.keys.length;
+  }
+
+  /** Throws `LlmError` (naming the key by position only) for a key no header can carry. */
+  #keySet(keys: readonly string[]): KeySet {
+    const auth = keys.map((key, i) => {
+      const value = `Bearer ${key}`;
+      if (!HEADER_VALUE.test(value)) {
+        throw new LlmError(
+          keys.length > 1
+            ? `API key #${i + 1} contains invalid characters`
+            : "API key contains invalid characters",
+        );
+      }
+      return value;
+    });
+    const fixed = this.#fixedAuth;
+    return {
+      keys: [...keys],
+      auth: fixed === null ? auth : Array.from({ length: Math.max(1, keys.length) }, () => fixed),
+    };
+  }
+
+  /**
+   * Sends with `keys` from the next request on (the router's `setProviderKeys` keeps its pool in
+   * step). Requests under way finish on the keys they started with.
+   */
+  setKeys(keys: readonly string[]): void {
+    this.#set = this.#keySet(keys);
+    this.#nextKey = 0;
+  }
+
+  /**
+   * Whether `key` works: one request of one token to `model` with it, no retries. Throws what
+   * the request failed with (never naming the key); resolves once the answer has been read.
+   */
+  async check(key: string, model: string, signal?: AbortSignal): Promise<void> {
+    const set = this.#keySet([key]);
+    let given = false;
+    const once: KeyChooser = {
+      lastResort: true,
+      next: () => {
+        if (given) return null;
+        given = true;
+        return 0;
+      },
+      report: () => false,
+    };
+    const request: ChatRequest = {
+      model,
+      messages: [{ role: "user", content: "ping", name: null, tool_calls: [], tool_call_id: null }],
+      max_tokens: 1,
+      thinking: false,
+      reasoning: "off",
+    };
+    await collectResponse(await this.#run(request, signal, once, set));
   }
 
   toString(): string {
@@ -387,10 +431,21 @@ export class OpenAiProvider implements ChatProvider {
    * at most `1 + connectRetries` wait out a connect timeout. A last resort (every key cooling)
    * is one attempt.
    */
-  async stream(
+  stream(
     request: ChatRequest,
     signal?: AbortSignal,
     options: StreamOptions = {},
+  ): Promise<ChatStream> {
+    // The keys now: the router's chooser was made for these same ones a moment ago.
+    const set = this.#set;
+    return this.#run(request, signal, options.keys ?? this.#plainKeys(set), set);
+  }
+
+  async #run(
+    request: ChatRequest,
+    signal: AbortSignal | undefined,
+    keys: KeyChooser,
+    set: KeySet,
   ): Promise<ChatStream> {
     log.debug(
       { provider: this.name, model: request.model, url: this.url },
@@ -402,7 +457,7 @@ export class OpenAiProvider implements ChatProvider {
         kind: this.#kind,
         baseUrl: this.#baseUrl,
         // Replaced by our own `Authorization` per attempt (`#send`).
-        apiKey: this.#keys[0] ?? null,
+        apiKey: set.keys[0] ?? null,
         headers: this.#headers,
         requestHeaders:
           this.#sessionHeader !== null && session !== null
@@ -414,7 +469,6 @@ export class OpenAiProvider implements ChatProvider {
       request,
       signal,
     );
-    const keys = options.keys ?? this.#plainKeys();
     let key = keys.next();
     if (key === null) throw new ProviderCoolingError(this.name);
     const once = keys.lastResort;
@@ -423,7 +477,7 @@ export class OpenAiProvider implements ChatProvider {
       const sent = new Sent();
       const sendWith = key;
       const events = step.open({
-        fetch: (_input, init) => this.#send(sent, step.patch, init, sendWith),
+        fetch: (_input, init) => this.#send(sent, step.patch, init, set.auth[sendWith]),
         sawDone: () => sent.sawDone(),
       });
       const first = events.next();
@@ -434,7 +488,7 @@ export class OpenAiProvider implements ChatProvider {
         // Nothing is streamed before the response arrives: `first` only wins by failing.
         await Promise.race([sent.responded.then(() => RESPONDED), first]);
         keys.report(key, { type: "ok" });
-        return this.#events(events, first, sent, signal);
+        return this.#events(events, first, sent, signal, set);
       } catch (caught) {
         error = caught;
       }
@@ -445,7 +499,7 @@ export class OpenAiProvider implements ChatProvider {
         if (signal?.aborted) throw signal.reason;
         throw abortError();
       }
-      const which = this.#keys.length > 1 ? ` (key #${key + 1})` : "";
+      const which = set.keys.length > 1 ? ` (key #${key + 1})` : "";
       // What failed, how the key is reported, whether another attempt is allowed, and how the
       // same key would be sent again (`null`: it would not).
       let fatal: Error;
@@ -473,7 +527,7 @@ export class OpenAiProvider implements ChatProvider {
         const status = failure.status;
         reason = `HTTP ${status}`;
         fatal = new ProviderHttpError(
-          `${this.name}${which}: HTTP ${statusText(status)}: ${snippet(this.#redact(failure.body))}`,
+          `${this.name}${which}: HTTP ${statusText(status)}: ${snippet(redact(failure.body, set))}`,
           status,
         );
         allowed = attempt < this.#maxRetries;
@@ -542,21 +596,11 @@ export class OpenAiProvider implements ChatProvider {
   }
 
   /** Every key once, starting with the next one in turn (a call without the router). */
-  #plainKeys(): KeyChooser {
-    const n = Math.max(1, this.#keys.length);
-    const start = this.#nextKey;
+  #plainKeys(set: KeySet): KeyChooser {
+    const n = Math.max(1, set.keys.length);
+    const start = this.#nextKey % n;
     this.#nextKey = (start + 1) % n;
     return plainKeys(n, start);
-  }
-
-  /** `text` with any of the keys in it replaced by its position. */
-  #redact(text: string): string {
-    let out = text;
-    this.#keys.forEach((key, i) => {
-      const k = key.trim();
-      if (k.length >= 4) out = out.split(k).join(`#${i + 1}`);
-    });
-    return out;
   }
 
   /**
@@ -588,13 +632,12 @@ export class OpenAiProvider implements ChatProvider {
     sent: Sent,
     patch: BodyPatch,
     init: RequestInit | undefined,
-    key: number,
+    auth: string | undefined,
   ): Promise<Response> {
     sent.called = true;
     const headers = Object.fromEntries(new Headers(init?.headers));
     delete headers.authorization;
     Object.assign(headers, this.#headers, { accept: "text/event-stream" });
-    const auth = this.#auth[key];
     if (auth !== undefined) headers.authorization = auth;
     const body = finalBody(String(init?.body ?? "{}"), patch);
     const idle = new IdleTimer(this.#timeoutMs);
@@ -636,6 +679,7 @@ export class OpenAiProvider implements ChatProvider {
     first: Promise<IteratorResult<StreamEvent, void>>,
     sent: Sent,
     signal: AbortSignal | undefined,
+    set: KeySet,
   ): ChatStream {
     try {
       for (let next = first; ; next = events.next()) {
@@ -643,7 +687,7 @@ export class OpenAiProvider implements ChatProvider {
         try {
           result = await next;
         } catch (error) {
-          throw this.#streamError(error, sent, signal);
+          throw this.#streamError(error, sent, signal, set);
         }
         if (result.done) return;
         yield result.value;
@@ -654,7 +698,7 @@ export class OpenAiProvider implements ChatProvider {
     }
   }
 
-  #streamError(error: unknown, sent: Sent, signal: AbortSignal | undefined): unknown {
+  #streamError(error: unknown, sent: Sent, signal: AbortSignal | undefined, set: KeySet): unknown {
     if (signal?.aborted) return signal.reason;
     const failure = error instanceof StepError ? error.failure : null;
     switch (failure?.kind) {
@@ -664,16 +708,32 @@ export class OpenAiProvider implements ChatProvider {
         return new LlmError(`${this.name}: stream ended unexpectedly`);
       case "chunk":
         return new LlmError(
-          `${this.name}: invalid stream chunk (${failure.reason}): ${snippet(this.#redact(failure.payload))}`,
+          `${this.name}: invalid stream chunk (${failure.reason}): ${snippet(redact(failure.payload, set))}`,
         );
       case "provider":
-        return new LlmError(`${this.name}: error in stream: ${this.#redact(failure.detail)}`);
+        return new LlmError(`${this.name}: error in stream: ${redact(failure.detail, set)}`);
       default: {
         const cause = sent.bodyError ?? (error instanceof StepError ? error.cause : error);
         return new LlmError(`${this.name}: stream interrupted: ${errorMessage(cause)}`, { cause });
       }
     }
   }
+}
+
+/** The keys a request is sent with, and the `Authorization` of each. */
+interface KeySet {
+  readonly keys: readonly string[];
+  readonly auth: readonly string[];
+}
+
+/** `text` with any of the keys of `set` in it replaced by its position. */
+function redact(text: string, set: KeySet): string {
+  let out = text;
+  set.keys.forEach((key, i) => {
+    const k = key.trim();
+    if (k.length >= 4) out = out.split(k).join(`#${i + 1}`);
+  });
+  return out;
 }
 
 /** Aborts its signal (a `TimeoutError`) after `ms` without `reset()`. */

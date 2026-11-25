@@ -25,6 +25,7 @@ import {
   type KeyAttempt,
   type KeyBreakerSettings,
   KeyPool,
+  type KeyStatus,
   type ProviderKeys,
 } from "./keys.js";
 import { errorKind, type LlmMetrics, llmMetrics } from "./metrics.js";
@@ -202,6 +203,69 @@ export class LlmRouter {
    */
   providerKeys(): ProviderKeys[] {
     return [...this.#pools.values()].map((p) => p.status());
+  }
+
+  /** Names of the providers, in config order. */
+  providerNames(): string[] {
+    return [...this.#providers.keys()];
+  }
+
+  /** Whether provider `name` can change its keys without a restart. */
+  takesKeys(name: string): boolean {
+    return typeof this.#providers.get(name)?.setKeys === "function";
+  }
+
+  /** Whether provider `name` can test a key (`ChatProvider.check`). */
+  testsKeys(name: string): boolean {
+    return typeof this.#providers.get(name)?.check === "function";
+  }
+
+  /** The breaker state of key `id` of provider `name` while it is in rotation, else `null`. */
+  keyStatus(name: string, id: string): KeyStatus | null {
+    return this.#pools.get(name)?.statusOf(id) ?? null;
+  }
+
+  /**
+   * Provider `name` sends with `keys` (in this order) from its next request on, and its pool is
+   * rebuilt in place: a key that stays (same `id`) keeps its breaker state. Throws `LlmError` for
+   * an unknown provider or one that cannot change keys while running.
+   */
+  setProviderKeys(name: string, keys: readonly { id: string; value: string }[]): void {
+    const provider = this.#providers.get(name);
+    const pool = this.#pools.get(name);
+    if (!provider || !pool) throw new LlmError(`unknown provider \`${name}\``);
+    if (typeof provider.setKeys !== "function") {
+      throw new LlmError(`provider \`${name}\` cannot change its keys while running`);
+    }
+    // Both in the same turn: no request starts between them.
+    provider.setKeys(keys.map((k) => k.value));
+    pool.reshape(keys.map((k) => k.id));
+  }
+
+  /** The model a key of provider `name` is tested on: its first in the purposes' chains. */
+  testModel(name: string): string | null {
+    for (const chain of this.#purposes.values()) {
+      const model = chain.find((m) => m.provider === name);
+      if (model) return model.model;
+    }
+    return null;
+  }
+
+  /**
+   * Whether `key` works with provider `name` (`ChatProvider.check` on `testModel`). Throws
+   * `LlmError` when the provider cannot test keys or no purpose uses it; else rejects with what
+   * the request failed with.
+   */
+  async checkKey(name: string, key: string, signal?: AbortSignal): Promise<{ model: string }> {
+    const provider = this.#providers.get(name);
+    if (!provider) throw new LlmError(`unknown provider \`${name}\``);
+    if (typeof provider.check !== "function") {
+      throw new LlmError(`provider \`${name}\` cannot test a key`);
+    }
+    const model = this.testModel(name);
+    if (model === null) throw new LlmError(`no purpose uses provider \`${name}\``);
+    await provider.check(key, model, signal);
+    return { model };
   }
 
   /**
