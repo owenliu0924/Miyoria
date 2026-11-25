@@ -21,7 +21,6 @@ import {
 } from "./cost.js";
 import {
   DEFAULT_KEY_BREAKER,
-  KEY_FAILURE_KINDS,
   type KeyAttempt,
   type KeyBreakerSettings,
   KeyPool,
@@ -51,9 +50,6 @@ import {
 } from "./types.js";
 
 const log = getLogger("llm.router");
-
-/** Kinds of a key's attempt the breaker counts (`miyoria_llm_errors_total{stage="key"}`). */
-const KEY_KINDS: ReadonlySet<string> = new Set(Object.values(KEY_FAILURE_KINDS));
 
 /** Calls and tokens per `provider:model` since startup. */
 export interface UsageRecord {
@@ -256,7 +252,12 @@ export class LlmRouter {
    * `LlmError` when the provider cannot test keys or no purpose uses it; else rejects with what
    * the request failed with.
    */
-  async checkKey(name: string, key: string, signal?: AbortSignal): Promise<{ model: string }> {
+  async checkKey(
+    name: string,
+    key: string,
+    signal?: AbortSignal,
+    label?: string,
+  ): Promise<{ model: string }> {
     const provider = this.#providers.get(name);
     if (!provider) throw new LlmError(`unknown provider \`${name}\``);
     if (typeof provider.check !== "function") {
@@ -264,7 +265,7 @@ export class LlmRouter {
     }
     const model = this.testModel(name);
     if (model === null) throw new LlmError(`no purpose uses provider \`${name}\``);
-    await provider.check(key, model, signal);
+    await provider.check(key, model, signal, label);
     return { model };
   }
 
@@ -490,9 +491,9 @@ export class LlmRouter {
       if (lastResort) {
         log.warn({ model: key }, "every key is cooling and nothing else is left, trying it once");
       }
-      const onAttempt = (a: KeyAttempt) => {
+      const onAttempt = (a: KeyAttempt, counted: boolean) => {
         if (pool.keyed) record.keys.push(a);
-        if (a.result === "failed" && a.kind !== null && KEY_KINDS.has(a.kind)) {
+        if (counted && a.kind !== null) {
           this.#metrics.errors.inc({ model: key, purpose, stage: "key", kind: a.kind });
         }
       };

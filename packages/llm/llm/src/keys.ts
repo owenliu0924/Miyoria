@@ -93,7 +93,25 @@ export const KEY_FAILURE_KINDS: Readonly<Record<KeyFailure, string>> = {
   rate_limit: "rate_limit",
   server: "http_5xx",
   network: "network",
+  quota: "quota",
+  rejected: "http_4xx",
 };
+
+/** The longest message of a failure kept or shown. */
+export const MAX_MESSAGE_CHARS = 300;
+
+/**
+ * A provider's message as it is kept and shown: control characters out, white space collapsed, at
+ * most `MAX_MESSAGE_CHARS`. The caller has replaced the keys in it by their positions.
+ */
+export function cleanMessage(text: string, max = MAX_MESSAGE_CHARS): string {
+  const plain = text
+    .replace(/\p{Cc}+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const chars = [...plain];
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : plain;
+}
 
 export type KeyState = "ok" | "cooling" | "bad";
 
@@ -106,6 +124,8 @@ export interface KeyStatus {
   /** Consecutive failures. */
   failures: number;
   last_error: string | null;
+  /** What the provider said with the last failure (keys replaced by positions), if anything. */
+  last_message: string | null;
   last_error_at: string | null;
 }
 
@@ -130,6 +150,7 @@ interface Slot {
   probing: boolean;
   lastFailureAt: number | null;
   lastError: string | null;
+  lastMessage: string | null;
 }
 
 const slot = (id: string): Slot => ({
@@ -141,6 +162,7 @@ const slot = (id: string): Slot => ({
   probing: false,
   lastFailureAt: null,
   lastError: null,
+  lastMessage: null,
 });
 
 /** The ids of a provider's keys as the config file gives them (before the panel adds any). */
@@ -224,7 +246,10 @@ export class KeyPool {
    * nothing else is left, so the least recently failed one is tried once
    * (`KeyChooser.lastResort`). `onAttempt` hears every pick's outcome and every key passed over.
    */
-  chooser(lastResort: boolean, onAttempt: (attempt: KeyAttempt) => void): CallKeys {
+  chooser(
+    lastResort: boolean,
+    onAttempt: (attempt: KeyAttempt, counted: boolean) => void,
+  ): CallKeys {
     return new CallKeys(this, this.#slots, lastResort, onAttempt);
   }
 
@@ -294,6 +319,7 @@ export class KeyPool {
     if (outcome.type === "ended") return;
     s.lastFailureAt = now;
     s.lastError = KEY_FAILURE_KINDS[outcome.failure];
+    s.lastMessage = outcome.message ? cleanMessage(outcome.message) : null;
     if (this.#off) return;
     const st = this.#settings;
     if (outcome.failure === "auth") {
@@ -337,6 +363,7 @@ export class KeyPool {
       until: s.openUntil !== null && now < s.openUntil ? toTimestamp(s.openUntil) : null,
       failures: s.failures,
       last_error: s.lastError,
+      last_message: s.lastMessage,
       last_error_at: s.lastFailureAt === null ? null : toTimestamp(s.lastFailureAt),
     };
   }
@@ -364,7 +391,7 @@ export class CallKeys implements KeyChooser {
   readonly #pool: KeyPool;
   /** The slots in rotation when the call started: the provider's keys at that moment, in order. */
   readonly #slots: readonly Slot[];
-  readonly #onAttempt: (attempt: KeyAttempt) => void;
+  readonly #onAttempt: (attempt: KeyAttempt, counted: boolean) => void;
   readonly #tried = new Set<number>();
   /** Picks not reported yet, and whether each is a probe. */
   readonly #open = new Map<number, boolean>();
@@ -374,7 +401,7 @@ export class CallKeys implements KeyChooser {
     pool: KeyPool,
     slots: readonly Slot[],
     lastResort: boolean,
-    onAttempt: (attempt: KeyAttempt) => void,
+    onAttempt: (attempt: KeyAttempt, counted: boolean) => void,
   ) {
     this.#pool = pool;
     this.#slots = slots;
@@ -386,7 +413,10 @@ export class CallKeys implements KeyChooser {
     const picked = this.#pool.pick(this.#slots, this.#tried, this.lastResort, (i, kind) => {
       if (this.#skipped.has(i)) return;
       this.#skipped.add(i);
-      this.#onAttempt({ provider: this.#pool.provider, key: i + 1, result: "skipped", kind });
+      this.#onAttempt(
+        { provider: this.#pool.provider, key: i + 1, result: "skipped", kind },
+        false,
+      );
     });
     if (picked === null) return null;
     this.#tried.add(picked.index);
@@ -400,17 +430,20 @@ export class CallKeys implements KeyChooser {
     const probe = this.#open.get(key) ?? false;
     this.#open.delete(key);
     const again = this.#pool.settle(s, key + 1, outcome, probe);
-    this.#onAttempt({
-      provider: this.#pool.provider,
-      key: key + 1,
-      result: outcome.type === "ok" ? "ok" : "failed",
-      kind:
-        outcome.type === "ok"
-          ? null
-          : outcome.type === "failed"
-            ? KEY_FAILURE_KINDS[outcome.failure]
-            : outcome.kind,
-    });
+    this.#onAttempt(
+      {
+        provider: this.#pool.provider,
+        key: key + 1,
+        result: outcome.type === "ok" ? "ok" : "failed",
+        kind:
+          outcome.type === "ok"
+            ? null
+            : outcome.type === "failed"
+              ? KEY_FAILURE_KINDS[outcome.failure]
+              : outcome.kind,
+      },
+      outcome.type === "failed",
+    );
     return again;
   }
 
