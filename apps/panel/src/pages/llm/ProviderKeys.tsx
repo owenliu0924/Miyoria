@@ -104,7 +104,7 @@ function KeyTable({ p, onDelete }: { p: LlmProviderKeyList; onDelete: (k: LlmKey
       {
         onSuccess: (t) => {
           if (t.ok) notify.ok(`${p.provider} ${keyName(k)} 可以用(${t.model},${Math.round(t.ms)} ms)`);
-          else notify.warn(`${p.provider} ${keyName(k)} 測試失敗:${t.kind ? (ERROR_LABEL[t.kind] ?? t.kind) : "錯誤"}${t.status !== null ? `(HTTP ${t.status})` : ""}`);
+          else notify.warn(`${p.provider} ${keyName(k)} 測試失敗:${t.kind ? (ERROR_LABEL[t.kind] ?? t.kind) : "錯誤"}${t.status !== null ? `(HTTP ${t.status})` : ""}`, t.message);
         },
         onError: (e) => notify.error(e, "測試不了"),
       },
@@ -145,7 +145,7 @@ function KeyTable({ p, onDelete }: { p: LlmProviderKeyList; onDelete: (k: LlmKey
                 <span className={cn(k.state !== "ok" && k.state !== "disabled" && "text-primary", k.state === "disabled" && "text-muted-foreground")}>{keyStateText(k)}</span>
               </span>
             </TableCell>
-            <TableCell className="hidden text-xs text-muted-foreground md:table-cell">
+            <TableCell className="hidden text-xs text-muted-foreground md:table-cell" title={k.last_message ?? undefined}>
               {k.last_error ? `${ERROR_LABEL[k.last_error] ?? k.last_error}${k.last_error_at ? ` · ${fmtTime(k.last_error_at)}` : ""}` : "—"}
             </TableCell>
             <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">{k.added_at ? fmtDateTime(k.added_at) : "設定檔"}</TableCell>

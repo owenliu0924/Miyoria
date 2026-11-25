@@ -73,6 +73,7 @@ export const ERROR_LABEL: Record<string, string> = {
   cooling: "金鑰都在冷卻,跳過",
   auth: "金鑰被拒(401/403)",
   rate_limit: "被限流(429)",
+  quota: "額度用完(402)",
   network: "網路錯誤",
 };
 

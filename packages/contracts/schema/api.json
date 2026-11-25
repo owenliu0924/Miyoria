@@ -13323,6 +13323,12 @@
             "null"
           ]
         },
+        "last_message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "last_error_at": {
           "type": [
             "string",
@@ -13351,6 +13357,7 @@
         "until",
         "failures",
         "last_error",
+        "last_message",
         "last_error_at",
         "added_at",
         "hint"
@@ -13374,6 +13381,12 @@
             "null"
           ]
         },
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "model": {
           "type": "string"
         },
@@ -13385,6 +13398,7 @@
         "ok",
         "kind",
         "status",
+        "message",
         "model",
         "ms"
       ]
@@ -13475,6 +13489,12 @@
                     "null"
                   ]
                 },
+                "last_message": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "last_error_at": {
                   "type": [
                     "string",
@@ -13487,6 +13507,7 @@
                 "until",
                 "failures",
                 "last_error",
+                "last_message",
                 "last_error_at"
               ]
             },
