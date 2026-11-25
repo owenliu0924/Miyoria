@@ -1,4 +1,4 @@
-import type { LlmCallKind, LlmCallRecord, LlmCallStatus, LlmKeyAttempt, LlmKeyStatus, LlmPricing } from "@miyoria/contracts/api";
+import type { LlmCallKind, LlmCallRecord, LlmCallStatus, LlmKeyAttempt, LlmKeyRow, LlmPricing } from "@miyoria/contracts/api";
 import type { Tone } from "@/components/status";
 
 /** Purposes in words; unknown ones show their key. */
@@ -83,10 +83,11 @@ export function keyAttemptLabel(k: LlmKeyAttempt): string {
   return k.kind ? (ERROR_LABEL[k.kind] ?? k.kind) : "失敗";
 }
 
-export const KEY_STATE_TONE: Record<LlmKeyStatus["state"], Tone> = {
+export const KEY_STATE_TONE: Record<LlmKeyRow["state"], Tone> = {
   ok: "success",
   cooling: "warning",
   bad: "danger",
+  disabled: "neutral",
 };
 
 export const purposeLabel = (p: string) => PURPOSE_LABEL[p] ?? p;

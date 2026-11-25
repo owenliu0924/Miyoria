@@ -75,6 +75,7 @@ import { digestRpc, knowledgeRpc, reflectionRpc } from "./learning.js";
 import { lifeRpc } from "./life.js";
 import { livePatRpc } from "./live.js";
 import { llmCallsRpc, thoughtRpc } from "./llmcalls.js";
+import { llmKeysRpc } from "./llmkeys.js";
 import { marketAdminRpc, marketRpc } from "./market-routes.js";
 import { memberRpc } from "./member.js";
 import { memoryRpc } from "./memory.js";
@@ -156,7 +157,7 @@ export const router = os.router({
   modules: { list: coreRpc.modules.list, ...settingsRpc, action: coreRpc.modules.action },
   places: { ...placesRpc, ...placesSpacesRpc },
   events: eventsRpc,
-  llm: { ...coreRpc.llm, ...llmCallsRpc, ...quotaRpc },
+  llm: { ...coreRpc.llm, ...llmCallsRpc, ...quotaRpc, ...llmKeysRpc },
   economy: economyRpc,
   channels: channelRpc,
   cluster: clusterRpc,

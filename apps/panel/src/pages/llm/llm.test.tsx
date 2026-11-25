@@ -2,7 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { Thought } from "@/api/types";
-import type { LlmCallRecord, LlmCallStats } from "@miyoria/contracts/api";
+import type { LlmCallRecord, LlmCallStats, LlmKeysView } from "@miyoria/contracts/api";
 import { mockFetch, renderRoute } from "@/test/render";
 
 const CALL: LlmCallRecord = {
@@ -62,16 +62,24 @@ const STATS: LlmCallStats = {
   kept: 1,
   oldest: CALL.at,
   prices: { "deepseek:deepseek-v4.1-flash": { input_per_mtok: 0.15, cached_input_per_mtok: null, output_per_mtok: 0.6 } },
+};
+
+const KEY_ROW = { label: null, failures: 0, last_error: null, last_error_at: null, until: null, added_at: null, hint: null } as const;
+
+const KEYS: LlmKeysView = {
   providers: [
     {
       provider: "deepseek",
-      keyed: true,
+      editable: true,
+      test_model: "deepseek-v4.1-flash",
+      breaker: null,
       keys: [
-        { key: 1, state: "cooling", until: "2026-11-03T10:05:00.000Z", failures: 2, last_error: "connect_timeout", last_error_at: "2026-11-03T10:04:00.000Z" },
-        { key: 2, state: "bad", until: "2026-11-03T11:00:00.000Z", failures: 1, last_error: "auth", last_error_at: "2026-11-03T10:00:00.000Z" },
-        { key: 3, state: "ok", until: null, failures: 0, last_error: null, last_error_at: null },
+        { ...KEY_ROW, id: "config:1", position: 1, source: "config", state: "cooling", until: "2026-11-03T10:05:00.000Z", failures: 2, last_error: "connect_timeout", last_error_at: "2026-11-03T10:04:00.000Z" },
+        { ...KEY_ROW, id: "panel:a", position: 2, source: "panel", state: "bad", label: "朋友的訂閱", until: "2026-11-03T11:00:00.000Z", last_error: "auth", added_at: "2026-11-03T09:00:00.000Z", hint: "…WXYZ" },
+        { ...KEY_ROW, id: "panel:b", position: null, source: "panel", state: "disabled", label: "備用", added_at: "2026-11-03T09:30:00.000Z" },
       ],
     },
+    { provider: "local", editable: true, test_model: null, breaker: { state: "ok", until: null, failures: 0, last_error: null, last_error_at: null }, keys: [] },
   ],
 };
 
@@ -162,17 +170,71 @@ describe("LLM call inspector", () => {
   });
 
   it("breaks the calls down with prices per model", async () => {
-    mockFetch((_m, url) => (url.pathname === "/api/llm/stats" ? { body: STATS } : undefined));
+    mockFetch((_m, url) => (url.pathname === "/api/llm/stats" ? { body: STATS } : url.pathname === "/api/llm/keys" ? { body: KEYS } : undefined));
     renderRoute("/llm");
     const models = await screen.findByRole("table", { name: "依模型" });
     expect(within(models).getByText("$0.150 / $0.600")).toBeInTheDocument();
     expect(screen.getByLabelText("LLM 概況")).toHaveTextContent("60%");
-    const keys = screen.getByRole("list", { name: "供應商與金鑰" });
-    expect(keys).toHaveTextContent("#1");
-    expect(keys).toHaveTextContent("冷卻到");
-    expect(keys).toHaveTextContent("上次失敗:連線逾時");
-    expect(keys).toHaveTextContent(/#2無效,.+再試/);
-    expect(keys).toHaveTextContent("#3正常");
+  });
+});
+
+describe("provider keys", () => {
+  it("lists each provider's keys by position, label, source and state", async () => {
+    mockFetch((_m, url) => (url.pathname === "/api/llm/stats" ? { body: STATS } : url.pathname === "/api/llm/keys" ? { body: KEYS } : undefined));
+    renderRoute("/llm");
+    const table = await screen.findByRole("table", { name: "deepseek 的金鑰" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows[0]).toHaveTextContent("#1");
+    expect(rows[0]).toHaveTextContent("設定檔");
+    expect(rows[0]).toHaveTextContent("冷卻到");
+    expect(rows[0]).toHaveTextContent("連線逾時");
+    expect(rows[1]).toHaveTextContent("朋友的訂閱");
+    expect(rows[1]).toHaveTextContent(/無效,.+再試/);
+    expect(rows[1]).toHaveTextContent("…WXYZ");
+    expect(rows[2]).toHaveTextContent("備用");
+    expect(rows[2]).toHaveTextContent("停用");
+    expect(screen.getByRole("region", { name: "local" })).toHaveTextContent("不用金鑰 · 正常");
+  });
+
+  it("adds a key through a password field and deletes one after a confirm", async () => {
+    const sent: { method: string; path: string; body: unknown }[] = [];
+    mockFetch((method, url, body) => {
+      if (url.pathname === "/api/llm/stats") return { body: STATS };
+      if (url.pathname === "/api/llm/keys") return { body: KEYS };
+      if (url.pathname.startsWith("/api/llm/keys/")) {
+        sent.push({ method, path: decodeURIComponent(url.pathname), body });
+        if (method === "DELETE") return { body: { deleted: true } };
+        if (url.pathname.endsWith("/test")) return { body: { ok: false, kind: "auth", status: 401, model: "deepseek-v4.1-flash", ms: 120 } };
+        return { body: { ...KEY_ROW, id: "panel:c", position: 3, source: "panel", state: "ok", label: "新的" } };
+      }
+      return undefined;
+    });
+    const user = userEvent.setup();
+    renderRoute("/llm");
+    const deepseek = await screen.findByRole("region", { name: "deepseek" });
+    await user.click(within(deepseek).getByRole("button", { name: /新增金鑰/ }));
+    const dialog = await screen.findByRole("dialog");
+    const field = within(dialog).getByLabelText("金鑰");
+    expect(field).toHaveAttribute("type", "password");
+    expect(field).toHaveAttribute("autocomplete", "off");
+    await user.type(field, "key-made-up-for-the-panel");
+    await user.type(within(dialog).getByLabelText("名稱"), "新的");
+    await user.click(within(dialog).getByRole("button", { name: "新增" }));
+    await waitFor(() => expect(sent[0]).toEqual({ method: "POST", path: "/api/llm/keys/deepseek", body: { key: "key-made-up-for-the-panel", label: "新的" } }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // The config file's key can only be tested; a panel key can be disabled or deleted.
+    await user.click(screen.getByRole("button", { name: "deepseek #1 的動作" }));
+    expect(screen.queryByRole("menuitem", { name: /刪除/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("menuitem", { name: /測試/ }));
+    await waitFor(() => expect(sent.at(-1)?.path).toBe("/api/llm/keys/deepseek/config:1/test"));
+
+    await user.click(screen.getByRole("button", { name: "deepseek #2 的動作" }));
+    await user.click(screen.getByRole("menuitem", { name: /刪除/ }));
+    const confirm = await screen.findByRole("alertdialog");
+    expect(confirm).toHaveTextContent("朋友的訂閱");
+    await user.click(within(confirm).getByRole("button", { name: "刪除" }));
+    await waitFor(() => expect(sent.at(-1)).toMatchObject({ method: "DELETE", path: "/api/llm/keys/deepseek/panel:a" }));
   });
 });
 

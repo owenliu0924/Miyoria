@@ -615,6 +615,31 @@ describe("oauth", () => {
     }
   });
 
+  it("provider_keys_need_admin_llm_keys", async () => {
+    const h = await harnessWith(true);
+    // Panel access and write, but not the keys node: neither listing nor adding.
+    await h.auth.upsertRole("test", {
+      name: "writer",
+      rank: 50,
+      grants: ["admin.panel.access", "admin.panel.write"],
+      denies: [],
+      builtin: false,
+    });
+    await h.auth.assign("test", discord(VIEWER), "writer", { type: "global" });
+    const writer = await h.loginCookie("viewer-code");
+    const list = await h.withCookie("GET", "/api/llm/keys", writer, false);
+    expect(list.status).toBe(403);
+    expect(list.body.error).toContain("admin.llm.keys");
+    const add = await h.withCookie("POST", "/api/llm/keys/p", writer, true, { key: "key-made-up" });
+    expect(add.status).toBe(403);
+    expect(JSON.stringify(add.body)).not.toContain("key-made-up");
+
+    // An admin (`admin.*`) gets past the node: no `llm` module here, so 503.
+    await h.auth.assign("test", discord(ADMIN), "admin", { type: "global" });
+    const admin = await h.loginCookie("admin-code");
+    expect((await h.withCookie("GET", "/api/llm/keys", admin, false)).status).toBe(503);
+  });
+
   it("wallet_adjust_needs_its_node_and_posts_once_per_key", async () => {
     const h = await harnessWith(true);
     const person = "01J0000000000000000000000A";
