@@ -417,7 +417,8 @@ export class HeartStore {
   /**
    * Applies her nightly reflection on `person` in one transaction: the anchor first (so a rise it
    * allows passes the tier), the texts, then the value corrections (cause `reflect`, one step each,
-   * under the day's caps). Throws, changing nothing, for someone without a row or a bad anchor.
+   * under the day's caps; a fall of the bond is the bond she wrote, uncapped). Throws, changing
+   * nothing, for someone without a row or a bad anchor.
    */
   reflect(
     person: PersonId,
@@ -452,6 +453,7 @@ export class HeartStore {
           direction: p.direction,
           quote: p.quote,
           cause: "reflect",
+          ...(p.amount === undefined ? {} : { amount: p.amount }),
         });
       }
       const changes = requests.length === 0 ? [] : this.applyAll(person, requests, options);

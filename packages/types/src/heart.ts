@@ -109,12 +109,56 @@ export const FEEL_EMOTION_WORDS: Readonly<Record<string, EmotionName | null>> = 
   平常: null,
 };
 
-/** One proposal of hers about one person: a direction, never a size. */
+/**
+ * One proposal of hers about one person: a direction, and for a bond minus the bond she takes off
+ * if she wrote it. Every other size is the program's.
+ */
 export interface FeelProposal {
   field: FeelField;
   direction: "up" | "down";
   /** What happened, in her quote: the reason the change records. */
   quote: string;
+  /**
+   * The bond she takes off (a whole number above 0), for a bond minus only; absent: she wrote
+   * no number, and the heart's default step applies. Ignored for any other proposal.
+   */
+  amount?: number;
+}
+
+/** The signs she may write: half- and full-width plus, and minus as `-`, `－` or `−`. */
+export const FEEL_SIGNS = "+＋\\-－−";
+
+/**
+ * A bond-loss amount as she wrote it (`30`, `３０`, `1,000`, `30分`, `2.6`), rounded to a whole
+ * number; `null` for anything that is not a number above 0 once rounded.
+ */
+export function feelAmount(text: string): number | null {
+  const t = text
+    .normalize("NFKC")
+    .replace(/[,，]/gu, "")
+    .replace(/[分點]$/u, "")
+    .trim();
+  if (!/^\d+(?:\.\d+)?$/u.test(t)) return null;
+  const n = Math.round(Number(t));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+const SIGN_AND_REST = new RegExp(`^([${FEEL_SIGNS}])(?:\\s*[${FEEL_SIGNS}])*\\s*(.*)$`, "u");
+
+/**
+ * A direction written as signs with an optional amount after them (`+`, `-`, `--`, `- 30`,
+ * `－３０`): the first sign is the direction, more signs are read as one, and what follows is the
+ * amount when it reads as one (`null` otherwise). `null` when `text` does not start with a sign.
+ */
+export function feelSign(text: string): { direction: "up" | "down"; amount: number | null } | null {
+  const m = SIGN_AND_REST.exec(text.trim());
+  if (m === null) return null;
+  const sign = m[1] ?? "+";
+  const rest = (m[2] ?? "").trim();
+  return {
+    direction: sign === "+" || sign === "＋" ? "up" : "down",
+    amount: rest === "" ? null : feelAmount(rest),
+  };
 }
 
 // ---- the words she reads for a person ---------------------------------------------------------

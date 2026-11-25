@@ -7,6 +7,7 @@ import {
   applyChange,
   applyDecay,
   bondGainCap,
+  bondLoss,
   CARES_THRESHOLD,
   cares,
   type DayLedger,
@@ -94,8 +95,8 @@ describe("days", () => {
 });
 
 describe("proposal steps", () => {
-  it("make a bad direction three times a good one", () => {
-    for (const field of PROPOSAL_FIELDS) {
+  it("make a bad direction three times a good one, the bond's fall aside", () => {
+    for (const field of PROPOSAL_FIELDS.filter((f) => f !== "bond")) {
       const good = field === "grudge" ? "down" : "up";
       const bad = field === "grudge" ? "up" : "down";
       const g = Math.abs(proposalStep(field, good, rules));
@@ -113,11 +114,23 @@ describe("proposal steps", () => {
     expect([50, 150, 450, 650].map((b) => proposalStep("bond", "up", rules, b))).toEqual([
       3, 2, 1.5, 1,
     ]);
-    expect(proposalStep("bond", "down", rules, 650)).toBe(-3);
     expect(proposalStep("trust", "up", rules)).toBe(0.5);
     expect(proposalStep("warmth", "up", rules)).toBeCloseTo(0.05);
-    expect(dailyCap("bond", "down", rules, 50)).toBe(36);
     expect(dailyCap("grudge", "up", rules)).toBeCloseTo(0.6);
+  });
+
+  it("size the bond's fall by what she wrote, the same at every bond, with no daily cap", () => {
+    for (const bond of [-50, 50, 650]) {
+      expect(proposalStep("bond", "down", rules, bond)).toBe(-9);
+      expect(proposalStep("bond", "down", rules, bond, 40)).toBe(-40);
+      expect(dailyCap("bond", "down", rules, bond)).toBe(Number.POSITIVE_INFINITY);
+    }
+    expect([undefined, 0, -3, 0.4, Number.NaN].map((a) => bondLoss(a, rules))).toEqual([
+      9, 9, 9, 9, 9,
+    ]);
+    expect([1, 2.6, 300, 5000].map((a) => bondLoss(a, rules))).toEqual([1, 3, 300, 5000]);
+    expect(bondLoss(undefined, heartPersonConfig({ bond_loss_default: 4 }))).toBe(4);
+    expect(HeartPersonConfigSchema.parse({}).bond_loss_default).toBe(9);
   });
 
   it("damp the n-th of a day by 0.75^(n-1)", () => {
@@ -130,7 +143,6 @@ describe("proposal steps", () => {
       ["bond", "up", 150],
       ["bond", "up", 400],
       ["bond", "up", 700],
-      ["bond", "down", 400],
       ["trust", "up", 0],
       ["warmth", "up", 0],
       ["respect", "down", 0],
@@ -200,6 +212,82 @@ describe("applyChange", () => {
       propose("bond", "down"),
     ]);
     expect(deltas).toEqual([3, 2.25, -9]);
+  });
+
+  describe("a fall of the bond", () => {
+    const fall = (amount?: number, cause: "feel" | "reflect" = "feel"): HeartChangeRequest => ({
+      type: "propose",
+      field: "bond",
+      direction: "down",
+      quote: "我說了不要還一直叫我學狗叫",
+      cause,
+      ...(amount === undefined ? {} : { amount }),
+    });
+
+    it("takes exactly what she wrote, every time the same day, undamped and uncapped", () => {
+      const { deltas, person: p } = run(person({ bond: 500 }), [
+        fall(30),
+        fall(30),
+        fall(30),
+        fall(5),
+        fall(),
+        fall(),
+        fall(),
+      ]);
+      expect(deltas).toEqual([-30, -30, -30, -5, -9, -9, -9]);
+      expect(p.bond).toBe(500 - 122);
+    });
+
+    it("is not held by a day that already lost much, nor by the tier she reached", () => {
+      const ledger = emptyLedger(TODAY);
+      ledger.fields = {
+        ...ledger.fields,
+        bond: { up: 0, down: 500, proposed_up: 0, proposed_down: 20 },
+      };
+      const start = person({ bond: 310, tier_floor: 300 });
+      const applied = applyChange(start, fall(300), ledger, rules, NOW);
+      expect(applied.change).toMatchObject({ delta: -300, value_after: 10, proposed: -300 });
+      expect(applied.person.bond).toBe(10);
+    });
+
+    it("goes from 100 to the scale's minimum on -300", () => {
+      const applied = applyChange(person({ bond: 100 }), fall(300), emptyLedger(TODAY), rules, NOW);
+      expect(applied.person.bond).toBe(-100);
+      // The log keeps what she wrote, and the reason.
+      expect(applied.change).toMatchObject({
+        field: "bond",
+        delta: -200,
+        value_after: -100,
+        proposed: -300,
+        reason_quote: "我說了不要還一直叫我學狗叫",
+        cause: "feel",
+      });
+    });
+
+    it("sizes her reflection's bond minus the same way", () => {
+      const { deltas } = run(person({ bond: 200 }), [
+        fall(60, "reflect"),
+        fall(undefined, "reflect"),
+      ]);
+      expect(deltas).toEqual([-60, -9]);
+    });
+
+    it("never takes the owner under the owner's floor", () => {
+      const applied = applyChange(
+        person({ tags: ["owner"], bond: 100 }),
+        fall(300),
+        emptyLedger(TODAY),
+        rules,
+        NOW,
+      );
+      expect(applied.person.bond).toBe(30);
+      expect(applied.change).toMatchObject({ delta: -70, proposed: -300 });
+    });
+
+    it("leaves a rise as it was: a number on a rise is not hers to write", () => {
+      const rise = { ...propose("bond", "up"), amount: 300 } as HeartChangeRequest;
+      expect(run(person({ bond: 50 }), [rise, rise]).deltas).toEqual([3, 2.25]);
+    });
   });
 
   it("caps reflection and evidence but not the owner, decay or the migration", () => {

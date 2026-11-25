@@ -8,6 +8,11 @@
 // day's cap for that field (the bond's: at the current bond, H3). With 0.75 and a quarter the
 // day's proposals converge on the cap (a quarter times 1 / (1 - 0.75) is the whole cap): three
 // proposals give 58% of it, eight 90%, fifteen 99%, and no number of them passes it.
+//
+// A fall of the bond is the exception (owner decision 2026-11-25): she writes how much goes
+// (`羈絆 -30`), or `bond_loss_default` when she writes no number, and it is taken whole, every
+// time, with no step, damping or daily cap; only the scale's minimum and the owner's floor hold.
+// So `step_share`, `repeat_damping`, `negative_factor` and `bond_gain_caps` never size a bond fall.
 
 import { z } from "zod";
 
@@ -66,6 +71,7 @@ const DecaySchema = z.object({
  * repeat_damping = 0.75
  * step_share = 0.25
  * negative_factor = 3
+ * bond_loss_default = 9
  * bond_gain_caps = [[0, 12], [100, 8], [300, 6], [600, 4]]
  * ```
  */
@@ -79,9 +85,17 @@ export const HeartPersonConfigSchema = z.object({
     .default(8 * 60),
   /** The n-th proposal of a day for one field, person and direction counts `repeat_damping^(n-1)`. */
   repeat_damping: unit().default(0.75),
-  /** A step and a cap in a field's bad direction are this many times the good one. */
+  /**
+   * A step and a cap in a field's bad direction are this many times the good one. Not the bond's
+   * fall, which she sizes herself (`bond_loss_default`).
+   */
   negative_factor: positive().default(3),
-  /** Most bond gained per day by the bond it starts from (H3). Lost: `negative_factor` times. */
+  /**
+   * The bond a bond minus takes off when she writes no number (`羈絆 -`); with a number
+   * (`羈絆 -30`) that number is taken. Either way whole, with no damping or daily cap.
+   */
+  bond_loss_default: positive().default(9),
+  /** Most bond gained per day by the bond it starts from (H3). A fall has no daily cap. */
   bond_gain_caps: z
     .array(BondCapSchema)
     .min(1)

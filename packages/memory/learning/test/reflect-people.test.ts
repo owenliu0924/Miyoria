@@ -33,6 +33,7 @@ import {
   LessonStore,
   MAX_PUBLIC_FEELING,
   PersonReflectionError,
+  PersonReflectionSchema,
   personRules,
   REFLECT_STATE_KEY,
   Reflector,
@@ -508,6 +509,34 @@ describe("reflectionOf", () => {
     expect(() => reflectionOf(anchor, day({ tier: 120, label: "知心" }), [])).toThrow(
       PersonReflectionError,
     );
+  });
+
+  it("reads the bond she takes off after a bond minus, and only there", () => {
+    const reply = PersonReflectionSchema.parse({
+      ...(base as object),
+      changes: [
+        { value: "羈絆", direction: "－３０", quote: "一直使喚我" },
+        { value: "信任", direction: "- 5", quote: "騙我" },
+        { value: "好感", direction: "+20", quote: "陪我" },
+        { value: "心結", direction: "--", quote: "還記著" },
+      ],
+    });
+    expect(reflectionOf(reply, day(), []).reflection.proposals).toEqual([
+      { field: "bond", direction: "down", quote: "一直使喚我", amount: 30 },
+      { field: "trust", direction: "down", quote: "騙我" },
+      { field: "warmth", direction: "up", quote: "陪我" },
+      { field: "grudge", direction: "down", quote: "還記著" },
+    ]);
+    const bare = PersonReflectionSchema.parse({
+      ...(base as object),
+      changes: [{ value: "羈絆", direction: "-", quote: "嫌我" }],
+    });
+    expect(reflectionOf(bare, day(), []).reflection.proposals).toEqual([
+      { field: "bond", direction: "down", quote: "嫌我" },
+    ]);
+    const bad = { ...(base as object), changes: [{ value: "羈絆", direction: "?", quote: "x" }] };
+    expect(PersonReflectionSchema.safeParse(bad).success).toBe(false);
+    expect(personRules("Owen", null)).toContain("羈絆的 - 可以在後面寫要扣多少");
   });
 
   it("asks for the anchor only when a tier is held", () => {

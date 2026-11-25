@@ -344,7 +344,12 @@ describe("routes", () => {
     expect(detail.ledger.find((l) => l.field === "bond")).toMatchObject({
       used_up: 0,
       cap_up: 12,
-      cap_down: 36,
+      // The bond's fall has no daily cap: she sizes it herself.
+      cap_down: null,
+    });
+    expect(detail.ledger.find((l) => l.field === "trust")).toMatchObject({
+      cap_up: 2,
+      cap_down: 6,
     });
     const flat = await raw(h.base, "GET", `/api/people/${owen}`, { token: TOKEN });
     expect(flat.body, "flattened").toHaveProperty("person");

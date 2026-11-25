@@ -4,9 +4,12 @@
 // - A `feel` proposal has a direction only; its size is `step_share` of the field's daily cap in
 //   that direction (a bad direction's cap is `negative_factor` times the good one's), and the n-th
 //   of a day for one field, person and direction counts `repeat_damping^(n-1)`.
+// - A fall of the bond is hers to size: the bond she wrote (`羈絆 -30`) or `bond_loss_default`,
+//   taken whole every time, from `feel` and from her reflection alike. No damping, no daily cap,
+//   no tier floor: only the scale's minimum and the owner's floor (`settle`) hold.
 // - Every day has caps per field and direction for what her proposals, her reflection and
-//   evidence may move. The bond's cap depends on the bond (H3). The day's totals come from the
-//   day's `heart.changed` events (`DayLedger`).
+//   evidence may move, the bond's fall aside. The bond's gain cap depends on the bond (H3). The
+//   day's totals come from the day's `heart.changed` events (`DayLedger`).
 // - From 知心 up a tier needs an anchor: without it a rise stops half a point below (H4).
 //   `tier_floor` rises only when a tier is actually entered.
 // - Once a day, `decayDay`: bond falls after a week without contact but never below the floor of
@@ -77,9 +80,14 @@ export function bondGainCap(bond: number, rules: HeartPersonConfig): number {
   return cap;
 }
 
+/** Whether a change is a fall of the bond: hers to size, with no damping or daily cap. */
+export function isBondFall(field: HeartField, direction: Direction): boolean {
+  return field === "bond" && direction === "down";
+}
+
 /**
  * The most `field` may move in `direction` on one day (bond: at the current bond). The bad
- * direction gets `negative_factor` times the good one.
+ * direction gets `negative_factor` times the good one. A fall of the bond has no cap (infinite).
  */
 export function dailyCap(
   field: HeartField,
@@ -87,6 +95,7 @@ export function dailyCap(
   rules: HeartPersonConfig,
   bond = 0,
 ): number {
+  if (isBondFall(field, direction)) return Number.POSITIVE_INFINITY;
   let good: number;
   if (field === "bond") good = bondGainCap(bond, rules);
   else if (field in rules.caps) good = rules.caps[field as keyof HeartPersonConfig["caps"]];
@@ -95,16 +104,28 @@ export function dailyCap(
 }
 
 /**
+ * The bond a bond minus takes off: `amount` as she wrote it, rounded (a whole number above 0), or
+ * `bond_loss_default` when she wrote none or it does not read as one.
+ */
+export function bondLoss(amount: number | undefined, rules: HeartPersonConfig): number {
+  const n = amount === undefined || !Number.isFinite(amount) ? 0 : Math.round(amount);
+  return n > 0 ? n : rules.bond_loss_default;
+}
+
+/**
  * The signed change one `feel` proposal asks for, before damping and caps: `step_share` of the
  * day's cap in that direction (the bond's at `bond`), so every field and every tier takes as many
- * proposals to reach its cap, and a bad direction is `negative_factor` times a good one.
+ * proposals to reach its cap, and a bad direction is `negative_factor` times a good one. A fall of
+ * the bond is `bondLoss(amount)` instead.
  */
 export function proposalStep(
   field: ProposalField,
   direction: Direction,
   rules: HeartPersonConfig,
   bond = 0,
+  amount?: number,
 ): number {
+  if (isBondFall(field, direction)) return -bondLoss(amount, rules);
   const size = dailyCap(field, direction, rules, bond) * rules.step_share;
   return direction === "up" ? size : -size;
 }
@@ -260,7 +281,8 @@ export type HeartChange = HeartChangedData;
 export type HeartChangeRequest =
   /**
    * Her proposal: a direction, sized by the program. `feel` (the default) is damped by the day's
-   * earlier proposals; `reflect` (her nightly reflection, one per field and direction) is not.
+   * earlier proposals; `reflect` (her nightly reflection, one per field and direction) is not. A
+   * fall of the bond is sized by `amount` (or the default) and never damped or capped.
    */
   | {
       type: "propose";
@@ -268,6 +290,8 @@ export type HeartChangeRequest =
       direction: Direction;
       quote: string;
       cause?: "feel" | "reflect";
+      /** A fall of the bond only: the bond she takes off; absent: `bond_loss_default`. */
+      amount?: number;
     }
   /** A change of a given size: her reflection, evidence, the owner, decay, the migration. */
   | {
@@ -289,7 +313,8 @@ export interface AppliedChange {
 
 /**
  * Applies one change to `person`: the step and damping for a proposal, then today's cap (for the
- * capped causes), the range, the anchors (bond), and the owner rules. The returned event says
+ * capped causes; a fall of the bond has none), the range, the anchors (bond), and the owner rules.
+ * The returned event says
  * what was asked and what was applied (0 when the caps took all of it). `ledger` must be the
  * person's ledger of `now`'s local day.
  */
@@ -305,11 +330,12 @@ export function applyChange(
   let proposed: number | null;
   let wanted: number;
   if (request.type === "propose") {
-    const step = proposalStep(request.field, request.direction, rules, person.bond);
+    const step = proposalStep(request.field, request.direction, rules, person.bond, request.amount);
     const counts = ledger.fields[field];
     const n = (request.direction === "up" ? counts.proposed_up : counts.proposed_down) + 1;
     proposed = step;
-    wanted = cause === "feel" ? step * repeatFactor(n, rules) : step;
+    const damped = cause === "feel" && !isBondFall(field, request.direction);
+    wanted = damped ? step * repeatFactor(n, rules) : step;
   } else {
     wanted = Number.isFinite(request.delta) ? request.delta : 0;
     proposed = cause === "decay" || cause === "migrate" ? null : wanted;
