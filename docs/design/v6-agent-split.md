@@ -111,6 +111,17 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:沙箱文件 §14 的「Core」那幾條;`gate.test.ts` 的 `code_run` 改成不審查;`followup` 的中風險工具在 `inline_wait_ms` 內、外兩種情況。
 
+**做成的樣子和上面不同的地方**(P3,2026-11-27):
+
+- `Language` 沒有加 `"shell"`:它是本地後端每種語言一個映像檔用的型別。另加 `RunLanguage`(`python | node | shell`),`RunRequest.language` 用它;本地後端收到 `shell` 回 `invalid_request`。`NetworkPolicy` 多 `"open"`(照 `[modules.sandbox.network]`:叢集是 `mode`,本地是有設定的白名單或沒有網路)。`SandboxErrorKind` 另外多 `"quota"`。`Sandbox` 多可省略的 `features`(`SandboxFeatures`:在哪、有沒有 shell、網路),閘門照它寫工具說明,換後端時重新註冊。
+- `backend = "auto"` 是「叢集裡有一台準備好了就用叢集,沒有就用這台的 Docker」(`remote/auto.ts` 的 `AutoSandbox`),不是「叢集模組在跑就用叢集」:Core 的接線一定給 `endpoints`(叢集模組沒跑時是 Core 自己的 registry),照字面會讓沒有 sandbox 服務的設定失去今天的本地沙箱。叢集的電腦不接(不接成員、滿了、沒準備好)而這台的 Docker 可用時,fresh 的 Python / Node 改在這台跑。
+- `sandbox_jobs` 的 Drizzle 定義寫在 `packages/store/scripts/schema-sql.ts` 裡:`packages/workspace` 沒有 `drizzle-orm` 相依(不加相依),所以 `jobs-store.ts` 用 `Db` 的純 SQL 讀寫;drift 測試照常比對。`payer` 欄存 JSON(`{ person, exempt? }`),重啟後 owner 的 `exempt` 才不會不見。
+- `trusted_hosts` 照沙箱文件 §12.2 放在 `[modules.sandbox.transfer]`(P8 讀 `config.transfer.trusted_hosts`)。`[modules.sandbox.workspace] max_mb` 的預設沒有跟著 `person_max_mb` 調高(32 GiB 是 Core 磁碟的上限,不是預先佔用)。
+- P4、P5、P6 的註冊位置是 `SandboxGateOptions` 的兩個掛鉤 `extraWorkspace(o)`、`extraAvailable(features)`,P9 在 `module.ts` 傳進去,不改 `gate.ts`。
+- `workspace_run`、她的工具都經 `Sandbox.run`;有 `workspace_folder` 的執行一律當成成員的(`for: "member"`),那個人的檔案只會送到主人接成員工作的電腦。
+- 協定上沙箱文件沒寫死、Core 這邊選了的(分段從 0 起、`x-delete` 標頭、第一次長輪詢不帶 `after` 拿到留著的全部、shell 的 `cwd` 是 `/workspace`)寫在 `.tmp-test/handoff-P3.md` 的 A 節;P2 的服務照同樣的做法。
+- 沒做的:Core 重啟時跑到一半的 exec 不接回(表沒有 exec 欄,工作階段本身接回);完整輸出(`GET .../log`)還沒存進 `outputs/`;`shell` 的執行在事件的語言清單加上 `shell` 之前不發 `sandbox.run.finished`。
+
 ### P4 額度、附件、分享
 
 **交付**:沙箱文件 §8、§11。
