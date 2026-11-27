@@ -40,6 +40,13 @@ export const WORKER_SYSTEM = `你是她(這個聊天角色)叫來做事的小幫
 export const WORKER_CODE =
   "- 這裡可以跑程式(code_run;存在工作區的腳本用 workspace_run):要算的、要轉格式的、要檢查的,寫成程式跑一次,看了輸出再下結論。沙箱能做什麼、不能做什麼,以工具的說明和回來的結果為準。";
 
+/** Said to a worker when a computer of the cluster takes its jobs (`shell_run`). */
+export const WORKER_SHELL =
+  "- 這裡有一台 Linux 機器(shell_run):bash、能上網、能 pip install / npm install 裝東西;同一個工作階段裡裝的套件和檔案會留著,/workspace 就是工作區。要改檔案裡的幾行用 workspace_edit,找字用 workspace_grep。";
+
+/** Said to a worker that can draw (`image_make`). */
+export const WORKER_IMAGE = "- 需要圖的話可以用 image_make 畫,畫好的圖是產物,結果裡寫它的代號。";
+
 /** Said to a worker when the sandbox is not there. */
 export const WORKER_NO_CODE =
   "- 這裡現在不能跑程式(沙箱沒有開)。需要程式的話可以寫好存進工作區,但結果裡一定要寫清楚:程式沒有跑過,結果沒有驗證過。不要說你跑過。";

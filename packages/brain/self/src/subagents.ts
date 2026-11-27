@@ -34,7 +34,9 @@ import {
   REFLECT_SYSTEM,
   RESEARCH_SYSTEM,
   WORKER_CODE,
+  WORKER_IMAGE,
   WORKER_NO_CODE,
+  WORKER_SHELL,
   WORKER_SYSTEM,
 } from "./delegate-texts.js";
 import { PLAN_TOOL } from "./plan.js";
@@ -94,7 +96,12 @@ export interface KindSpec {
 export type CallableKind = Exclude<SubagentKind, "reflect">;
 
 /** The sandbox's tools: a worker has them when they are registered. */
-export const CODE_TOOLS: readonly string[] = ["code_run", "code_session", "workspace_run"];
+export const CODE_TOOLS: readonly string[] = [
+  "code_run",
+  "shell_run",
+  "code_session",
+  "workspace_run",
+];
 
 /**
  * What a worker may call, by name (besides its `plan` and its own `find_tools`). A group or an
@@ -110,13 +117,16 @@ export const WORKER_TOOLS: readonly string[] = [
   "workspace_list",
   "workspace_read",
   "workspace_write",
+  "workspace_edit",
+  "workspace_grep",
   "workspace_delete",
   "workspace_export",
+  "image_make",
   ...CODE_TOOLS,
 ];
 
-/** The groups `extra_tools` may name tools of: MCP servers and plugins. */
-export const WORKER_EXTRA_GROUPS: ReadonlySet<string> = new Set(["mcp", "extension"]);
+/** The groups `extra_tools` may name tools of: MCP servers, plugins and declared HTTP tools. */
+export const WORKER_EXTRA_GROUPS: ReadonlySet<string> = new Set(["mcp", "extension", "http"]);
 
 /**
  * The MCP and plugin tools a worker may call besides its list, by exact name
@@ -416,7 +426,10 @@ export const noMouth: Outlet = {
 /** Block 1 of a job: its kind's system text, and for a worker whether code can run. */
 export function helperSystem(spec: KindSpec, tools: readonly string[]): string {
   if (spec.kind !== "worker") return spec.system;
-  return `${spec.system}\n${canRunCode(tools) ? WORKER_CODE : WORKER_NO_CODE}`;
+  const lines = [spec.system, canRunCode(tools) ? WORKER_CODE : WORKER_NO_CODE];
+  if (tools.includes("shell_run")) lines.push(WORKER_SHELL);
+  if (tools.includes("image_make")) lines.push(WORKER_IMAGE);
+  return lines.join("\n");
 }
 
 /**
