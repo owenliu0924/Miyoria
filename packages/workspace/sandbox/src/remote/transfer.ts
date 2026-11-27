@@ -308,6 +308,22 @@ async function destination(dir: string, path: string): Promise<string | null> {
   return safeJoin(dir, path);
 }
 
+/**
+ * Where `path` under `dir` is now, for a deletion: every component must already exist as a real
+ * directory (never through a link), and nothing is made. `null` when it is not there or
+ * something is in the way. A deletion list comes from the other computer: resolving it with
+ * `destination` would let it create any number of empty folders on Core's disk.
+ */
+async function existing(dir: string, path: string): Promise<string | null> {
+  let current = dir;
+  for (const part of path.split("/").slice(0, -1)) {
+    current = join(current, part);
+    const stat = await lstat(current).catch(() => null);
+    if (stat === null || stat.isSymbolicLink() || !stat.isDirectory()) return null;
+  }
+  return safeJoin(dir, path);
+}
+
 /** Bytes of `source` with their SHA-256 counted on the way; gzip found by its magic bytes. */
 async function* counted(
   source: AsyncIterable<Uint8Array>,
@@ -357,6 +373,9 @@ export async function receiveWorkspace(
   const before = await place.workspace.snapshot();
   const usage = await place.workspace.usage();
   const staging = join(dirname(ws.root.dir), "sandbox-incoming", newId().toLowerCase());
+  // Changes refused as a whole: the deletions that came with them are part of the same answer
+  // and are not taken either (half of an exec's result would leave the folder in neither state).
+  let refused = false;
   try {
     if (sync.tar !== null) {
       await mkdir(staging, { recursive: true });
@@ -380,6 +399,7 @@ export async function receiveWorkspace(
         // Over the folder's caps as a whole: none of it is taken.
         log.warn({ job: job.id, err: error.message }, "the changes of a job were refused");
         written = [];
+        refused = true;
       }
       if (sink.hash.digest("hex") !== sync.tar.sha256 || sink.bytes !== sync.tar.bytes) {
         throw new SandboxError(
@@ -415,7 +435,16 @@ export async function receiveWorkspace(
         known.set(entry.path, entry);
       }
     }
-    for (const raw of sync.deleted) {
+    // No more deletions than the folder can hold files: a longer list names files that cannot
+    // be there, and each name costs a walk of Core's disk.
+    const deleted = refused ? [] : sync.deleted.slice(0, ws.limits.maxFiles);
+    if (sync.deleted.length > deleted.length && !refused) {
+      log.warn(
+        { job: job.id, deleted: sync.deleted.length, taken: deleted.length },
+        "a job named more deletions than its folder holds files",
+      );
+    }
+    for (const raw of deleted) {
       let path: string;
       try {
         path = normalizeRelativePath(raw);
@@ -423,7 +452,7 @@ export async function receiveWorkspace(
         continue;
       }
       if (place.skip?.(path)) continue;
-      const target = await destination(place.dir, path).catch(() => null);
+      const target = await existing(place.dir, path).catch(() => null);
       if (target === null) continue;
       const stat = await lstat(target).catch(() => null);
       // She changed it on Core's side meanwhile: hers stays.

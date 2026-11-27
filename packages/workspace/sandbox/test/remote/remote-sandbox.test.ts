@@ -102,6 +102,15 @@ function sandboxOn(machines: FakeMachine[], config: Record<string, unknown> = {}
 
 const AMY: WorkPayer = { person: "person-amy" };
 
+/** A tar with nothing in it (a sync that only names deletions). */
+async function emptyTar(): Promise<Buffer> {
+  const pack = tar.pack();
+  pack.finalize();
+  const chunks: Buffer[] = [];
+  for await (const c of pack) chunks.push(c as Buffer);
+  return Buffer.concat(chunks);
+}
+
 /** Writes `text` to `path` in the job's /workspace, as a program would. */
 async function put(dir: string, path: string, text: string): Promise<void> {
   await mkdir(join(dir, path, ".."), { recursive: true });
@@ -356,6 +365,55 @@ describe("the folder in and back", () => {
     expect((await workspace.read("people/bob/b.txt")).text).toBe("bob's");
     expect(await workspace.exists("people/bob/new.txt")).toBe(false);
     expect((await workspace.read("mine.txt")).text).toBe("mine");
+  });
+
+  it("a_hostile_list_of_deletions_makes_no_folders_and_is_cut_at_the_file_cap", async () => {
+    for (let i = 0; i < 5; i++) await workspace.write(`people/amy/keep-${i}.txt`, "kept");
+    await workspace.write("people/amy/gone.txt", "bye");
+    const pc = machine("pc");
+    // 20 is the person's file cap: the real names after that many are never looked at.
+    const deep = Array.from({ length: 19 }, (_, i) => `deep-${i}/a/b/c/d.txt`);
+    pc.hostileSync = {
+      tar: await emptyTar(),
+      deleted: ["gone.txt", ...deep, ...Array.from({ length: 5 }, (_, i) => `keep-${i}.txt`)],
+    };
+    const { sandbox } = sandboxOn([pc]);
+    await sandbox.health({ refresh: true });
+    await sandbox.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      workspace_folder: "amy",
+      for: "member",
+    });
+    expect(await workspace.exists("people/amy/gone.txt")).toBe(false);
+    for (let i = 0; i < 5; i++)
+      expect(await workspace.exists(`people/amy/keep-${i}.txt`)).toBe(true);
+    // Resolving where a deletion would land creates nothing on Core's disk.
+    expect(await workspace.exists("people/amy/deep-0")).toBe(false);
+  });
+
+  it("takes_no_deletions_with_changes_that_were_refused", async () => {
+    await workspace.write("people/amy/keep.txt", "kept");
+    const pack = tar.pack();
+    // Over the person's 20 files: none of the changes is taken.
+    for (let i = 0; i < 25; i++) pack.entry({ name: `junk-${i}.txt`, size: 1 }, "x");
+    pack.finalize();
+    const chunks: Buffer[] = [];
+    for await (const c of pack) chunks.push(c as Buffer);
+    const pc = machine("pc");
+    pc.hostileSync = { tar: Buffer.concat(chunks), deleted: ["keep.txt"] };
+    const { sandbox } = sandboxOn([pc]);
+    await sandbox.health({ refresh: true });
+    await sandbox.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      workspace_folder: "amy",
+      for: "member",
+    });
+    expect(await workspace.exists("people/amy/junk-0.txt")).toBe(false);
+    expect((await workspace.read("people/amy/keep.txt")).text).toBe("kept");
   });
 
   it("says_how_big_a_folder_too_large_to_send_is", async () => {
