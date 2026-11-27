@@ -167,6 +167,18 @@ export {
   UNAVAILABLE,
 } from "./rpc.js";
 export {
+  inExtDir,
+  type Placement as SandboxPlacement,
+  type SandboxLauncher,
+  type SandboxLauncherOptions,
+  type SandboxPlan,
+  sandboxArgv,
+  sandboxEnv,
+  sandboxLauncher,
+  sandboxNetwork,
+  sandboxPlan,
+} from "./sandbox-launch.js";
+export {
   ExtensionSchedules,
   MAX_SCHEDULE_PAYLOAD,
   MAX_SCHEDULES,

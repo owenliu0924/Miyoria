@@ -3,6 +3,7 @@ import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { directiveTables } from "@miyoria/brain/directive";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
+import { ExtensionLauncherKey, type SandboxLauncher } from "@miyoria/plugin-host/ext-host";
 import {
   Config,
   ConfigError,
@@ -124,6 +125,16 @@ describe("going down", () => {
     await built.start();
     await built.stop();
     expect(seen).toEqual(["shutdown", "module stopped"]);
+  });
+});
+
+describe("extension launcher", () => {
+  it("is the sandbox launcher, provided before the modules start", async () => {
+    core = await buildCoreWith(catalog(), config(), { discord: false, api: false });
+    const launcher = core.services.get(ExtensionLauncherKey) as SandboxLauncher | undefined;
+    expect(launcher).toBeDefined();
+    expect(typeof launcher?.placement).toBe("function");
+    expect(launcher?.placement("miyoria.none")).toBeNull();
   });
 });
 

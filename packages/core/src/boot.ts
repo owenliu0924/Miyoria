@@ -27,6 +27,7 @@ import { cardsTables } from "@miyoria/play/cards";
 import { exchangeTables } from "@miyoria/play/exchange";
 import { karaokeTables } from "@miyoria/play/karaoke";
 import { marketTables } from "@miyoria/play/market";
+import { ExtensionLauncherKey, sandboxLauncher } from "@miyoria/plugin-host/ext-host";
 import {
   type Config,
   ConfigError,
@@ -87,9 +88,10 @@ import {
   PromptContributors,
   PromptContributorsKey,
   RunningProfileKey,
+  SandboxClientKey,
   type SpaceRef,
 } from "@miyoria/types";
-import { sandboxJobsTables } from "@miyoria/workspace/sandbox";
+import { SandboxConfigSchema, sandboxJobsTables } from "@miyoria/workspace/sandbox";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import { type Machines, openMachines } from "./machines.js";
@@ -261,6 +263,8 @@ export class Core {
     this.bus.publish(KERNEL_MODULE, Events.SystemShutdown, {});
     this.settings?.close();
     await this.supervisor.stopAll();
+    // The sandbox launcher only watches the client; it stops after the extensions it started.
+    (this.services.get(ExtensionLauncherKey) as { close?: () => void } | undefined)?.close?.();
     this.#persist.abort();
     await this.#persistTask;
     await this.#membersTask;
@@ -312,6 +316,19 @@ export async function buildCoreWith(
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);
+  // Where extension programs run (docs/design/v6-sandbox.md §16 q3): in a job on a computer of
+  // the cluster that takes plugins, else here as before. Provided before any `ext.<id>` starts;
+  // the client is read at each launch, the sandbox module provides it later (or never).
+  const sandboxSection = SandboxConfigSchema.safeParse(config.module("sandbox").config ?? {});
+  const launcher = sandboxLauncher({
+    client: () => services.get(SandboxClientKey),
+    trustedHosts: sandboxSection.success ? sandboxSection.data.transfer.trusted_hosts : [],
+    // Core does not know its own hostd name yet: credentials go only to trusted_hosts.
+    coreHost: null,
+    fallback: "host",
+    restart: (extension) => supervisor.restart(`ext.${extension}`),
+  });
+  services.provide(k, ExtensionLauncherKey, launcher);
   // What the panel changes of a module's config, laid over the file (docs/design/v5-settings.md).
   const settings = new ModuleSettings({
     config,
