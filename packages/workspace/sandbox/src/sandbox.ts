@@ -34,9 +34,11 @@ import {
   egressProxyArgs,
   egressProxyName,
   egressReadyArgs,
+  ISOLATED_GATEWAY_DOCKER,
+  isolatesGateway,
   networkConnectArgs,
   networkCreateArgs,
-  networkInspectArgs,
+  networkGatewayModeArgs,
   networkRemoveArgs,
   proxyEnv,
 } from "./egress.js";
@@ -430,8 +432,24 @@ export class DockerSandbox implements Sandbox {
     await this.ensureImage("node", signal);
     const fail = (what: string, result: ExecResult): SandboxError =>
       new SandboxError("docker_failed", `egress proxy: cannot ${what}: ${why(result)}`);
-    const inspected = await this.#control(networkInspectArgs(network), signal);
-    if (inspected.exit_code !== 0) {
+    if (!isolatesGateway(this.#health.server_version)) {
+      // An older engine leaves the network's gateway on this machine: a run would reach every
+      // service Core's machine listens on (the admin pages, hostd).
+      throw new SandboxError(
+        "network_unsupported",
+        `Docker ${this.#health.server_version ?? "?"} cannot keep runs on the network away from this machine's own services; Docker ${ISOLATED_GATEWAY_DOCKER} or newer is needed`,
+      );
+    }
+    // `exit 0` is "it exists"; anything but `isolated` is one made before the gateway was taken off.
+    const inspected = await this.#control(networkGatewayModeArgs(network), signal);
+    if (inspected.exit_code === 0 && decodeOutput(inspected.stdout).trim() !== "isolated") {
+      await this.#control(removeArgs([proxy]), signal).catch(() => undefined);
+      const removed = await this.#control(networkRemoveArgs(network), signal);
+      if (removed.exit_code !== 0 || removed.error !== null) {
+        throw fail("replace the network that still leads to this machine", removed);
+      }
+    }
+    if (inspected.exit_code !== 0 || decodeOutput(inspected.stdout).trim() !== "isolated") {
       const created = await this.#control(networkCreateArgs(network, this.instance), signal);
       if (created.exit_code !== 0 || created.error !== null) {
         throw fail("create the network", created);

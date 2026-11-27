@@ -15,6 +15,7 @@ import {
 } from "@miyoria/contracts/workers";
 import { type Clock, systemClock } from "@miyoria/types";
 import { keeperUser, versionArgs } from "../args.js";
+import { ISOLATED_GATEWAY_DOCKER, isolatesGateway } from "../egress.js";
 import { type DockerRunner, ProcessDockerRunner } from "../runner.js";
 import { resolveUser } from "../sandbox.js";
 import { acceptedTokens, isLoopback } from "./auth.js";
@@ -173,6 +174,14 @@ export async function startSandboxService(
     const status = images[role];
     if (!dockerStatus.available) {
       return { tag: null, reason: `這台的 Docker 沒有回應(${dockerStatus.error ?? "?"})` };
+    }
+    if (!isolatesGateway(dockerStatus.server_version)) {
+      // Older engines leave a job network's gateway on this machine, so a job would reach every
+      // service it listens on: no job at all (not ready) rather than run that way.
+      return {
+        tag: null,
+        reason: `這台的 Docker 是 ${dockerStatus.server_version ?? "?"},要 ${ISOLATED_GATEWAY_DOCKER} 以上才擋得住工作連回這台電腦;請更新 Docker`,
+      };
     }
     if (status === null) return { tag: null, reason: "這台沒有這種沙箱映像檔" };
     if (status.usable !== null) return { tag: status.usable, reason: "" };

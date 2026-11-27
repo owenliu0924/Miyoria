@@ -17,6 +17,7 @@
 // Everything here is argument building and the proxy's source; starting it is `DockerSandbox` or
 // the sandbox service.
 
+import { BlockList, isIP } from "node:net";
 import { LABEL, LABEL_INSTANCE, LABEL_KIND, NAME_PREFIX } from "./args.js";
 import type { SandboxNetwork } from "./config.js";
 
@@ -55,12 +56,39 @@ export function proxyEnv(port: number): Record<string, string> {
   };
 }
 
-/** `docker network create --internal`: containers on it have no route out. */
+/** The bridge options that decide whether the host has an address on the network. */
+export const GATEWAY_MODE_IPV4 = "com.docker.network.bridge.gateway_mode_ipv4";
+export const GATEWAY_MODE_IPV6 = "com.docker.network.bridge.gateway_mode_ipv6";
+
+/** The first Docker Engine whose `internal` bridges take gateway mode `isolated` (28.0.0). */
+export const ISOLATED_GATEWAY_DOCKER = 28;
+
+/**
+ * Whether Docker `version` (`{{.Server.Version}}`, e.g. `28.3.2`, `29.0.1+dfsg1`) can create a
+ * network the host has no address on. Older engines ignore the option without a word, so the
+ * network would still lead to every service the lending machine listens on at 0.0.0.0.
+ */
+export function isolatesGateway(version: string | null): boolean {
+  const major = /^\s*v?(\d+)\./.exec(version ?? "")?.[1];
+  return major !== undefined && Number(major) >= ISOLATED_GATEWAY_DOCKER;
+}
+
+/**
+ * `docker network create --internal` with gateway mode `isolated`: containers on it have no route
+ * out, and the host has no address on it. A plain internal bridge keeps the host's gateway
+ * address (`172.x.y.1`), and a program that connects to it reaches whatever this machine listens
+ * on at 0.0.0.0 (sshd, hostd, the sandbox service itself, admin pages); the proxy is a peer on
+ * the network, so no gateway is needed.
+ */
 export function networkCreateArgs(name: string, instance: string, job?: string): string[] {
   return [
     "network",
     "create",
     "--internal",
+    "--opt",
+    `${GATEWAY_MODE_IPV4}=isolated`,
+    "--opt",
+    `${GATEWAY_MODE_IPV6}=isolated`,
     "--label",
     `${LABEL}=1`,
     "--label",
@@ -72,6 +100,39 @@ export function networkCreateArgs(name: string, instance: string, job?: string):
 
 export function networkInspectArgs(name: string): string[] {
   return ["network", "inspect", "--format", "{{.Name}}", name];
+}
+
+/** Prints the network's IPv4 gateway mode (`isolated` when it was made by `networkCreateArgs`). */
+export function networkGatewayModeArgs(name: string): string[] {
+  return ["network", "inspect", "--format", `{{index .Options "${GATEWAY_MODE_IPV4}"}}`, name];
+}
+
+/** Prints the network's subnets, space-separated. */
+export function networkSubnetsArgs(name: string): string[] {
+  return ["network", "inspect", "--format", "{{range .IPAM.Config}}{{.Subnet}} {{end}}", name];
+}
+
+/**
+ * Which of `addresses` (this machine's own, `os.networkInterfaces()`) lie in one of `subnets`:
+ * on Linux the bridge's own address shows there, so a non-empty answer means the network leads
+ * to this machine whatever Docker was told.
+ */
+export function addressesInSubnets(
+  subnets: readonly string[],
+  addresses: readonly string[],
+): string[] {
+  const list = new BlockList();
+  for (const subnet of subnets) {
+    const [net, bits] = subnet.split("/");
+    const family = isIP(net ?? "");
+    if (family === 0 || bits === undefined || !/^\d{1,3}$/.test(bits)) continue;
+    list.addSubnet(net as string, Number(bits), family === 6 ? "ipv6" : "ipv4");
+  }
+  return addresses.filter((a) => {
+    const plain = a.split("%")[0] as string;
+    const family = isIP(plain);
+    return family !== 0 && list.check(plain, family === 6 ? "ipv6" : "ipv4");
+  });
 }
 
 export function networkRemoveArgs(name: string): string[] {

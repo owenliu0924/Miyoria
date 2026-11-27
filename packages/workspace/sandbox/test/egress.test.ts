@@ -18,7 +18,13 @@ import { join } from "node:path";
 import { createContext, runInContext } from "node:vm";
 import { afterEach, describe, expect, it } from "vitest";
 import { isBlockedAddress } from "../../web/src/net.js";
-import { jobEgressProxyArgs, LABEL_JOB, parseEgressStats } from "../src/egress.js";
+import {
+  addressesInSubnets,
+  isolatesGateway,
+  jobEgressProxyArgs,
+  LABEL_JOB,
+  parseEgressStats,
+} from "../src/egress.js";
 import {
   buildRunArgs,
   defaultSandboxConfig,
@@ -478,11 +484,31 @@ async function until(check: () => Promise<boolean>, ms: number): Promise<void> {
   throw new Error("timed out");
 }
 
+describe("a network the host has no address on", () => {
+  it("needs Docker 28 or newer", () => {
+    for (const v of ["28.0.0", "28.3.2", "29.0.1+dfsg1", "v30.1.0"])
+      expect(isolatesGateway(v), v).toBe(true);
+    for (const v of ["27.5.1", "26.1.5+dfsg1", "20.10.24", "", "podman", null]) {
+      expect(isolatesGateway(v), String(v)).toBe(false);
+    }
+  });
+
+  it("finds this machine's own addresses inside a network's subnets", () => {
+    const own = ["127.0.0.1", "10.1.0.4", "172.18.0.1", "fe80::1%eth0", "fd00:1::1"];
+    expect(addressesInSubnets(["172.18.0.0/16"], own)).toEqual(["172.18.0.1"]);
+    expect(addressesInSubnets(["fd00:1::/64", "bogus", "1.2.3.0/x"], own)).toEqual(["fd00:1::1"]);
+    expect(addressesInSubnets(["192.0.2.0/24"], own)).toEqual([]);
+  });
+});
+
 describe("egress arguments", () => {
   const instance = "0123456789abcdef";
 
   it("creates_an_internal_network_and_hardens_the_proxy_container", () => {
     expect(networkCreateArgs("n", instance)).toContain("--internal");
+    expect(networkCreateArgs("n", instance)).toContain(
+      "com.docker.network.bridge.gateway_mode_ipv4=isolated",
+    );
     const config = SandboxConfigSchema.parse({
       network: { allow: ["pypi.org", "*.pythonhosted.org"] },
     });

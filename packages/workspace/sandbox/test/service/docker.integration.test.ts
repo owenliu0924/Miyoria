@@ -8,9 +8,11 @@
 
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import { networkInterfaces } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { addressesInSubnets } from "../../src/egress.js";
 import { ProcessDockerRunner } from "../../src/runner.js";
 import { imageHash, imageTag } from "../../src/service/images.js";
 import { type RunningSandboxService, startSandboxService } from "../../src/service/index.js";
@@ -43,7 +45,10 @@ describe.skipIf(!dockerAvailable())("sandbox service (live Docker)", () => {
   let service: RunningSandboxService;
   let jobImage = "python:3.12-slim";
   let proxyImage = "node:24-slim";
+  let hostListener: TcpServer | null = null;
   const opened: string[] = [];
+  /** The jobs of the running test: closed after it, so the next one has the machine's CPUs. */
+  let current: string[] = [];
 
   const start = () =>
     startSandboxService({
@@ -85,9 +90,32 @@ describe.skipIf(!dockerAvailable())("sandbox service (live Docker)", () => {
       `/v1/jobs/${id}`,
       jobBody({ limits: { ...jobBody().limits, cpus: 1, memory_mb: 512 }, ...over }),
     );
-    expect(res.status, JSON.stringify(res.json)).toBe(201);
+    if (res.status !== 201) {
+      // What the service had reserved: a refusal for CPUs or memory names its cause.
+      const info = (await call("GET", "/v1/info")).json;
+      expect(
+        res.status,
+        JSON.stringify({
+          answer: res.json,
+          load: info?.load,
+          policy: info?.policy,
+          ready: info?.ready,
+          reason: info?.reason,
+        }),
+      ).toBe(201);
+    }
     opened.push(id);
+    current.push(id);
     return id;
+  };
+
+  /** The JSON a program printed, or a failure that shows everything the exec answered. */
+  const printed = (result: Json): Json => {
+    try {
+      return JSON.parse(String(result?.stdout ?? "").trim());
+    } catch {
+      throw new Error(`the program printed no JSON: ${JSON.stringify(result)}`);
+    }
   };
 
   /** Runs a Python program in `job` and returns its result. */
@@ -106,6 +134,19 @@ describe.skipIf(!dockerAvailable())("sandbox service (live Docker)", () => {
       await new Promise((r) => setTimeout(r, 200));
     }
   };
+
+  afterEach(async () => {
+    for (const id of current) {
+      const closed = await call("DELETE", `/v1/jobs/${id}`).catch((e: unknown) => ({
+        status: 0,
+        json: String(e),
+      }));
+      // 410: it ended already (its lease ran out); anything else is worth seeing in the log.
+      if (closed.status !== 200 && closed.status !== 410)
+        console.warn(`closing job ${id}: ${closed.status} ${JSON.stringify(closed.json)}`);
+    }
+    current = [];
+  }, 120_000);
 
   beforeAll(async () => {
     root = tempDir("sbx-live-");
@@ -139,6 +180,7 @@ describe.skipIf(!dockerAvailable())("sandbox service (live Docker)", () => {
   afterAll(async () => {
     for (const id of opened) await call("DELETE", `/v1/jobs/${id}`).catch(() => undefined);
     await service?.close();
+    hostListener?.close();
     // Only this test's jobs: their ids are the ones opened here.
     for (const id of opened) {
       docker("rm", "-f", `miyoria-sbx-${id}`, `miyoria-sbx-egress-${id}`);
@@ -168,7 +210,7 @@ except OSError: report["rootfs"] = "read-only"
 print(json.dumps(report))
 `,
     );
-    const report = JSON.parse(result.stdout.trim());
+    const report = printed(result);
     expect(report.uid).not.toBe(0);
     expect(report.capeff).toBe("0000000000000000");
     expect(report.nonewprivs).toBe("1");
@@ -195,8 +237,8 @@ while time.time() < end: pass
 print("spun")
 `,
     );
-    expect(busy.stdout.trim()).toBe("spun");
-    expect(busy.cpu_ms).toBeGreaterThan(500);
+    expect(busy.stdout.trim(), JSON.stringify(busy)).toBe("spun");
+    expect(busy.cpu_ms, JSON.stringify(busy)).toBeGreaterThan(500);
     const check = await python(
       job,
       `
@@ -211,7 +253,7 @@ for pid in os.listdir("/proc"):
 print(len(mine))
 `,
     );
-    expect(check.stdout.trim()).toBe("0");
+    expect(check.stdout.trim(), JSON.stringify(check)).toBe("0");
   }, 180_000);
 
   it("refuses every private, tailnet, metadata, gateway and mail target through the proxy", async () => {
@@ -275,7 +317,7 @@ print(json.dumps(out))
 `,
       180_000,
     );
-    const out = JSON.parse(result.stdout.trim()) as Record<string, string>;
+    const out = printed(result) as Record<string, string>;
     for (const target of targets) expect(out[target], target).toBe("HTTP/1.1 403 Forbidden");
     for (const url of [
       "http://169.254.169.254/latest/meta-data/",
@@ -298,8 +340,13 @@ for host, port in [("1.1.1.1", 80), ("8.8.8.8", 53), ("172.17.0.1", 2375), ("169
     try:
         socket.create_connection((host, port), timeout=5).close()
         out[f"{host}:{port}"] = "connected"
-    except OSError as e:
+    except ConnectionRefusedError:
+        # Something answered: a route to that host exists.
         out[f"{host}:{port}"] = "refused"
+    except socket.timeout:
+        out[f"{host}:{port}"] = "timeout"
+    except OSError as e:
+        out[f"{host}:{port}"] = f"unreachable {e.errno}"
 s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 s.settimeout(3)
 try:
@@ -309,10 +356,82 @@ except OSError:
 print(json.dumps(out))
 `,
     );
-    const out = JSON.parse(result.stdout.trim()) as Record<string, string>;
+    const out = printed(result) as Record<string, string>;
     for (const [target, what] of Object.entries(out)) {
-      expect(what, target).not.toBe("connected");
-      expect(what, target).not.toBe("answered");
+      expect(what, `${target} ${JSON.stringify(out)}`).not.toBe("connected");
+      expect(what, `${target} ${JSON.stringify(out)}`).not.toBe("refused");
+      expect(what, `${target} ${JSON.stringify(out)}`).not.toBe("answered");
+    }
+  }, 180_000);
+
+  it("never reaches this machine's own listeners through the job network's gateway", async () => {
+    // Something of the lending machine's listening on every address, as sshd or hostd would.
+    hostListener = createTcpServer((socket) => socket.end("host-secret\n"));
+    await new Promise<void>((r) => hostListener?.listen(0, "0.0.0.0", r));
+    const address = hostListener.address();
+    const hostPort = typeof address === "object" && address !== null ? address.port : 0;
+    const servicePort = Number(new URL(service.url).port);
+    const job = await open();
+    const network = `miyoria-sbx-net-${job}`;
+    const inspected = docker("network", "inspect", "--format", "{{json .}}", network);
+    const subnets = docker(
+      "network",
+      "inspect",
+      "--format",
+      "{{range .IPAM.Config}}{{.Subnet}} {{end}}",
+      network,
+    )
+      .split(/\s+/)
+      .filter((s) => s.includes(".") && s.includes("/"));
+    // The address a plain internal bridge gives the host: the first one of its subnet.
+    const gateways = subnets.map((subnet) => {
+      const parts = (subnet.split("/")[0] as string).split(".").map(Number);
+      parts[3] = (parts[3] ?? 0) + 1;
+      return parts.join(".");
+    });
+    const own = Object.values(networkInterfaces())
+      .flat()
+      .flatMap((n) => (n === undefined ? [] : [n.address]));
+    const diagnosis = {
+      network: inspected,
+      subnets,
+      gateways,
+      docker: docker("version", "--format", "{{.Server.Version}}"),
+    };
+    if (process.platform === "linux") {
+      expect(addressesInSubnets(subnets, own), JSON.stringify(diagnosis)).toEqual([]);
+    }
+    expect(gateways.length, JSON.stringify(diagnosis)).toBeGreaterThan(0);
+    const targets = gateways.flatMap((g) => [hostPort, servicePort, 22, 2375].map((p) => [g, p]));
+    const result = await python(
+      job,
+      `
+import json, socket
+out = {"route": open("/proc/net/route").read()}
+for host, port in ${JSON.stringify(targets)}:
+    key = f"{host}:{port}"
+    try:
+        s = socket.create_connection((host, port), timeout=5)
+        out[key] = "connected " + s.recv(100).decode(errors="replace").strip()
+        s.close()
+    except ConnectionRefusedError:
+        out[key] = "refused"
+    except socket.timeout:
+        out[key] = "timeout"
+    except OSError as e:
+        out[key] = f"unreachable {e.errno}"
+print(json.dumps(out))
+`,
+      120_000,
+    );
+    const out = printed(result) as Record<string, string>;
+    const why = JSON.stringify({ ...diagnosis, out });
+    for (const [host, port] of targets) {
+      const what = out[`${host}:${port}`] ?? "missing";
+      // Refused is a failure too: it means the host answered on that address.
+      expect(what.startsWith("connected") || what === "refused" || what === "missing", why).toBe(
+        false,
+      );
     }
   }, 180_000);
 
@@ -336,10 +455,10 @@ open("/workspace/fine.txt", "w").write("fine")
 print("ok")
 `,
     );
-    expect(made.stdout.trim()).toBe("ok");
+    expect(made.stdout.trim(), JSON.stringify(made)).toBe("ok");
     const sync = nextId();
     const res = await call("PUT", `/v1/jobs/${job}/syncs/${sync}`, { target: "workspace" });
-    expect(res.status).toBe(200);
+    expect(res.status, JSON.stringify(res.json)).toBe(200);
     expect(res.json.changed.map((e: Json) => e.path)).toEqual(["fine.txt"]);
     const skipped = Object.fromEntries(res.json.skipped.map((s: Json) => [s.path, s.why]));
     expect(skipped["steal-file"]).toBe("link");
@@ -362,7 +481,7 @@ print("ok")
       replace: false,
       manifest: [],
     });
-    expect(committed.status).toBe(200);
+    expect(committed.status, JSON.stringify(committed.json)).toBe(200);
     expect(committed.json.files).toBe(0);
     expect(readFileSync(hostFile, "utf8")).toBe(SECRET);
     expect(() => readFileSync(join(hostDir, "planted.txt"))).toThrow();
@@ -384,14 +503,17 @@ print("ok")
         "import sys\nfor l in sys.stdin: print(l.strip().upper(), flush=True)",
       ],
     });
-    expect(started.status).toBe(201);
+    expect(started.status, JSON.stringify(started.json)).toBe(201);
     await call("PUT", `/v1/jobs/${job}/procs/${proc}/stdin?offset=0`, Buffer.from("hello\n"));
     let text = "";
     for (let i = 0; i < 100 && !text.includes("HELLO"); i++) {
       text = (await call("GET", `/v1/jobs/${job}/procs/${proc}/stdout?after=0`)).bytes.toString();
       await new Promise((r) => setTimeout(r, 100));
     }
-    expect(text).toContain("HELLO");
+    const err = (
+      await call("GET", `/v1/jobs/${job}/procs/${proc}/stdout?after=0&stream=stderr`)
+    ).bytes.toString();
+    expect(text, `stdout ${JSON.stringify(text)} stderr ${JSON.stringify(err)}`).toContain("HELLO");
     await call("DELETE", `/v1/jobs/${job}/procs/${proc}`);
   }, 180_000);
 
@@ -406,11 +528,14 @@ print("ok")
     await service.close();
     service = await start();
     await service.refresh();
-    expect((await call("GET", `/v1/jobs/${kept}`)).status).toBe(200);
-    expect((await python(kept, "print(6 * 7)")).stdout.trim()).toBe("42");
+    const back = await call("GET", `/v1/jobs/${kept}`);
+    expect(back.status, JSON.stringify(back.json)).toBe(200);
+    const answer = await python(kept, "print(6 * 7)");
+    expect(answer.stdout.trim(), JSON.stringify(answer)).toBe("42");
     await new Promise((r) => setTimeout(r, 11_000));
     await service.sweep();
-    expect((await call("GET", `/v1/jobs/${short}`)).status).toBe(410);
+    const ended = await call("GET", `/v1/jobs/${short}`);
+    expect(ended.status, JSON.stringify(ended.json)).toBe(410);
     expect(docker("ps", "-aq", "--filter", `label=miyoria.sandbox.job=${short}`)).toBe("");
   }, 180_000);
 
@@ -425,7 +550,7 @@ import urllib.request
 print(urllib.request.urlopen("https://example.com/", timeout=30).status)
 `,
       );
-      expect(result.stdout.trim()).toBe("200");
+      expect(result.stdout.trim(), JSON.stringify(result)).toBe("200");
     },
     180_000,
   );

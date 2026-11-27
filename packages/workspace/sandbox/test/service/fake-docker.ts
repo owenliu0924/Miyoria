@@ -69,6 +69,10 @@ export class FakeDocker implements DockerRunner {
   readonly images = new Set<string>();
   readonly containers = new Map<string, FakeContainer>();
   readonly networks = new Map<string, Record<string, string>>();
+  /** `--opt` of each network as created. */
+  readonly networkOptions = new Map<string, Record<string, string>>();
+  /** What `docker version` says. */
+  version = "28.1.0";
   /** cgroup `usage_usec` of every container (grows as the test says). */
   cpuUsec = 0;
   /** The kill-all fails (pids used up, say). */
@@ -111,7 +115,7 @@ export class FakeDocker implements DockerRunner {
     }
     switch (command) {
       case "version":
-        return result({ stdout: Buffer.from("27.1.0\n") });
+        return result({ stdout: Buffer.from(`${this.version}\n`) });
       case "info":
         return result({ stdout: Buffer.from("2\n") });
       case "image": {
@@ -125,13 +129,15 @@ export class FakeDocker implements DockerRunner {
         if (sub === "create") {
           const name = args.at(-1) as string;
           const labels: Record<string, string> = {};
+          const opts: Record<string, string> = {};
           for (let i = 0; i < args.length; i++) {
-            if (args[i] === "--label") {
+            if (args[i] === "--label" || args[i] === "--opt") {
               const [k, v] = (args[i + 1] as string).split("=");
-              labels[k as string] = v as string;
+              (args[i] === "--label" ? labels : opts)[k as string] = v as string;
             }
           }
           this.networks.set(name, labels);
+          this.networkOptions.set(name, opts);
           return result();
         }
         if (sub === "rm") {
@@ -147,8 +153,20 @@ export class FakeDocker implements DockerRunner {
             .map(([n, l]) => `${n} ${l["miyoria.sandbox.job"] ?? ""}`);
           return result({ stdout: Buffer.from(lines.join("\n")) });
         }
-        if (sub === "inspect")
+        if (sub === "inspect") {
+          const format = args[args.indexOf("--format") + 1] ?? "";
+          const name = args.at(-1) as string;
+          const option = /index \.Options "([^"]+)"/.exec(format)?.[1];
+          if (option !== undefined || format === "{{range .IPAM.Config}}{{.Subnet}} {{end}}") {
+            const opts = this.networkOptions.get(name);
+            if (opts === undefined)
+              return result({ exit_code: 1, stderr: Buffer.from("Error: No such network\n") });
+            // TEST-NET-1: never an address of the machine the tests run on.
+            const out = option !== undefined ? (opts[option] ?? "") : "192.0.2.0/24 ";
+            return result({ stdout: Buffer.from(`${out}\n`) });
+          }
           return result({ stdout: Buffer.from("172.17.0.1 172.17.0.0/16 \n") });
+        }
         return result();
       }
       case "run": {

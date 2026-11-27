@@ -362,6 +362,30 @@ describe("network allowlist", () => {
     expect(proxyStart?.includes("node:24-slim")).toBe(true);
   });
 
+  it("replaces_a_network_made_before_the_host_lost_its_address_on_it", async () => {
+    const sbx = sandbox(allow);
+    const network = egressNetworkName(sbx.instance);
+    runner.networks.add(network);
+    await sbx.run({ language: "python", code: "x", network: { allow: ["pypi.org"] } });
+    expect(runner.calledWith("network rm")[0]).toEqual(["network", "rm", network]);
+    expect(runner.calledWith("network create")[0]).toContain(
+      "com.docker.network.bridge.gateway_mode_ipv4=isolated",
+    );
+    expect(runner.isolated.has(network)).toBe(true);
+  });
+
+  it("refuses_a_networked_run_on_a_docker_that_leaves_the_gateway_on_this_machine", async () => {
+    runner.version = "27.5.1";
+    const sbx = sandbox(allow);
+    const error = await errorOf(
+      sbx.run({ language: "python", code: "x", network: { allow: ["pypi.org"] } }),
+    );
+    expect(error.kind).toBe("network_unsupported");
+    expect(error.message).toContain("27.5.1");
+    expect(runner.calledWith("network create")).toHaveLength(0);
+    expect(runner.calledWith("run").filter((a) => a[2] === "-i")).toHaveLength(0);
+  });
+
   it("starts_the_proxy_again_when_it_died_and_a_run_without_network_never_touches_it", async () => {
     const sbx = sandbox(allow);
     await sbx.run({ language: "python", code: "x", network: { allow: ["pypi.org"] } });

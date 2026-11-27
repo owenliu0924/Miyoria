@@ -5,6 +5,7 @@
 // execs.ts and procs.ts; files in and out in uploads.ts and syncs.ts.
 
 import { chmod, mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import type {
   ExecResult,
@@ -32,6 +33,7 @@ import {
   WORKSPACE_DIR,
 } from "../args.js";
 import {
+  addressesInSubnets,
   DEFAULT_DENY_PORTS,
   EGRESS_ALIAS,
   type EgressStats,
@@ -43,7 +45,9 @@ import {
   LABEL_JOB,
   networkConnectArgs,
   networkCreateArgs,
+  networkGatewayModeArgs,
   networkRemoveArgs,
+  networkSubnetsArgs,
   parseEgressStats,
   proxyEnv,
 } from "../egress.js";
@@ -649,6 +653,8 @@ export class JobManager {
     if (job.network !== null && job.proxy !== null && proxyImage !== null) {
       const created = await ctx.docker.run(networkCreateArgs(job.network, ctx.instance, job.id));
       if (!succeeded(created)) throw fail("create the job's network", created);
+      const leak = await networkLeak(ctx.docker, job.network);
+      if (leak !== null) throw new ServiceError("docker_failed", leak);
       const r = job.request.network;
       const started = await ctx.docker.run(
         jobEgressProxyArgs({
@@ -792,6 +798,8 @@ export class JobManager {
         accepts(ctx.policy(), file.request.for) &&
         (await containerState(ctx.docker, job.container)) === "running" &&
         (job.proxy === null || (await containerState(ctx.docker, job.proxy)) === "running") &&
+        // A job from before networks were isolated would keep a way to this machine.
+        (job.network === null || (await networkLeak(ctx.docker, job.network)) === null) &&
         succeeded(await ctx.docker.run(killAllArgs(job.container, ctx.user)));
       if (!keep) {
         await teardown(ctx, job.container, job.proxy, job.network, root);
@@ -866,6 +874,36 @@ async function readJobFile(root: string): Promise<JobFile | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * Why a job's network leads to this machine, or `null` when it does not: it must have been made
+ * with gateway mode `isolated`, and on Linux (where Docker's bridges are this machine's own
+ * interfaces) none of this machine's addresses may lie in its subnets. Elsewhere Docker runs in a
+ * VM whose bridges are not interfaces here, and an unrelated adapter (WSL's) can share a range.
+ */
+export async function networkLeak(
+  docker: DockerControl,
+  network: string,
+  platform: NodeJS.Platform = process.platform,
+  addresses: () => string[] = ownInterfaceAddresses,
+): Promise<string | null> {
+  const mode = await docker.run(networkGatewayModeArgs(network));
+  if (!succeeded(mode)) return `cannot inspect the job's network: ${why(mode)}`;
+  const value = decode(mode.stdout).trim();
+  if (value !== "isolated") {
+    return `the job's network has gateway mode "${value || "nat"}", not "isolated": Docker kept an address on this machine`;
+  }
+  if (platform !== "linux") return null;
+  const subnets = (await docker.text(networkSubnetsArgs(network))) ?? "";
+  const inside = addressesInSubnets(subnets.split(/\s+/).filter(Boolean), addresses());
+  return inside.length === 0
+    ? null
+    : `this machine has ${inside.join(", ")} on the job's network (${subnets.trim()}): a program there would reach its services`;
+}
+
+function ownInterfaceAddresses(): string[] {
+  return Object.values(networkInterfaces()).flatMap((list) => (list ?? []).map((n) => n.address));
 }
 
 /** Whether a container runs, stopped, or is not there (`unknown` when Docker did not say). */

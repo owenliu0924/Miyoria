@@ -148,9 +148,43 @@ describe("sandbox service: opening a job", () => {
       .calledWith("run")
       .find((c) => c.some((a) => a.startsWith("EGRESS_MODE="))) as string[];
     expect(proxy).toContain("EGRESS_MODE=open");
-    expect(proxy).toContain("EGRESS_DENY_PORTS=25,465,587");
+    expect(proxy).toContain("EGRESS_DENY_PORTS=25,465,587,2525");
     expect(proxy).toContain("EGRESS_DENY_ADDRS=203.0.113.50,2a01:4f8:1:2::/64");
-    expect(h.docker.calledWith("network", "create")[0]).toContain("--internal");
+    const create = h.docker.calledWith("network", "create")[0] as string[];
+    expect(create).toContain("--internal");
+    // The host keeps no address on the job's network, so the job cannot reach its listeners.
+    expect(create).toContain("com.docker.network.bridge.gateway_mode_ipv4=isolated");
+    expect(create).toContain("com.docker.network.bridge.gateway_mode_ipv6=isolated");
+  });
+
+  it("is not ready on a Docker too old to keep a job network off this machine", async () => {
+    h = await harness();
+    h.docker.version = "27.5.1";
+    await h.service.refresh();
+    const health = (await h.call("GET", "/health")).json;
+    expect(health.ready).toBe(false);
+    expect(health.reason).toContain("27.5.1");
+    const refused = await h.call("PUT", `/v1/jobs/${nextId()}`, jobBody());
+    expect(refused.status, JSON.stringify(refused.json)).toBe(503);
+    expect(h.docker.calledWith("network", "create")).toHaveLength(0);
+  });
+
+  it("refuses a job whose network Docker made with the host's gateway on it", async () => {
+    h = await harness();
+    const docker = h.docker;
+    const exec = docker.exec.bind(docker);
+    // An engine that drops the option it does not know.
+    docker.exec = (args, options) =>
+      exec(
+        args[0] === "network" && args[1] === "create"
+          ? args.filter((a, i) => a !== "--opt" && args[i - 1] !== "--opt")
+          : args,
+        options,
+      );
+    const refused = await h.call("PUT", `/v1/jobs/${nextId()}`, jobBody());
+    expect(refused.status).toBe(502);
+    expect(refused.json.error.message).toContain('not "isolated"');
+    expect(docker.networks.size).toBe(0);
   });
 
   it("gives a job without network no network and no proxy", async () => {

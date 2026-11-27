@@ -64,6 +64,10 @@ export class FakeRunner implements DockerRunner {
   readonly started = new Map<string, string[]>();
   /** Docker networks created and not removed. */
   readonly networks = new Set<string>();
+  /** Networks made with gateway mode `isolated` (the host has no address on them). */
+  readonly isolated = new Set<string>();
+  /** What `docker version` says. */
+  version = "29.8.2";
   /** Programs run per pooled container name. */
   readonly programs = new Map<string, number>();
   /** Ends a waiting pooled container's CLI, by name. */
@@ -180,20 +184,26 @@ export class FakeRunner implements DockerRunner {
     if (command === "network") {
       const [, sub] = args;
       const name = args.at(-1) as string;
-      if (sub === "inspect") return this.networks.has(name) ? result() : result({ exit_code: 1 });
+      if (sub === "inspect") {
+        if (!this.networks.has(name)) return result({ exit_code: 1 });
+        return result({ stdout: Buffer.from(this.isolated.has(name) ? "isolated\n" : "\n") });
+      }
       if (sub === "create") {
         this.networks.add(name);
+        if (args.includes("com.docker.network.bridge.gateway_mode_ipv4=isolated"))
+          this.isolated.add(name);
         return result();
       }
       if (sub === "rm") {
         this.networks.delete(name);
+        this.isolated.delete(name);
         return result();
       }
       return result();
     }
     if (command === "version") {
       return this.dockerUp
-        ? result({ stdout: Buffer.from("29.8.2\n") })
+        ? result({ stdout: Buffer.from(`${this.version}\n`) })
         : result({
             exit_code: 1,
             stderr: Buffer.from("error during connect: the docker daemon is not running\n"),
