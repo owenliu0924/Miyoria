@@ -1,4 +1,5 @@
 import type { Server } from "node:http";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type Config,
@@ -10,8 +11,17 @@ import {
   type ModuleContext,
   type ModuleManifest,
 } from "@miyoria/runtime/kernel";
+import { ExtensionCatalogKey } from "../../ext-host/src/host.js";
+import { ExtensionLauncherKey, localLauncher } from "../../ext-host/src/launch.js";
+import { type BundledServer, bundledServers } from "./bundled.js";
 import { Registrar, ServerRunner } from "./client.js";
-import { type McpConfig, parseMcpConfig, reconnectInitialMs, reconnectMaxMs } from "./config.js";
+import {
+  type McpConfig,
+  parseMcpConfig,
+  reconnectInitialMs,
+  reconnectMaxMs,
+  type ServerConfig,
+} from "./config.js";
 import { bind, exposeHandler, localAddress, McpServeError, serveUntil } from "./server.js";
 import { McpStatus, McpStatusKey, newServerStatus } from "./status.js";
 
@@ -25,9 +35,10 @@ interface Running {
 }
 
 /**
- * Module `mcp`: connects to configured MCP servers and mirrors their tools into the shared
- * `ToolRegistry`; optionally serves a read-only MCP endpoint. Provides `McpStatusKey`; requires
- * the `ToolRegistryKey` service to exist.
+ * Module `mcp`: connects to configured MCP servers and to the ones enabled extensions bundle, and
+ * mirrors their tools into the `ActuatorRegistry` as gated capabilities (offered to the model
+ * through the shared `ToolRegistry`); optionally serves a read-only MCP endpoint. Provides
+ * `McpStatusKey`; requires the `ToolRegistryKey` service to exist.
  *
  * Its config is the top-level `[mcp]` section (not `[modules.mcp]`), passed to the constructor.
  */
@@ -37,6 +48,8 @@ export class McpModule implements Module {
     icon: "plug",
     category: "system",
     description: "MCP client for external tools, optional read-only MCP server",
+    // Started after the extension host when there is one: its catalog lists bundled servers.
+    optional: ["extensions", "actions"],
   });
   readonly config: McpConfig;
   #running: Running | null = null;
@@ -59,9 +72,21 @@ export class McpModule implements Module {
     const registry = ctx.services.get(ToolRegistryKey);
     if (!registry) throw new McpStartError("the tool registry service is not available");
     const status = new McpStatus();
-    const registrar = new Registrar(registry);
+    const registrar = new Registrar(actuatorsFor(ctx), registry);
+    const catalog = ctx.services.get(ExtensionCatalogKey);
+    const bundled = catalog === undefined ? [] : bundledServers(catalog, this.config.servers);
+    const bundledNames = new Set(bundled.map((b) => b.name));
+    const launcher = () => ctx.services.get(ExtensionLauncherKey) ?? localLauncher();
 
-    for (const [name, server] of this.config.servers) {
+    const runners: [string, ServerConfig, BundledServer | null][] = [
+      ...[...this.config.servers]
+        // An entry that only tunes a bundled server (no command, no url of its own) is not a
+        // server of its own.
+        .filter(([name, s]) => !(bundledNames.has(name) && s.command === null && s.url === null))
+        .map(([name, s]) => [name, s, null] as [string, ServerConfig, null]),
+      ...bundled.map((b) => [b.name, b.config, b] as [string, ServerConfig, BundledServer]),
+    ];
+    for (const [name, server, from] of runners) {
       status.insert(
         newServerStatus(
           name,
@@ -89,6 +114,7 @@ export class McpModule implements Module {
       const runner = new ServerRunner({
         name,
         config: server,
+        ...(from?.launch ? { transport: (signal) => from.connect(launcher(), signal) } : {}),
         status,
         registrar,
         backoffInitialMs: reconnectInitialMs(this.config),

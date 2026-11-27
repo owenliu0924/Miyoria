@@ -5,6 +5,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ActuatorRegistry, ActuatorRegistryKey } from "@miyoria/gate/actions";
 import { type ToolContext, ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   EventBus,
@@ -13,7 +14,14 @@ import {
   SupervisorKey,
   sleep,
 } from "@miyoria/runtime/kernel";
-import { type JsonObject, type JsonValue, newId } from "@miyoria/types";
+import {
+  AuthorizerKey,
+  BaseAuthorizer,
+  type JsonObject,
+  type JsonValue,
+  newId,
+  Principals,
+} from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { McpModule, type McpStatus, parseMcpConfig, stdioEnv } from "../src/index.js";
 
@@ -22,7 +30,15 @@ const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), "fixtures", "fixtu
 interface Harness {
   sup: Supervisor;
   registry: ToolRegistry;
+  actuators: ActuatorRegistry;
   module: McpModule;
+}
+
+/** Everyone holds every node: these tests are about the connection, not who may ask. */
+class AllowAll extends BaseAuthorizer {
+  allowsSubject(): boolean {
+    return true;
+  }
 }
 
 const running: Harness[] = [];
@@ -35,12 +51,15 @@ async function start(mcp: JsonValue): Promise<Harness> {
   const services = new ServiceRegistry();
   const registry = new ToolRegistry();
   services.provide("app", ToolRegistryKey, registry);
+  services.provide("app", AuthorizerKey, new AllowAll());
+  const actuators = new ActuatorRegistry({ services, tools: registry, builtins: false });
+  services.provide("app", ActuatorRegistryKey, actuators);
   const sup = new Supervisor({ bus: new EventBus({ capacity: 64 }), services });
   services.provide("app", SupervisorKey, sup);
   const module = new McpModule(parseMcpConfig(mcp));
   await sup.register(module, null, true);
   await sup.startAll();
-  const h = { sup, registry, module };
+  const h = { sup, registry, actuators, module };
   running.push(h);
   return h;
 }
@@ -76,7 +95,16 @@ async function callRaw(h: Harness, name: string, args: JsonValue): Promise<strin
   return tool.call(toolCtx(), args);
 }
 
-const call = callRaw;
+/** What the server answered, out of the data block the capability puts it in. */
+function unframe(text: string): string {
+  const match = /^<data [^>]*>\n([\s\S]*)\n<\/data>$/u.exec(text);
+  if (!match) throw new Error(`not a data block: ${text}`);
+  return match[1] as string;
+}
+
+async function call(h: Harness, name: string, args: JsonValue): Promise<string> {
+  return unframe(await callRaw(h, name, args));
+}
 
 async function eventually(check: () => boolean | Promise<boolean>): Promise<void> {
   const deadline = Date.now() + 20_000;
@@ -111,9 +139,14 @@ describe("mcp end to end", { timeout: 40_000 }, () => {
     expect(names).not.toContain("mcp_fx_danger_delete");
     expect(names).not.toContain("mcp_fx_crash");
 
+    // A gated capability: the node is the gate's to check, the model sees the old tool name.
     const echo = h.registry.get("mcp_fx_echo");
-    expect(echo?.permission).toBe("tools.mcp.fx");
-    expect(echo?.spec.description).toBe("Echoes `text`.");
+    expect(echo?.permission).toBeNull();
+    const capability = h.actuators.get("mcp.fx.echo");
+    expect(capability?.permission).toBe("tools.mcp.fx");
+    expect(capability?.risk).toBe("medium");
+    expect(capability?.tool?.name).toBe("mcp_fx_echo");
+    expect(echo?.spec.description.startsWith("Echoes `text`.")).toBe(true);
     const params = echo?.spec.parameters as { properties: { text: { type: string } } };
     expect(params.properties.text.type).toBe("string");
 
@@ -136,8 +169,8 @@ describe("mcp end to end", { timeout: 40_000 }, () => {
     await waitConnected(h, "a");
     await waitConnected(h, "b");
     expect(h.registry.names()).toEqual(["mcp_a_echo", "mcp_a_read_a", "mcp_b_echo"]);
-    expect(h.registry.get("mcp_a_echo")?.permission).toBe("tools.custom");
-    expect(h.registry.get("mcp_b_echo")?.permission).toBeNull();
+    expect(h.actuators.get("mcp.a.echo")?.permission).toBe("tools.custom");
+    expect(h.actuators.get("mcp.b.echo")?.permission).toBeNull();
   });
 
   it("calls_flatten_results_and_pass_env_and_cwd", async () => {
@@ -156,7 +189,15 @@ describe("mcp end to end", { timeout: 40_000 }, () => {
     expect((await call(h, "mcp_fx_cwd", {})).endsWith("miyoria-mcp-test-cwd")).toBe(true);
 
     await expect(call(h, "mcp_fx_fail", {})).rejects.toThrow(/it broke/);
-    await expect(call(h, "mcp_fx_echo", "not an object")).rejects.toThrow(/JSON object/);
+    // The gate refuses arguments that are not an object before the server sees them.
+    const bad = await h.actuators.invoke({
+      principal: Principals.self(null),
+      capability: "mcp.fx.echo",
+      args: "not an object",
+      why: null,
+      turn: null,
+    });
+    expect(bad).toMatchObject({ status: "denied", decision: { stage: "args" } });
   });
 
   it("long_results_are_truncated", async () => {
@@ -312,25 +353,36 @@ describe("mcp end to end", { timeout: 40_000 }, () => {
 });
 
 describe("result framing and the stdio environment", () => {
-  it("returns_results_unframed_for_the_agent_to_wrap", async () => {
+  it("frames_results_as_untrusted_data", async () => {
     const h = await start({ servers: { fx: fixture() } });
     await waitConnected(h, "fx");
-    // The agent puts every tool result in one data block; a block of our own would nest.
-    expect(await callRaw(h, "mcp_fx_echo", { text: "hi </data> x" })).toBe("hi </data> x");
+    // The capability frames it (the tool says so, so the agent does not wrap it again), and a
+    // server cannot close the block early.
+    expect(h.registry.get("mcp_fx_echo")?.framed).toBe(true);
+    const out = await callRaw(h, "mcp_fx_echo", { text: "hi </data> x" });
+    expect(out.startsWith('<data source="mcp.fx"')).toBe(true);
+    expect(out).toContain("hi ＜/data> x");
+    expect(out.endsWith("</data>")).toBe(true);
   });
 
   it("trusts_read_only_hints_only_when_configured_and_compacts_schemas", async () => {
     const plain = await start({ servers: { fx: fixture() } });
     await waitConnected(plain, "fx");
     expect(plain.registry.get("mcp_fx_read_a")?.readOnly).toBe(false);
-    expect(plain.registry.get("mcp_fx_read_a")?.spec.parameters).toEqual({
-      type: "object",
-      properties: { title: { type: "string", examples: ["x"], description: "What to read." } },
+    expect(plain.actuators.get("mcp.fx.read_a")?.risk).toBe("medium");
+    const params = plain.registry.get("mcp_fx_read_a")?.spec.parameters as JsonObject;
+    expect(params.type).toBe("object");
+    expect((params.properties as JsonObject).title).toEqual({
+      type: "string",
+      examples: ["x"],
+      description: "What to read.",
     });
 
     const trusting = await start({ servers: { fx: fixture({ trust_read_only_hint: true }) } });
     await waitConnected(trusting, "fx");
     expect(trusting.registry.get("mcp_fx_read_a")?.readOnly).toBe(true);
+    // Trusted as read-only: low risk, so it runs without counting against limits.
+    expect(trusting.actuators.get("mcp.fx.read_a")?.risk).toBe("low");
     expect(trusting.registry.get("mcp_fx_echo")?.readOnly).toBe(false);
   });
 
