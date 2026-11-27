@@ -16,6 +16,8 @@ export const SPACE = "01HSPACE000000000000000000";
 export const OTHER_SPACE = "01HSPACE2SPACE2SPACE2SPACE";
 export const ROOM = "01HROOM0000000000000000000";
 export const DM_ROOM = "01HDMROOM00000000000000000";
+/** The room of the group DM `gd`. */
+export const GROUP_ROOM = "01HGROUPROOM00000000000000";
 export const SESSION = "space:01HSPACE:room:01HROOM";
 
 export const IN_SERVER: NotePlace = { space: SPACE, room: ROOM, dm: null };
@@ -125,12 +127,13 @@ export const DM_CHANNEL: ContextKey = {
 };
 export const OWEN_ACCOUNT: AccountRef = { platform: "discord", id: "u-owen" };
 
-/** A resolver that knows one server, its channel, one DM and Owen's account. */
+/** A resolver that knows one server, its channel, one DM, one group DM and Owen's account. */
 export function fakeResolver(): ScopeResolver {
+  const rooms: Record<string, string> = { c1: ROOM, d1: DM_ROOM, gd: GROUP_ROOM };
   return {
     spaceOf: (platform, guild) => (platform === "discord" && guild === "g1" ? SPACE : null),
     guildOf: (space) => (space === SPACE ? { platform: "discord", guild: "g1" } : null),
-    roomOf: (ctx) => (ctx.channel === "c1" ? ROOM : ctx.channel === "d1" ? DM_ROOM : null),
+    roomOf: (ctx) => rooms[ctx.channel] ?? null,
     contextOf: (room) => (room === ROOM ? CHANNEL : room === DM_ROOM ? DM_CHANNEL : null),
     personOf: (account) => (account.id === "u-owen" ? OWEN : null),
     accountOf: (person) => (person === OWEN ? OWEN_ACCOUNT : null),

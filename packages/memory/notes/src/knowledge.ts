@@ -33,7 +33,14 @@ import type {
 import { cleanKey } from "../../learning/src/json-doc.js";
 import { leaves, pieces } from "./importer.js";
 import type { DocumentKind, NoteAuthor, Provenance } from "./schema.js";
-import type { NoteScope, NotesReader, NotesViewer, ScopeResolver } from "./scope.js";
+import {
+  groupDm,
+  type NoteScope,
+  type NotesReader,
+  type NotesViewer,
+  outsideSpace,
+  type ScopeResolver,
+} from "./scope.js";
 import { MISC_SECTION, sectionKey, sectionLabel } from "./sections.js";
 import {
   type CardOptions,
@@ -130,11 +137,12 @@ export class NotesKnowledge {
       return p === null ? [] : [p];
     });
     if (context === null) return { space: null, room: null, dm: null, present: [] };
-    const dm = context.kind === "dm" || context.scope === null;
+    const dm = outsideSpace(context);
     return {
       space: dm ? null : this.resolver.spaceOf(context.platform, context.scope as string),
       room: this.resolver.roomOf(context),
-      dm: dm ? (present[0] ?? null) : null,
+      // A group DM reads its room's lines, never one member's DM lines.
+      dm: dm && !groupDm(context) ? (present[0] ?? null) : null,
       present,
     };
   }
@@ -165,7 +173,12 @@ export class NotesKnowledge {
   #scopeOf(writer: KnowledgeWriter): NoteScope | null {
     const c: ContextKey | null = writer.context;
     if (c === null) return { type: "self" };
-    if (c.kind === "dm" || c.scope === null) {
+    if (groupDm(c)) {
+      // Said before several people: kept to that room, not to the writer's own DM.
+      const room = this.resolver.roomOf(c);
+      return room === null ? null : { type: "room", room };
+    }
+    if (outsideSpace(c)) {
       const person =
         writer.person ?? (writer.account === null ? null : this.resolver.personOf(writer.account));
       return person === null ? null : { type: "dm", person };
@@ -532,8 +545,12 @@ export class NotesKnowledge {
         if (options.context === null) return this.render(subjects, "owner", options.maxChars);
         const people = subjects.flatMap((s) => (s.type === "person" ? [s.person] : []));
         const viewer = this.viewerFor(options.context);
+        // A DM read for the people it is about: theirs, unless it is a group DM.
         const reader: NotesViewer =
-          viewer.dm === null && viewer.space === null && people.length > 0
+          viewer.dm === null &&
+          viewer.space === null &&
+          people.length > 0 &&
+          !groupDm(options.context)
             ? { ...viewer, dm: people[0] ?? null, present: people }
             : viewer;
         return this.render(subjects, reader, options.maxChars);

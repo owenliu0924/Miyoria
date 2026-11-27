@@ -232,6 +232,12 @@ describe("units", () => {
       expect(scopeForNew(cfg, dm, owen, kind, p)).toEqual(dmScope);
     }
     expect(scopeForNew(cfg, dm, null, "fact", null)).toEqual({ type: "channel", context: dm });
+    // A group DM keeps what is learned there to itself, whoever is named as the partner.
+    const group = { ...dm, group: true };
+    expect(scopeForNew(cfg, group, owen, "fact", null)).toEqual({
+      type: "channel",
+      context: group,
+    });
 
     const open: MemoryConfig = memoryConfig({ allow_global_from_dm: true, guild_scope: "channel" });
     expect(scopeForNew(open, dm, owen, "fact", p)).toEqual({ type: "person", person: p });

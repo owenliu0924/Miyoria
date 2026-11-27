@@ -110,6 +110,19 @@ export function visibleTo(scope: NoteScope, reader: NotesReader): boolean {
   }
 }
 
+/** A context outside any server: a DM, a group DM, or a guild-less room. */
+export function outsideSpace(context: ContextKey): boolean {
+  return context.kind === "dm" || context.scope === null;
+}
+
+/**
+ * A group DM (the platform says so): several people share it, so it is a room of its own and
+ * never one member's DM, neither for what is read there nor for what is written.
+ */
+export function groupDm(context: ContextKey): boolean {
+  return outsideSpace(context) && context.group === true;
+}
+
 /** The place a conversation happens in, as identity names it. */
 export interface NotePlace {
   /** `null`: a DM, or a room outside any space. */

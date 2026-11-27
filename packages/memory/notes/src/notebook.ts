@@ -47,7 +47,14 @@ import {
 } from "../../memory/src/notebook.js";
 import { bodyLines } from "./importer.js";
 import type { DocumentKind } from "./schema.js";
-import { type NoteScope, type NotesViewer, type ScopeResolver, sameScope } from "./scope.js";
+import {
+  groupDm,
+  type NoteScope,
+  type NotesViewer,
+  outsideSpace,
+  type ScopeResolver,
+  sameScope,
+} from "./scope.js";
 import { MISC_SECTION, sectionKey, sectionLabel } from "./sections.js";
 import {
   NotesError,
@@ -156,11 +163,12 @@ export class NotesNotebook implements Notebook {
       return p === null ? [] : [p];
     });
     if (c === null) return { space: null, room: null, dm: null, present: [] };
-    const dm = c.kind === "dm" || c.scope === null;
+    const dm = outsideSpace(c);
     return {
       space: dm || c.scope === null ? null : this.#resolver.spaceOf(c.platform, c.scope),
       room: this.#resolver.roomOf(c),
-      dm: dm ? (present[0] ?? null) : null,
+      // A group DM reads its room's lines, never one member's DM lines.
+      dm: dm && !groupDm(c) ? (present[0] ?? null) : null,
       present,
     };
   }
@@ -169,7 +177,12 @@ export class NotesNotebook implements Notebook {
   #scopeOf(where: NotebookWhere): NoteScope | null {
     const c = where.context;
     if (c === null) return { type: "self" };
-    if (c.kind === "dm" || c.scope === null) {
+    if (groupDm(c)) {
+      // Written before several people: kept to that room, not to the writer's own DM.
+      const room = this.#resolver.roomOf(c);
+      return room === null ? null : { type: "room", room };
+    }
+    if (outsideSpace(c)) {
       const person = this.#personOf(where);
       return person === null ? null : { type: "dm", person };
     }

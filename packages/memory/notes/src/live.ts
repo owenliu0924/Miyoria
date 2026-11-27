@@ -35,7 +35,7 @@ import type { TranscriptEntry } from "../../transcript/src/types.js";
 import type { EpisodeSink } from "./episodes.js";
 import { type PassUsage, runSegmentPass, type SegmentPerson } from "./pass.js";
 import type { PromiseLedger } from "./promises.js";
-import { type NotePlace, placeScope, type ScopeResolver } from "./scope.js";
+import { groupDm, type NotePlace, outsideSpace, placeScope, type ScopeResolver } from "./scope.js";
 import {
   entriesAfter,
   markProcessed,
@@ -149,9 +149,11 @@ export function placeOfContext(
   entries: readonly TranscriptEntry[],
   resolver: ScopeResolver,
 ): NotePlace {
-  const dm = context.kind === "dm" || context.scope === null;
-  if (dm) {
-    const partner = entries.find((e) => e.kind === "other" && e.person_id !== null);
+  if (outsideSpace(context)) {
+    // A group DM is a room of its own: what is learned there is not one member's DM.
+    const partner = groupDm(context)
+      ? undefined
+      : entries.find((e) => e.kind === "other" && e.person_id !== null);
     return { space: null, room: resolver.roomOf(context), dm: partner?.person_id ?? null };
   }
   return {

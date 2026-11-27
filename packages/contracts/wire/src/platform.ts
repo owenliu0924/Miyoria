@@ -26,6 +26,11 @@ export const ContextKeySchema = z
     scope: z.string().nullable(),
     channel: z.string(),
     kind: ContextKindSchema,
+    /**
+     * A `dm` with several people (a Discord group DM), set by the platform: it is never one
+     * member's private DM with her. Not part of the identity of the context.
+     */
+    group: z.boolean().optional(),
   })
   .meta({ id: "WireContextKey" });
 export type ContextKey = z.output<typeof ContextKeySchema>;
