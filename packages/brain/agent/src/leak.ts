@@ -57,10 +57,19 @@ const WEAK: readonly RegExp[] = [
   /我(?:得|要|再|先)(?:驗算|確認|檢查|算一下|重算)/,
   /(?:驗算|驗證)[:：]/,
   /^(?:所以|那麼|因此).{0,20}(?:對的|正確|沒錯)[。.]?$/,
-  /^(?:思考|推理|分析|草稿|Reasoning|Thinking)[:：]/i,
   /^參考資料[:：]/,
+];
+
+/**
+ * A step of reasoning labelled (「分析:」「思考:」) or a plan of what to say first is her words when
+ * someone asked for an analysis (「分析:A 便宜但要等」, 「我應該先說結論」). It is a hint only when it
+ * speaks of the person she answers in the third person: 「分析:使用者在問座標」, 「我應該先回答他」.
+ */
+const PLAN_STEP: readonly RegExp[] = [
+  /^(?:思考|推理|分析|草稿|Reasoning|Thinking)[:：]/i,
   /我(?:該|應該|要)先?(?:驗收|回覆|回答|接著說|說)/,
 ];
+const ABOUT_THE_REPLY = /使用者|用戶|\buser\b|[他她](?!們)/i;
 
 /**
  * A tag of the prompt's structure on its own, no attributes (`<now>`, `</data>`, `<chat>`). In a
@@ -159,6 +168,9 @@ export function judgeLine(line: string, echo: PromptEcho | null = null): LineVer
   }
   const words = raw.replace(REPLY_OPEN, "").replace(REPLY_CLOSE, "");
   if (!toSomeone && WEAK.some((r) => r.test(text))) return { score: 1, text: words };
+  if (!toSomeone && PLAN_STEP.some((r) => r.test(text)) && ABOUT_THE_REPLY.test(text)) {
+    return { score: 1, text: words };
+  }
   return { score: 0, text: words };
 }
 

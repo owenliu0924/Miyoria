@@ -42,7 +42,8 @@ const MAX_EMOTION_LEN = 32;
  * thinks aloud reads it as a thinking block: `<emo:thinking>the plan</emo:thinking>the reply`.
  * Text up to such a closing tag is her reasoning and is never shown (2026-11-09, five times in
  * the log). The parser waits this many UTF-16 units for the closing tag before it gives up and
- * takes the tag as the emotion it names.
+ * takes the tag as the emotion it names. A block that nothing of hers follows but her feel block
+ * is no plan: it is her reply, wrapped in the tag (`afterThought`).
  */
 const MAX_THINK_LEN = 1200;
 const THINK_OPEN = /^<emo:(thinking|think|thought)(?: [0-9.]+)?>/;
@@ -251,9 +252,24 @@ export class ExpressionParser {
         const from = start + thinking[0].length;
         const close = lower.indexOf(`</emo:${thinking[1]}>`, from);
         if (close !== -1) {
+          const after = close + (thinking[1] ?? "").length + 7;
+          const was = afterThought(input, lower, after, eof);
           flush();
-          pos = close + (thinking[1] ?? "").length + 7;
-          continue;
+          if (was === "wait") {
+            this.#held = input.slice(start);
+            return out;
+          }
+          if (was === "plan") {
+            pos = after;
+            continue;
+          }
+          // Nothing of hers after it but her feel block: what it held was her reply, written
+          // under the emotion it names (2026-11-27: an analysis she was asked for vanished).
+          const scan = scanTag(input.slice(start));
+          if (scan.kind === "tag") out.push(scan.segment);
+          this.#held = input.slice(from, close) + input.slice(after);
+          out.push(...this.#drain(eof));
+          return out;
         }
         if (!eof && input.length - from <= MAX_THINK_LEN) {
           flush();
@@ -376,6 +392,26 @@ export class ExpressionParser {
     const keep = eof ? 0 : Math.min(tickRunBack(input, from), FENCE.length - 1);
     return { end: input.length - keep, hold: keep > 0 };
   }
+}
+
+/**
+ * What an `<emo:thinking>…</emo:thinking>` closed at `after` was: `plan` when words of hers follow
+ * it (the plan before the reply), `reply` when only her feel block or the end of the stream does
+ * (the block was the reply itself), `wait` while only whitespace or the start of a tag came yet.
+ */
+function afterThought(
+  input: string,
+  lower: string,
+  after: number,
+  eof: boolean,
+): "plan" | "reply" | "wait" {
+  let i = after;
+  while (i < input.length && isSpace(input[i])) i++;
+  if (i >= input.length) return eof ? "reply" : "wait";
+  const rest = lower.slice(i);
+  if (rest.startsWith(FEEL_OPEN)) return "reply";
+  if (!eof && FEEL_OPEN.startsWith(rest)) return "wait";
+  return "plan";
 }
 
 const FENCE = "```";

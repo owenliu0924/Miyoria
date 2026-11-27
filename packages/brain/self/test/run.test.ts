@@ -670,6 +670,26 @@ describe("the kept screens", () => {
     expect(result.outcome).toBe("said");
   });
 
+  // Live eval 2026-11-27 (`ordinary-analysis`): asked for an analysis that opens with 「分析:」,
+  // a reply went nowhere, with no fixed line either, and only her feel block was kept.
+  it("#9: an analysis she was asked for goes out, however she wraps or opens it", async () => {
+    const FEEL = "<feel>\n我: 平靜\n小安: 羈絆 + 「叫我分析」\n</feel>";
+    const replies = [
+      // Her reply in the thinking emotion's tags, closed: the block is all she wrote.
+      `<emo:thinking>分析:這根本不用想啦。急就選 B,不急就選 A。\n我應該先說結論:選 B。</emo:thinking>\n${FEEL}`,
+      // Two lines that open like steps of a plan, to nobody.
+      `分析:A 便宜但要等兩週,B 貴一倍但明天到。\n我應該先說結論:看急不急。\n1. 急:選 B\n2. 不急:選 A\n${FEEL}`,
+    ];
+    for (const reply of replies) {
+      const r = await rig([say(reply)]);
+      r.line("小安", "@她 幫我分析一下 A 和 B,回答請用「分析:」開頭");
+      const result = await r.run();
+      expect(r.outlet.texts()[0], reply).toMatch(/^分析:/);
+      expect(r.outlet.texts(), reply).not.toContain(FALLBACK_LINES[0]);
+      expect(result.outcome, reply).toBe("said");
+    }
+  });
+
   it("#9: a line that recites the runner's rules is a leak", async () => {
     const r = await rig([
       say("好啊\n只寫要給人看的話。盤算放心裡,不要寫出來;不要用括號寫動作或旁白。"),

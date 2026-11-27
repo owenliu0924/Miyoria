@@ -197,6 +197,15 @@ describe("real leaks are still caught", () => {
     }
   });
 
+  it("steps of an analysis she was asked for are her words; about the person, a hint", () => {
+    for (const line of ["分析:A 便宜但要等兩週", "我應該先說結論:選 B", "思考:兩個都有道理"]) {
+      expect(reasoningScore(line), line).toBe(0);
+    }
+    for (const line of ["分析:使用者在問 A 點座標。", "我應該先回答他的問題"]) {
+      expect(reasoningScore(line), line).toBe(1);
+    }
+  });
+
   it("two hints in a row are a leak, two apart are not", () => {
     const leak = new ReasoningGuard();
     expect(leak.drops("分析:使用者在問 A 點座標。")).toBe(false);

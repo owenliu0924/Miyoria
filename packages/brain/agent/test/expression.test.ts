@@ -350,6 +350,23 @@ describe("an emotion tag used as a thinking block", () => {
     expect(segments).toEqual([emo("smug"), text(REPLY)]);
   });
 
+  // Live eval 2026-11-27: her whole analysis came in the tags, and only her feel block followed.
+  it("a block that nothing of hers follows but her feel block was her reply", () => {
+    const whole = `<emo:thinking>${REPLY}</emo:thinking>\n<feel>\n我: 平靜\n</feel>`;
+    for (let i = 0; i <= whole.length; i++) {
+      const e = new Expression();
+      for (const s of parseChunks([whole.slice(0, i), whole.slice(i)])) e.apply(s);
+      expect(e.text.trim(), `split at ${i}`).toBe(REPLY);
+      expect(e.emotions, `split at ${i}`).toEqual(["thinking"]);
+      expect(e.feel, `split at ${i}`).toEqual(["\n我: 平靜\n"]);
+    }
+    expect(Expression.parse(`<emo:thinking>${REPLY}</emo:thinking>`).text).toBe(REPLY);
+    // A plan before her words is still a plan, a feel block after them or not.
+    expect(
+      Expression.parse(`<emo:thinking>${PLAN}</emo:thinking>\n${REPLY}<feel>x</feel>`).text,
+    ).toBe(`\n${REPLY}`);
+  });
+
   it("an emotion she really means, with no closing tag, is still the emotion", () => {
     expect(parseChunks(["<emo:thinking>嗯……讓我想想。"])).toEqual([
       emo("thinking"),
