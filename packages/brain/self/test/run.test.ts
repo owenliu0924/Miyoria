@@ -726,6 +726,20 @@ describe("the kept screens", () => {
     expect(r.transcript.tail(SESSION.id).entries.at(-1)).toMatchObject({ kind: "note" });
   });
 
+  // Review 2026-11-27: a wish refused by the Floor cost a second model call refused the same way.
+  it("lines the Floor refused are a note, without one more step", async () => {
+    const guard: Guard = {
+      checkCall: async () => ALLOW,
+      checkLine: async () => refuse("floor", "現在沒有真人在場,不對空氣說話"),
+    };
+    const r = await rig([say("早安~"), say("<silence/>")], { guard });
+    const result = await r.run({ kind: "self", note: "早上了" });
+    expect(r.outlet.texts()).toEqual([]);
+    expect(r.model.requests).toHaveLength(1);
+    expect(result.outcome).toBe("silent");
+    expect(r.transcript.tail(SESSION.id).entries.at(-1)).toMatchObject({ kind: "note" });
+  });
+
   it("a refused line with a fixed one to say instead has that one said, and she is told", async () => {
     const guard: Guard = {
       checkCall: async () => ALLOW,

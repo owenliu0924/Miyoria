@@ -199,6 +199,27 @@ describe("the service guard", () => {
     expect(floorKind({ kind: "timer", note: "x" })).toBe("wish");
   });
 
+  // Review 2026-11-27: a reminder someone asked for, due in a channel nobody spoke in for half
+  // an hour, was refused as "nobody there" and never delivered.
+  it("a reminder someone asked for is owed them: no Floor of hers refuses it", async () => {
+    const asker = { account: { platform: "discord", id: "u1" }, name: "阿明" };
+    const asked = { kind: "timer" as const, note: "提醒阿明倒垃圾", from: asker };
+    expect(floorKind(asked)).toBe("result");
+    const kinds: string[] = [];
+    const floor = {
+      refuses: (kind: string) => {
+        kinds.push(kind);
+        return kind === "wish" ? "現在沒有真人在場,不對空氣說話" : null;
+      },
+    };
+    const g = serviceGuard({ services: services([[FloorKey, floor]]) });
+    expect(await g.checkLine(CTX, "阿明,該倒垃圾囉", ctx(asked))).toEqual(ALLOW);
+    expect(await g.checkLine(CTX, "早安", ctx({ kind: "timer", note: "早安" }))).toEqual(
+      refuse("floor", "現在沒有真人在場,不對空氣說話"),
+    );
+    expect(kinds).toEqual(["result", "wish"]);
+  });
+
   it("a line in another place claims that place's Floor as a start of hers", async () => {
     const asked: [string, ContextKey][] = [];
     const floor = {

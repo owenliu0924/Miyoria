@@ -81,6 +81,9 @@ export function floorKind(wake: Wake): FloorClaimKind {
     case "glance":
       return "ambient";
     case "timer":
+      // A reminder someone asked her for is her answer to them, owed whoever is around now
+      // (a quiet channel included); one she set herself is a wish of hers.
+      return wake.from != null ? "result" : "wish";
     case "self":
       return "wish";
   }

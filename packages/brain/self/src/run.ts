@@ -274,6 +274,11 @@ interface Step {
   later: boolean[];
   /** Reasons of the lines the guard or the outlet did not let out. */
   blocked: string[];
+  /**
+   * Every line not let out was refused by the Floor of the place: no other words would pass it now
+   * (it refuses by place and by what woke her, not by the line).
+   */
+  floorOnly: boolean;
   reasoning: string;
   calls: ToolCall[];
   /** `<silence/>` before any text, or only a feel block. */
@@ -659,8 +664,9 @@ class Run {
         break;
       }
       this.#record(assistant, [], step.blocked, step);
-      // A line that did not go out is hers to know about: one more step reads the note.
-      if (step.blocked.length > 0 && limit === null && !retriedBlocked) {
+      // A line that did not go out is hers to know about: one more step reads the note. Not when
+      // the Floor refused them all: another try is a model call it refuses the same way.
+      if (step.blocked.length > 0 && !step.floorOnly && limit === null && !retriedBlocked) {
         retriedBlocked = true;
         continue;
       }
@@ -937,6 +943,7 @@ class Run {
       ids: [],
       later: [],
       blocked: [],
+      floorOnly: true,
       reasoning: "",
       calls: [],
       silence: false,
@@ -954,9 +961,13 @@ class Run {
           step.lines.push(out.text);
           step.ids.push(out.message_id);
           step.later.push(out.later);
-          if (out.replaced !== null) step.blocked.push(out.replaced);
+          if (out.replaced !== null) {
+            step.blocked.push(out.replaced);
+            step.floorOnly = false;
+          }
         } else {
           step.blocked.push(out.reason);
+          if (out.code !== "floor") step.floorOnly = false;
         }
       }
     };
