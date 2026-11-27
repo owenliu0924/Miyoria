@@ -55,7 +55,14 @@ export interface Harness {
 }
 
 export async function harness(
-  over: { hostToml?: string; images?: boolean; docker?: FakeDocker; root?: string } = {},
+  over: {
+    hostToml?: string;
+    images?: boolean;
+    docker?: FakeDocker;
+    root?: string;
+    /** `false`: answer at once after the start, without waiting for the first check. */
+    refresh?: boolean;
+  } = {},
 ): Promise<Harness> {
   const root = over.root ?? tempDir("sbx-service-");
   const hostToml = join(root, "host.toml");
@@ -84,7 +91,7 @@ export async function harness(
       killGraceMs: 50,
     });
   let service = await start();
-  await service.refresh();
+  if (over.refresh !== false) await service.refresh();
   const h: Harness = {
     get service() {
       return service;

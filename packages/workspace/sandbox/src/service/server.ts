@@ -36,6 +36,12 @@ export interface ServerDeps {
   events: EventRing;
   accepted: readonly Buffer[];
   info(): SandboxInfo;
+  /**
+   * Resolves once the service's first check of Docker is over, or soon enough for a caller's
+   * time limit; `/health` and `/v1/info` wait for it, so a service asked the moment it started
+   * answers what it is and not "still checking".
+   */
+  settled?(): Promise<void>;
   health(): {
     status: "ok";
     running: number;
@@ -210,10 +216,15 @@ async function route(deps: ServerDeps, req: IncomingMessage, res: ServerResponse
   const method = req.method ?? "GET";
   const q = url.searchParams;
 
-  if (method === "GET" && url.pathname === "/health") return send(res, 200, deps.health());
+  if (method === "GET" && url.pathname === "/health") {
+    await deps.settled?.();
+    return send(res, 200, deps.health());
+  }
   if (parts[0] !== "v1") throw new ServiceError("not_found", "no such route");
-  if (method === "GET" && parts.length === 2 && parts[1] === "info")
+  if (method === "GET" && parts.length === 2 && parts[1] === "info") {
+    await deps.settled?.();
     return send(res, 200, deps.info());
+  }
   if (method === "GET" && parts.length === 2 && parts[1] === "events") {
     return await events(deps, res, q);
   }

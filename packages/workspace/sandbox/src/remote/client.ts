@@ -53,6 +53,11 @@ const log = getLogger("sandbox.client");
 export const SANDBOX_CAPABILITY = "sandbox";
 /** How long a computer's `/v1/info` is used. */
 export const INFO_TTL_MS = 60_000;
+/**
+ * How long an answer of "not ready" (or none) is used: a service that was still checking Docker
+ * when it was asked is ready seconds later, and a minute of refusals would send her elsewhere.
+ */
+export const NOT_READY_TTL_MS = 5_000;
 /** One long-poll waits this long for events (the service takes at most 25 s). */
 export const POLL_WAIT_MS = 25_000;
 /** How often every open job's lease is renewed. */
@@ -245,7 +250,11 @@ export class HttpSandboxClient implements SandboxClient {
       await Promise.all(
         this.#candidates().map(async (e) => {
           const known = this.#infos.get(keyOf(e));
-          if (!options.force && known && now - known.at < this.#infoTtlMs) return;
+          const ttl =
+            known?.info?.ready === true
+              ? this.#infoTtlMs
+              : Math.min(this.#infoTtlMs, NOT_READY_TTL_MS);
+          if (!options.force && known && now - known.at < ttl) return;
           await this.#readInfo(e, options.signal);
         }),
       );

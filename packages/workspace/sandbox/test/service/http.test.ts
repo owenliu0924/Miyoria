@@ -12,7 +12,7 @@ import {
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { MIB } from "../../src/service/util.js";
-import { result } from "./fake-docker.js";
+import { FakeDocker, result } from "./fake-docker.js";
 import {
   execBody,
   type Harness,
@@ -82,6 +82,20 @@ describe("sandbox service: auth and health", () => {
     writeFileSync(h.hostToml, "BROKEN");
     await h.service.refresh();
     expect((await h.call("GET", "/health")).json.reason).toContain("host.toml");
+  });
+
+  it("answers a caller of the first moment once its first look at Docker is done", async () => {
+    const docker = new FakeDocker();
+    const exec = docker.exec.bind(docker);
+    // A slow Docker: the first `docker version` takes a while, as on a loaded machine.
+    docker.exec = async (args, options) => {
+      if (args[0] === "version") await new Promise((r) => setTimeout(r, 400));
+      return exec(args, options);
+    };
+    h = await harness({ docker, refresh: false });
+    const info = (await h.call("GET", "/v1/info")).json;
+    expect(info.ready, JSON.stringify(info)).toBe(true);
+    expect((await h.call("GET", "/health")).json.ready).toBe(true);
   });
 
   it("reports the owner's rules and the reservations in /v1/info", async () => {

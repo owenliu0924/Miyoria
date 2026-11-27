@@ -31,6 +31,9 @@ export { buildImage, imageHash, imageSource, imageStatus, imageTag } from "./ima
 export type { HostConfigParser, SandboxPolicy } from "./policy.js";
 export { policyOf } from "./policy.js";
 
+/** How long `/health` and `/v1/info` wait for the first check of Docker after a start. */
+export const FIRST_CHECK_WAIT_MS = 3_000;
+
 export interface SandboxServiceOptions {
   /** `HOST`. */
   host: string;
@@ -334,11 +337,26 @@ export async function startSandboxService(
     };
   };
 
+  // The first check, which `/health` and `/v1/info` wait for (bounded under Core's 5 s).
+  let first: Promise<void> | null = null;
+  const settled = async (): Promise<void> => {
+    if (first === null) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      first,
+      new Promise<void>((done) => {
+        timer = setTimeout(done, FIRST_CHECK_WAIT_MS);
+      }),
+    ]);
+    clearTimeout(timer);
+  };
+
   const server = createSandboxServer({
     jobs,
     events,
     accepted,
     info,
+    settled,
     health: () => {
       const running = jobs.runningExecs();
       const r = readiness();
@@ -363,7 +381,9 @@ export async function startSandboxService(
   const port = typeof address === "object" && address !== null ? address.port : options.port;
   const host = options.host.includes(":") ? `[${options.host}]` : options.host;
   const url = `http://${host}:${port}`;
-  void check();
+  first = check().finally(() => {
+    first = null;
+  });
   jobs.start();
   const timer = setInterval(() => void check(), options.checkEveryMs ?? 30_000);
   log.info({ url, instance, state }, "sandbox service listening");

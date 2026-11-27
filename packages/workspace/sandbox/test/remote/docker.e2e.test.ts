@@ -33,7 +33,8 @@ function dockerAvailable(): boolean {
   return probe.status === 0 && probe.stdout.trim() !== "";
 }
 
-type Start = (options: Record<string, unknown>) => Promise<{ url: string; close(): Promise<void> }>;
+type Running = { url: string; close(): Promise<void>; refresh(): Promise<void> };
+type Start = (options: Record<string, unknown>) => Promise<Running>;
 
 /** P2's service, once it exists. */
 const service = (await import("../../src/service/index.js")) as unknown as {
@@ -94,7 +95,7 @@ class CountingQuota implements WorkQuota {
 
 describe.skipIf(!enabled)("the sandbox service on real Docker (needs P2's service)", () => {
   let root: string;
-  let running: { url: string; close(): Promise<void> };
+  let running: Running;
   let sandbox: RemoteSandbox;
   const quota = new CountingQuota();
 
@@ -112,6 +113,8 @@ describe.skipIf(!enabled)("the sandbox service on real Docker (needs P2's servic
       token,
       hostToken: null,
     });
+    // Docker, the images and the jobs of an earlier run are looked at before the first question.
+    await running.refresh();
     const config = SandboxConfigSchema.parse({});
     const client = new HttpSandboxClient({
       endpoints: loopback(running.url, token),
@@ -139,7 +142,8 @@ describe.skipIf(!enabled)("the sandbox service on real Docker (needs P2's servic
   });
 
   it("runs_a_shell_session_with_the_folder_both_ways", async () => {
-    expect((await sandbox.health({ refresh: true })).available).toBe(true);
+    const health = await sandbox.health({ refresh: true });
+    expect(health.available, JSON.stringify(health)).toBe(true);
     await sandbox.workspace?.write("in.txt", "hello from core\n");
     const first = await sandbox.run({
       language: "shell",
@@ -147,7 +151,7 @@ describe.skipIf(!enabled)("the sandbox service on real Docker (needs P2's servic
       session: "main",
       payer: { person: "person-e2e" },
     });
-    expect(first.exit_code).toBe(0);
+    expect(first.exit_code, JSON.stringify(first)).toBe(0);
     expect(first.stdout).toContain("hello from core");
     expect(first.stdout).toContain("Linux");
     expect((await sandbox.workspace?.read("out.txt"))?.text.trim()).toBe("499999500000");

@@ -40,7 +40,8 @@ function dockerAvailable(): boolean {
   return probe.status === 0 && probe.stdout.trim() !== "";
 }
 
-type Start = (options: Record<string, unknown>) => Promise<{ url: string; close(): Promise<void> }>;
+type Running = { url: string; close(): Promise<void>; refresh(): Promise<void> };
+type Start = (options: Record<string, unknown>) => Promise<Running>;
 const service = (await import("../../src/service/index.js").catch(() => ({}))) as {
   startSandboxService?: Start;
 };
@@ -80,7 +81,7 @@ describe.skipIf(!enabled)(
   "browse_* on the real sandbox service (needs P2's service and procs)",
   () => {
     let root: string;
-    let running: { url: string; close(): Promise<void> };
+    let running: Running;
     let client: HttpSandboxClient;
     let browse: Browse;
     let workspace: CountedWorkspace;
@@ -107,6 +108,8 @@ describe.skipIf(!enabled)(
         token,
         hostToken: null,
       });
+      // Docker, the images and the jobs of an earlier run are looked at before the first question.
+      await running.refresh();
       const config = SandboxConfigSchema.parse({});
       client = new HttpSandboxClient({
         endpoints: loopback(running.url, token),
@@ -145,7 +148,7 @@ describe.skipIf(!enabled)(
     it("opens, clicks, reads, looks and brings a download back", async () => {
       expect(browse.availability()).toEqual({ ok: true });
       const first = await run("browse_open", { url: "data:text/html,<h1>開始</h1>" });
-      expect(first.ok).toBe(true);
+      expect(first.ok, first.text).toBe(true);
       expect(first.text).toContain("# 開始");
 
       // The test's pages, from a second proc of the same job.
@@ -155,13 +158,13 @@ describe.skipIf(!enabled)(
       await new Promise((r) => setTimeout(r, 1500));
 
       const home = await run("browse_open", { url: "http://127.0.0.1:8080/" });
-      expect(home.text).toContain("測試首頁");
+      expect(home.text, JSON.stringify(home)).toContain("測試首頁");
       const link = /\[(e\d+)\] 連結 去第二頁/.exec(home.text)?.[1];
       const file = /\[(e\d+)\] 連結 下載報告/.exec(home.text)?.[1];
       expect(link && file).toBeTruthy();
 
       const two = await run("browse_act", { action: "click", ref: link });
-      expect(two.text).toContain("頁面換了");
+      expect(two.text, JSON.stringify(two)).toContain("頁面換了");
       expect((await run("browse_read", {})).text).toContain("這裡是第二頁的內容");
 
       const shot = await run("browse_shot", {});
@@ -171,7 +174,7 @@ describe.skipIf(!enabled)(
 
       await run("browse_act", { action: "back" });
       const saved = await run("browse_act", { action: "click", ref: file });
-      expect(saved.text).toContain("downloads/report.txt");
+      expect(saved.text, JSON.stringify(saved)).toContain("downloads/report.txt");
       expect((await workspace.read("downloads/report.txt")).text).toBe("downloaded bytes\n");
     }, 300_000);
 
@@ -183,7 +186,7 @@ describe.skipIf(!enabled)(
     it("closes the job with the session", async () => {
       const session = browse.sessions.get("all", "main");
       const out = await run("browse_act", { action: "close" });
-      expect(out.text).toContain("關掉了");
+      expect(out.text, JSON.stringify(out)).toContain("關掉了");
       expect((await session?.job.ended)?.reason).toBeDefined();
       expect(browse.sessions.size).toBe(0);
     }, 120_000);
