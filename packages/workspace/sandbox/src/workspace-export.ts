@@ -46,6 +46,17 @@ import type { WorkspaceApi } from "./workspace-store.js";
 /** The default of `[modules.sandbox.workspace] export_max_kb`, in bytes. */
 const MAX_EXPORT_BYTES = 256 * 1024 * 1024;
 
+/**
+ * The most a gzip (a tar.gz or a single .gz) may inflate to, in bytes, below the share limit
+ * (`zip_max_unpacked_mb`, 256 MiB by default). The check here and the one `share` makes again
+ * inflate a gzip whole into Core's memory (twice while the pieces are joined) and then read it on
+ * the event loop, where the outgoing checks also turn its text into a string: a program can write
+ * a 250 KB gzip that holds 256 MiB, and every export or share of it would take a gigabyte and stall
+ * her replies for everyone. 32 MiB keeps that to a moment. A zip is not held whole (its entries are
+ * inflated one at a time and dropped), so a bigger folder still goes out as a zip.
+ */
+const MAX_GZIP_INFLATED_BYTES = 32 * 1024 * 1024;
+
 /** The zip-based document types, by extension: a zip with one of these names is stored as that type. */
 const OFFICE: Readonly<Record<string, string>> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -139,9 +150,14 @@ export function workspaceExportCapability(
       if (archive || (known === null && binaryHead(head.subarray(0, 64)))) {
         // The limits `share` will apply; told now, before a copy is made.
         const share = ctx.services.get(ActuatorRegistryKey)?.config.share;
+        const limits = zipLimits(share ?? ShareConfigSchema.parse({}));
+        // A gzip refused here never becomes an artifact, so `share` never inflates it either.
+        if (known?.mime === "application/gzip") {
+          limits.maxUnpackedBytes = Math.min(limits.maxUnpackedBytes, MAX_GZIP_INFLATED_BYTES);
+        }
         const verdict = await checkContent(bytes, true, {
           ...(office === null ? {} : { mime: office }),
-          zip: zipLimits(share ?? ShareConfigSchema.parse({})),
+          zip: limits,
           attachment: true,
         });
         if (!verdict.ok && verdict.code === "type_not_allowed") {

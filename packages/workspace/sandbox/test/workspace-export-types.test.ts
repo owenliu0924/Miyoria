@@ -109,6 +109,13 @@ describe("workspace.export: more types", () => {
     }
   });
 
+  it("refuses a gzip that inflates past the much lower gzip cap, below the share limit", async () => {
+    await put("ok.log.gz", gzipSync(new Uint8Array(24 * 1024 * 1024)));
+    await put("big.log.gz", gzipSync(new Uint8Array(40 * 1024 * 1024)));
+    expect((await exportFile("ok.log.gz")).data).toMatchObject({ ok: true });
+    expect(refused(await exportFile("big.log.gz"))).toBe("zip_refused");
+  });
+
   it("tells a 7z or rar to be made a zip instead", async () => {
     await put("pack.7z", Uint8Array.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4, 9, 9]));
     await put("pack.rar", Uint8Array.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0, 9, 9]));
