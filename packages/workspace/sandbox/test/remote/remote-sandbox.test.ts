@@ -228,6 +228,37 @@ describe("the folder in and back", () => {
     expect(result.workspace_removed).toEqual([]);
   });
 
+  it("an_owner_s_run_takes_the_people_s_folders_only_to_a_computer_that_takes_members", async () => {
+    await workspace.write("notes/in.txt", "from core");
+    await workspace.write("people/amy/secret.txt", "amy's");
+    const program: Program = async (exec) => {
+      const leaked = await lstat(join(exec.workspace, "people/amy/secret.txt")).then(
+        () => true,
+        () => false,
+      );
+      await put(exec.workspace, "people/amy/from-run.txt", "written there");
+      return { stdout: `people:${leaked}` };
+    };
+    for (const [members, seen] of [
+      [false, "people:false"],
+      [true, "people:true"],
+    ] as const) {
+      const pc = machine(`pc-${members}`, { members, program });
+      const { sandbox } = sandboxOn([pc]);
+      await sandbox.health({ refresh: true });
+      const result = await sandbox.run({
+        language: "python",
+        code: "x",
+        mount_workspace: true,
+        for: "owner",
+      });
+      expect(result.stdout).toBe(seen);
+      // What a computer that never got the folders writes there does not come back.
+      expect(await workspace.exists("people/amy/from-run.txt")).toBe(members);
+      await sandbox.close();
+    }
+  });
+
   it("a_person_s_run_sees_only_their_folder_and_is_held_to_its_caps", async () => {
     await workspace.write("mine.txt", "hers");
     await workspace.write("people/amy/a.txt", "amy's");
