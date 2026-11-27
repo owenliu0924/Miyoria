@@ -286,26 +286,43 @@ export class LedgerTables implements CoinLedgerStore {
     for (const r of rows) {
       if (!Number.isSafeInteger(r.delta)) throw new StoreError("a coin delta must be whole");
       if (r.idem_key === null) throw new StoreError("every row of a posting needs its key");
-      if (r.person !== first.person) throw new StoreError("one posting is one wallet");
     }
     try {
       return this.#db.tx((): CoinPost => {
-        const wallet = this.#wallet(first.person);
-        const done = this.#first(wallet, first.idem_key as string);
-        if (done) return { status: "duplicate", entry: done, balance: this.#sumOf(wallet) };
-        let balance = this.#sumOf(wallet);
-        const total = rows.reduce((t, r) => t + r.delta, 0);
-        if (rule.covered && balance + total < 0) return { status: "short", balance };
-        for (const r of rows) {
-          if (r !== first && this.#first(wallet, r.idem_key as string)) {
-            throw new StoreError(`a key of the posting is taken: ${r.idem_key}`);
+        const wallets = rows.map((r) => this.#wallet(r.person));
+        const own = wallets[0] as PersonId;
+        const done = this.#first(own, first.idem_key as string);
+        if (done) return { status: "duplicate", entry: done, balance: this.#sumOf(own) };
+        const balances = new Map<PersonId, number>();
+        const totals = new Map<PersonId, number>();
+        rows.forEach((r, i) => {
+          const w = wallets[i] as PersonId;
+          if (!balances.has(w)) balances.set(w, this.#sumOf(w));
+          totals.set(w, (totals.get(w) ?? 0) + r.delta);
+        });
+        // Covered: no wallet the posting takes from may go below zero.
+        if (rule.covered) {
+          for (const [w, total] of totals) {
+            const balance = balances.get(w) ?? 0;
+            if (total < 0 && balance + total < 0) return { status: "short", balance };
           }
         }
-        for (const r of rows) {
-          this.#insert({ ...r, person: wallet }, balance);
-          balance += r.delta;
-        }
-        return { status: "posted", entry: { ...first, person: wallet }, balance };
+        rows.forEach((r, i) => {
+          if (r !== first && this.#first(wallets[i] as PersonId, r.idem_key as string)) {
+            throw new StoreError(`a key of the posting is taken: ${r.idem_key}`);
+          }
+        });
+        rows.forEach((r, i) => {
+          const w = wallets[i] as PersonId;
+          const balance = balances.get(w) ?? 0;
+          this.#insert({ ...r, person: w }, balance);
+          balances.set(w, balance + r.delta);
+        });
+        return {
+          status: "posted",
+          entry: { ...first, person: own },
+          balance: balances.get(own) ?? 0,
+        };
       });
     } catch (cause) {
       if (cause instanceof StoreError) throw cause;

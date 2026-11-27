@@ -266,6 +266,32 @@ describe("the coin ledger", () => {
     ]);
   });
 
+  it("posts rows of several wallets together, each wallet covered on its own", async () => {
+    const { economy, person } = await rig();
+    const x = person(discord("1"));
+    const y = person(discord("2"));
+    await economy.ledger.post(coin(x, 10, "checkin", "c", 1_000));
+    const rows = (amount: number, key: string) => [
+      coin(x, -amount, "transfer_out", `${key}:out`, 2_000),
+      coin(y, amount, "transfer_in", `${key}:in`, 2_000),
+    ];
+    expect(await economy.ledger.postAll(rows(11, "a"), { covered: true })).toMatchObject({
+      status: "short",
+      balance: 10,
+    });
+    expect(await economy.ledger.balance("p", y)).toBe(0);
+    expect(await economy.ledger.postAll(rows(7, "b"), { covered: true })).toMatchObject({
+      status: "posted",
+      balance: 3,
+    });
+    expect(await economy.ledger.postAll(rows(7, "b"), { covered: true })).toMatchObject({
+      status: "duplicate",
+    });
+    expect([await economy.ledger.balance("p", x), await economy.ledger.balance("p", y)]).toEqual([
+      3, 7,
+    ]);
+  });
+
   it("names what a refund of the day gave back", async () => {
     const { economy, person } = await rig();
     const x = person(discord("1"));
