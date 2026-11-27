@@ -214,6 +214,18 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:插件工具經閘門(次數、稽核、`on_own`、成員到 `work_min_bond` 叫得到、不到時看到 `WORK_BELOW_BOND`);舊的插件(沒寫風險)照樣能用;MCP 工具同上;插件附的 MCP 伺服器經 `localLauncher` 接上;HTTP 工具:參數驗證、`{secret:}` 只換在標頭、私有位址被擋、`pick`;插件排程到了送 `schedule.fire`;`miyoria ext new` 產生的範本能跑起來(現有的 `ext-hello` 測試的做法)。
 
+**做成的樣子和上面不同的地方**(P7,2026-11-27):
+
+- 外部工具(插件、MCP、HTTP)沒寫 `work` 時用 `[modules.actions.work]` 的次數(`work = false` 才用中風險的):中風險預設的 20 秒冷卻、一天 30 次會讓每個既有插件的工具變得幾乎不能用。宣告裡的次數 `0` 是「沒有這個上限」(協定的說法),`externalLimits` 換成閘門的寫法。
+- `ExternalToolSpec` 多可省的 `args`(閘門在 `args` 那一步檢查的 zod,HTTP 工具用)和 `source`(資料框的來源名)。結果一律由能力框成不可信資料(工具標 `framed`,agent 不再包一層);只有自己的程式寫了全部文字的(`framed: true`)不再框,插件或伺服器說的不算。錯誤訊息也經 `escapeData`。
+- 呼叫插件的 `tools.call` 的 `context` 從閘門的 `ExecContext` 來:`account` 是開口的人,沒有人開口時是 `{ id: "self" }`;`priority` 由 principal 推。
+- 密鑰的規則(`ext-host/src/env.ts`):萬用字元(manifest 的 `[env] pass` 或 owner 的 `env_pass`,誰寫的都一樣)不給名字像密鑰的變數(`_` 分開的字有 `KEY`、`TOKEN`、`SECRET`、`PASSWORD`、`PASS`、`AUTH`、`COOKIE`、`SESSION`、`PRIVATE`、`DSN`、`WEBHOOK`…,或以 `KEY` 結尾);完整名字可以,但 Core 自己的密鑰(`CORE_SECRET_PREFIXES`:`LLM_`、`DISCORD_`、`OPENAI_`、`MIYORIA_API_`、`MIYORIA_GITHUB_`…)只能由 owner 的 `env_pass` 或 `secrets` 給,manifest 寫了也不給。理由:萬用字元是給插件自己的設定用的,密鑰一個名字寫一行就清楚交出了什麼;Core 的金鑰等於 owner 的錢和她的身分。沒給的名字(不含值)寫進啟動的警告。既有的三個插件(minecraft、osu、threads)靠萬用字元拿自己的 token,manifest 要加完整名字(交付說明)。
+- `manifest.ts` 新讀的欄位:`[env] secrets`(插件想要、要 owner 同意的密鑰,只顯示不給)和 `[[mcp_servers]] risk`。`[modules.extensions]` 多 `utc_offset_minutes`(排程的 `daily` 照的時區,預設 480)。
+- 插件附的 MCP 伺服器叫 `<插件 id>-<名字>`(點換成 `_`),`ExtensionCatalog.mcpServers()` 多帶 `owner`(插件的 spec);owner 用同名、不寫 `command` / `url` 的 `[mcp.servers."<名字>"]` 調它。接線在 `mcp/src/bundled.ts`(新);`child-transport.ts` 用 MCP SDK 自己的 `ReadBuffer` / `serializeMessage`。`McpModule` 的 manifest 多 `optional: ["extensions", "actions"]`。
+- HTTP 工具:不跟轉址(下一站也會拿到密鑰標頭);網址的主機由檔案決定(`{參數}` 不能在主機裡);參數多 `in`(`path` / `query` / `body`)、固定的 `[query]`;插件 `http-tools/` 裡的檔只能用 owner 同時列在 `[modules.http_tools] secrets` 和那個插件 `[extensions."<id>"] secrets` 的密鑰(不然插件的檔可以把 owner 給自己工具的金鑰送去任何主機);名字和既有工具撞到時不註冊。
+- `ext new` 範本只有 `index.mjs`(不用建置)、manifest、`package.json`、`config.schema.json`;一個 `risk: "low"`、`readOnly` 的工具,註解示範 `ctx.schedule`。SDK 的 `ctx.schedule`(`set`、`cancel`、`list`、`on`)是 `extension.ts` 的;型別從 `sdk/src/index.ts` 匯出要另外加(交付說明)。
+- 沒做的:插件在執行中被停用時,它附的 MCP 伺服器不會跟著停(只照啟動時的 `enabled`);`localLauncher` 不看 `run_in`。
+
 ### P8 插件的程序進沙箱
 
 **交付**
