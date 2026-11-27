@@ -42,6 +42,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@miyoria/contracts": "workspace:^",
     "@miyoria/gate": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/store": "workspace:*",

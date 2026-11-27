@@ -1491,6 +1491,9 @@ importers:
 
   packages/workspace:
     dependencies:
+      '@miyoria/contracts':
+        specifier: workspace:^
+        version: link:../contracts
       '@miyoria/gate':
         specifier: workspace:*
         version: link:../gate
