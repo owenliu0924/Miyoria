@@ -86,8 +86,10 @@ describe("a schedule with a job", () => {
     expect(textOf(rig.model.requests[0])).toContain("排好要開的工作沒開成:amy 今天的額度用完了");
   });
 
-  it("wakes her when the host gave no way to start a job", async () => {
+  it("wakes her when there is no way to start a job", async () => {
     const rig = await Rig.create();
+    // The host hands its delegator over; without one the schedule cannot start anything.
+    host(rig).initiative.useJobs(undefined);
     rig.model.push(says("好"));
     setJob(rig);
     rig.shift = 31 * MIN;

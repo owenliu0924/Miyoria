@@ -56,6 +56,7 @@ import {
   ImpulseHostKey,
   type IncomingMessage,
   is,
+  MessageFilesKey,
   type MessageRef,
   newAction,
   newId,
@@ -71,6 +72,7 @@ import {
   textLane,
   timestampMs,
   toTimestamp,
+  WorkQuotaKey,
 } from "@miyoria/types";
 import {
   type Agent,
@@ -136,6 +138,7 @@ import { type Initiative, type InitiativeOptions, startInitiative } from "./init
 import { JobsHost, type JobsHostOptions } from "./jobs.js";
 import { type AdmittedInput, Lane, type LaneHost, type LaneRun, type ToolWork } from "./lane.js";
 import { textLimits } from "./limits.js";
+import { MessageFilesBook } from "./message-files.js";
 import { MouthOutlet, Settlements, submitTyping } from "./outlet.js";
 import { ReplyContext } from "./parent.js";
 import { resolvePlace } from "./places.js";
@@ -145,6 +148,7 @@ import { knownPeople, outletClaims } from "./repeat.js";
 import { PromptKeeper } from "./saved.js";
 import { askedLine, SAY_DM } from "./texts.js";
 import { VoiceHost } from "./voice.js";
+import { hostWorkQuota } from "./work-quota.js";
 
 /** Lines of a place before the first one the backfill fetches at most. */
 const MAX_BACKFILL = 50;
@@ -235,6 +239,8 @@ export class SelfHost implements TextRunner {
   readonly runner: SelfRunner;
   /** Each person's AI quota (`[modules.agent.quota]`), shared by text, voice and helper jobs. */
   readonly quota: PersonQuota;
+  /** The files of the messages she saw lately (`MessageFilesKey`, for `workspace_attach`). */
+  readonly messageFiles = new MessageFilesBook();
   readonly prompt: HostPrompt;
   /** The voice conversations (`TextRunner.voice`). */
   readonly voice: VoiceHost;
@@ -343,6 +349,10 @@ export class SelfHost implements TextRunner {
     };
     this.quota = options.runner?.quota ?? hostQuota(agent, options.quiet ?? null);
     agent.ctx.provide(PersonQuotaKey, this.quota);
+    // Each person's sandbox CPU seconds, kept beside the AI quota (docs/design/v6-sandbox.md §8).
+    agent.ctx.provide(WorkQuotaKey, hostWorkQuota(agent, options.quiet ?? null));
+    // The files of recent messages, for `workspace_attach`.
+    agent.ctx.provide(MessageFilesKey, this.messageFiles);
     // A file `share` hands over quotes by the rule her lines follow (`#takeQuote`).
     agent.ctx.provide(ReplyReferencesKey, { take: (turn, place) => this.#takeQuote(turn, place) });
     this.runner = new SelfRunner(
@@ -441,6 +451,11 @@ export class SelfHost implements TextRunner {
       options.initiative ?? {},
     );
     this.initiative = started.initiative;
+    // A schedule with a job starts it through the same delegator her own `delegate` uses.
+    const jobs = this.jobs;
+    if (jobs !== null && options.initiative?.jobs === undefined) {
+      this.initiative.useJobs({ start: (spec) => jobs.delegator.start(spec) });
+    }
     this.#stopInitiative = started.stop;
     this.impulses = new ImpulseDesk({
       agent,
