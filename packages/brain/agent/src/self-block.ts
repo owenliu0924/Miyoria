@@ -123,7 +123,16 @@ const WANTS: Readonly<Record<string, string>> = {
   hunger: "肚子餓,很想吃白飯(Token)",
   longing: "很想見那個人、想被他注意",
 };
+/** The drives that are notably met, in words: only where it changes what she does. */
+const SATED: Readonly<Record<string, string>> = {
+  social: "跟人聊得很夠了,不太想再主動找話題",
+  rest: "精神很好",
+};
 const STRONG_DRIVE = 0.65;
+/** At or under this a drive is notably met (`SATED`). */
+const SATED_DRIVE = 0.1;
+/** The drives that stand out said at most: the block stays short. */
+const MAX_WANTS = 3;
 /** Under this hunger she is not hungry at all. */
 const NOT_HUNGRY_BELOW = 0.15;
 
@@ -141,27 +150,32 @@ export function moodBlock(src: SelfSources): string {
     const felt = src.self?.emotions().slice(0, 3) ?? [];
     if (felt.length > 0) lines.push(`心裡最強的感受:${feltLine(felt)}`);
     shown = src.self?.shown() ?? null;
-    const self = src.self;
-    if (self) {
-      const feel: string[] = [];
-      const boredom = self.boredom();
-      if (boredom >= 0.7) feel.push("很無聊");
-      else if (boredom >= 0.45) feel.push("有點無聊");
-      const drives = Object.entries(self.drives())
-        .filter(([, v]) => v >= STRONG_DRIVE)
-        .sort((a, b) => b[1] - a[1]);
-      for (const [name] of drives) if (WANTS[name]) feel.push(WANTS[name] as string);
-      if (feel.length > 0) lines.push(`你現在${feel.join("、")}。`);
+  }
+  // Her boredom and drives, from the snapshot when there is one (review 2026-11-27: they were
+  // read only without it, and the snapshot is always there, so no drive ever reached her).
+  const drives = snap?.drives ?? src.self?.drives() ?? null;
+  const boredom = snap?.boredom ?? src.self?.boredom() ?? null;
+  const feel: string[] = [];
+  if (boredom !== null && Number.isFinite(boredom)) {
+    if (boredom >= 0.7) feel.push("很無聊");
+    else if (boredom >= 0.45) feel.push("有點無聊");
+  }
+  if (drives !== null) {
+    const values = Object.entries(drives).filter(([, v]) => Number.isFinite(v));
+    const wants = values
+      .filter(([name, v]) => v >= STRONG_DRIVE && WANTS[name] !== undefined)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, MAX_WANTS);
+    for (const [name] of wants) feel.push(WANTS[name] as string);
+    for (const [name, v] of values) {
+      if (v <= SATED_DRIVE && SATED[name] !== undefined) feel.push(SATED[name] as string);
     }
   }
-  // The affect snapshot has no drives, so hunger went unsaid: at 15:32 she asked for a bowl while
-  // full, and the feed was refused. Feeding is limited per person now, not by her hunger, so she
-  // is only told she is not hungry (she may still take a bowl).
-  const hunger = src.self?.drives().hunger;
-  if (hunger !== undefined) {
-    if (hunger < NOT_HUNGRY_BELOW) lines.push("你現在不餓。");
-    else if (snap !== null && hunger >= STRONG_DRIVE) lines.push(`你現在${WANTS.hunger}。`);
-  }
+  if (feel.length > 0) lines.push(`你現在${feel.join("、")}。`);
+  // At 15:32 she asked for a bowl while full, and the feed was refused. Feeding is limited per
+  // person now, not by her hunger, so she is told she is not hungry (she may still take a bowl).
+  const hunger = drives?.hunger;
+  if (hunger !== undefined && hunger < NOT_HUNGRY_BELOW) lines.push("你現在不餓。");
   const hint = shown ? shownHint(shown) : "";
   if (hint !== "") lines.push(hint);
   return lines.join("\n");
