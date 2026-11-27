@@ -10,6 +10,8 @@ import {
   ExecViewSchema,
   type JobView,
   JobViewSchema,
+  type ProcView,
+  ProcViewSchema,
   type SandboxEvent,
   SyncResultSchema,
   UploadPartResultSchema,
@@ -653,7 +655,8 @@ export class RemoteJob implements TransferJob {
     this.#procs.set(id, channel);
     void channel.exited.then(() => this.#procs.delete(id));
     try {
-      await this.#call(this.#path(`/procs/${id}`), {
+      // Read as the contract says, so a service that answers otherwise fails here, not later.
+      await this.#json<ProcView>(this.#path(`/procs/${id}`), ProcViewSchema, {
         method: "PUT",
         json: start,
         timeoutMs: TIMEOUTS.procStart,

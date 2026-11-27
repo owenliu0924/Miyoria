@@ -636,6 +636,19 @@ class WorkersSandboxProcStart(BaseModel):
     env: dict[str, str] | None = None
 
 
+class WorkersSandboxProcView(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    id: str
+    state: Literal["running", "exited"]
+    code: float | None
+    signal: str | None
+    stdin_offset: float
+    stdout_offset: float
+    stderr_offset: float
+
+
 class SkippedItem(BaseModel):
     model_config = ConfigDict(
         extra="ignore",

@@ -2551,6 +2551,51 @@
         "argv"
       ]
     },
+    "WorkersSandboxProcView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "exited"
+          ]
+        },
+        "code": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stdin_offset": {
+          "type": "number"
+        },
+        "stdout_offset": {
+          "type": "number"
+        },
+        "stderr_offset": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "code",
+        "signal",
+        "stdin_offset",
+        "stdout_offset",
+        "stderr_offset"
+      ]
+    },
     "WorkersSandboxSyncResult": {
       "type": "object",
       "properties": {

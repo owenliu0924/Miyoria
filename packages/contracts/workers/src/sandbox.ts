@@ -350,6 +350,23 @@ export const ProcStartSchema = z
   .meta({ id: "WorkersSandboxProcStart" });
 export type ProcStart = z.output<typeof ProcStartSchema>;
 
+/**
+ * The answer of `PUT .../procs/{proc}`, of its stdin and of `DELETE`: the proc now. The offsets
+ * are the bytes taken on stdin and written on stdout and stderr so far.
+ */
+export const ProcViewSchema = z
+  .object({
+    id: z.string(),
+    state: z.enum(["running", "exited"]),
+    code: z.number().nullable(),
+    signal: z.string().nullable(),
+    stdin_offset: z.number(),
+    stdout_offset: z.number(),
+    stderr_offset: z.number(),
+  })
+  .meta({ id: "WorkersSandboxProcView" });
+export type ProcView = z.output<typeof ProcViewSchema>;
+
 /** One event of `GET /v1/events`, for every job on the machine. `seq` rises by one. */
 export const SandboxEventSchema = z
   .discriminatedUnion("kind", [

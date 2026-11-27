@@ -3,7 +3,7 @@
 // Core counted, so a resent write is never written twice; output goes out as `proc_out` events,
 // and the last 4 MiB of each stream stay to be fetched again when Core missed some.
 
-import type { ProcStart } from "@miyoria/contracts/workers";
+import type { ProcStart, ProcView } from "@miyoria/contracts/workers";
 import { execWithArgs } from "../args.js";
 import type { Job, ProcHandle } from "./jobs.js";
 import { accepts } from "./policy.js";
@@ -58,15 +58,8 @@ export class Retained {
   }
 }
 
-export interface ProcView {
-  id: string;
-  state: "running" | "exited";
-  code: number | null;
-  signal: string | null;
-  stdin_offset: number;
-  stdout_offset: number;
-  stderr_offset: number;
-}
+/** The wire shape (`@miyoria/contracts/workers`). */
+export type { ProcView };
 
 class Proc implements ProcHandle {
   running = true;
