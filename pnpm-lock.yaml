@@ -622,6 +622,9 @@ importers:
       smol-toml:
         specifier: ^1.9.1
         version: 1.9.1
+      tar-stream:
+        specifier: ^3.3.0
+        version: 3.3.0(bare-buffer@3.7.3)
       ulid:
         specifier: ^3.0.2
         version: 3.0.2

@@ -160,6 +160,18 @@ const SKIP_DIRS = new Set(["__pycache__", "tests", "node_modules", ".pytest_cach
 const skipDir = (name) =>
   SKIP_DIRS.has(name) || name.startsWith(".venv") || name.startsWith(".tmp");
 
+/** Every file below `dir` (not `node_modules`), as paths relative to `dir`. */
+function filesBelow(dir, base = dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== "node_modules") out.push(...filesBelow(full, base));
+    } else if (entry.isFile()) out.push(relative(base, full));
+  }
+  return out;
+}
+
 /** Every `.py` below `dir`, as paths relative to `dir`. */
 function pythonSources(dir, base = dir) {
   const out = [];
@@ -238,6 +250,13 @@ function copyCatalog() {
       for (const py of pythonSources(join(repo, dir))) {
         copy(join(dir, py), join(dir, py));
         scan(join(repo, dir, py));
+      }
+    } else if (entry.name === "sandbox") {
+      // The image is built from these files on the machine that offers the service, and its tag
+      // is a hash of them: a packaged CLI must carry them byte for byte (dotfiles included).
+      copy(join(dir, "README.md"), join(dir, "README.md"));
+      for (const file of filesBelow(join(repo, dir, "image"))) {
+        copy(join(dir, "image", file), join(dir, "image", file));
       }
     } else {
       // A binary the user downloads (MediaMTX): its config only.

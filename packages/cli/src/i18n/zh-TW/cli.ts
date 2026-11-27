@@ -130,6 +130,11 @@ export const cli: typeof en = {
       ls: "列出模型資料夾中的模型、大小，以及使用它們的服務",
       gc: "確認後刪除沒有任何已啟用服務使用的模型（-y 直接刪除）",
     },
+    sandbox: {
+      help: "沙箱服務：這台電腦用 Docker 容器替她跑程式（接誰的工作看 host.toml 的 [sandbox]）",
+      serve: "在此終端機執行沙箱服務（平常由 hostd 啟動；手動啟動時用）",
+      build: "建置沙箱映像檔（約 2 GB，第一次要幾分鐘）；-y 不詢問直接建置",
+    },
     hostd: {
       help: "在此終端機執行本機的主機常駐程式（hostd）；按 Ctrl+C 停止全部服務",
       start: "hostd 啟動後立即啟動 host.toml 啟用的全部服務（登入時自動啟動即使用此選項）",

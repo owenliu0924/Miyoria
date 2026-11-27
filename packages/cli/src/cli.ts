@@ -536,6 +536,34 @@ export function commands(): CommandSpec {
         ],
       },
       {
+        name: "sandbox",
+        help: t.cli.cmd.sandbox.help,
+        subcommands: [
+          {
+            name: "serve",
+            help: t.cli.cmd.sandbox.serve,
+            options: [hostConfigOption()],
+            run: async (ctx) => {
+              const { sandboxServe } = await import("./commands/sandbox.js");
+              await sandboxServe({ hostToml: hostTargetOf(ctx).hostToml });
+            },
+          },
+          {
+            name: "build",
+            help: t.cli.cmd.sandbox.build,
+            options: [hostConfigOption()],
+            run: async (ctx) => {
+              const { sandboxBuild } = await import("./commands/sandbox.js");
+              const built = await sandboxBuild({
+                yes: ctx.yes,
+                hostToml: hostTargetOf(ctx).hostToml,
+              });
+              if (!built) process.exitCode = 1;
+            },
+          },
+        ],
+      },
+      {
         name: "hostd",
         help: t.cli.cmd.hostd.help,
         options: [

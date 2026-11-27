@@ -326,6 +326,17 @@ async function installReport(
     const groups = t.doctor.groups;
     await collect("hostd", groups.hostd, () => hostdChecks(input));
     await collect("services", groups.services, () => serviceChecks(input));
+    if (side.entries.some((e) => e.name === "sandbox")) {
+      // Docker answers and the sandbox image is built and current (loaded only when it is enabled).
+      const { sandboxDoctorChecks } = await import("./sandbox.js");
+      await collect("services", groups.services, async () => {
+        const out: Finding[] = [];
+        for (const check of sandboxDoctorChecks({ hostToml: side.target.hostToml })) {
+          out.push(await check.run());
+        }
+        return out;
+      });
+    }
     if (deep) {
       await collect("ports", groups.ports, () => portChecks({ deps }, listenersOf(input)));
       await collect("health", groups.health, () => healthChecks(input));
