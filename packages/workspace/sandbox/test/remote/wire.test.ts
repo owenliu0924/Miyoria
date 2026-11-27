@@ -120,6 +120,14 @@ describe("a reply's size", () => {
   });
 });
 
+describe("a redirect", () => {
+  it("is not followed: the request asks fetch to fail on one", async () => {
+    const source = sourceOf(() => new Response("{}", { status: 200 }));
+    await callJson(source, ENDPOINT, "/v1/info", Any, { method: "GET", timeoutMs: 5_000 });
+    expect(source.inits[0]?.redirect).toBe("error");
+  });
+});
+
 describe("a reply's time", () => {
   it("stops a JSON reply that started in time and then drips", async () => {
     const source = sourceOf(() => dripping('{"cursor":'));

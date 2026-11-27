@@ -81,6 +81,7 @@ function jobWith(o: { told: number; asked?: number }) {
     ended: () => undefined,
   };
   const job = new RemoteJob(view(o.told), {
+    id: JOB_ID,
     host: "pc",
     service: "sandbox",
     payer: { person: "person-amy" },

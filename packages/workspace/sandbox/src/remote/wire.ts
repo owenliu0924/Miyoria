@@ -197,6 +197,10 @@ async function send(
         headers,
         ...(body === undefined ? {} : { body }),
         signal,
+        // A redirect is never the service's own answer: followed, it would send the request (and
+        // Core's bearer token, to the same host) wherever the other computer points, a LAN or
+        // admin address included.
+        redirect: "error",
       });
       clearTimeout(headTimer);
       if (!response.ok) throw await failure(response, signal);

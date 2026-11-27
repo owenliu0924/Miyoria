@@ -191,6 +191,8 @@ export class RemoteJob implements TransferJob {
   constructor(
     view: JobView,
     o: {
+      /** The id Core sent; a view of another job is an error. */
+      id: string;
       host: string;
       service: string;
       payer: WorkPayer | null;
@@ -200,7 +202,10 @@ export class RemoteJob implements TransferJob {
       cpus?: number;
     },
   ) {
-    this.id = view.id;
+    if (view.id !== o.id) {
+      throw new SandboxHttpError(200, "bad_reply", "the sandbox service answered for another job");
+    }
+    this.id = o.id;
     this.kind = view.kind;
     this.host = o.host;
     this.service = o.service;
@@ -353,6 +358,11 @@ export class RemoteJob implements TransferJob {
       ) {
         this.end(error.extra.ended?.reason ?? "lost");
       }
+      return;
+    }
+    if (view.id !== this.id) {
+      // Another job's state (its `ended` above all) is not this one's.
+      log.warn({ job: this.id, host: this.host }, "a sandbox computer answered for another job");
       return;
     }
     this.#view = view;
@@ -749,7 +759,7 @@ export class RemoteJob implements TransferJob {
           method: "DELETE",
           timeoutMs: TIMEOUTS.close,
         });
-        this.#chargeTo(view.usage.cpu_ms);
+        if (view.id === this.id) this.#chargeTo(view.usage.cpu_ms);
       } catch (error) {
         log.debug({ job: this.id, err: errorMessage(error) }, "closing a job did not answer");
       }
