@@ -14,6 +14,7 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey, StoreKey } from "@miyoria/store";
 import { FileReaderKey, type ProfileId, SandboxClientKey, WorkQuotaKey } from "@miyoria/types";
+import { workspaceAttachCapability } from "./attach.js";
 import { type SandboxConfig, SandboxConfigSchema } from "./config.js";
 import { SandboxFileReader } from "./files.js";
 import { SandboxGate } from "./gate.js";
@@ -25,6 +26,7 @@ import { RemoteSandbox } from "./remote/remote-sandbox.js";
 import { type DockerRunner, ProcessDockerRunner } from "./runner.js";
 import { DockerSandbox } from "./sandbox.js";
 import { type Sandbox, type SandboxHealth, SandboxKey } from "./types.js";
+import { workspaceEditCapabilities } from "./workspace-edit.js";
 
 export interface SandboxModuleOptions {
   /** Directory `root` resolves against (the directory of `miyoria.toml`). */
@@ -197,6 +199,10 @@ export class SandboxModule implements Module {
     }
 
     const registry = actuatorsFor(ctx);
+    const people = {
+      maxBytes: config.workspace.person_max_mb * 1024 * 1024,
+      maxFiles: config.workspace.person_max_files,
+    };
     const gate = new SandboxGate(registry, {
       sandbox,
       tools,
@@ -204,14 +210,22 @@ export class SandboxModule implements Module {
       toolTimeoutMs: config.tool_timeout_ms,
       readChars: config.workspace.read_chars,
       keepOutputs: config.workspace.keep_outputs,
-      people: {
-        maxBytes: config.workspace.person_max_mb * 1024 * 1024,
-        maxFiles: config.workspace.person_max_files,
-      },
+      people,
       exportMaxBytes: config.workspace.export_max_kb * 1024,
       maxTimeoutMs: config.max_timeout_ms,
       sessionIdleMinutes: config.sessions.idle_minutes,
       sessionLifetimeMinutes: config.sessions.lifetime_minutes,
+      // Host-side file tools: offered with the workspace, whether or not any sandbox answers.
+      extraWorkspace: (o) => [
+        ...workspaceEditCapabilities(o),
+        workspaceAttachCapability({
+          workspace: o.workspace,
+          people: o.people ?? people,
+          maxBytes: config.workspace.max_file_kb * 1024,
+          allowedHosts: config.files.allowed_hosts,
+          downloadTimeoutMs: config.files.download_timeout_ms,
+        }),
+      ],
       ...(remote === null
         ? {}
         : {

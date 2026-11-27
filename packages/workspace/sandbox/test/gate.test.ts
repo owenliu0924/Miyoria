@@ -1,7 +1,11 @@
-import { ActionDeniedError, RESULT_PENDING, WORKSPACE_ALL } from "@miyoria/gate/actions";
+import {
+  ActionDeniedError,
+  RESULT_PENDING,
+  WORK_PENDING,
+  WORKSPACE_ALL,
+} from "@miyoria/gate/actions";
 import { DATA_CLOSE, DATA_OPEN, Events, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
-import { WORK_PENDING } from "../../../gate/actions/src/tools.js";
 import { SHELL_RUN } from "../src/capabilities.js";
 import {
   CODE_RUN,
