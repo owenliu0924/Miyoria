@@ -116,4 +116,5 @@ export const HOST_CAPABILITIES = [
   "voice-room",
   "renderer",
   "embed",
+  "sandbox",
 ] as const;

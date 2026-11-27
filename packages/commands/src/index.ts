@@ -96,6 +96,7 @@ export {
   WEB_TOOL,
   WORK_BOND,
   WORK_DELEGATE,
+  WORK_IMAGE,
   WORK_NODES,
   WORKSPACE_ALL,
 } from "./nodes.js";

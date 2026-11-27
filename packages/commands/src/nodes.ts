@@ -78,6 +78,8 @@ export const SANDBOX_WORKSPACE = "sandbox.workspace";
 export const SKILLS_USE = "skills.use";
 /** Handing a job to a background helper that works for the person who asked. */
 export const WORK_DELEGATE = "work.delegate";
+/** Making an image on the ComfyUI server for the person who asked. */
+export const WORK_IMAGE = "work.image";
 
 /**
  * A bond with her at or above `[modules.actions] work_min_bond` counts as these nodes: real work
@@ -88,6 +90,7 @@ export const WORK_NODES: readonly string[] = [
   SANDBOX_CODE_RUN,
   SKILLS_USE,
   WORK_DELEGATE,
+  WORK_IMAGE,
 ];
 
 /**

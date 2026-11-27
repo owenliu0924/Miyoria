@@ -174,6 +174,21 @@ export const QuotaLimitsSchema = z
   .meta({ id: "ApiQuotaLimits" });
 export type QuotaLimits = z.output<typeof QuotaLimitsSchema>;
 
+/**
+ * The sandbox CPU a person used, in seconds (docs/design/v6-sandbox.md §8): the last hour and her
+ * day, and the limits (`0`: none). `capped` is the limit they are at now.
+ */
+export const QuotaWorkSchema = z
+  .object({
+    hour: z.number(),
+    day: z.number(),
+    limit_hour: z.number(),
+    limit_day: z.number(),
+    capped: z.enum(["hour", "day"]).nullable(),
+  })
+  .meta({ id: "ApiQuotaWork" });
+export type QuotaWork = z.output<typeof QuotaWorkSchema>;
+
 /** One person she spent on today. */
 export const QuotaPersonSchema = z
   .object({
@@ -186,6 +201,8 @@ export const QuotaPersonSchema = z
     day_usd: z.number(),
     /** The limit they are at now; `null`: none. */
     capped: z.enum(["hour", "day"]).nullable(),
+    /** Their sandbox CPU; left out where it is not kept. */
+    work: QuotaWorkSchema.optional(),
   })
   .meta({ id: "ApiQuotaPerson" });
 export type QuotaPerson = z.output<typeof QuotaPersonSchema>;

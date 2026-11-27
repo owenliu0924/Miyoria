@@ -20,6 +20,8 @@ import {
   ExtPromptContributeParamsSchema,
   ExtPromptContributeResultSchema,
   ExtRpcMessageSchema,
+  ExtScheduleFireParamsSchema,
+  ExtScheduleSetParamsSchema,
   ExtStructuredStateSchema,
   ExtTaskEventSchema,
   ExtTaskSpecSchema,
@@ -107,6 +109,7 @@ describe("the handshake", () => {
       parameters: { type: "object", properties: {} },
       permission: null,
       read_only: false,
+      risk: "medium",
     });
     expect(read.executor).toEqual({ name: "E", goals: [], guide: null, steer: false });
     expect(ExtContributionsSchema.safeParse({ tools: "no" }).success).toBe(false);
@@ -315,5 +318,39 @@ describe("the envelope", () => {
       expect(ExtRpcMessageSchema.safeParse(message).success).toBe(true);
     }
     expect(ExtRpcMessageSchema.safeParse({ jsonrpc: "1.0", method: "x" }).success).toBe(false);
+  });
+});
+
+describe("tool risk and schedules", () => {
+  it("reads_a_tool_with_the_new_fields_and_an_old_one_without", () => {
+    const read = ExtContributionsSchema.parse({
+      tools: [
+        { name: "a", description: "old" },
+        {
+          name: "b",
+          description: "new",
+          risk: "low",
+          work: true,
+          followup: true,
+          limits: { per_hour: 5, cooldown_ms: 1000 },
+        },
+      ],
+    });
+    expect(read.tools[0]?.risk).toBe("medium");
+    expect(read.tools[0]?.work).toBeUndefined();
+    expect(read.tools[1]?.limits).toEqual({ per_hour: 5, cooldown_ms: 1000 });
+    expect(
+      ExtContributionsSchema.safeParse({ tools: [{ name: "c", description: "", risk: "x" }] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("checks_a_schedule_id_and_a_daily_time", () => {
+    expect(
+      ExtScheduleSetParamsSchema.safeParse({ id: "daily-report", daily: "08:30" }).success,
+    ).toBe(true);
+    expect(ExtScheduleSetParamsSchema.safeParse({ id: "Bad Id", at: 1 }).success).toBe(false);
+    expect(ExtScheduleSetParamsSchema.safeParse({ id: "x", daily: "25:00" }).success).toBe(false);
+    expect(ExtScheduleFireParamsSchema.parse({ id: "x", payload: null, due: 5 }).due).toBe(5);
   });
 });

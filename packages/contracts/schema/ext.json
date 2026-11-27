@@ -937,6 +937,114 @@
         }
       ]
     },
+    "ExtScheduleCancelParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "ExtScheduleEntry": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "number"
+        },
+        "daily": {
+          "type": "string"
+        },
+        "payload": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next": {
+          "default": null,
+          "type": [
+            "number",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "ExtScheduleFireParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "payload": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WireJsonValue"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "due": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "payload",
+        "due"
+      ]
+    },
+    "ExtScheduleListResult": {
+      "type": "object",
+      "properties": {
+        "schedules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ExtScheduleEntry"
+          }
+        }
+      },
+      "required": [
+        "schedules"
+      ]
+    },
+    "ExtScheduleSetParams": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]{0,47}$"
+        },
+        "at": {
+          "type": "number"
+        },
+        "daily": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "payload": {
+          "$ref": "#/$defs/WireJsonValue"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
     "ExtStatusResult": {
       "type": "object",
       "properties": {
@@ -1479,11 +1587,62 @@
         "read_only": {
           "default": false,
           "type": "boolean"
+        },
+        "risk": {
+          "default": "medium",
+          "$ref": "#/$defs/ExtToolRisk"
+        },
+        "work": {
+          "type": "boolean"
+        },
+        "limits": {
+          "$ref": "#/$defs/ExtToolLimits"
+        },
+        "followup": {
+          "type": "boolean"
         }
       },
       "required": [
         "name",
         "description"
+      ]
+    },
+    "ExtToolLimits": {
+      "type": "object",
+      "properties": {
+        "per_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "per_person_per_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "per_day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "per_person_per_day": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cooldown_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "ExtToolRisk": {
+      "type": "string",
+      "enum": [
+        "low",
+        "medium",
+        "high"
       ]
     },
     "ExtToolsUnregisterParams": {

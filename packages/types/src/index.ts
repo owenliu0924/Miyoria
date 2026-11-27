@@ -81,6 +81,8 @@ export {
   type FileReader,
   FileReaderKey,
   type FileRequest,
+  type MessageFiles,
+  MessageFilesKey,
 } from "./files.js";
 export {
   type ActionId,
@@ -286,6 +288,17 @@ export {
   type PromptRequest,
   type PromptSection,
 } from "./prompt.js";
+export {
+  type SandboxClient,
+  SandboxClientKey,
+  type SandboxExecResult,
+  type SandboxExecStart,
+  type SandboxFor,
+  type SandboxJob,
+  type SandboxJobKind,
+  type SandboxJobSpec,
+  type SandboxProc,
+} from "./sandbox-client.js";
 export {
   type Affect,
   type AgendaBlock,
@@ -1138,3 +1151,12 @@ export {
   correctionsOf,
   isCorrectionKind,
 } from "./corrections.js";
+
+// ---- v6 sandbox: per-person work quota -----------------------------------------------------------
+
+export {
+  type WorkCap,
+  type WorkPayer,
+  type WorkQuota,
+  WorkQuotaKey,
+} from "./work-quota.js";

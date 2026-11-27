@@ -8,6 +8,7 @@ export * from "./common.js";
 export * from "./karaoke.js";
 export * from "./lyrics.js";
 export * from "./protocol.js";
+export * from "./sandbox.js";
 export * from "./sing.js";
 export * from "./tts.js";
 export * from "./turn.js";
