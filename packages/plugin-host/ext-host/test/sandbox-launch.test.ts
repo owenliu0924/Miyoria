@@ -336,6 +336,12 @@ describe("what goes into a job", () => {
       credentials: ["MADE_KEY"],
       hosts: ["core-pc", "trusted-pc"],
     });
+    // Core's own computer as the registry knows it at the launch.
+    let local: string[] = [];
+    const fromRegistry = { trustedHosts: [], coreHost: () => local };
+    expect(sandboxPlan(secret, fromRegistry)).toMatchObject({ ok: false });
+    local = ["core-pc"];
+    expect(sandboxPlan(secret, fromRegistry)).toMatchObject({ ok: true, hosts: ["core-pc"] });
     // A token the owner passed by its exact name is a credential too.
     const passed = echoSpec({ env: { ...echoSpec().env, MADE_TOKEN: "t" } });
     expect(sandboxPlan(passed, { trustedHosts: [] })).toMatchObject({ ok: false });

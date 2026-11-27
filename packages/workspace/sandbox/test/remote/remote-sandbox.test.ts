@@ -76,7 +76,15 @@ function machine(host: string, o: Partial<ConstructorParameters<typeof FakeMachi
   return new FakeMachine({ host, root: join(root, "machines"), ...o });
 }
 
-function sandboxOn(machines: FakeMachine[], config: Record<string, unknown> = {}) {
+/**
+ * A sandbox on `machines`. `coreHosts`: which of them are Core's own machine; by default all,
+ * so a test that is not about the member list does not have to list them.
+ */
+function sandboxOn(
+  machines: FakeMachine[],
+  config: Record<string, unknown> = {},
+  coreHosts: readonly string[] = machines.map((m) => m.host),
+) {
   const endpoints = new FakeEndpoints(machines);
   const parsed = SandboxConfigSchema.parse({
     workspace: { person_max_mb: 1, person_max_files: 20 },
@@ -95,6 +103,7 @@ function sandboxOn(machines: FakeMachine[], config: Record<string, unknown> = {}
     tools: new ToolsWorkspace(join(root, "core", "tools"), { maxScripts: 5, maxScriptBytes: 4096 }),
     quota: () => quota,
     jobs,
+    coreHosts: () => coreHosts,
   });
   opened.push(sandbox);
   return { sandbox, endpoints, client, config: parsed };
@@ -268,6 +277,81 @@ describe("the folder in and back", () => {
       expect(await workspace.exists("people/amy/from-run.txt")).toBe(members);
       await sandbox.close();
     }
+  });
+
+  it("members_work_goes_only_to_a_computer_core_lets_have_it_whatever_it_says", async () => {
+    await workspace.write("people/amy/secret.txt", "amy's");
+    const program: Program = async (exec) => {
+      const leaked = await lstat(join(exec.workspace, "people/amy/secret.txt")).then(
+        () => true,
+        () => false,
+      );
+      return { stdout: `people:${leaked}` };
+    };
+    // It says it takes members' work, but nobody at Core said it may have it.
+    const friend = machine("friend-pc", { members: true, program });
+    const { sandbox } = sandboxOn([friend], {}, []);
+    await sandbox.health({ refresh: true });
+    expect(sandbox.memberHost("friend-pc")).toBe(false);
+    const refused = await sandbox
+      .run({
+        language: "python",
+        code: "x",
+        mount_workspace: true,
+        workspace_folder: "amy",
+        for: "member",
+        payer: AMY,
+      })
+      .catch((e: unknown) => e);
+    expect((refused as SandboxError).kind).toBe("not_accepting");
+    expect((refused as SandboxError).message).toContain("都不接成員的工作");
+    expect(friend.jobs.size).toBe(0);
+    // An owner's run over everything goes there without the people's folders.
+    const owner = await sandbox.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      for: "owner",
+    });
+    expect(owner.stdout).toBe("people:false");
+    await sandbox.close();
+
+    // Listed by the owner: both.
+    const listed = sandboxOn([friend], { transfer: { member_hosts: ["Friend-PC"] } }, []);
+    await listed.sandbox.health({ refresh: true });
+    const run = await listed.sandbox.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      for: "owner",
+    });
+    expect(run.stdout).toBe("people:true");
+    await listed.sandbox.run({
+      language: "python",
+      code: "x",
+      mount_workspace: true,
+      workspace_folder: "amy",
+      for: "member",
+      payer: AMY,
+    });
+    const member = [...friend.jobs.values()].find((j) => j.create.for === "member");
+    expect(member).toBeDefined();
+  });
+
+  it("a_member_s_job_opens_only_on_a_listed_computer", async () => {
+    const stranger = machine("stranger-pc", { members: true });
+    const mine = machine("core-pc", { members: true });
+    // Core's own machine needs no listing.
+    const { sandbox } = sandboxOn([stranger, mine], {}, ["core-pc"]);
+    await sandbox.health({ refresh: true });
+    const result = await sandbox.run({
+      language: "shell",
+      code: "true",
+      for: "member",
+      payer: AMY,
+    });
+    expect(result.host).toBe("core-pc");
+    expect(stranger.jobs.size).toBe(0);
   });
 
   it("a_person_s_run_sees_only_their_folder_and_is_held_to_its_caps", async () => {

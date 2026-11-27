@@ -37,6 +37,8 @@ miyoria host approve <這台> sandbox   # 在 Core 那台:owner 核准這台的 
 # runtime = "runsc"       # Docker 的 --runtime(裝了 gVisor 的 Linux 才寫)
 ```
 
+  **成員的工作要兩邊都同意**:這台寫 `members = true` 之外,Core 那台的 `miyoria.toml` 要把這台的名字列進 `[modules.sandbox.transfer] member_hosts`(Core 自己那台不用列)。`members` 是這台自己回報的,Core 不能只聽它的:沒列的電腦拿不到成員的工作和他們的資料夾,owner 跑整個工作區時也不會收到 `people/`;`/admin autonomy status` 那台的一行會寫「不在 member_hosts 裡」。Core 認得自己那台,是看它的 hostd 從 127.0.0.1 連進來;如果別台也是經過 Core 這台上的反向代理或通道連進來,它們看起來都像 Core 自己那台,這種架設要知道這件事。
+
   `[services.sandbox] concurrency` 把同時的工作數從 4 往下調;一個付錢的人(成員)最多佔一半。規則變嚴(例如 `members` 改回 false),開著的成員工作在服務讀到新的規則後(兩分鐘內)關掉,正在跑的那次跑完才關(`host_policy`)。
 
 ## 一個工作有什麼

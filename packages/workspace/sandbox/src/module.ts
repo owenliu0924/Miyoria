@@ -10,6 +10,7 @@ import {
   type Health,
   type Module,
   type ModuleContext,
+  type ServiceLookup,
   sleep,
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey, StoreKey } from "@miyoria/store";
@@ -36,6 +37,12 @@ export interface SandboxModuleOptions {
   runner?: (executable: string) => DockerRunner;
   /** Core's endpoint registry: the computers of the cluster that run the `sandbox` service. */
   endpoints?: EndpointsOption;
+  /**
+   * The hosts of the cluster that are Core's own machine, read at each use (Core's wiring reads
+   * the registry). Members' folders may go there without `[modules.sandbox.transfer]
+   * member_hosts` listing it; without this option only the listed computers take them.
+   */
+  coreHosts?: (services: ServiceLookup) => readonly string[];
 }
 
 /** Where the key that hides payers from the computers is kept (`SettingsStore`). */
@@ -149,6 +156,7 @@ export class SandboxModule implements Module {
       publisher: ctx.publisher,
       quota,
       jobs,
+      coreHosts: () => this.options.coreHosts?.(ctx.services) ?? [],
     });
   }
 
@@ -235,8 +243,15 @@ export class SandboxModule implements Module {
             machineLines: () =>
               remote.client.machines().map((m) => {
                 const policy = m.info?.policy;
+                // Its owner takes members' work, but Core does not send it there unlisted.
                 const who =
-                  policy === undefined ? "" : policy.members ? ",接成員的工作" : ",只接她和主人的";
+                  policy === undefined
+                    ? ""
+                    : !policy.members
+                      ? ",只接她和主人的"
+                      : remote.memberHost(m.host)
+                        ? ",接成員的工作"
+                        : ",它接成員的工作,但不在 [modules.sandbox.transfer] member_hosts 裡,成員的工作不送去";
                 return `沙箱電腦 ${m.host}:${m.ready ? "準備好了" : (m.reason ?? "還在檢查")}${who}${m.jobs > 0 ? `,開著 ${m.jobs} 個工作` : ""}`;
               }),
           }),

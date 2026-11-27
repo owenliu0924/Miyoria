@@ -77,7 +77,10 @@ describe("SandboxModule on the cluster", () => {
     await waitFor(() => tools.get("shell_run") !== undefined);
     expect(tools.get("code_run")).toBeDefined();
     expect(registry.get("shell.run")?.risk).toBe("medium");
-    expect((await registry.statusLines()).join("\n")).toContain("沙箱電腦 friend-pc:準備好了");
+    const status = (await registry.statusLines()).join("\n");
+    expect(status).toContain("沙箱電腦 friend-pc:準備好了");
+    // It takes members' work by its own word, but nobody listed it at Core.
+    expect(status).toContain("它接成員的工作,但不在 [modules.sandbox.transfer] member_hosts 裡");
     await sup.stopAll();
     expect(tools.get("shell_run")).toBeUndefined();
   });

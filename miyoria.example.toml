@@ -1598,6 +1598,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # part_mb = 8                    # 每一段
 # lease_secs = 600               # Core 這麼久沒來,那台就關掉工作(Core 重啟不會讓工作階段不見)
 # trusted_hosts = []             # 有密鑰的插件只送到這幾台的沙箱;空 = 有密鑰的插件在這台跑
+# member_hosts = []              # 成員的工作和他們的資料夾(還有 owner 跑整個工作區時的 people/)只送到這幾台(寫 host 名字);
+#                                # Core 自己那台一律可以。那台的 host.toml 也要 [sandbox] members = true,兩個都要才送
 # 一次執行進出的大小上限(都是位元組)
 # [modules.sandbox.caps]
 # max_code_bytes = 262144        # 程式最長

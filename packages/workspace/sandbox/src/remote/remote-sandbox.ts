@@ -71,7 +71,15 @@ export interface RemoteSandboxOptions {
   /** Each person's CPU seconds (`WorkQuotaKey`), looked up at each run. */
   quota?: () => WorkQuota | null;
   jobs?: SandboxJobs | null;
+  /**
+   * The hosts of the cluster that are Core's own machine (read at each use: hosts connect after
+   * Core starts). Members' folders may always go there; elsewhere only to `member_hosts`.
+   */
+  coreHosts?: () => readonly string[];
 }
+
+/** What a member is told when every computer that would take their work is not one Core lets. */
+const MEMBERS_NOT_LISTED = "能跑程式的電腦現在都不接成員的工作;這次沒有跑。";
 
 interface Session {
   name: string;
@@ -168,6 +176,7 @@ export class RemoteSandbox implements Sandbox {
   readonly #publish: Publish;
   readonly #quota: () => WorkQuota | null;
   readonly #jobs: SandboxJobs | null;
+  readonly #coreHosts: () => readonly string[];
   readonly #sessions = new Map<string, Session>();
   readonly #tombstones = new Map<string, SessionCloseReason>();
   readonly #closing = new AbortController();
@@ -189,6 +198,7 @@ export class RemoteSandbox implements Sandbox {
     this.#publish = o.publisher ?? (() => {});
     this.#quota = o.quota ?? (() => null);
     this.#jobs = o.jobs ?? null;
+    this.#coreHosts = o.coreHosts ?? (() => []);
     this.features = {
       where: "cluster",
       shell: true,
@@ -252,20 +262,51 @@ export class RemoteSandbox implements Sandbox {
     };
   }
 
-  /** Whether the owner of computer `host` said it takes members' work (`[sandbox] members`). */
+  /**
+   * Whether Core lets computer `host` have members' work: Core's own machine, or one the owner
+   * listed in `[modules.sandbox.transfer] member_hosts`. Host names compare without case.
+   */
+  memberHost(host: string): boolean {
+    const name = host.toLowerCase();
+    return [...this.#config.transfer.member_hosts, ...this.#coreHosts()].some(
+      (h) => h.toLowerCase() === name,
+    );
+  }
+
+  /**
+   * Whether computer `host` may take members' work and folders: Core lets it (`memberHost`) and
+   * its owner said it takes them (`[sandbox] members`). The second alone is that computer's own
+   * report, which a hostile one would make.
+   */
   #takesMembers(host: string): boolean {
-    return this.#client.machines().some((m) => m.host === host && m.info?.policy.members === true);
+    return (
+      this.memberHost(host) &&
+      this.#client.machines().some((m) => m.host === host && m.info?.policy.members === true)
+    );
+  }
+
+  /** The computers a member's job may open on: those Core lets have members' work. */
+  #memberHosts(): string[] {
+    return this.#client
+      .machines()
+      .map((m) => m.host)
+      .filter((h) => this.memberHost(h));
   }
 
   /**
    * The workspace a scope key reaches on computer `host`, or `null` when the workspace is off.
-   * The owner's whole workspace holds the people's folders: those only go to a computer whose
-   * owner takes members' work; elsewhere the owner's run gets the workspace without them.
+   * The owner's whole workspace holds the people's folders: those only go to a computer that
+   * takes members' work (`#takesMembers`); elsewhere the owner's run gets the workspace without
+   * them. A person's folder never goes to a computer Core does not let have it (a session found
+   * again after a restart on a computer no longer listed is refused here); that computer's own
+   * `members` was asked when the job opened, and its service ends members' jobs itself when its
+   * owner turns that off.
    */
   #callWorkspace(scope: string, host: string): CallWorkspace | null {
     const root = this.workspace;
     if (root === null) return null;
     if (scope.startsWith("person:")) {
+      if (!this.memberHost(host)) throw new SandboxError("not_accepting", MEMBERS_NOT_LISTED);
       const folder = scope.slice("person:".length);
       return {
         root,
@@ -355,11 +396,21 @@ export class RemoteSandbox implements Sandbox {
 
   #available(forWho: "self" | "owner" | "member"): void {
     const available = this.#client.available(forWho);
-    if (available.ok) return;
-    throw new SandboxError(
-      available.code === "no_machine" ? "unavailable" : available.code,
-      available.reason,
-    );
+    if (!available.ok) {
+      throw new SandboxError(
+        available.code === "no_machine" ? "unavailable" : available.code,
+        available.reason,
+      );
+    }
+    // A computer takes members' work, but none that Core lets have it: refused before a job opens.
+    if (forWho === "member" && this.#memberHosts().length === 0) {
+      throw new SandboxError("not_accepting", MEMBERS_NOT_LISTED);
+    }
+  }
+
+  /** The `hosts` of a job's spec: a member's only goes to the computers Core lets have it. */
+  #hostsFor(forWho: "self" | "owner" | "member"): { hosts?: string[] } {
+    return forWho === "member" ? { hosts: this.#memberHosts() } : {};
   }
 
   /** The exec of a run, its result in `RunResult` form. */
@@ -426,11 +477,12 @@ export class RemoteSandbox implements Sandbox {
         network: networkOf(r.network, this.#config),
         mounts: { tools: r.mount_tools === true },
         limits: { disk_mb: this.#config.sessions.disk_mb },
+        ...this.#hostsFor(forWho),
       },
       { signal, folder: r.mount_workspace && this.workspace !== null ? scopeOf(r) : null },
     );
-    const ws = r.mount_workspace ? this.#callWorkspace(scopeOf(r), job.host) : null;
     try {
+      const ws = r.mount_workspace ? this.#callWorkspace(scopeOf(r), job.host) : null;
       if (r.mount_tools) await job.upload("tools", { dir: await this.tools.ensure() }, { signal });
       let manifest: Manifest = [];
       if (ws !== null) manifest = await sendWorkspace(job, ws, signal);
@@ -582,6 +634,7 @@ export class RemoteSandbox implements Sandbox {
             payer,
             label: session.name,
             network: networkOf(r.network, this.#config),
+            ...this.#hostsFor(forWho),
           },
           { signal, folder: this.workspace === null ? null : session.scope, name: session.name },
         );
@@ -600,7 +653,16 @@ export class RemoteSandbox implements Sandbox {
         host: job.host,
       });
     }
-    const ws = this.#callWorkspace(session.scope, job.host);
+    let ws: CallWorkspace | null;
+    try {
+      ws = this.#callWorkspace(session.scope, job.host);
+    } catch (error) {
+      // A person's session on a computer Core no longer lets have their folder (the list
+      // changed, or it was found again after a restart): it ends here, nothing more goes there.
+      this.#markEnded(session, "closed", false);
+      await job.close();
+      throw error;
+    }
     try {
       if (ws !== null) {
         session.manifest =

@@ -45,8 +45,12 @@ export interface SandboxLauncherOptions {
   client: SandboxClient | (() => SandboxClient | null | undefined) | null;
   /** `[modules.sandbox.transfer] trusted_hosts`: computers an extension's credentials may go to. */
   trustedHosts: readonly string[];
-  /** Core's own computer in the cluster: credentials may always go there. */
-  coreHost?: string | null;
+  /**
+   * Core's own computer in the cluster: credentials may always go there. A function is read at
+   * each launch (the app reads the registry: hosts connect after Core starts); it may name
+   * several (a hostd and a static entry on the same machine).
+   */
+  coreHost?: CoreHost;
   /** No computer takes it: run here (default) or let the extension fail to start. */
   fallback?: "host" | "fail";
   /** Where `host` programs run; default `localLauncher()`. */
@@ -68,6 +72,15 @@ export interface SandboxLauncherOptions {
   /** Proc ids (tests); default `newId()` in lower case, the form the service takes. */
   procId?: () => string;
   now?: () => number;
+}
+
+/** Core's own computer: a name, or what the registry says now. */
+export type CoreHost = string | null | (() => string | readonly string[] | null);
+
+function coreHosts(given: CoreHost | undefined): string[] {
+  const value = typeof given === "function" ? given() : given;
+  if (value === null || value === undefined) return [];
+  return typeof value === "string" ? [value] : [...value];
 }
 
 /** Where an extension's main program runs now. */
@@ -252,7 +265,7 @@ export function sandboxEnv(
 /** Where `spec` may run in a job and as what (pure: the launcher and the tests use it). */
 export function sandboxPlan(
   spec: LaunchSpec,
-  o: { trustedHosts: readonly string[]; coreHost?: string | null },
+  o: { trustedHosts: readonly string[]; coreHost?: CoreHost },
 ): SandboxPlan {
   const argv = sandboxArgv(spec);
   if (typeof argv === "string") return { ok: false, why: argv };
@@ -267,7 +280,7 @@ export function sandboxPlan(
   for (const host of hosts) dropped.push({ name: host, why: "not a host name the proxy allows" });
   if (credentials.length === 0) return { ok: true, argv, env, dropped, network, credentials };
   const allowed = [
-    ...new Set([o.coreHost, ...o.trustedHosts].filter((h): h is string => !!h && h !== "")),
+    ...new Set([...coreHosts(o.coreHost), ...o.trustedHosts].filter((h) => h !== "")),
   ];
   if (allowed.length === 0) {
     return {

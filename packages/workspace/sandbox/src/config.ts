@@ -229,6 +229,13 @@ export const SandboxTransferSchema = z.object({
    * (docs/design/v6-sandbox.md §16 question 3).
    */
   trusted_hosts: z.array(z.string().min(1).max(253)).max(64).default([]),
+  /**
+   * The computers (host names) members' work may go to, with their folders, and that receive
+   * the `people/` tree on an owner's run over the whole workspace; Core's own machine always may.
+   * A computer must be listed here AND have its owner take members' work (`[sandbox] members`
+   * in its host.toml): that report is the computer's own word, and a hostile one would say yes.
+   */
+  member_hosts: z.array(z.string().min(1).max(253)).max(64).default([]),
 });
 export type SandboxTransfer = z.output<typeof SandboxTransferSchema>;
 

@@ -91,9 +91,14 @@ import {
   SandboxClientKey,
   type SpaceRef,
 } from "@miyoria/types";
-import { SandboxConfigSchema, sandboxJobsTables } from "@miyoria/workspace/sandbox";
+import {
+  SANDBOX_CAPABILITY,
+  SandboxConfigSchema,
+  sandboxJobsTables,
+} from "@miyoria/workspace/sandbox";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
+import { coreMachineHosts } from "./core-machine.js";
 import { type Machines, openMachines } from "./machines.js";
 import {
   moduleEnabled,
@@ -330,8 +335,8 @@ export async function buildCoreWith(
     const launcher = sandboxLauncher({
       client: () => services.get(SandboxClientKey),
       trustedHosts: sandboxSection.data.transfer.trusted_hosts,
-      // Core does not know its own hostd name yet: credentials go only to trusted_hosts.
-      coreHost: null,
+      // Core's own machine in the cluster, as the registry knows it at each launch.
+      coreHost: () => coreMachineHosts(services, SANDBOX_CAPABILITY),
       fallback: "host",
       restart: (extension) => supervisor.restart(`ext.${extension}`),
     });
