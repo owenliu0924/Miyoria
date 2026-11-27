@@ -163,6 +163,7 @@ export { FALLBACK_LINES, MainLine } from "./mainline/main.js";
 export {
   contextData,
   contextState,
+  type ExampleOptions,
   exampleDialogues,
   examplesBlock,
   partyLine,
