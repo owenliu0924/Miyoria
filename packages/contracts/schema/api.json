@@ -3735,6 +3735,9 @@
         },
         "kind": {
           "$ref": "#/$defs/WireContextKind"
+        },
+        "group": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -24901,6 +24904,9 @@
         },
         "kind": {
           "$ref": "#/$defs/WireContextKind"
+        },
+        "group": {
+          "type": "boolean"
         }
       },
       "required": [

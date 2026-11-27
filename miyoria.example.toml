@@ -1114,7 +1114,7 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # usd_default = 0.25
 # usd_max = 0.75
 
-# 輸出檢查:新跑者留下的六個對她輸出的檢查(編號見 docs/design/v5-brain.md Q8)。預設都開;
+# 輸出檢查:新跑者留下的六個對她輸出的檢查(編號見 docs/design/v5-brain.md Q8),和補寫漏掉的 <feel>。預設都開;
 # 這些開關是除錯用的,關掉一個只是拿掉那一個檢查,外層的牆(主人規則、行動閘門、送達帳本、輸出審查、
 # Floor 的限額)不受影響
 # [modules.agent.corrections]
@@ -1124,6 +1124,9 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # fallback_line = true           # #15 模型失敗或什麼都沒給、而有人在等時,送固定的一句短話
 # tag_strip = true               # #18 拿掉寫成標籤的工具、DeepSeek 的工具標記和 HTML 標籤
 # self_talk = true               # #19 她寫給自己的盤算(「他在問我…,直接回他就好。」)只拿掉那一行,文字不送、語音不念
+# feel_repair = true             # 文字或語音的回覆送出了、卻漏了最後的 <feel>:之後再問同一個模型一次,只補那一段(同樣的 prompt 加她的回覆,
+#                                # 幾乎都走快取;一次、最多 20 秒、240 token、不推理)。不給人看、不念,不拖慢回覆;費用算在那次回覆的人的
+#                                # AI 額度上(呼叫紀錄的 label 是 feel),那個人到了額度或今天的預算不是 ok 就不補
 
 # 節奏:文字頻道裡她怎麼分幾則送、表情反應的上限(v4 §7.2、§7.3)。這一節在 [modules.agent.rhythm]
 # (不是 [modules.agent.mainline]),下面都是預設值
@@ -1895,6 +1898,10 @@ record = false
 # transcript_sweep_hours = 24    # 多久清一次對話紀錄(0 = 不清):已經被摘要蓋掉、又過期的行,和很久沒人說話的整份紀錄;摘要之後的尾巴不會動
 # transcript_covered_days = 30   # 被摘要蓋掉的行留幾天(原始訊息仍在事件紀錄裡)
 # transcript_idle_days = 90      # 一個地方沒有新的話幾天後,整份對話紀錄刪掉
+# backup_hour = 4                # 每天從幾點起(本機時間)備份一次資料庫(-1 = 不備份);在背景另開連線複製,不會卡住語音
+# backup_dir = ""                # 備份放哪(空 = 資料庫旁的 backups/auto/;相對路徑從資料庫的資料夾算)
+# backup_keep = 3                # 留最新的幾份;一份大約是資料庫實際用到的大小
+# backup_min_free_mb = 2048      # 備份完硬碟剩不到這麼多(MB)就跳過那晚並寫警告,舊的備份不動
 # fold_after_days = 14           # 背景事實(ambient)過多久合併成每日統計
 # short_days = 90                # 回合內部、動作這類事件留多久(0 = 永久);還有後續事件指向的不會被刪
 # long_days = 365                # 大家說過的話和她說的話留多久(0 = 永久)

@@ -1,5 +1,7 @@
-// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play] [--subject self]
+// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond,screens] [--subject self]
 //  [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>]`
+//
+// Without `--repeat`, every item runs once, except in a suite with its own default (`bond`: 5).
 //
 // Runs the live suites against the real model and writes the run to `--out` (default
 // `data/eval/live/`): one JSON file and one line of `history.jsonl`. `--max-usd` is a hard stop:
@@ -37,7 +39,7 @@ const DEFAULT_OUT = "data/eval/live";
 const DEFAULT_MAX_USD = 0.5;
 
 const USAGE =
-  "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections] " +
+  "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond,screens] " +
   "[--subject self] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>] [--memory-target records|notes]\n" +
   "       pnpm eval --live --rebuild-history [--out <dir>]\n";
 
@@ -89,7 +91,9 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
     }
   }
   const configArg = opt("config");
-  const repeat = Number(opt("repeat") ?? 1);
+  // Unset: each suite's own default (`SUITE_REPEAT`), else once.
+  const repeatArg = opt("repeat");
+  const repeat = repeatArg === undefined ? undefined : Number(repeatArg);
   const maxUsd = Number(opt("max-usd") ?? DEFAULT_MAX_USD);
   const subjectName = opt("subject") ?? "self";
   const makeSubject = SUBJECTS[subjectName];
@@ -99,8 +103,7 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
   }
   if (
     configArg === undefined ||
-    !Number.isInteger(repeat) ||
-    repeat < 1 ||
+    (repeat !== undefined && (!Number.isInteger(repeat) || repeat < 1)) ||
     !Number.isFinite(maxUsd) ||
     maxUsd <= 0
   ) {
@@ -142,7 +145,7 @@ export async function liveMain(argv: readonly string[], hooks: LiveHooks = {}): 
       suites,
       persona: profile.personaPrompt(),
       handle: new PersonaHandle(profile),
-      repeat,
+      ...(repeat === undefined ? {} : { repeat }),
       ...(seed === undefined ? {} : { seed }),
       commit: commitOf(REPO),
       chain: model.chain.split(" > "),

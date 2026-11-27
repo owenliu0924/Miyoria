@@ -521,6 +521,8 @@ describe("a live run", () => {
       "corrections",
       "feel",
       "play",
+      "bond",
+      "screens",
     ]);
     expect(runnableSuites(registry)).toEqual(["persona", "tools", "relationship", "feel"]);
     const { judge, meter } = setup(() => "{}");

@@ -229,6 +229,7 @@ export interface Rig {
       signal?: AbortSignal;
       payer?: Payer | null;
       payerOf?: (from: WakeAuthor) => Payer | null;
+      feelRepair?: boolean;
     },
   ): Promise<RunResult>;
   /** Appends someone's line to the session's transcript. */
@@ -304,6 +305,7 @@ export async function rig(script: readonly ScriptStep[], options: RigOptions = {
         turn: `t${++turns}`,
         ...(o.payer === undefined ? {} : { payer: o.payer }),
         ...(o.payerOf === undefined ? {} : { payerOf: o.payerOf }),
+        ...(o.feelRepair === undefined ? {} : { feelRepair: o.feelRepair }),
       }),
     line: (author, content, extra = {}) => {
       transcript.append(

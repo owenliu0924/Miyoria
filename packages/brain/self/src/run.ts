@@ -71,12 +71,21 @@ import {
   EXHAUSTED_LINE,
   FALLBACK_LINES,
   FOR_ARG,
+  type PromptEcho,
+  promptEcho,
   quotaLine,
   roughWait,
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
-import { HANDOFF_TOOL, type LimitName, type RunLimits, type RunProfile } from "./profiles.js";
+import { FeelRepair } from "./feel-repair.js";
+import {
+  HANDOFF_TOOL,
+  type LimitName,
+  PREFIX_PROFILE,
+  type RunLimits,
+  type RunProfile,
+} from "./profiles.js";
 import { gatherBlocks, type RunMessages, runMessages, toolSpecs } from "./prompt.js";
 import {
   capMinutes,
@@ -90,6 +99,8 @@ import {
 import {
   BLOCKED_LABEL,
   blockedNote,
+  FEEL_REMINDER,
+  feels,
   HANDED_OFF_NOTE,
   HANDOFF_NOTES,
   LIMIT_NOTE_QUIET,
@@ -98,7 +109,9 @@ import {
   longReceipt,
   NO_MORE_CALLS,
   ONLY_HANDOFF,
+  PROFILE_NOTES,
   REFUSALS,
+  rulesFor,
 } from "./rules.js";
 import type { Spoken } from "./say.js";
 import { ALL_CHECKS, type OutputChecks, type ScreenedLine, StepText } from "./screens.js";
@@ -153,6 +166,8 @@ export class SelfRunner {
   readonly #checks: OutputChecks;
   /** The runs going on, by turn: what `say` speaks through. */
   readonly #active = new Map<string, Run>();
+  /** Feel repairs of runs that ended, by turn, until the host takes them (the newest few). */
+  readonly #repairs = new Map<string, FeelRepair>();
 
   constructor(ports: RunPorts, options: RunnerOptions = {}) {
     this.#ports = ports;
@@ -187,9 +202,30 @@ export class SelfRunner {
       return await run.execute(this.#compaction);
     } finally {
       this.#active.delete(run.turn);
+      const repair = run.feelRepair;
+      if (repair !== null) {
+        this.#repairs.set(run.turn, repair);
+        for (const turn of this.#repairs.keys()) {
+          if (this.#repairs.size <= KEPT_REPAIRS) break;
+          this.#repairs.delete(turn);
+        }
+      }
     }
   }
+
+  /**
+   * The feel repair the run of `turn` left (`RunInput.feelRepair`: its reply went out without a
+   * block), once; `null` when it left none or it was taken.
+   */
+  takeFeelRepair(turn: string): FeelRepair | null {
+    const repair = this.#repairs.get(turn) ?? null;
+    this.#repairs.delete(turn);
+    return repair;
+  }
 }
+
+/** Feel repairs kept for the host to take; older ones are dropped. */
+const KEPT_REPAIRS = 16;
 
 /** What a run charges its steps to. */
 interface Money {
@@ -238,6 +274,11 @@ interface Step {
   later: boolean[];
   /** Reasons of the lines the guard or the outlet did not let out. */
   blocked: string[];
+  /**
+   * Every line not let out was refused by the Floor of the place: no other words would pass it now
+   * (it refuses by place and by what woke her, not by the line).
+   */
+  floorOnly: boolean;
   reasoning: string;
   calls: ToolCall[];
   /** `<silence/>` before any text, or only a feel block. */
@@ -363,6 +404,11 @@ class Run {
   #pictures: ChatMessage | null = null;
   /** Bytes of the pictures her tools fetched in this run (they count against `pictureBytes`). */
   #pictureBytes = 0;
+  /** The run's prompt and the tools of its last step: what a feel repair resends. */
+  #base: RunMessages | null = null;
+  #lastOffered: readonly ToolEntry[] = [];
+  /** Set when the run ended: its reply went out without a feel block (`RunInput.feelRepair`). */
+  feelRepair: FeelRepair | null = null;
 
   constructor(ports: RunPorts, input: RunInput, turn: string, money: Money, checks: OutputChecks) {
     this.turn = turn;
@@ -433,6 +479,7 @@ class Run {
       }
     }
     this.#saveTools();
+    this.feelRepair = this.#feelRepair(outcome);
     let compacted = false;
     if (compaction !== null && outcome !== "cancelled" && outcome !== "over_budget") {
       compacted = await this.#compact(compaction);
@@ -466,6 +513,27 @@ class Run {
       ...(this.#profile.silentWaitMs !== null && { silent_waits: this.#silentWaits }),
     });
     return result;
+  }
+
+  /**
+   * What a repair of the run's missing feel block needs, when it is wanted: a run of a profile
+   * that writes blocks, whose reply went out, wrote none. The request is the one its next step
+   * would have sent (its prompt, its steps, her reply), with the tools of its last step.
+   */
+  #feelRepair(outcome: RunOutcome): FeelRepair | null {
+    if (this.#in.feelRepair !== true || !feels(this.#profile.name)) return null;
+    if (outcome !== "said" || this.#lines.length === 0 || this.#feel.length > 0) return null;
+    if (this.#base === null) return null;
+    return new FeelRepair({
+      turn: this.turn,
+      purpose: this.#profile.purpose,
+      request: this.#request(this.#base, this.#lastOffered, null),
+      payers: this.#payers.map((p) => p.payer),
+      quota: this.#money.quota,
+      rate: this.#money.rate,
+      model: this.#p.model,
+      now: () => this.#now(),
+    });
   }
 
   // ---- the session's tools ----------------------------------------------------------------
@@ -526,6 +594,7 @@ class Run {
     const tail = this.#p.transcript.tail(session.id);
     for (const e of tail.entries) for (const c of e.tool_calls) this.#callIds.add(c.id);
     const base = runMessages(blocks, tail, this.#wake, input.profile);
+    this.#base = base;
 
     let failure: unknown = null;
     let empty = false;
@@ -541,6 +610,7 @@ class Run {
         ended = limit;
       }
       const offered = this.#offered();
+      this.#lastOffered = offered;
       const handoff: boolean =
         limit !== null && handed === null && this.#mayHandOff(limit, offered);
       this.#rounds += 1;
@@ -594,8 +664,9 @@ class Run {
         break;
       }
       this.#record(assistant, [], step.blocked, step);
-      // A line that did not go out is hers to know about: one more step reads the note.
-      if (step.blocked.length > 0 && limit === null && !retriedBlocked) {
+      // A line that did not go out is hers to know about: one more step reads the note. Not when
+      // the Floor refused them all: another try is a model call it refuses the same way.
+      if (step.blocked.length > 0 && !step.floorOnly && limit === null && !retriedBlocked) {
         retriedBlocked = true;
         continue;
       }
@@ -843,13 +914,36 @@ class Run {
 
   // ---- one step ---------------------------------------------------------------------------
 
+  /**
+   * The output checks of this run's text. Work a profile that does not speak writes (a helper's
+   * report, her notes when she reflects) is no chat reply: the screens for leaks of a reply and
+   * notes to herself are not for it (a report may well open with 「分析:」).
+   */
+  #textChecks(): OutputChecks {
+    if (this.#profile.speaks) return this.#checks;
+    return { ...this.#checks, leakScreen: false, leakScreenSpoken: false, selfTalk: false };
+  }
+
+  /**
+   * The runner's rules she reads (block 1 after the persona, her profile's note, the reminder in
+   * `<turn>`), so a line that recites them is a leak. Not the persona: introducing herself, she
+   * may well say a line of it word for word.
+   */
+  #echo(): PromptEcho | null {
+    if (!this.#profile.speaks) return null;
+    const name = this.#profile.name;
+    const rules = [rulesFor(PREFIX_PROFILE[name]), PROFILE_NOTES[name] ?? "", FEEL_REMINDER];
+    return promptEcho(rules.join("\n"));
+  }
+
   async #step(request: ChatRequest, final: boolean): Promise<Step> {
-    const screen = new StepText(this.#profile.unit, this.#checks);
+    const screen = new StepText(this.#profile.unit, this.#textChecks(), this.#echo());
     const step: Step = {
       lines: [],
       ids: [],
       later: [],
       blocked: [],
+      floorOnly: true,
       reasoning: "",
       calls: [],
       silence: false,
@@ -867,9 +961,13 @@ class Run {
           step.lines.push(out.text);
           step.ids.push(out.message_id);
           step.later.push(out.later);
-          if (out.replaced !== null) step.blocked.push(out.replaced);
+          if (out.replaced !== null) {
+            step.blocked.push(out.replaced);
+            step.floorOnly = false;
+          }
         } else {
           step.blocked.push(out.reason);
+          if (out.code !== "floor") step.floorOnly = false;
         }
       }
     };
@@ -1106,7 +1204,7 @@ class Run {
 
   /** A `say` of this run: her words for another place, screened like her written lines. */
   async speakElsewhere(place: ContextKey, raw: string): Promise<Spoken> {
-    const screen = new StepText("line", this.#checks);
+    const screen = new StepText("line", this.#checks, this.#echo());
     const lines = [...screen.push(raw), ...screen.finish()];
     const text = lines.map((l) => l.text).join("\n");
     if (text === "") return { ok: false, code: "empty", reason: LINE_REFUSALS.empty };

@@ -60,7 +60,8 @@ async function build(script: StreamEvent[][]) {
     new Map(["chat", "summarizer"].map((p) => [p, chain])),
   );
   const profile = await Profile.loadDir(PROFILE_DIR);
-  const subject = new SelfSubject({ router, meter, profile });
+  // Her steps here are counted one by one: no repair call after a reply without a block.
+  const subject = new SelfSubject({ router, meter, profile, feelRepair: false });
   return { provider, meter, router, subject };
 }
 

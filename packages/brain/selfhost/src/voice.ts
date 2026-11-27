@@ -90,6 +90,7 @@ import {
   wakeAuthor,
 } from "../../self/src/index.js";
 import { answeredLine, applyFeel, feelDeps } from "./feel.js";
+import type { FeelRepairs } from "./feel-repair.js";
 import type { AdmittedInput } from "./lane.js";
 import type { HostPrompt, SlowReads } from "./prompt.js";
 import { payerOfAuthor } from "./quota.js";
@@ -131,6 +132,8 @@ export interface VoiceHostDeps {
   /** The prompts of recent runs, for the panel: a run begins and ends here. */
   saved: PromptKeeper;
   runner: () => SelfRunner;
+  /** Repairs of a reply said without its feel block; unset: none. */
+  repairs?: FeelRepairs;
   /** The session a voice channel's transcript is under. */
   sessionOf(context: ContextKey): string;
   /** Triage of a line of `context` under the glance caps every place shares. */
@@ -913,6 +916,7 @@ export class VoiceHost implements VoiceRunner {
           signal: run.controller.signal,
           turn,
           payerOf: (from) => payerOfAuthor(agent, from),
+          ...(this.#d.repairs?.wanted() === true && { feelRepair: true }),
         }),
       );
     } catch (e) {
@@ -941,6 +945,7 @@ export class VoiceHost implements VoiceRunner {
     this.#d.initiative?.ended(run.wake, turn, context, outcome, state.lines > 0);
     if (run.dropped) {
       // It started early and they went on: it never was.
+      this.#d.repairs?.after(this.#d.runner(), turn, null);
       agent.ctx.publish(Events.AgentTurnCompleted, { turn, context, text: "" }, { turn });
       return;
     }
@@ -950,7 +955,13 @@ export class VoiceHost implements VoiceRunner {
 
   /** Her `<feel>` blocks of a voice run that ended (`feel.ts`): those in the channel may be named. */
   #feel(place: VoicePlace, run: VoiceRun, result: RunResult): void {
-    if (result.feel.length === 0) return;
+    if (result.feel.length === 0) {
+      // Said without a block: one small call after it, in the background (nothing is held up).
+      this.#d.repairs?.after(this.#d.runner(), run.turn, (feel) =>
+        this.#feel(place, run, { ...result, feel }),
+      );
+      return;
+    }
     try {
       const entries = this.#d.transcript.tail(place.session).entries;
       const people = [

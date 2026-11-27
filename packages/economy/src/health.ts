@@ -9,8 +9,13 @@
 
 import { CARD_REASONS, EXCHANGE_REASONS, KARAOKE_REASONS, MARKET_REASONS } from "@miyoria/types";
 import type { EconomyService } from "./economy.js";
-import { type LedgerDayTotal, LedgerStatsKey, type LedgerStatsStore } from "./records.js";
-import { DANMAKU_REASON, DANMAKU_REFUND_REASON } from "./types.js";
+import {
+  type LedgerDayTotal,
+  LedgerStatsKey,
+  type LedgerStatsStore,
+  REFUND_REASONS,
+} from "./records.js";
+import { BET_RAKE_REASON, DANMAKU_REASON, DANMAKU_REFUND_REASON } from "./types.js";
 import type { HealthView } from "./v2-types.js";
 
 export { type LedgerDayTotal, LedgerStatsKey, type LedgerStatsStore };
@@ -44,6 +49,12 @@ export const RECOVERED_REASONS: readonly string[] = [
   "room",
   "commission",
   "transfer_fee",
+  // The paid items of the shop: a card frame, a foil card, a fortune slip.
+  "frame",
+  "card_foil",
+  "fortune",
+  // The cut of a prediction's pool (predictions.ts): it passes through her purse and burns there.
+  BET_RAKE_REASON,
   CARD_REASONS.daily,
   // The weekly market (docs/design/v5-play.md §11.4): the song priority ticket, lottery tickets and
   // the price of a won lot are burned. A bid's hold is neither: it is given back or becomes a win.
@@ -112,6 +123,11 @@ export class Health {
       // A daily card that could not be written gave its coins back: they were not recovered. So do
       // the market's refunds and its lottery prize.
       if (GIVEN_BACK_REASONS.includes(r.reason)) day.recovered -= r.positive;
+      // A generic refund gives back the row it names: only one of a recovered spend counts (a
+      // stake given back was never recovered).
+      if (REFUND_REASONS.includes(r.reason) && r.of !== undefined) {
+        if (RECOVERED_REASONS.includes(r.of)) day.recovered -= r.positive;
+      }
     }
     const list = [...days.entries()]
       .sort((a, b) => a[0] - b[0])

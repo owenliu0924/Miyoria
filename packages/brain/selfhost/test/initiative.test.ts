@@ -350,6 +350,52 @@ describe("opportunities and gates", () => {
   });
 });
 
+// Review 2026-11-27: due in a channel nobody spoke in for half an hour, a reminder someone asked
+// for was refused as "nobody there" after a model call, a second one paid for the refusal, and
+// the reminder was used up.
+describe("the Floor of a quiet channel", () => {
+  it("a reminder someone asked for is delivered there", async () => {
+    const rig = await Rig.create({ arbiter: {} });
+    rig.shift = toNoon();
+    rig.model.push(calls("schedule", { when: "40m", note: "提醒 amy 關火" }), says("好"));
+    rig.say(mention(C1, "amy", "@她 四十分鐘後提醒我關火"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    rig.model.push(says("amy,該關火了!"));
+    rig.shift += 41 * MIN;
+    await tick(rig);
+    await until(() => rig.sink.texts().length === 2, 3_000, "the reminder");
+    expect(rig.sink.texts()[1]).toBe("amy,該關火了!");
+    expect(rig.model.requests).toHaveLength(3);
+  });
+
+  it("a wish of hers there costs no model call and is not used up", async () => {
+    const rig = await Rig.create({ arbiter: {} });
+    rig.shift = toNoon();
+    rig.model.push(says("嗨"));
+    rig.say(mention(C1, "amy", "@她 嗨"));
+    await until(() => rig.sink.texts().length === 1, 3_000, "her answer");
+    const at = () => Date.now() + rig.shift;
+    host(rig).initiative.book.set({
+      when: { due: at() + 40 * MIN, daily: null },
+      note: "問大家晚餐吃什麼",
+      context: C1,
+    });
+    rig.shift += 41 * MIN;
+    await tick(rig);
+    await sleep(100);
+    expect(rig.model.requests).toHaveLength(1);
+    const stopped = decisions(rig).filter(
+      (d) => d.impulse.startsWith("timer:") && d.verdict === "rejected",
+    );
+    expect(stopped.map((d) => [d.reason, d.detail?.split(":")[0]])).toEqual([["nobody", "floor"]]);
+    // Someone is back: it is still hers to bring up.
+    rig.model.push(says("在喔"));
+    rig.say(mention(C1, "bob", "@她 在嗎"));
+    await until(() => rig.sink.texts().length === 2, 3_000, "the next run there");
+    expect(textOf(rig.model.requests[1])).toContain("問大家晚餐吃什麼");
+  });
+});
+
 describe("her starts in the Arbiter's ledger", () => {
   it("a start of hers is an entry of ArbiterKey.ledger(), and settles there", async () => {
     const rig = await Rig.create({ arbiter: {} });

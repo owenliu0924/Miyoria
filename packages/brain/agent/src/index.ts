@@ -130,7 +130,15 @@ export {
   voiceScope,
 } from "./handle.js";
 export { backfillLimit } from "./history.js";
-export { isSelfTalk, looksLikeReasoning, ReplyScreen } from "./leak.js";
+export {
+  isSelfTalk,
+  judgeLine,
+  type LineVerdict,
+  looksLikeReasoning,
+  PromptEcho,
+  promptEcho,
+  ReplyScreen,
+} from "./leak.js";
 export {
   CEILINGS,
   type Ceiling,
@@ -155,6 +163,7 @@ export { FALLBACK_LINES, MainLine } from "./mainline/main.js";
 export {
   contextData,
   contextState,
+  type ExampleOptions,
   exampleDialogues,
   examplesBlock,
   partyLine,

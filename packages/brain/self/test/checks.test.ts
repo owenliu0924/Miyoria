@@ -28,6 +28,8 @@ describe("the output checks", () => {
       fallback_line: true,
       tag_strip: true,
       self_talk: true,
+      // Not an output check: the repair of a missing feel block, run by the hosts.
+      feel_repair: true,
     });
     expect(Object.values(ALL_CHECKS)).toEqual([true, true, true, true, true, true]);
   });
@@ -70,6 +72,27 @@ describe("the output checks", () => {
       "<sing_start>",
     );
     expect(kept.tagsStripped).toBe(0);
+  });
+
+  // Review 2026-11-27: `<div>`, `<a href>`, `<user_id>` came out of the code she wrote, and an
+  // unclosed `<feel` in code took the rest of the reply.
+  it("#18 tag strip: code passes as she wrote it, whatever the chunks", () => {
+    const code = '```html\n<div class="x"><a href="/a">a</a><img src=cat.png></div>\n<feel\n```';
+    const raw = `<emo:happy>給你:\n${code}\n把 \`<user_id>\` 換成你的 <sing_start>\n<feel>\n我: 得意 弱\n</feel>`;
+    const want = ["給你:", code, "把 `<user_id>` 換成你的"];
+    for (const size of [1, 2, 3, 5, 8, raw.length]) {
+      const screen = new StepText("line", ALL_CHECKS);
+      const out = [];
+      for (let i = 0; i < raw.length; i += size) out.push(...screen.push(raw.slice(i, i + size)));
+      out.push(...screen.finish());
+      expect(
+        out.map((l) => l.text),
+        `chunks of ${size}`,
+      ).toEqual(want);
+      expect(out[0]?.emotion).toBe("happy");
+      expect(screen.feel).toEqual(["\n我: 得意 弱\n"]);
+      expect(screen.tagsStripped).toBe(1);
+    }
   });
 
   it("#19 self-talk: a note to herself is left out, or sent with the switch off", () => {

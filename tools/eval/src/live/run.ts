@@ -7,11 +7,13 @@ import type { Judge } from "./judge.js";
 import type { Meter } from "./meter.js";
 import type { ModelUsage, Subject } from "./subject.js";
 import { type PersonaParts, SuiteRegistry, type SuiteResult } from "./suite.js";
+import { BOND_REPEAT, runBond } from "./suites/bond.js";
 import { runCorrections } from "./suites/corrections.js";
 import { runFeel } from "./suites/feel.js";
 import { runPersona } from "./suites/persona.js";
 import { runPlay } from "./suites/play.js";
 import { runRelationship } from "./suites/relationship.js";
+import { runScreens } from "./suites/screens.js";
 import { runTools } from "./suites/tools.js";
 
 export {
@@ -32,14 +34,20 @@ export function defaultSuites(): SuiteRegistry {
     .register("memory", null)
     .register("corrections", (ctx) => runCorrections(ctx))
     .register("feel", (ctx) => runFeel(ctx))
-    .register("play", (ctx) => runPlay(ctx));
+    .register("play", (ctx) => runPlay(ctx))
+    .register("bond", (ctx) => runBond(ctx))
+    .register("screens", (ctx) => runScreens(ctx));
 }
 
 /**
- * Suites that run only when named: `corrections` is for comparing brains, not the nightly, and
- * `play` is a few hundred model calls at 8 repeats.
+ * Suites that run only when named: `corrections` is for comparing brains, not the nightly, `play`
+ * is a few hundred model calls at 8 repeats, `bond` is for checking her feel rules after a
+ * change to them, and `screens` for a change to the send-boundary screens or her examples.
  */
-const OPT_IN: ReadonlySet<string> = new Set(["corrections", "play"]);
+const OPT_IN: ReadonlySet<string> = new Set(["corrections", "play", "bond", "screens"]);
+
+/** How many times a suite runs each item when the run names no `repeat` (others: once). */
+export const SUITE_REPEAT: Readonly<Record<string, number>> = { bond: BOND_REPEAT };
 
 /** The suites a run takes when none is named: the ones that have a runner, but not the opt-in ones. */
 export function runnableSuites(registry: SuiteRegistry): string[] {
@@ -58,6 +66,7 @@ export interface LiveRunOptions {
   persona: string;
   /** Her persona as her chat reads it (`SuiteContext.handle`). */
   handle?: PersonaParts;
+  /** Every item of every suite runs this many times; unset: `SUITE_REPEAT`, else once. */
   repeat?: number;
   seed?: string;
   /** The git commit the run is of (`null`: unknown). */
@@ -93,7 +102,9 @@ export async function runLive(options: LiveRunOptions): Promise<LiveRun> {
   const now = options.now ?? (() => Date.now());
   const start = now();
   const seed = options.seed ?? new Date(start).toISOString();
-  const repeat = options.repeat ?? 1;
+  const repeatOf = (suite: string) => options.repeat ?? SUITE_REPEAT[suite] ?? 1;
+  // What the run records: the repeat given, else the most any of its suites ran.
+  const repeat = Math.max(1, ...options.suites.map(repeatOf));
   const log = options.log ?? (() => undefined);
   const suites: SuiteResult[] = [];
   let stopped = false;
@@ -120,7 +131,7 @@ export async function runLive(options: LiveRunOptions): Promise<LiveRun> {
       ...(options.router === undefined ? {} : { router: options.router }),
       persona: options.persona,
       ...(options.handle === undefined ? {} : { handle: options.handle }),
-      repeat,
+      repeat: repeatOf(name),
       seed,
       log,
     });

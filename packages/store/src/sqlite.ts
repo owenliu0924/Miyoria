@@ -22,6 +22,7 @@ import {
 } from "@miyoria/types";
 import { artifactSchema } from "./artifacts/migrations.js";
 import { ArtifactStore } from "./artifacts/store.js";
+import { DatabaseBackups } from "./backup.js";
 import { storeRegistry } from "./categories.js";
 import {
   fromMicros,
@@ -501,6 +502,8 @@ export class SqliteStore implements Store {
   readonly artifacts: ArtifactStore | null;
   /** Forgetting and merging people through every schema's hooks (`person-data.ts`). */
   readonly personData: PersonData;
+  /** The nightly copies of the database file (`backup.ts`); `null` in memory. */
+  readonly backups: DatabaseBackups | null;
   readonly #db: Db;
   readonly #location: string;
   /** Every schema migrated on this database by this store (the store's own and plugins'). */
@@ -519,6 +522,7 @@ export class SqliteStore implements Store {
   ) {
     this.#db = db;
     this.#location = location;
+    this.backups = location === ":memory:" ? null : new DatabaseBackups(location);
     this.#schemas = [...schemas];
     this.persons = new Identity(db);
     this.places = new SpacePlaces(db, this.persons);

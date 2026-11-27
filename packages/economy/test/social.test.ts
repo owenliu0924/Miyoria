@@ -268,6 +268,26 @@ describe("transfers", () => {
     expect(await balance(r, BOB)).toBe(60);
   });
 
+  it("writes the sender's, the receiver's and the fee's rows together or not at all", async () => {
+    const r = await rig();
+    await post(r, ALICE, 80, "checkin");
+    // Any row written on its own after the sender's fails, as a crash there would.
+    const ledger = ledgerOf(r.store);
+    const one = ledger.post.bind(ledger);
+    ledger.post = async (entry, rule) => {
+      if (entry.reason === "transfer_in" || entry.reason === "transfer_fee") {
+        throw new Error("the process died here");
+      }
+      return one(entry, rule);
+    };
+    await r.economy.transfer(ALICE, BOB, 25, "together").catch(() => undefined);
+    const lost = 80 - (await balance(r, ALICE));
+    const got = await balance(r, BOB);
+    // Either nothing moved, or all of it: never a debit without its credit.
+    expect([0, 25]).toContain(got);
+    expect(lost).toBe(got === 0 ? 0 : got + 2);
+  });
+
   it("finishes a transfer whose second row never landed, on the same key, once", async () => {
     const r = await rig();
     await post(r, ALICE, 80, "checkin");

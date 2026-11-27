@@ -52,6 +52,7 @@ import {
   dataBlock,
   type Envelope,
   Events,
+  FloorKey,
   FollowupSourceKey,
   HandleDirectoryKey,
   HeartKey,
@@ -71,12 +72,13 @@ import {
 } from "@miyoria/types";
 import type { Agent } from "../../agent/src/index.js";
 import { dayIndex, type LocalTime, localHour } from "../../arbiter/src/index.js";
-import type {
-  PromptInput,
-  StartOutcome,
-  StartSpec,
-  Wake,
-  WakeAuthor,
+import {
+  floorKind,
+  type PromptInput,
+  type StartOutcome,
+  type StartSpec,
+  type Wake,
+  type WakeAuthor,
 } from "../../self/src/index.js";
 import {
   GateBook,
@@ -147,6 +149,7 @@ const REASON: Readonly<Record<GateName, ArbiterReason>> = {
   unanswered: "unanswered",
   cooldown: "cooldown",
   same_kind: "repeat",
+  floor: "nobody",
 };
 
 /** Inbox kinds that wake her themselves (a result has a wake of its own already). */
@@ -637,6 +640,12 @@ export class Initiative {
         this.#stopped(o, verdict.gate, verdict.detail, verdict.retryAt);
         continue;
       }
+      // The Floor her lines would meet, before a model call: refused, it stays for a later look.
+      const refused = this.#floorRefuses(o);
+      if (refused !== null) {
+        this.#stopped(o, "floor", refused, null);
+        continue;
+      }
       this.#wake(o, now);
     }
     this.#dirty = true;
@@ -976,15 +985,33 @@ export class Initiative {
     this.#decide(o, "rejected", REASON[gate], `${gate}: ${detail}`, retryAt);
   }
 
+  /** The wake of a run for `o`. */
+  #wakeOf(o: Opportunity): Wake {
+    return o.kind === "timer"
+      ? { kind: "timer", note: o.note, ...(o.asker ? { from: o.asker } : {}) }
+      : o.kind === "world"
+        ? { kind: "world", what: o.note }
+        : { kind: "self", note: o.note };
+  }
+
+  /**
+   * Why the Floor of `o`'s place would refuse the lines of its run now (the guard asks the same
+   * of each line, `floorKind`); `null`: it would not, or there is no Floor.
+   */
+  #floorRefuses(o: Opportunity): string | null {
+    if (o.place === null) return null;
+    try {
+      return this.#services.get(FloorKey)?.refuses(floorKind(this.#wakeOf(o)), o.place) ?? null;
+    } catch (error) {
+      this.#h.agent.log.debug({ err: errorMessage(error) }, "no floor for her initiative");
+      return null;
+    }
+  }
+
   #wake(o: Opportunity, now: number): void {
     const place = o.place;
     if (place === null) return;
-    const wake: Wake =
-      o.kind === "timer"
-        ? { kind: "timer", note: o.note, ...(o.asker ? { from: o.asker } : {}) }
-        : o.kind === "world"
-          ? { kind: "world", what: o.note }
-          : { kind: "self", note: o.note };
+    const wake = this.#wakeOf(o);
     this.#runs.set(wake, { o, entry: null });
     if (!this.#h.wake(place, wake)) {
       this.#runs.delete(wake);

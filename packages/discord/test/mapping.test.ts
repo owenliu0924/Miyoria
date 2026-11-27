@@ -210,6 +210,35 @@ describe("mapping", () => {
     expect(kindOf(ChannelType.GuildVoice)).toBe("channel");
   });
 
+  test("a_group_dm_is_marked_as_one", () => {
+    const dm = (type: ChannelType) =>
+      incomingMessage(message({ guildId: null, member: null, channel: { type } }), "dm", selves())
+        .id.context;
+    expect(dm(ChannelType.GroupDM)).toEqual({
+      platform: "discord",
+      scope: null,
+      channel: "200",
+      kind: "dm",
+      group: true,
+    });
+    expect(dm(ChannelType.DM)).not.toHaveProperty("group");
+    // Without the channel at hand it is a plain DM, as before.
+    expect(
+      incomingMessage(message({ guildId: null }), "dm", selves()).id.context,
+    ).not.toHaveProperty("group");
+    // A reply in the group DM keeps the mark.
+    const reply = incomingMessage(
+      message({
+        guildId: null,
+        channel: { type: ChannelType.GroupDM },
+        reference: { messageId: "999", channelId: "200" },
+      }),
+      "dm",
+      selves(),
+    );
+    expect(reply.reply_to?.context.group).toBe(true);
+  });
+
   test("snowflake_parsing", () => {
     expect(snowflake("123456789012345678", "channel")).toBe("123456789012345678");
     expect(() => snowflake("0", "channel")).toThrow("invalid Discord channel id `0`");

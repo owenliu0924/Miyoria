@@ -17,11 +17,24 @@ import {
   type NotesStore,
   notesTables,
   personSubject,
+  placeOfContext,
   processedUpTo,
   type RebuildState,
   type SegmentEpisode,
 } from "../src/index.js";
-import { CHANNEL, fakeResolver, MINUTE, OWEN, scripted, T0, testClock } from "./helpers.js";
+import {
+  by,
+  CHANNEL,
+  DM_CHANNEL,
+  DM_ROOM,
+  fakeResolver,
+  GROUP_ROOM,
+  MINUTE,
+  OWEN,
+  scripted,
+  T0,
+  testClock,
+} from "./helpers.js";
 
 const SESSION = "s:channel";
 const CONFIG: LiveSegmentConfig = {
@@ -299,5 +312,22 @@ describe("LiveSegments", () => {
     expect(await live(o, model.router).tick()).toBe(0);
     expect(model.asked).toHaveLength(0);
     await o.store.close();
+  });
+});
+
+describe("placeOfContext", () => {
+  const said = by(1, OWEN, "Owen", "嗨");
+  it("names a DM's other side, and nobody's DM in a group DM", () => {
+    expect(placeOfContext(DM_CHANNEL, [said], fakeResolver())).toEqual({
+      space: null,
+      room: DM_ROOM,
+      dm: OWEN,
+    });
+    const group = { ...DM_CHANNEL, channel: "gd", group: true };
+    expect(placeOfContext(group, [said], fakeResolver())).toEqual({
+      space: null,
+      room: GROUP_ROOM,
+      dm: null,
+    });
   });
 });

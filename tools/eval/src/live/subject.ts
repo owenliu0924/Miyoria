@@ -22,8 +22,11 @@ export interface ScenePerson {
 }
 
 export interface SceneLine {
+  /** The speaker, one of `people`; ignored on a line of hers (`self`). */
   who: string;
   text: string;
+  /** A line she said earlier in the scene (a refusal, say). */
+  self?: boolean;
 }
 
 /**
@@ -39,7 +42,10 @@ export interface Scene {
   id: string;
   place: "text" | "dm";
   people: ScenePerson[];
-  /** What was said, oldest first; every `who` is one of `people`. The last line is the one she answers. */
+  /**
+   * What was said, oldest first; every `who` is one of `people`, except on her own lines. The last
+   * line is the one she answers, never one of hers.
+   */
   lines: SceneLine[];
   address: Address;
   /** Her state line ("now"), when the scene sets one. */
@@ -120,6 +126,23 @@ export interface Reply {
    * not report them.
    */
   feel?: string[];
+  /** How many of `feel` the repair after the reply brought (it wrote none itself); unset: no repair. */
+  feel_repaired?: number;
+  /**
+   * What the model wrote in each step, before any screen or parser (the repair's call included);
+   * unset: the subject does not report it.
+   */
+  raw?: string[];
+}
+
+/** Characters of a failed item's raw model text kept in the run file. */
+export const RAW_CHARS = 1500;
+
+/** `reply.raw` as one text cut to `RAW_CHARS`, for the run file; `undefined`: none reported. */
+export function rawText(reply: Pick<Reply, "raw">): string | undefined {
+  if (reply.raw === undefined) return undefined;
+  const chars = [...reply.raw.join("\n---\n")];
+  return chars.length > RAW_CHARS ? `${chars.slice(0, RAW_CHARS).join("")}…` : chars.join("");
 }
 
 export interface Subject {

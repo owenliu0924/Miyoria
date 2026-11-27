@@ -9,6 +9,7 @@ import {
   CHANNEL,
   DM_CHANNEL,
   fakeResolver,
+  GROUP_ROOM,
   OWEN,
   OWEN_ACCOUNT,
   type Rig,
@@ -121,6 +122,36 @@ describe("knowledge_note on the notes", () => {
     expect(k.base.render(subjects, { context: CHANNEL, maxChars: 800 })).toBe("");
     expect(k.base.render(subjects, { context: null, maxChars: 800 })).toContain("私訊裡說的");
     expect(k.knowledge.viewerFor(CHANNEL).space).toBe(SPACE);
+  });
+
+  it("never reads or writes one member's DM lines from a group DM", async () => {
+    const k = await setup();
+    const group: ContextKey = { ...DM_CHANNEL, channel: "gd", group: true };
+    await k.tool.call(k.ctx(DM_CHANNEL), {
+      action: "create",
+      subject: "speaker",
+      kind: "人物卡",
+      title: "Owen",
+      content: { 祕密: "私訊裡說的" },
+    });
+    const subjects = [{ type: "person" as const, person: OWEN }];
+    expect(k.base.render(subjects, { context: group, maxChars: 800 })).not.toContain("私訊裡說的");
+    expect(k.knowledge.viewerFor(group, [OWEN_ACCOUNT])).toMatchObject({
+      dm: null,
+      space: null,
+      room: GROUP_ROOM,
+    });
+    const id = k.notes.document(`person:${OWEN}`)?.id ?? "";
+    await k.tool.call(k.ctx(group), {
+      action: "patch",
+      doc: `#${id.slice(-6)}`,
+      ops: [{ op: "add", path: "/群組", value: "大家都知道" }],
+    });
+    const line = k.notes.lines(`person:${OWEN}`, "owner").find((l) => l.text.includes("大家"));
+    expect(line?.scope).toEqual({ type: "room", room: GROUP_ROOM });
+    expect(k.base.render(subjects, { context: DM_CHANNEL, maxChars: 800 })).not.toContain(
+      "大家都知道",
+    );
   });
 
   it("lists and reads what her tool wrote, from the notes only", async () => {

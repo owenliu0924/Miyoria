@@ -6,14 +6,18 @@
 // - block 4: the scene's people as person cards, rendered by today's people block (`peopleBody`)
 //   from a heart row made of the closeness the scene sets;
 // - block 7: the time (the scene's clock when it sets one), the place and her state line;
-// - the transcript: the scene's lines in a fresh in-memory transcript store;
+// - the transcript: the scene's lines in a fresh in-memory transcript store (a line of hers as one
+//   she said);
 // - tools: a fresh registry with `find_tools` and `say`, and the scene's fake-world tools, all
 //   always on except the ones `hidden` names for the scene: those she has to find first;
 // - the guard: the service guard over the one service that runs without a network, the output
 //   moderation's local rules (`Moderation`); no owner rules, no Floor, no gate, no budget;
 // - what woke her: a mention or a DM as addressed, a scene nobody calls her in as a glance;
 // - a scene she answers aloud (`spoken`) runs the voice profile: what the outlet gets are the
-//   sentences she would say.
+//   sentences she would say;
+// - a reply that went out without a feel block gets the one repair call the hosts make
+//   (`[modules.agent.corrections] feel_repair`); what it brought is in `feel`, counted in
+//   `feel_repaired`.
 //
 // Nothing carries over from one scene to the next.
 
@@ -23,6 +27,7 @@ import {
   PROFILES,
   type PromptSource,
   type RunEvent,
+  type RunModel,
   SelfRunner,
   sayTool,
   serviceGuard,
@@ -78,6 +83,11 @@ export interface SelfOptions {
   hidden?: (scene: Scene) => readonly string[];
   /** Every event of a run (for looking into one). */
   onEvent?: (event: RunEvent) => void;
+  /**
+   * A reply without a feel block gets the hosts' one repair call after it (`feel_repair`, on in
+   * production by default). Default `true`.
+   */
+  feelRepair?: boolean;
 }
 
 const PLATFORM = "eval";
@@ -203,6 +213,7 @@ export class SelfSubject implements Subject {
     const unknown = (scene.tools?.tools ?? []).filter((t) => FAKE_TOOL_SPECS[t] === undefined);
     if (unknown.length > 0) return `no fake tool definition for ${unknown.join(", ")}`;
     if (scene.lines.length === 0 && scene.world === undefined) return "the scene has no line";
+    if (scene.lines.at(-1)?.self === true) return "the scene's last line is hers";
     if (scene.place === "dm" && scene.address !== "dm") return "a DM scene is addressed by `dm`";
     if (scene.place === "text" && scene.address === "dm") return "`dm` needs the place to be a DM";
     return null;
@@ -252,6 +263,14 @@ export class SelfSubject implements Subject {
         scene.lines.map((line, i) => {
           ts += 1000;
           const lastLine = i === scene.lines.length - 1;
+          if (line.self === true) {
+            return {
+              kind: "self" as const,
+              content: line.text,
+              message_id: `m${i + 1}`,
+              at: toTimestamp(ts),
+            };
+          }
           return {
             kind: "other" as const,
             account: accountFor(line.who),
@@ -332,11 +351,31 @@ export class SelfSubject implements Subject {
           (key as ServiceKey<unknown>) === ModerationKey ? (moderation as T) : undefined,
       },
     });
+    // What the model wrote, before any screen: a failed item can be read back from the run file.
+    const raw: string[] = [];
+    const model: RunModel = {
+      complete: (purpose, request, signal) => o.router.complete(purpose, request, signal),
+      prices: () => o.router.prices(),
+      async stream(purpose, request, signal) {
+        const stream = await o.router.stream(purpose, request, signal);
+        raw.push("");
+        const at = raw.length - 1;
+        return {
+          ...(stream.model === undefined ? {} : { model: stream.model }),
+          async *[Symbol.asyncIterator]() {
+            for await (const ev of stream) {
+              if (ev.type === "text_delta") raw[at] += ev.text;
+              yield ev;
+            }
+          },
+        };
+      },
+    };
     const runner = new SelfRunner(
       {
         transcript,
         tools,
-        model: o.router,
+        model,
         prompt,
         guard,
         outlet,
@@ -363,15 +402,30 @@ export class SelfSubject implements Subject {
     const timer = setTimeout(() => controller.abort(), o.timeoutMs ?? 180_000);
     let timedOut = false;
     let feel: string[] = [];
+    let repaired = 0;
+    // What she did took this long; the repair after it is no part of it, as in the hosts.
+    let endedAt: number | null = null;
+    const repair = o.feelRepair !== false;
     try {
       const result = await runner.run({
         session,
         wake,
         profile: scene.spoken ? PROFILES.voice : PROFILES.text,
         signal: controller.signal,
+        ...(repair && { feelRepair: true }),
       });
       timedOut = result.outcome === "cancelled";
       feel = result.feel;
+      endedAt = Date.now();
+      // As the hosts do: a reply that went out without a block gets one repair call after it.
+      const pending = runner.takeFeelRepair(result.turn);
+      if (pending !== null) {
+        const out = await pending.run({ signal: controller.signal });
+        if (out.status === "repaired") {
+          feel = [...feel, ...out.feel];
+          repaired = out.feel.length;
+        }
+      }
     } finally {
       clearTimeout(timer);
     }
@@ -381,9 +435,11 @@ export class SelfSubject implements Subject {
       calls,
       silent: lines.length === 0,
       usage: subUsage(o.meter.usage(), before),
-      ms: Math.max(0, Date.now() - started),
+      ms: Math.max(0, (endedAt ?? Date.now()) - started),
       ...(timedOut ? { timed_out: true } : {}),
       feel,
+      ...(repair ? { feel_repaired: repaired } : {}),
+      raw,
     };
   }
 }

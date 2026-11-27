@@ -47,7 +47,14 @@ import {
 } from "../../memory/src/notebook.js";
 import { bodyLines } from "./importer.js";
 import type { DocumentKind } from "./schema.js";
-import { type NoteScope, type NotesViewer, type ScopeResolver, sameScope } from "./scope.js";
+import {
+  groupDm,
+  type NoteScope,
+  type NotesViewer,
+  outsideSpace,
+  type ScopeResolver,
+  sameScope,
+} from "./scope.js";
 import { MISC_SECTION, sectionKey, sectionLabel } from "./sections.js";
 import {
   NotesError,
@@ -156,11 +163,12 @@ export class NotesNotebook implements Notebook {
       return p === null ? [] : [p];
     });
     if (c === null) return { space: null, room: null, dm: null, present: [] };
-    const dm = c.kind === "dm" || c.scope === null;
+    const dm = outsideSpace(c);
     return {
       space: dm || c.scope === null ? null : this.#resolver.spaceOf(c.platform, c.scope),
       room: this.#resolver.roomOf(c),
-      dm: dm ? (present[0] ?? null) : null,
+      // A group DM reads its room's lines, never one member's DM lines.
+      dm: dm && !groupDm(c) ? (present[0] ?? null) : null,
       present,
     };
   }
@@ -169,6 +177,11 @@ export class NotesNotebook implements Notebook {
   #scopeOf(where: NotebookWhere): NoteScope | null {
     const c = where.context;
     if (c === null) return { type: "self" };
+    if (groupDm(c)) {
+      // Written before several people: kept to that room, not to the writer's own DM.
+      const room = this.#resolver.roomOf(c);
+      return room === null ? null : { type: "room", room };
+    }
     if (c.kind === "dm" || c.scope === null) {
       const person = this.#personOf(where);
       return person === null ? null : { type: "dm", person };
@@ -283,6 +296,9 @@ export class NotesNotebook implements Notebook {
     if (all.length === 0 && this.#notes.writtenBy("tool") >= cfg.max_pages) {
       throw new NotebookError(`筆記本滿了(${cfg.max_pages} 頁),先刪掉或合併幾頁`);
     }
+    // Who asked for the write: what she notes at someone's word rests on them, so "forget me"
+    // takes it from a topic or self page too (as `tidy` keeps a merged line's one teller).
+    const asker = this.#personOf(where);
     const ops: NoteOp[] = [
       ...(mode === "replace"
         ? here.map((l): NoteOp => ({ op: "outdate", line: l.id, reason: "rewritten" }))
@@ -295,6 +311,7 @@ export class NotesNotebook implements Notebook {
           provenance: "observed",
           scope,
           confidence: WRITTEN_CONFIDENCE,
+          ...(asker === null ? {} : { told_by: asker }),
         }),
       ),
     ];

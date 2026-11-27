@@ -19,6 +19,7 @@ import {
   type ModelUsage,
   NO_USAGE,
   type Reply,
+  rawText,
   type Scene,
   type SceneLine,
   type ScenePerson,
@@ -211,6 +212,8 @@ export interface FeelItem {
   usage: ModelUsage;
   ms: number;
   timed_out?: boolean;
+  /** A failed item: what the model wrote, before any screen (cut, `rawText`). */
+  raw?: string;
 }
 
 /** The verdict on one reply to `c`. */
@@ -255,12 +258,14 @@ export async function runFeel(
         run,
         ok: fault === null,
         fault,
-        wrote_feel: (reply.feel ?? []).length > 0,
+        // In the reply itself: a block the repair after it brought does not count here.
+        wrote_feel: (reply.feel ?? []).length - (reply.feel_repaired ?? 0) > 0,
         lines: reply.lines,
         feel: reply.feel ?? [],
         usage: reply.usage ?? { ...NO_USAGE },
         ms: reply.ms,
         ...(reply.timed_out ? { timed_out: true } : {}),
+        ...(fault !== null && rawText(reply) !== undefined ? { raw: rawText(reply) } : {}),
       });
       ctx.log(`feel ${c.id}: ${fault === null ? "ok" : `failed (${fault})`}`);
     }

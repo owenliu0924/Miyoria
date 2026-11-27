@@ -99,15 +99,32 @@ function wrap(tag: string, lines: readonly string[]): string {
   return body.includes("\n") ? `<${tag}>\n${body}\n</${tag}>` : `<${tag}>${body}</${tag}>`;
 }
 
+/** A `<feel>` block of an example reply, with the line break before it. */
+const FEEL_BLOCK = /\n?[ \t]*<feel\b[^>]*>[\s\S]*?<\/feel\s*>/giu;
+
+/** What an example is rendered for. */
+export interface ExampleOptions {
+  /**
+   * Her replies keep their `<feel>` blocks: only for a prompt whose rules ask for one (the text
+   * and voice runs, `feels`). Off, they are taken out: whatever else reads her examples (a card
+   * she writes) must not learn to write one.
+   */
+  feel?: boolean;
+}
+
 /**
  * One example dialogue (a `## ` section of `persona/examples/*.md`) as an `<example>`: the title
  * is its situation, other people's lines are `<chat>` (`名字: 內容`, as the history shows them)
  * and hers (`herNames`) `<reply>` (what she writes), alternating as the dialogue does. A line with
  * no speaker goes on with the one before.
  */
-export function exampleBlock(dialogue: string, herNames: readonly string[]): string | null {
+export function exampleBlock(
+  dialogue: string,
+  herNames: readonly string[],
+  options: ExampleOptions = {},
+): string | null {
   const own = new Set(herNames.map((n) => n.trim().toLowerCase()).filter((n) => n !== ""));
-  const lines = dialogue.split("\n");
+  const lines = (options.feel === true ? dialogue : dialogue.replace(FEEL_BLOCK, "")).split("\n");
   let situation = "";
   const turns: { her: boolean; lines: string[] }[] = [];
   for (const raw of lines) {
@@ -141,9 +158,10 @@ export function exampleBlock(dialogue: string, herNames: readonly string[]): str
 export function examplesBlock(
   dialogues: readonly string[],
   herNames: readonly string[],
+  options: ExampleOptions = {},
 ): string | null {
   const blocks = dialogues
-    .map((d) => exampleBlock(d, herNames))
+    .map((d) => exampleBlock(d, herNames, options))
     .filter((b): b is string => b !== null);
   if (blocks.length === 0) return null;
   return `<examples${xmlAttrs({ note: EXAMPLES_NOTE })}>\n${blocks.join("\n\n")}\n</examples>`;

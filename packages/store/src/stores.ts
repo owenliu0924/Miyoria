@@ -20,6 +20,7 @@ import {
   type TurnOutcomeRecord,
 } from "@miyoria/types";
 import type { ArtifactStore } from "./artifacts/store.js";
+import type { DatabaseBackups } from "./backup.js";
 import type { PlaceSettings } from "./config/places.js";
 import type { ConfigModuleState } from "./config/revisions.js";
 import type { PluginState } from "./config/state.js";
@@ -377,6 +378,11 @@ export interface Store {
    * (`person-data.ts`). Optional for test doubles.
    */
   readonly personData?: PersonDataStore;
+  /**
+   * The nightly copies of the database file (`backup.ts`). `null` for an in-memory database;
+   * optional for test doubles.
+   */
+  readonly backups?: DatabaseBackups | null;
   /**
    * Identity's Spaces, Rooms and members (`identity/places.ts`), which Core provides as
    * `PlacesKey`. Optional for test doubles; without it Core provides no `Places` and every module

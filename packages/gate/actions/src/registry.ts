@@ -1058,18 +1058,25 @@ export class ActuatorRegistry implements ActuatorExecutor {
       requester === null
         ? null
         : (this.#services.get(SocialSignalsKey)?.attitude(requester) ?? null);
-    const messages = reviewMessages({
-      name: this.#name,
-      principal: request.principal,
-      requester: attitude,
-      capability: capability.name,
-      summary: capability.summary,
-      guidance: capability.guidance ?? null,
-      risk: capability.risk,
-      args: request.args,
-      why: request.why,
-      guardrails: this.#guardrails(),
-    });
+    // A request that cannot be put into words is a failed review: denied and audited by the
+    // caller, never an exception that skips the audit record.
+    let messages: ReturnType<typeof reviewMessages>;
+    try {
+      messages = reviewMessages({
+        name: this.#name,
+        principal: request.principal,
+        requester: attitude,
+        capability: capability.name,
+        summary: capability.summary,
+        guidance: capability.guidance ?? null,
+        risk: capability.risk,
+        args: request.args,
+        why: request.why,
+        guardrails: this.#guardrails(),
+      });
+    } catch (error) {
+      return deny("review", `self-review failed (${errorMessage(error)})`);
+    }
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     signal?.addEventListener("abort", onAbort, { once: true });

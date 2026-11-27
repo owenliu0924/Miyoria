@@ -268,6 +268,12 @@ describe("NotesRecall", () => {
       accounts: [OWEN_ACCOUNT, acct("u-cara")],
     });
     expect(group.memories).toEqual([]);
+    // A group DM the platform marks is no member's DM, even with only one of them speaking.
+    const marked = await r.recall.recollect({
+      ...ask("拉麵店員"),
+      context: { ...DM, channel: "gd", group: true },
+    });
+    expect(marked.memories).toEqual([]);
   });
 
   it("says who a self line's 他 is, and leaves one nobody can tell out", async () => {

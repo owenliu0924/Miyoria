@@ -533,7 +533,8 @@ export type QuotaConfig = z.output<typeof QuotaConfigSchema>;
 
 /**
  * `[modules.agent.corrections]`: the six checks of her output the runner keeps (numbered as in
- * docs/design/v4-patches.md and docs/design/v5-brain.md Q8). Every one is on by default; a switch
+ * docs/design/v4-patches.md and docs/design/v5-brain.md Q8), and the repair of a missing feel
+ * block. Every one is on by default; a switch
  * is for debugging, and turning one off removes only that check, never an outer wall (owner
  * rules, the action gate, the delivery ledger, output moderation, the Floor's limits).
  */
@@ -554,6 +555,13 @@ export const CorrectionsConfigSchema = z.object({
    * not said aloud. Only that line: the rest of the reply is hers.
    */
   self_talk: z.boolean().default(true),
+  /**
+   * A text or voice reply that went out without its `<feel>` block gets one small call after it,
+   * on the same prompt and her reply, for the block alone (brain/self `feel-repair.ts`): never
+   * shown or said, charged to the people the reply was for, skipped when one of them is at their
+   * AI quota or the day's budget is not `ok`.
+   */
+  feel_repair: z.boolean().default(true),
 });
 export type CorrectionsConfig = z.output<typeof CorrectionsConfigSchema>;
 

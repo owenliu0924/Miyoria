@@ -44,6 +44,26 @@ describe("health", () => {
     expect(v.warn).toBeNull();
   });
 
+  it("counts every spend that burns, and a refund only of what was counted as recovered", async () => {
+    const r = await rig();
+    provide(r, (t) => [
+      { day: t, reason: "checkin", positive: 100, negative: 0 },
+      { day: t, reason: "frame", positive: 0, negative: 30 },
+      { day: t, reason: "card_foil", positive: 0, negative: 5 },
+      { day: t, reason: "fortune", positive: 0, negative: 3 },
+      { day: t, reason: "feed", positive: 0, negative: 20 },
+      // A feed given back was not recovered; a stake given back never was.
+      { day: t, reason: "refund", positive: 10, negative: 0, of: "feed" },
+      { day: t, reason: "refund", positive: 50, negative: 0, of: "bet" },
+      { day: t, reason: "refund_removed", positive: 2, negative: 0, of: "frame" },
+      // The cut of a prediction's pool passes through her purse and is burned.
+      { day: t, reason: "bet_cut", positive: 4, negative: 0 },
+      { day: t, reason: "bet_rake", positive: 0, negative: 4 },
+    ]);
+    const v = await r.economy.v2.health();
+    expect(v.days.at(-1)).toMatchObject({ issued: 100, recovered: 30 + 5 + 3 + 20 - 10 - 2 + 4 });
+  });
+
   it("warns when less than health_warn_ratio came back in the week", async () => {
     const r = await rig();
     provide(r, (t) => [

@@ -520,6 +520,22 @@ describe("the banner", () => {
       '<html><head><script>let s = "<body>";</script></head><body id="b"><p>x</p></body></html>',
     );
     expect(tricky).toContain('<body id="b"><div id="mabc"');
+    // Nor one in text the parser never reads as tags, or in an attribute value.
+    for (const head of [
+      "<style>/*<body>*/</style>",
+      "<title><body></title>",
+      "<textarea><body></textarea>",
+      "<noscript><body></noscript>",
+      "<template><body></template>",
+      '<meta name="x" content="<body>">',
+      "<meta name='x' content='a > <body>'>",
+      "<!-- <body> -->",
+    ]) {
+      const out = at(`<html><head>${head}</head><body id="b"><p>x</p></body></html>`);
+      expect(out, head).toContain(`<html><head>${head}</head><body id="b"><div id="mabc"`);
+    }
+    // An unclosed raw-text element runs to the end: the banner goes before it, not into it.
+    expect(at("<html><style>/*<body>")).toMatch(/^<html><div id="mabc"/);
     expect(at("<body>")).toContain("&lt;b&gt;");
     expect(at("<body>")).toContain("position:fixed!important");
   });

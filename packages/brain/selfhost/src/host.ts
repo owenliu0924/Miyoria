@@ -132,6 +132,7 @@ import {
   courtesyNote,
 } from "./courtesy.js";
 import { answeredLine, applyFeel, feelApplies, feelDeps } from "./feel.js";
+import { FeelRepairs } from "./feel-repair.js";
 import { startIdleCompaction } from "./idle-compaction.js";
 import { ImpulseDesk } from "./impulses.js";
 import { type Initiative, type InitiativeOptions, startInitiative } from "./initiative.js";
@@ -244,6 +245,8 @@ export class SelfHost implements TextRunner {
   readonly prompt: HostPrompt;
   /** The voice conversations (`TextRunner.voice`). */
   readonly voice: VoiceHost;
+  /** Repairs of replies, written or spoken, that went out without a feel block. */
+  readonly feelRepairs: FeelRepairs;
   /** The sub-agents; `null`: `[modules.agent.delegate] enabled = false`. */
   readonly jobs: JobsHost | null;
   /** Her inbox, her schedules and what wakes her on her own (`initiative.ts`). */
@@ -285,6 +288,20 @@ export class SelfHost implements TextRunner {
     this.#saved = new PromptKeeper(agent);
     this.#replied = new ReplyContext(agent, transcript, this.#around.recent);
     const sessionOf = (context: ContextKey) => this.#sessionFor(context);
+    this.feelRepairs = new FeelRepairs({
+      enabled: () => agent.config.corrections.feel_repair,
+      budget: () => agent.handle.llmBudget(),
+      model: () => {
+        const r = agent.ctx.services.get(LlmRouterKey);
+        if (!r) throw new Error("the llm module is not running");
+        return {
+          stream: (p, request, signal) => r.stream(p, request, signal),
+          prices: () => r.prices(),
+        };
+      },
+      log: agent.log,
+      signal: this.#stop.signal,
+    });
     this.prompt = new HostPrompt(agent, {
       transcript,
       sessionOf,
@@ -300,6 +317,7 @@ export class SelfHost implements TextRunner {
       prompt: this.prompt,
       saved: this.#saved,
       runner: () => this.runner,
+      repairs: this.feelRepairs,
       sessionOf,
       triage: (context, line) =>
         triage(
@@ -1154,6 +1172,7 @@ export class SelfHost implements TextRunner {
           signal: run.controller.signal,
           turn,
           payerOf: (from) => payerOfAuthor(agent, from),
+          ...(this.feelRepairs.wanted() && { feelRepair: true }),
         }),
       );
     } catch (e) {
@@ -1178,7 +1197,15 @@ export class SelfHost implements TextRunner {
 
   /** Her `<feel>` blocks of a run that ended, to the emotion engine and the heart (`feel.ts`). */
   #feel(context: ContextKey, session: string, run: LaneRun, result: RunResult): void {
-    if (result.feel.length === 0 || !feelApplies(run)) return;
+    if (result.feel.length === 0) {
+      // Her reply went out without a block: one small call after it, in the background.
+      const apply = feelApplies(run)
+        ? (feel: string[]) => this.#feel(context, session, run, { ...result, feel })
+        : null;
+      this.feelRepairs.after(this.runner, run.turn, apply);
+      return;
+    }
+    if (!feelApplies(run)) return;
     try {
       const entries = this.transcript.tail(session).entries;
       applyFeel(feelDeps(this.#agent), {

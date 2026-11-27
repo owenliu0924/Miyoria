@@ -379,6 +379,21 @@ export class TranscriptStore {
     return latest === null ? [] : this.#range(session, 0, latest.upto_seq);
   }
 
+  /**
+   * The sequences of the redacted entries of `session` up to `uptoSeq`: a compaction compares
+   * them before and after its model call, so a line forgotten meanwhile never goes into a fresh
+   * summary. (Redaction only ever adds to them; the sweep only removes rows nobody can redact.)
+   */
+  redactedSeqs(session: string, uptoSeq: number): number[] {
+    return this.#db.orm
+      .select({ seq: E.seq })
+      .from(E)
+      .where(and(eq(E.session, session), lte(E.seq, uptoSeq), isNotNull(E.redacted_at)))
+      .orderBy(asc(E.seq))
+      .all()
+      .map((r) => r.seq);
+  }
+
   /** One entry, as stored. */
   entry(session: string, seq: number): TranscriptEntry | null {
     const row = this.#db.orm
