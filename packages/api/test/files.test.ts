@@ -3,6 +3,7 @@
 // refused, the file origin's headers, the member page's routes and the pass a scoped link goes
 // through. All in memory: the file origin is a Hono app called directly, nothing listens.
 
+import { Moderation, ModerationConfigSchema } from "@miyoria/gate/moderation";
 import { ArtifactStoreKey, CLEAN_PLUGIN, PeopleStoreKey } from "@miyoria/store";
 import type { AccountRef, PersonId } from "@miyoria/types";
 import type { AnyRouter } from "@orpc/server";
@@ -13,7 +14,7 @@ import { buildZip } from "../../gate/actions/test/zip-fixture.js";
 import { ApiError } from "../src/errors.js";
 import { ImageCleaner, reencode } from "../src/files/clean.js";
 import { FilesConfigSchema, parseOrigin } from "../src/files/config.js";
-import { FileLinkService } from "../src/files/links.js";
+import { FileLinkService, textBlocked } from "../src/files/links.js";
 import { filesAdminRpc, filesPassRoute, memberFilesRpc } from "../src/files/routes.js";
 import { disposition, FILE_CSP, fileOriginApp } from "../src/files/serve.js";
 import type { FilesSide } from "../src/files/side.js";
@@ -221,6 +222,19 @@ describe("share links", () => {
       ok: false,
       refused: "not_found",
     });
+  });
+
+  it("find a protected value or a long token in the middle of a long text", () => {
+    const moderation = new Moderation({
+      config: ModerationConfigSchema.parse({ max_scan_chars: 2_000 }),
+    });
+    const kept = "9f3c1a7d5b2e4f60a8c1d3e5f7091b2c4d6e8f0a1b3c5d7e9f";
+    moderation.protect(kept);
+    const filler = "平常的一行字。\n".repeat(3_000);
+    expect(textBlocked(`${filler}${kept}\n${filler}`, moderation)).toBe("secrets.protected-value");
+    const token = "Zx9Kq2Lm7Pw4Rt8Yb3Nc6Vd1Hf5Gj0SaQwErTyUiOp";
+    expect(textBlocked(`${filler}${token}\n${filler}`, moderation)).toBe("secrets.long-token");
+    expect(textBlocked(`${filler}${filler}`, moderation)).toBeNull();
   });
 
   it("take a zip only for its own person, read whole, with its text entries checked", async () => {

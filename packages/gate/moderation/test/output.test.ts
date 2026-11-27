@@ -288,6 +288,21 @@ describe("the rule list is config", () => {
     expect(moderation.screen({ path: "reply", visible: `${filler} n i g g e r` }).ok).toBe(false);
     expect(moderation.screen({ path: "reply", visible: `n i g g e r ${filler}` }).ok).toBe(false);
   });
+
+  it("looks for secrets over the whole of a very long text, not only its ends", () => {
+    const { moderation } = make({ max_scan_chars: 1000 });
+    moderation.protect(fake.admin());
+    const filler = "好".repeat(5000);
+    const middle = (s: string) => `${filler}\n${s}\n${filler}`;
+    expect(
+      moderation.screen({ path: "other", visible: middle(fake.admin()) }).blocked[0]?.rule,
+    ).toBe("secrets.protected-value");
+    const token = "Zx9Kq2Lm7Pw4Rt8Yb3Nc6Vd1Hf5Gj0SaQwErTyUiOp";
+    expect(moderation.screen({ path: "other", visible: middle(token) }).blocked[0]?.rule).toBe(
+      "secrets.long-token",
+    );
+    expect(moderation.screen({ path: "other", visible: middle("平常的一句話") }).ok).toBe(true);
+  });
 });
 
 describe("block log", () => {
