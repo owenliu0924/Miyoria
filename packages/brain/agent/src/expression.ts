@@ -114,6 +114,8 @@ export class ExpressionParser {
   #dropRest = false;
   /** The inside of the `<feel>` block being read; `null`: not in one. */
   #feel: string | null = null;
+  /** The step goes on with tool calls (`callsFollow`). */
+  #callsFollow = false;
   /** Inside a ``` block; `null`: not. */
   #code: "fence" | null = null;
 
@@ -124,6 +126,14 @@ export class ExpressionParser {
   push(chunk: string): Segment[] {
     this.#held += chunk;
     return this.#drain(false);
+  }
+
+  /**
+   * Tool calls of the step follow what she wrote: a thinking block closed with nothing of hers
+   * after it is the plan of those calls, hidden as before, not her reply (`afterThought`).
+   */
+  callsFollow(): void {
+    this.#callsFollow = true;
   }
 
   /** Flushes held input; an unterminated tag becomes text. */
@@ -253,7 +263,9 @@ export class ExpressionParser {
         const close = lower.indexOf(`</emo:${thinking[1]}>`, from);
         if (close !== -1) {
           const after = close + (thinking[1] ?? "").length + 7;
-          const was = afterThought(input, lower, after, eof);
+          // Her tool calls follow: the block was the plan of what they do, never words of hers.
+          const seen = afterThought(input, lower, after, eof);
+          const was = seen === "reply" && this.#callsFollow ? "plan" : seen;
           flush();
           if (was === "wait") {
             this.#held = input.slice(start);
@@ -396,8 +408,9 @@ export class ExpressionParser {
 
 /**
  * What an `<emo:thinking>…</emo:thinking>` closed at `after` was: `plan` when words of hers follow
- * it (the plan before the reply), `reply` when only her feel block or the end of the stream does
- * (the block was the reply itself), `wait` while only whitespace or the start of a tag came yet.
+ * it (the plan before the reply), `reply` when the stream ended with only her feel block after it
+ * (the block was the reply itself), `wait` until then. Whether tool calls followed is the
+ * parser's to add (`callsFollow`): then it was their plan.
  */
 function afterThought(
   input: string,
@@ -409,7 +422,8 @@ function afterThought(
   while (i < input.length && isSpace(input[i])) i++;
   if (i >= input.length) return eof ? "reply" : "wait";
   const rest = lower.slice(i);
-  if (rest.startsWith(FEEL_OPEN)) return "reply";
+  // Her feel block ends her words, and her tool calls may still follow it: the end decides.
+  if (rest.startsWith(FEEL_OPEN)) return eof ? "reply" : "wait";
   if (!eof && FEEL_OPEN.startsWith(rest)) return "wait";
   return "plan";
 }

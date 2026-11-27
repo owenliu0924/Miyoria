@@ -164,6 +164,8 @@ export class StepText {
    * the end marks that might follow goes out now (spoken; a line waits for its line break).
    */
   settle(): ScreenedLine[] {
+    // What is still held as a possible reply in a thinking block is the plan of these calls.
+    this.#parser.callsFollow();
     if (!this.#sentences || this.#silence) return [];
     const done = this.#splitter.flushComplete();
     return done === null ? [] : this.#sentence(done);

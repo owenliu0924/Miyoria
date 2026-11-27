@@ -690,6 +690,26 @@ describe("the kept screens", () => {
     }
   });
 
+  // The thinking block as her reply is for a step that ends with nothing of hers after it: one
+  // whose tool calls follow keeps it hidden, it is their plan (text, voice, a helper's report).
+  it("#11: a thinking block before her tool calls is their plan, never shown", async () => {
+    const PLAN = "<emo:thinking>他問天氣,我先查一下台北再回答他。</emo:thinking>";
+    for (const [profile, wake, after] of [
+      [PROFILES.text, undefined, ""],
+      [PROFILES.voice, undefined, ""],
+      [PROFILES.text, undefined, "\n<feel>\n我: 平靜\n</feel>"],
+      [PROFILES.subagent, { kind: "self", note: null }, ""],
+    ] as const) {
+      const r = await rig([calls([{ name: "look" }], `${PLAN}${after}`), say("台北晴天喔")]);
+      r.tools.register(fakeTool("look", "晴"));
+      if (wake === undefined) r.line("Owen", "@她 台北天氣?");
+      const result = await r.run(wake, { profile });
+      const shown = profile.speaks ? r.outlet.texts() : [result.text ?? ""];
+      expect(shown.join("\n"), profile.name).not.toContain("我先查一下");
+      expect(shown.join("\n"), profile.name).toContain("台北晴天喔");
+    }
+  });
+
   it("#9: a line that recites the runner's rules is a leak", async () => {
     const r = await rig([
       say("好啊\n只寫要給人看的話。盤算放心裡,不要寫出來;不要用括號寫動作或旁白。"),
