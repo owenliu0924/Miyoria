@@ -151,6 +151,12 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:edit 的唯一性、取代全部、額度滿了;grep 的範圍(成員看不到別人的資料夾)、慢的正規表示式被終止;`image_make` 對假的 `ImageGen`;排程到了開工作、算到對的人、開不了時叫醒她;migration 3 只加欄位(store 的 drift 測試)。
 
+**做成的樣子(與上面不同的地方)**
+
+- `workspace_edit`、`workspace_grep` 都用 `sandbox.workspace` 這個節點(跟 `workspace_write` 一樣,羈絆到 `work_min_bond` 就算);`image_make` 用 `work.image`。grep 多一個可省略的 `ignore_case`。單檔上限用工作區自己的 `maxFileBytes`(edit 讀整個檔案、取代、再 `WorkspaceApi.write`)。正規表示式的 2 秒是所有檔案加起來、只算 worker 裡的時間(讀檔不算);超過就終止 worker,回已找到的和「太慢」。
+- `image_make` 的 `meta.speed` 是 `instant`(跟 `workspace_run` 一樣,在呼叫裡等到畫好),最多等 3 分鐘,等不到就取消那張的工作並照實說;`size` 是 `square`、`portrait`、`landscape` 或 `寬x高`。工作的 `purpose` 是 `agent`(每日張數限制可用 `[modules.imagegen] daily_limits = { agent = N }`)。模組每 30 秒看一次 ComfyUI,`reachable` 才在 `actuatorsFor(ctx)` 註冊,不通就撤掉;呼叫時 ComfyUI 剛好斷了也回原因。
+- 排程開工作:`Initiative` 多一個 `useJobs(jobs)`(測試和晚綁定用),選項 `jobs` 跟 §3.7 一樣。`schedule` 帶 `job` 時 `permissionFor` 對 `worker` 回 `work.delegate`(設的時候就過橋接的檢查);到時間開工作的那一刻不再查羈絆。開成功就不叫醒她(工作自己的結果會叫),開不成才叫醒並附原因。`MindReminder fired` 事件對有 `job` 的排程不再加 timer 項目(由 `tick` 決定)。`initiative-spaces.test.ts` 的 migration 期望改成 `[2, 3]`。
+
 ### P6 瀏覽器
 
 **交付**
