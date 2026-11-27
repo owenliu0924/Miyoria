@@ -147,7 +147,7 @@ describe.skipIf(!enabled)(
 
     it("opens, clicks, reads, looks and brings a download back", async () => {
       expect(browse.availability()).toEqual({ ok: true });
-      const first = await run("browse_open", { url: "data:text/html,<h1>開始</h1>" });
+      const first = await run("browse_open", { url: "data:text/html;charset=utf-8,<h1>開始</h1>" });
       expect(first.ok, first.text).toBe(true);
       expect(first.text).toContain("# 開始");
 

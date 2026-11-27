@@ -426,12 +426,19 @@ print(json.dumps(out))
     );
     const out = printed(result) as Record<string, string>;
     const why = JSON.stringify({ ...diagnosis, out });
+    // With no address left to this machine, Docker hands the first address of the subnet to a
+    // container of the job (the proxy). A refusal from that container is not this machine
+    // answering; a refusal from an address no container holds is.
+    const held = new Set(
+      Object.values(
+        (JSON.parse(inspected) as { Containers?: Record<string, { IPv4Address?: string }> })
+          .Containers ?? {},
+      ).map((c) => (c.IPv4Address ?? "").split("/")[0]),
+    );
     for (const [host, port] of targets) {
       const what = out[`${host}:${port}`] ?? "missing";
-      // Refused is a failure too: it means the host answered on that address.
-      expect(what.startsWith("connected") || what === "refused" || what === "missing", why).toBe(
-        false,
-      );
+      expect(what.startsWith("connected") || what === "missing", why).toBe(false);
+      if (!held.has(String(host))) expect(what, why).not.toBe("refused");
     }
   }, 180_000);
 
