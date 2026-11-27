@@ -122,36 +122,105 @@ export function replaceExact(
 
 // ---- grep --------------------------------------------------------------------------------------
 
-/** A glob as a regular expression over a whole path: `*` within a folder, `**` across, `?` one. */
-export function globToRegExp(glob: string): RegExp {
-  let out = "";
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob.charAt(i);
+// A glob is matched by walking the path once while keeping the set of places in the glob that the
+// text so far can have reached, never by backtracking. The model writes the glob and a program
+// names the files, so `*a*a*a*a*a*a*b` against a name of 100 `a`s is a real input: as a regular
+// expression it backtracks for minutes, and the glob is matched here on Core's event loop, not in
+// the grep worker under its time limit, so that would freeze her for everyone. This way the work is
+// at most (path length) x (glob length) steps, whatever the glob is.
+
+/** One step of a glob: the steps of `**\/` are `dirs`, `any` and the `/` after them. */
+type GlobStep =
+  | { kind: "char"; char: string }
+  /** `?`: one character, not `/`. */
+  | { kind: "one" }
+  /** `*`: any run of characters within one folder. */
+  | { kind: "star" }
+  /** `**`: any run of characters, `/` included. */
+  | { kind: "any" }
+  /** Before `**\/`: it may also stand for nothing, so it can jump past its `any` and `/`. */
+  | { kind: "dirs" };
+
+/** A glob ready to match: `*` within a folder, `**` across, `**\/` also nothing, `?` one. */
+export interface Glob {
+  /** A glob without a slash is matched against the file name only. */
+  whole: boolean;
+  steps: readonly GlobStep[];
+}
+
+/** Every character but `*` and `?` stands for itself (`[`, `.`, `\` and the rest included). */
+export function compileGlob(glob: string): Glob {
+  const steps: GlobStep[] = [];
+  // By code point, so `?` is one character also for one outside the BMP.
+  const chars = Array.from(glob);
+  for (let i = 0; i < chars.length; i++) {
+    const c = chars[i] as string;
     if (c === "*") {
-      if (glob.charAt(i + 1) === "*") {
+      if (chars[i + 1] === "*") {
         i += 1;
         // `**/` also matches nothing, so `**/x.md` finds `x.md` at the top.
-        if (glob.charAt(i + 1) === "/") {
+        if (chars[i + 1] === "/") {
           i += 1;
-          out += "(?:.*/)?";
+          steps.push({ kind: "dirs" }, { kind: "any" }, { kind: "char", char: "/" });
         } else {
-          out += ".*";
+          steps.push({ kind: "any" });
         }
       } else {
-        out += "[^/]*";
+        steps.push({ kind: "star" });
       }
     } else if (c === "?") {
-      out += "[^/]";
+      steps.push({ kind: "one" });
     } else {
-      out += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+      steps.push({ kind: "char", char: c });
     }
   }
-  return new RegExp(`^${out}$`, "s");
+  return { whole: glob.includes("/"), steps };
+}
+
+/** Adds to `live` the places reachable without reading a character. */
+function settle(steps: readonly GlobStep[], live: Uint8Array): void {
+  // Every such jump goes forward, so one pass in order reaches all of them.
+  for (let s = 0; s < steps.length; s++) {
+    if (live[s] !== 1) continue;
+    const kind = steps[s]?.kind;
+    if (kind === "star" || kind === "any") live[s + 1] = 1;
+    else if (kind === "dirs") {
+      live[s + 1] = 1;
+      live[s + 3] = 1;
+    }
+  }
 }
 
 /** Whether `path` passes `glob`: one without a slash is matched against the file name only. */
-export function globMatches(glob: RegExp, source: string, path: string): boolean {
-  return glob.test(source.includes("/") ? path : (path.split("/").at(-1) ?? path));
+export function globMatches(glob: Glob, path: string): boolean {
+  const text = Array.from(glob.whole ? path : (path.split("/").at(-1) ?? path));
+  const { steps } = glob;
+  const n = steps.length;
+  let live = new Uint8Array(n + 1);
+  let next = new Uint8Array(n + 1);
+  live[0] = 1;
+  settle(steps, live);
+  for (const c of text) {
+    next.fill(0);
+    let any = false;
+    for (let s = 0; s < n; s++) {
+      if (live[s] !== 1) continue;
+      const step = steps[s] as GlobStep;
+      let to = -1;
+      if (step.kind === "char") to = c === step.char ? s + 1 : -1;
+      else if (step.kind === "one") to = c === "/" ? -1 : s + 1;
+      else if (step.kind === "star") to = c === "/" ? -1 : s;
+      else if (step.kind === "any") to = s;
+      if (to >= 0) {
+        next[to] = 1;
+        any = true;
+      }
+    }
+    if (!any) return false;
+    settle(steps, next);
+    [live, next] = [next, live];
+  }
+  return live[n] === 1;
 }
 
 const WORKER_SOURCE = `
@@ -288,7 +357,7 @@ export async function grepWorkspace(
 ): Promise<GrepReport> {
   const fileBytes = o.fileBytes ?? GREP_FILE_BYTES;
   const totalBytes = o.totalBytes ?? GREP_TOTAL_BYTES;
-  const glob = o.glob === null ? null : globToRegExp(o.glob);
+  const glob = o.glob === null ? null : compileGlob(o.glob);
   const { entries, truncated } = await ws.list(o.prefix);
   const matcher = o.regex
     ? regexMatcher(pattern, o.ignoreCase, o.limitMs ?? REGEX_TIME_LIMIT_MS)
@@ -305,7 +374,7 @@ export async function grepWorkspace(
   let read = 0;
   try {
     for (const entry of entries.sort((a, b) => a.path.localeCompare(b.path))) {
-      if (glob !== null && o.glob !== null && !globMatches(glob, o.glob, entry.path)) continue;
+      if (glob !== null && !globMatches(glob, entry.path)) continue;
       if (entry.size > fileBytes || read + entry.size > totalBytes) {
         report.skipped += 1;
         continue;

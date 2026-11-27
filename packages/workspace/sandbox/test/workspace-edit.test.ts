@@ -6,9 +6,9 @@ import { DATA_CLOSE, Principals } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { NODE_WORKSPACE, PersistentWorkspace, type WorkspaceGateOptions } from "../src/index.js";
 import {
+  compileGlob,
   GREP_MAX_RESULTS,
   globMatches,
-  globToRegExp,
   grepWorkspace,
   replaceExact,
   workspaceEditCapabilities,
@@ -288,7 +288,7 @@ describe("workspace_grep", () => {
 
 describe("globs", () => {
   it("matches names, folders and ** the way a person writes them", () => {
-    const m = (glob: string, path: string) => globMatches(globToRegExp(glob), glob, path);
+    const m = (glob: string, path: string) => globMatches(compileGlob(glob), path);
     expect(m("*.md", "a/b/c.md")).toBe(true);
     expect(m("*.md", "c.txt")).toBe(false);
     expect(m("notes/*.md", "notes/a.md")).toBe(true);
@@ -297,5 +297,39 @@ describe("globs", () => {
     expect(m("**/a.md", "a.md")).toBe(true);
     expect(m("a?.md", "ab.md")).toBe(true);
     expect(m("a.md", "xa.md")).toBe(false);
+  });
+
+  it("keeps * and ? inside one folder and lets ** cross them", () => {
+    const m = (glob: string, path: string) => globMatches(compileGlob(glob), path);
+    expect(m("a/*", "a/b/c")).toBe(false);
+    expect(m("a/?/c", "a/b/c")).toBe(true);
+    expect(m("a?c/x", "a/c/x")).toBe(false);
+    expect(m("a/**", "a/b/c")).toBe(true);
+    expect(m("a/**c", "a/b/c")).toBe(true);
+    expect(m("**/b/*.md", "b/x.md")).toBe(true);
+    expect(m("**/b/*.md", "a/c/b/x.md")).toBe(true);
+    // `**/` is nothing or whole folders: it does not end in the middle of a name.
+    expect(m("**/b.md", "xb.md")).toBe(false);
+    expect(m("a/**/b.md", "a/b.md")).toBe(true);
+    expect(m("a/**/b.md", "a/x/y/b.md")).toBe(true);
+    expect(m("a/***.md", "a/x/y.md")).toBe(true);
+    // What a regular expression would read as syntax is just text in a glob.
+    expect(m("[a].md", "[a].md")).toBe(true);
+    expect(m("[a].md", "a.md")).toBe(false);
+    expect(m("a+(b)|c.md", "a+(b)|c.md")).toBe(true);
+    expect(m("*.md", "日記/今天.md")).toBe(true);
+    expect(m("??.md", "今天.md")).toBe(true);
+  });
+
+  it("answers at once for a glob a backtracking matcher would take minutes over", () => {
+    const started = performance.now();
+    const name = "a".repeat(100);
+    expect(globMatches(compileGlob("*a*a*a*a*a*a*b"), name)).toBe(false);
+    expect(globMatches(compileGlob(`${"*a".repeat(60)}b`), "a".repeat(4000))).toBe(false);
+    expect(globMatches(compileGlob(`**/${"*a".repeat(40)}b`), `${"a/".repeat(500)}${name}`)).toBe(
+      false,
+    );
+    expect(globMatches(compileGlob("*a*a*a*a*a*a*"), name)).toBe(true);
+    expect(performance.now() - started).toBeLessThan(500);
   });
 });
