@@ -62,9 +62,10 @@ export interface SandboxLauncherOptions {
    */
   restart?: (extension: string) => void | Promise<void>;
   /**
-   * Within this long after the launcher was made, a launch that finds no computer at all waits
-   * for one until the end of that time: at boot the cluster's computers connect a little after
-   * Core starts its extensions. Default 10 s; 0 never waits.
+   * Within this long after the launcher was made, a launch waits for the client and for a
+   * computer that offers the service but is not ready yet, until the end of that time. With no
+   * computer offering it at all it does not wait: the extension starts here and moves once one
+   * takes plugins (`restart`). Default 10 s; 0 never waits.
    */
   bootWaitMs?: number;
   /** Fewest milliseconds between two `restart`s of one extension (default 60 s). */
@@ -316,6 +317,18 @@ function refusalCode(error: unknown): string | null {
   return typeof code === "string" ? code : null;
 }
 
+/**
+ * Whether any computer offers the sandbox service now, ready or not. Read from the client's
+ * `machines()` (the cluster's client has it; `SandboxClient` does not promise it): a client that
+ * cannot say counts as none, so nothing waits on it.
+ */
+function offered(client: SandboxClient): boolean {
+  const machines = (client as { machines?: unknown }).machines;
+  if (typeof machines !== "function") return false;
+  const list: unknown = machines.call(client);
+  return Array.isArray(list) && list.length > 0;
+}
+
 interface Running {
   child: ChildLike;
   placement: Placement;
@@ -528,7 +541,12 @@ class SandboxLauncherImpl implements SandboxLauncher {
     }
   }
 
-  /** A computer that takes plugins, waiting for one at boot. */
+  /**
+   * A computer that takes plugins, waiting at boot only for one that offers the service but is
+   * not ready yet (its service still checking Docker). With none offering it at all, the usual
+   * install without a sandbox computer, it starts here at once: waiting would delay every boot,
+   * and an extension here for want of a computer moves there when one comes (`#machinesChanged`).
+   */
   async #available(
     client: SandboxClient,
     signal: AbortSignal,
@@ -537,6 +555,7 @@ class SandboxLauncherImpl implements SandboxLauncher {
       const free = client.available("plugin");
       const left = this.#bootUntil - this.#now();
       if (free.ok || free.code !== "no_machine" || left <= 0 || signal.aborted) return free;
+      if (!offered(client)) return free;
       await new Promise<void>((resolve) => {
         const timer = setTimeout(done, left);
         const off = client.watch(done);

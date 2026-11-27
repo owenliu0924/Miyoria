@@ -28,6 +28,7 @@ import { RemoteSandbox } from "./remote/remote-sandbox.js";
 import { type DockerRunner, ProcessDockerRunner } from "./runner.js";
 import { DockerSandbox } from "./sandbox.js";
 import { type Sandbox, type SandboxHealth, SandboxKey } from "./types.js";
+import { codeUnavailableCapability, unavailableReason } from "./unavailable.js";
 import { workspaceEditCapabilities } from "./workspace-edit.js";
 
 export interface SandboxModuleOptions {
@@ -100,6 +101,7 @@ export class SandboxModule implements Module {
   #browse: BrowseOffer | null = null;
   #removeBrowseStatus: (() => void) | null = null;
   #unwatch: (() => void) | null = null;
+  #removeWhyNot: (() => void) | null = null;
 
   constructor(
     readonly profile: ProfileId,
@@ -291,9 +293,30 @@ export class SandboxModule implements Module {
       for await (const _ of toolEvents) await gate.refreshTools();
     });
 
-    const recheck = async (signal: AbortSignal) => {
+    // While the code tools are withdrawn she has `code_unavailable` in their place, worded with
+    // the reason of the last check (registered again only when that reason changes).
+    let whyNot: { reason: string; unregister: () => void } | null = null;
+    const explain = (health: SandboxHealth) => {
+      const reason = this.#gate === null ? null : unavailableReason(health);
+      if (reason === whyNot?.reason) return;
+      whyNot?.unregister();
+      whyNot = null;
+      if (reason === null) return;
+      whyNot = {
+        reason,
+        unregister: registry.register(
+          codeUnavailableCapability({ reason, recheck: (signal) => recheck(signal) }),
+        ),
+      };
+    };
+    this.#removeWhyNot = () => {
+      whyNot?.unregister();
+      whyNot = null;
+    };
+    const recheck = async (signal: AbortSignal): Promise<SandboxHealth> => {
       const health = await sandbox.health({ signal, refresh: true });
       await gate.setAvailable(health.available);
+      explain(health);
       browse?.update({ available: health.available, features: featuresOf(sandbox) });
       return health;
     };
@@ -349,6 +372,8 @@ export class SandboxModule implements Module {
     this.#unwatch = null;
     this.#removeStatus?.();
     this.#removeStatus = null;
+    this.#removeWhyNot?.();
+    this.#removeWhyNot = null;
     this.#gate?.close();
     this.#gate = null;
     this.#removeBrowseStatus?.();

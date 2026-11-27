@@ -166,7 +166,9 @@ class FakeJob implements SandboxJob {
 }
 
 class FakeClient implements SandboxClient {
-  machines: Machine[];
+  computers: Machine[];
+  /** Hosts that offer the service but are not ready (their service still checking Docker). */
+  starting: string[] = [];
   readonly jobs: FakeJob[] = [];
   readonly listeners = new Set<() => void>();
   skipped: { path: string; why: string }[] = [];
@@ -174,20 +176,20 @@ class FakeClient implements SandboxClient {
   #n = 0;
 
   constructor(machines: Machine[] = [{ host: "friend-pc", plugins: true }]) {
-    this.machines = machines;
+    this.computers = machines;
   }
 
   available(forWho: SandboxFor): Available {
     if (this.refuse !== null) return this.refuse;
-    if (this.machines.length === 0)
+    if (this.computers.length === 0)
       return { ok: false, code: "no_machine", reason: "現在沒有能跑程式的電腦。" };
-    if (forWho === "plugin" && !this.machines.some((m) => m.plugins))
+    if (forWho === "plugin" && !this.computers.some((m) => m.plugins))
       return { ok: false, code: "not_accepting", reason: "不接插件的工作" };
     return { ok: true };
   }
 
   async open(spec: SandboxJobSpec): Promise<SandboxJob> {
-    const machine = this.machines.find(
+    const machine = this.computers.find(
       (m) => m.plugins && (spec.hosts === undefined || spec.hosts.includes(m.host)),
     );
     if (machine === undefined) {
@@ -197,6 +199,14 @@ class FakeClient implements SandboxClient {
     const job = new FakeJob(`job${this.#n}`, machine.host, spec, this.skipped);
     this.jobs.push(job);
     return job;
+  }
+
+  /** Every computer that offers the service, as the cluster's client lists them. */
+  machines(): { host: string; ready: boolean }[] {
+    return [
+      ...this.computers.map((m) => ({ host: m.host, ready: true })),
+      ...this.starting.map((host) => ({ host, ready: false })),
+    ];
   }
 
   watch(onChange: () => void): () => void {
@@ -441,12 +451,34 @@ describe("the sandbox launcher", { timeout: 30_000 }, () => {
     await child.exited;
   });
 
-  it("waits for a computer at boot, and moves a fallen-back extension when one takes plugins", async () => {
+  it("with no computer offering the service, starts here at once and moves when one comes", async () => {
+    // The first deployment: the default boot wait (10 s), and nothing in the cluster.
     const client = new FakeClient([]);
+    const restarted: string[] = [];
+    const l = launcher(client, {
+      bootWaitMs: 10_000,
+      restart: (ext) => void restarted.push(ext),
+    });
+    const started = Date.now();
+    const here = await l.launch(echoSpec(), new AbortController().signal);
+    expect(Date.now() - started).toBeLessThan(2000);
+    expect(here.where).toEqual({ kind: "host" });
+    client.computers = [{ host: "friend-pc", plugins: true }];
+    client.change();
+    await eventually(() => restarted.length > 0);
+    expect(restarted).toEqual(["made.up"]);
+    here.kill();
+    await here.exited;
+  });
+
+  it("waits at boot for a computer that offers the service but is not ready, and moves a fallen-back extension when one takes plugins", async () => {
+    const client = new FakeClient([]);
+    client.starting = ["friend-pc"];
     const early = launcher(client, { bootWaitMs: 5000 });
     const pending = early.launch(echoSpec(), new AbortController().signal);
     await sleep(50);
-    client.machines = [{ host: "friend-pc", plugins: true }];
+    client.starting = [];
+    client.computers = [{ host: "friend-pc", plugins: true }];
     client.change();
     const child = await pending;
     expect(child.where).toMatchObject({ kind: "sandbox", host: "friend-pc" });

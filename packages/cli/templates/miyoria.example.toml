@@ -1566,7 +1566,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # 已核准的 sbx_<name>。跑程式是中風險,不再每次審核(擋傷害的是沙箱、出口代理和每人的 CPU 秒數);
 # 存成之後會自動跑的(workspace_save_script、tool_propose)照舊高風險,她自己審核,有疑慮才私訊你確認。
 # 工作區的檔案工具(workspace_list / read / write / edit / grep / delete / export、workspace_attach)
-# 不需要 Docker,沙箱開著(enabled = true)就有;沒有電腦能跑程式時只收回跑程式的那些。
+# 不需要 Docker,沙箱開著(enabled = true)就有;沒有電腦能跑程式時只收回跑程式的那些,換成 code_unavailable 告訴她為什麼
+# (有人要她跑程式時她照實說)。插件不會在開機時等沙箱電腦:沒有任何電腦提供沙箱服務就先在這台跑,有電腦接插件之後再搬過去。
 # /admin autonomy status 看狀態(每台電腦一行),GET /api/sandbox/tools 看她寫的工具。
 # 安全說明見 packages/workspace/sandbox/README.md。接工作的那台電腦自己決定接誰的工作:它的 host.toml 的 [sandbox]。
 # [modules.sandbox]
