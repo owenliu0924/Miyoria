@@ -447,7 +447,8 @@ describe("egress proxy in open mode", () => {
         }
       }, 5000);
       const stats = parseEgressStats(readFileSync(statsFile, "utf8"));
-      expect(stats?.bytes_in).toBeGreaterThan(32 * 1024);
+      // The cut can land exactly on the limit.
+      expect(stats?.bytes_in).toBeGreaterThanOrEqual(32 * 1024);
       expect(stats?.total).toBeGreaterThanOrEqual(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
