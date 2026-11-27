@@ -54,6 +54,7 @@ import {
   type FortuneStore,
   type LedgerDayTotal,
   PURSE,
+  REFUND_REASONS,
 } from "./records.js";
 import {
   type BountyRow,
@@ -470,21 +471,29 @@ export class LedgerTables implements CoinLedgerStore {
     // the casts keep the division integral however the driver binds a JS number).
     const offset = Math.round(offsetMinutes) * 60_000_000;
     const day = sql`CAST((${L.ts} + CAST(${offset} AS INTEGER)) / 86400000000 AS INTEGER)`;
+    // A generic refund is split by the reason of the row it gave back (its `ref`): one of a
+    // recovered spend lowers what was recovered, one of a stake does not.
+    const o = sql.raw("o");
     const rows = this.#db.orm.all<{
       day: number;
       reason: string;
+      of: string | null;
       positive: number;
       negative: number;
     }>(sql`
-      SELECT ${day} AS day, ${L.reason} AS reason,
+      SELECT ${day} AS day, ${L.reason} AS reason, ${o}.reason AS of,
         COALESCE(SUM(CASE WHEN ${L.delta} > 0 THEN ${L.delta} ELSE 0 END), 0) AS positive,
         COALESCE(-SUM(CASE WHEN ${L.delta} < 0 THEN ${L.delta} ELSE 0 END), 0) AS negative
-      FROM ${L} WHERE ${L.ts} >= ${toMicros(since)} GROUP BY 1, 2 ORDER BY 1, 2`);
+      FROM ${L} LEFT JOIN ${L} AS ${o}
+        ON ${L.reason} IN (SELECT value FROM json_each(${JSON.stringify(REFUND_REASONS)}))
+          AND ${o}.id = ${L.ref}
+      WHERE ${L.ts} >= ${toMicros(since)} GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`);
     return rows.map((r) => ({
       day: Number(r.day),
       reason: String(r.reason),
       positive: Number(r.positive),
       negative: Number(r.negative),
+      ...(r.of === null ? {} : { of: String(r.of) }),
     }));
   }
 }

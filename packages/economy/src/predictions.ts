@@ -3,7 +3,8 @@
 // that is burned.
 //
 // * A pool, not a house. Stakes are held as ledger rows (`bet`); when it is settled the winners
-//   share the pool less `prediction_rake` (5%: floored, burned: no row takes it), each
+//   share the pool less `prediction_rake` (5%: floored, burned: her purse takes it out of the pool
+//   and burns it in the same posting, `bet_cut` and `bet_rake`, so the ledger shows it), each
 //   `stake * prize / winners' stakes`, floored, and the leftover coins (at most one per winner) go
 //   to her purse. Nothing is created: the coins paid out are at most the coins staked. If nobody
 //   was right, or it is called off, every stake is given back in full.
@@ -37,8 +38,9 @@ import type { EconomyDoc } from "./docs.js";
 import { type EconomyService, type Member, STRANGER } from "./economy.js";
 import { PredictionWatch } from "./prediction-watch.js";
 import { pickById, shortId } from "./purse.js";
+import { PURSE } from "./records.js";
 import { mayTakePart, spaceName, spaceToOpen } from "./spaces.js";
-import { EconomyError } from "./types.js";
+import { BET_CUT_REASON, BET_RAKE_REASON, EconomyError } from "./types.js";
 import type {
   BetResult,
   PredictionSettledBy,
@@ -525,6 +527,7 @@ export class PredictionDesk {
     const rake = refundAll ? 0 : Math.floor(pool * (data.rake_rate ?? 0));
     const prize = pool - rake;
     const payoutOf = (b: BetData) => Math.floor((b.amount * prize) / winPool);
+    if (rake > 0) await this.#burnCut(pred.id, rake);
     for (const bet of everyone.filter((b) => b.status === "open")) {
       const b = asBet(bet);
       const owner = bet.owner;
@@ -572,6 +575,39 @@ export class PredictionDesk {
       rake,
       refunded: refundAll,
     };
+  }
+
+  /**
+   * The cut as rows of the ledger, so the health table sees what burned: the purse takes it out
+   * of the pool and burns it in one posting (all or none, keyed, so a re-run writes nothing), and
+   * keeps none of it. Before any payout, so a settlement a crash cut short still has its row. A
+   * ledger without postings that write together gets no rows (the coins burn all the same).
+   */
+  async #burnCut(predictionId: string, rake: number): Promise<void> {
+    const ledger = this.e.ledger();
+    if (!ledger.postAll) return;
+    const ts = toTimestamp(this.e.now());
+    const row = (delta: number, reason: string, key: string) => ({
+      id: newId(),
+      person: PURSE,
+      delta,
+      reason,
+      ref: predictionId,
+      idem_key: key,
+      ts,
+    });
+    try {
+      await ledger.postAll([
+        row(rake, BET_CUT_REASON, `bet-cut:${predictionId}`),
+        row(-rake, BET_RAKE_REASON, `bet-rake:${predictionId}`),
+      ]);
+    } catch (error) {
+      // The payouts do not wait on a record of the burn.
+      this.e.log.warn(
+        { err: errorMessage(error), prediction: predictionId },
+        "cannot record the cut",
+      );
+    }
   }
 
   async #close(bet: EconomyDoc, status: string, payout: number): Promise<void> {

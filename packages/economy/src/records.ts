@@ -69,7 +69,15 @@ export interface LedgerDayTotal {
   positive: number;
   /** The sum of the rows with `delta < 0`, as a positive number. */
   negative: number;
+  /**
+   * For `refund` and `refund_removed` rows: the reason of the rows they gave back (their `ref`),
+   * so a refund of a spend that was recovered is told from one that was not (a stake).
+   */
+  of?: string;
 }
+
+/** The generic refund reasons, whose `ref` is the row they give back. */
+export const REFUND_REASONS: readonly string[] = ["refund", "refund_removed"];
 
 /** Totals over the whole coin ledger, for the economy's health table (docs/design/v4-plan.md §10). */
 export interface LedgerStatsStore {
