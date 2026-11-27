@@ -6,7 +6,9 @@
 // the text profile (her rules and the reminder at the end of the prompt) and read with the real
 // feel parser. Per scene the table counts the runs with a bond minus about the people watched, the
 // amounts she wrote, the runs where a grudge or another minus stood in for it (no bond minus), and
-// the runs with a bond plus. Nothing is judged by a model. Opt-in; each scene runs 5 times unless
+// the runs with a bond plus, the runs whose block came from the repair after the reply (the hosts'
+// one call when a reply went out without one, so the table is the end result), and the runs left
+// with no block at all. Nothing is judged by a model. Opt-in; each scene runs 5 times unless
 // `--repeat` says otherwise. The people and lines are made up.
 
 import { type FeelLine, parseFeel } from "@miyoria/brain/self";
@@ -212,6 +214,8 @@ export interface BondItem {
   ok: boolean;
   fault: string | null;
   reading: BondReading;
+  /** Her block came from the repair after the reply (she wrote none herself). */
+  repaired: boolean;
   lines: string[];
   feel: string[];
   usage: ModelUsage;
@@ -224,7 +228,7 @@ const amountText = (a: number | null) => (a === null ? "-?" : `-${a}`);
 /** The table of the suite: one row per scene. */
 export function bondTable(cases: readonly BondCase[], items: readonly BondItem[]): string[] {
   const rows = [
-    `${"scene".padEnd(22)} ${"expect".padEnd(6)} ${"ok".padEnd(5)} ${"minus".padEnd(5)} ${"amounts".padEnd(20)} ${"grudge-only".padEnd(11)} ${"plus".padEnd(5)} no-feel`,
+    `${"scene".padEnd(22)} ${"expect".padEnd(6)} ${"ok".padEnd(5)} ${"minus".padEnd(5)} ${"amounts".padEnd(20)} ${"grudge-only".padEnd(11)} ${"plus".padEnd(5)} ${"repaired".padEnd(8)} no-feel`,
   ];
   for (const c of cases) {
     const of = items.filter((i) => i.id === c.id);
@@ -241,6 +245,7 @@ export function bondTable(cases: readonly BondCase[], items: readonly BondItem[]
         (amounts.length === 0 ? "-" : amounts.join(" ")).padEnd(20),
         count((i) => i.reading.stand_in).padEnd(11),
         count((i) => i.reading.rise).padEnd(5),
+        count((i) => i.repaired).padEnd(8),
         String(of.filter((i) => !i.reading.wrote_feel).length),
       ].join(" "),
     );
@@ -285,6 +290,7 @@ export async function runBond(
         ok: fault === null,
         fault,
         reading,
+        repaired: (reply.feel_repaired ?? 0) > 0,
         lines: reply.lines,
         feel: reply.feel,
         usage: reply.usage ?? { ...NO_USAGE },
@@ -293,8 +299,8 @@ export async function runBond(
       });
       ctx.log(
         `bond ${c.id}#${run}: ${fault === null ? "ok" : `failed (${fault})`}${
-          reading.falls.length > 0 ? ` [${reading.falls.map(amountText).join(" ")}]` : ""
-        }`,
+          (reply.feel_repaired ?? 0) > 0 ? " (repaired)" : ""
+        }${reading.falls.length > 0 ? ` [${reading.falls.map(amountText).join(" ")}]` : ""}`,
       );
     }
   }
@@ -307,6 +313,7 @@ export async function runBond(
       as_expected: share(items.filter((i) => i.ok).length, items.length),
       minus_where_due: share(due.filter((i) => i.reading.falls.length > 0).length, due.length),
       minus_where_not: share(undue.filter((i) => i.reading.falls.length > 0).length, undue.length),
+      repaired: share(items.filter((i) => i.repaired).length, items.length),
     },
     items,
     unsupported,

@@ -126,6 +126,8 @@ export interface Reply {
    * not report them.
    */
   feel?: string[];
+  /** How many of `feel` the repair after the reply brought (it wrote none itself); unset: no repair. */
+  feel_repaired?: number;
 }
 
 export interface Subject {

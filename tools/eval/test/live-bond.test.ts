@@ -134,7 +134,12 @@ describe("the suite", () => {
     const run = await runLive({
       subject: stub((scene) => {
         const a = answers[scene.id];
-        return { lines: ["嗯"], feel: a === undefined ? [] : block(a) };
+        // Scene d's blocks all came from the repair after her reply.
+        return {
+          lines: ["嗯"],
+          feel: a === undefined ? [] : block(a),
+          feel_repaired: scene.id === "bond-d-contempt" ? 1 : 0,
+        };
       }),
       judge: routerJudge(new LlmRouter(new Map(), new Map())),
       meter,
@@ -155,16 +160,18 @@ describe("the suite", () => {
       as_expected: 5 / 7,
       minus_where_due: 2 / 3,
       minus_where_not: 1 / 3,
+      repaired: 1 / 7,
     });
     const table = result?.report ?? [];
     expect(table[0]).toMatch(
-      /^scene\s+expect\s+ok\s+minus\s+amounts\s+grudge-only\s+plus\s+no-feel$/,
+      /^scene\s+expect\s+ok\s+minus\s+amounts\s+grudge-only\s+plus\s+repaired\s+no-feel$/,
     );
     const row = (id: string) => table.find((l) => l.startsWith(id)) ?? "";
-    expect(row("c-after-two-noes")).toMatch(/minus\s+0\/5\s+0\/5\s+-\s+5\/5\s+0\/5\s+0$/);
+    expect(row("c-after-two-noes")).toMatch(/minus\s+0\/5\s+0\/5\s+-\s+5\/5\s+0\/5\s+0\/5\s+0$/);
+    expect(row("d-contempt")).toMatch(/-40 -40 -40 -40 -40\s+0\/5\s+0\/5\s+5\/5\s+0$/);
     expect(row("e-dear-over-the-line")).toContain("-150 -150 -150 -150 -150");
     // No block at all in any of its runs.
-    expect(row("g-small-talk")).toMatch(/0\/5\s+-\s+0\/5\s+0\/5\s+5$/);
+    expect(row("g-small-talk")).toMatch(/0\/5\s+-\s+0\/5\s+0\/5\s+0\/5\s+5$/);
   });
 
   it("runs the repeat given instead", async () => {
@@ -187,14 +194,17 @@ const done: StreamEvent = {
   usage: { prompt_tokens: 100, completion_tokens: 20, cached_prompt_tokens: 0 },
 };
 
-/** Answers with `text` and keeps every request. */
+/** Answers with `texts` in turn (the last one again) and keeps every request. */
 class Recording implements ChatProvider {
   readonly name = "scripted";
   readonly requests: ChatRequest[] = [];
-  constructor(readonly text: string) {}
+  readonly texts: string[];
+  constructor(...texts: string[]) {
+    this.texts = texts;
+  }
   async stream(request: ChatRequest): Promise<ChatStream> {
     this.requests.push(request);
-    const text = this.text;
+    const text = this.texts[Math.min(this.requests.length - 1, this.texts.length - 1)] ?? "";
     return (async function* (): ChatStream {
       yield { type: "text_delta", text };
       yield done;
@@ -229,6 +239,46 @@ describe("subject self in a bond scene", () => {
     expect(system).toContain(rules.FEEL_RULES);
     // The reminder is the last thing she reads.
     expect(contentText(messages.at(-1)?.content ?? "")).toContain(rules.FEEL_REMINDER);
+  });
+
+  it("a reply without a block gets the hosts' repair call; what it brought is counted", async () => {
+    const provider = new Recording(
+      "我說了不要!",
+      "<feel>\n我: 生氣 中\n阿哲: 羈絆 -20「說了兩次不要還一直洗版」\n</feel>",
+    );
+    const meter = new Meter({});
+    const router = new LlmRouter(
+      new Map([["scripted", meter.wrap(provider)]]),
+      new Map(["chat", "summarizer"].map((p) => [p, [parseModelRef("scripted:m")]])),
+    );
+    const profile = await Profile.loadDir(PROFILE_DIR);
+    const c = BOND_CASES.find((x) => x.id === "c-after-two-noes");
+    if (c === undefined) throw new Error("no case c");
+    const out = await new SelfSubject({ router, meter, profile }).respond(bondScene(c));
+    expect(out.lines).toEqual(["我說了不要!"]);
+    expect(out.feel_repaired).toBe(1);
+    expect(readBond(out.feel ?? [], c.watch).falls).toEqual([20]);
+    expect(provider.requests).toHaveLength(2);
+    expect(contentText(provider.requests[1]?.messages.at(-1)?.content ?? "")).toBe(
+      rules.FEEL_REPAIR_NOTE,
+    );
+    // Both calls are the reply's.
+    expect(out.usage.calls).toBe(2);
+
+    const off = new Recording("我說了不要!");
+    const offRouter = new LlmRouter(
+      new Map([["scripted", meter.wrap(off)]]),
+      new Map(["chat", "summarizer"].map((p) => [p, [parseModelRef("scripted:m")]])),
+    );
+    const plain = await new SelfSubject({
+      router: offRouter,
+      meter,
+      profile,
+      feelRepair: false,
+    }).respond(bondScene(c));
+    expect(off.requests).toHaveLength(1);
+    expect(plain.feel).toEqual([]);
+    expect(plain.feel_repaired).toBeUndefined();
   });
 
   it("does not run a scene whose last line is hers", async () => {
