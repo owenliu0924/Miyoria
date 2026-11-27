@@ -1,4 +1,4 @@
-// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond] [--subject self]
+// `pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond,screens] [--subject self]
 //  [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>]`
 //
 // Without `--repeat`, every item runs once, except in a suite with its own default (`bond`: 5).
@@ -39,7 +39,7 @@ const DEFAULT_OUT = "data/eval/live";
 const DEFAULT_MAX_USD = 0.5;
 
 const USAGE =
-  "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond] " +
+  "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond,screens] " +
   "[--subject self] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>] [--memory-target records|notes]\n" +
   "       pnpm eval --live --rebuild-history [--out <dir>]\n";
 
