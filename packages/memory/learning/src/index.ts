@@ -99,7 +99,6 @@ export {
 export {
   MAX_CORRECTIONS,
   MAX_QUOTE,
-  PersonReflectionError,
   type PersonReflectionReply,
   PersonReflectionSchema,
   personData,

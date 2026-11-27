@@ -1,7 +1,7 @@
 // Her reflections since phase 4 step 4 (docs/design/v5-heart.md §2.4): the daily one keeps its
 // own system, reasoning `reflect`, goals and the interaction threshold, and no longer tidies
 // person cards; after it, one call per person who did anything with her since the last night,
-// most first, capped per night, applied whole through the heart (`HeartKey.reflect`) or skipped,
+// most first, capped per night, applied through the heart (`HeartKey.reflect`) less any item that cannot be,
 // each person once a local day, and over when the nightly figure runs out.
 
 import { LlmRouter, LlmRouterKey, MockProvider, parseModelRef } from "@miyoria/llm/llm";
@@ -32,7 +32,6 @@ import {
   FeedbackTracker,
   LessonStore,
   MAX_PUBLIC_FEELING,
-  PersonReflectionError,
   PersonReflectionSchema,
   personRules,
   REFLECT_STATE_KEY,
@@ -355,15 +354,24 @@ describe("the nightly reflection on each person", () => {
     });
   });
 
-  it("skips a reply that cannot be applied whole, and goes on with the next", async () => {
+  it("drops only the items of a reply that cannot be applied, and keeps the rest", async () => {
     const bad = person({
       stance: "新的",
-      changes: [{ value: "魅力", direction: "+", quote: "x" }],
+      changes: [
+        { value: "魅力", direction: "+", quote: "x" },
+        { value: "好感", direction: "+", quote: "陪我" },
+      ],
+      anchor: { ref: "e9", quote: "沒有這段" },
     });
     const { heart, reflector } = setup('{"summary": "嗯"}', bad, person({ jokes: "貓" }));
     await reflector.reflect("daily", null);
-    expect(await reflector.reflectPeople(new AbortController().signal)).toEqual(["Amy"]);
-    expect(heart.reflected.map((r) => r.person)).toEqual(["p-amy"]);
+    expect(await reflector.reflectPeople(new AbortController().signal)).toEqual(["Owen", "Amy"]);
+    expect(heart.reflected.map((r) => r.person)).toEqual(["p-owen", "p-amy"]);
+    expect(heart.reflected[0]?.reflection).toMatchObject({
+      texts: { stance: "新的" },
+      proposals: [{ field: "warmth", direction: "up", quote: "陪我" }],
+      anchor: null,
+    });
   });
 
   describe("public_feeling", () => {
@@ -495,20 +503,27 @@ describe("reflectionOf", () => {
   });
   const base = JSON.parse(person()) as never;
 
-  it("refuses two corrections of one value, and an anchor with no held tier or memory", () => {
+  it("drops a second correction of one value, and an anchor with no held tier or memory", () => {
     const twice = {
       ...(base as object),
       changes: [
         { value: "好感", direction: "+", quote: "a" },
         { value: "好感", direction: "-", quote: "b" },
+        { value: "魅力", direction: "+", quote: "c" },
       ],
     } as never;
-    expect(() => reflectionOf(twice, day(), [])).toThrow(PersonReflectionError);
+    const out = reflectionOf(twice, day(), []);
+    expect(out.reflection.proposals).toEqual([{ field: "warmth", direction: "up", quote: "a" }]);
+    expect(out.dropped).toEqual(["two corrections of `好感`", "unknown value `魅力`"]);
     const anchor = { ...(base as object), anchor: { ref: "e1", quote: "q" } } as never;
-    expect(() => reflectionOf(anchor, day(), [])).toThrow(PersonReflectionError);
-    expect(() => reflectionOf(anchor, day({ tier: 120, label: "知心" }), [])).toThrow(
-      PersonReflectionError,
-    );
+    expect(reflectionOf(anchor, day(), [])).toMatchObject({
+      reflection: { anchor: null },
+      dropped: ["an anchor, but no tier is held"],
+    });
+    expect(reflectionOf(anchor, day({ tier: 120, label: "知心" }), [])).toMatchObject({
+      reflection: { anchor: null },
+      dropped: ["the anchor names no memory shown (`e1`)"],
+    });
   });
 
   it("reads the bond she takes off after a bond minus, and only there", () => {
