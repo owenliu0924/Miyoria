@@ -279,6 +279,7 @@ export class SandboxModule implements Module {
               config: config.browser,
               resultChars: config.result_chars,
               clock: ctx.clock,
+              memberHosts: () => remote.memberHosts(),
             }),
           );
     this.#browse = browse;

@@ -83,7 +83,11 @@ class CappedQuota implements WorkQuota {
   }
 }
 
-function setup(config: Record<string, unknown> = {}, quota: WorkQuota | null = null) {
+function setup(
+  config: Record<string, unknown> = {},
+  quota: WorkQuota | null = null,
+  memberHosts?: () => readonly string[],
+) {
   const h = harness();
   h.grants.grant(AMY, NODE_CODE_RUN);
   h.grants.grant(OWNER, NODE_CODE_RUN);
@@ -100,6 +104,7 @@ function setup(config: Record<string, unknown> = {}, quota: WorkQuota | null = n
       received.push({ job, ws, last });
       return { manifest: [...last], removed: [], conflicts: [] };
     },
+    ...(memberHosts === undefined ? {} : { memberHosts }),
   });
   for (const capability of browse.capabilities) h.registry.register(capability);
   const call = async (name: string, args: object, as = toolContext()): Promise<ToolResult> => {
@@ -149,6 +154,17 @@ describe("browse_open", () => {
     expect(out.text).toContain("網址:https://shop.example.test/");
     // The driver keeps to the owner's step time, so Core's wait outlasts its answer.
     expect(client.jobs[0]?.starts[0]?.env).toEqual({ MIYORIA_BROWSE_STEP_MS: "45000" });
+  });
+
+  it("opens a member's browser only on the computers Core lets have members' work", async () => {
+    let listed: string[] = [];
+    const { client, call } = setup({}, null, () => listed);
+    const refused = await call("browse_open", { url: "https://shop.example.test/" });
+    expect(refused.text).toContain("不接成員的工作");
+    expect(client.jobs).toHaveLength(0);
+    listed = ["friend-pc"];
+    expect((await call("browse_open", { url: "https://shop.example.test/" })).ok).toBe(true);
+    expect(client.jobs[0]?.spec.hosts).toEqual(["friend-pc"]);
   });
 
   it("keeps one session per person and name, and hers apart from a member's", async () => {

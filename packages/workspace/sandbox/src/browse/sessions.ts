@@ -167,7 +167,16 @@ export interface BrowseSessionsOptions {
   clock?: Clock;
   /** How the downloads come back (P3's `receiveWorkspace`; tests swap it). */
   receive?: typeof receiveWorkspace;
+  /**
+   * The computers Core lets have members' work (`RemoteSandbox.memberHosts`): a member's
+   * browser opens only there, since its downloads come back into their folder and a computer's
+   * own word that it takes members is what a hostile one would say. Absent: no limit (tests).
+   */
+  memberHosts?: () => readonly string[];
 }
+
+/** Her words when no computer Core lets have members' work is there. */
+export const BROWSE_MEMBERS_NOT_LISTED = "能跑程式的電腦現在都不接成員的工作;這次沒有開瀏覽器。";
 
 /** Whether the job can hand its `/workspace` back (`RemoteJob` can). */
 function canSync(job: SandboxJob): job is TransferJob {
@@ -199,7 +208,10 @@ export class BrowseSessions {
     this.#config = o.config;
     this.#clock = o.clock ?? systemClock;
     this.#receive = o.receive ?? receiveWorkspace;
+    this.#memberHosts = o.memberHosts ?? null;
   }
+
+  readonly #memberHosts: (() => readonly string[]) | null;
 
   static key(owner: string, name: string): string {
     return `${owner}\u0000${name}`;
@@ -289,11 +301,16 @@ export class BrowseSessions {
 
   async #start(owner: BrowseOwner, name: string, signal?: AbortSignal): Promise<BrowseSession> {
     const c = this.#config;
+    const hosts =
+      owner.for === "member" && this.#memberHosts !== null ? [...this.#memberHosts()] : null;
+    if (hosts !== null && hosts.length === 0)
+      throw new BrowseError("start", BROWSE_MEMBERS_NOT_LISTED);
     const job = await this.#client.open(
       {
         kind: "browser",
         image: "browser",
         for: owner.for,
+        ...(hosts === null ? {} : { hosts }),
         payer: owner.payer,
         label: `browse ${name}`,
         limits: { cpus: c.cpus, memory_mb: c.memory_mb, pids: BROWSER_PIDS },

@@ -532,7 +532,6 @@
 - **Core 重啟**:跑到一半的 exec 不接回(工作階段接回);瀏覽器的工作階段全部結束,還沒收回的下載跟著工作沒了;接回的工作階段的語言寫成 `shell`、次數 0。
 - **完整輸出**:`GET .../log` 還沒存進 `outputs/<run id>.txt`(回來的只有前 `max_output_bytes`)。
 - **Core 怎麼認得自己那台**:`core/src/core-machine.ts` 看叢集的 registry:hostd 從 127.0.0.1 連進來的那台,和 Core 直接用 loopback 位址叫的那筆。有密鑰的插件(`coreHost`)和成員的資料夾(`member_hosts` 之外)都可以去那裡。叢集的連接埠前面有 Core 這台上的反向代理或通道時,每一台看起來都是從 127.0.0.1 連進來的,都會被當成 Core 自己那台;要靠得住得讓 owner 寫明 Core 自己的 host 名字。
-- **瀏覽器沒有看 `member_hosts`**:成員的瀏覽器工作階段(`browse/`)照那台自己回報的 `members` 選電腦,沒有限定在 `member_hosts`;下載會寫回成員的資料夾。要收就讓它開工作時帶 `hosts`(`RemoteSandbox.memberHost`)。
 - **插件**:`fallback = "fail"` 沒有設定鍵(預設 `host`);`fallback = "fail"` 時它附的 MCP 伺服器一直等;沙箱模組在執行中才開,已經在這台跑的插件不會搬(要重啟);deno、bun 的插件、資料夾有連結的(pnpm 的 `node_modules`)一律在這台;開機時只有在有電腦提供沙箱服務、但還沒準備好時才等(最多 10 秒),一台都沒有就馬上在這台跑,之後有電腦接插件再搬;owner 寫了 `run_in = "sandbox"` 的插件沒有電腦時不啟動(啟動失敗的原因寫在模組狀態),有電腦之後要等 supervisor 重試或手動重啟才會起來;沙箱模組關著或 `backend = "local"` 時用的是這台的 launcher,它不看 `run_in`,寫了 `"sandbox"` 也在這台跑。
 - **插件的行為改了要 owner 知道**:沒寫 `permission` 的插件和 MCP 工具以前所有人都能叫,現在要節點或羈絆到 `work_min_bond`;live 的 `miyoria.toml` 裡用萬用字元 `env_pass` 給 token 的,要加完整名字(啟動的警告列名字)。插件在執行中被停用時它附的 MCP 伺服器跟著停(P8 做了)。插件可以寫跟自己排程同名的 storage 鍵,只會弄亂自己的鬧鐘。
 - **瀏覽器**:`<iframe>` 裡的元素不在大綱、沒有 `ref`;每個工作階段是新的設定檔,登入最多留 `lifetime_minutes`。

@@ -286,7 +286,7 @@ export class RemoteSandbox implements Sandbox {
   }
 
   /** The computers a member's job may open on: those Core lets have members' work. */
-  #memberHosts(): string[] {
+  memberHosts(): string[] {
     return this.#client
       .machines()
       .map((m) => m.host)
@@ -403,14 +403,14 @@ export class RemoteSandbox implements Sandbox {
       );
     }
     // A computer takes members' work, but none that Core lets have it: refused before a job opens.
-    if (forWho === "member" && this.#memberHosts().length === 0) {
+    if (forWho === "member" && this.memberHosts().length === 0) {
       throw new SandboxError("not_accepting", MEMBERS_NOT_LISTED);
     }
   }
 
   /** The `hosts` of a job's spec: a member's only goes to the computers Core lets have it. */
   #hostsFor(forWho: "self" | "owner" | "member"): { hosts?: string[] } {
-    return forWho === "member" ? { hosts: this.#memberHosts() } : {};
+    return forWho === "member" ? { hosts: this.memberHosts() } : {};
   }
 
   /** The exec of a run, its result in `RunResult` form. */

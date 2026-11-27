@@ -143,6 +143,8 @@ export interface BrowseOptions {
   clock?: Clock;
   /** Tests: how the downloads come back. */
   receive?: typeof receiveWorkspace;
+  /** The computers Core lets have members' work (`BrowseSessionsOptions.memberHosts`). */
+  memberHosts?: () => readonly string[];
 }
 
 export type BrowseAvailability = { ok: true } | { ok: false; reason: string };
@@ -266,6 +268,7 @@ export function browseCapabilities(o: BrowseOptions): Browse {
     config: o.config,
     clock,
     ...(o.receive === undefined ? {} : { receive: o.receive }),
+    ...(o.memberHosts === undefined ? {} : { memberHosts: o.memberHosts }),
   });
   const budget = Math.max(500, o.resultChars - 400);
 
