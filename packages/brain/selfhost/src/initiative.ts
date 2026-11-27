@@ -71,7 +71,13 @@ import {
 } from "@miyoria/types";
 import type { Agent } from "../../agent/src/index.js";
 import { dayIndex, type LocalTime, localHour } from "../../arbiter/src/index.js";
-import type { PromptInput, Wake, WakeAuthor } from "../../self/src/index.js";
+import type {
+  PromptInput,
+  StartOutcome,
+  StartSpec,
+  Wake,
+  WakeAuthor,
+} from "../../self/src/index.js";
 import {
   GateBook,
   type GateFacts,
@@ -88,6 +94,7 @@ import {
   type InitiativeStore,
   initiativeTables,
   type NewInboxItem,
+  type ScheduleRow,
 } from "./initiative-store.js";
 import {
   ELSEWHERE,
@@ -147,6 +154,11 @@ const WAKING: ReadonlySet<string> = new Set(["timer", "commitment", "followup", 
 /** Other places a run at home lists at most; the rest are one "and N more". */
 export const ELSEWHERE_MAX = 4;
 
+/** What a schedule with a `job` starts it with: `Delegator.start`'s shape (Core passes its delegator). */
+export interface ScheduledJobs {
+  start(spec: StartSpec): StartOutcome;
+}
+
 export interface InitiativeHost {
   agent: Agent;
   transcript: TranscriptStore;
@@ -162,6 +174,8 @@ export interface InitiativeHost {
   places(): ContextKey[];
   /** Whether she is in the voice channel `context` now; unset: never. */
   inVoice?(context: ContextKey): boolean;
+  /** Starts the job of a schedule that has one; unset: such a schedule only wakes her. */
+  jobs?: ScheduledJobs;
 }
 
 /** An opportunity that woke her, until its run ends. */
@@ -219,6 +233,12 @@ export class Initiative {
         }),
     });
     this.gates = new GateBook(gateConfig(host.settings, host.quiet));
+  }
+
+  /** Where a due schedule's job is started; for a host that builds its delegator after this. */
+  useJobs(jobs: ScheduledJobs | undefined): void {
+    if (jobs === undefined) delete this.#h.jobs;
+    else this.#h.jobs = jobs;
   }
 
   get #now(): number {
@@ -296,6 +316,8 @@ export class Initiative {
       // `tick` and their event finds the item there already.
       const { state, reminder } = env.data;
       if (state !== "fired") return;
+      // A schedule with a job: `tick` started it and wakes her only if that failed.
+      if (this.#h.store.schedule(reminder.id)?.job != null) return;
       this.#add({
         key: `timer:${reminder.id}:${reminder.fired}`,
         kind: "timer",
@@ -624,13 +646,50 @@ export class Initiative {
   #dueSchedules(now: number): void {
     for (const row of this.book.takeDue(now)) {
       const whose = row.for_account === null ? "" : "(有人請你設的提醒)";
+      // A schedule with a job starts it for the person who asked (their quota, folder and bond);
+      // the job's own result wakes her. Only a job that could not start wakes her with the reason.
+      const failure = row.job === null ? null : this.#startJob(row);
+      if (row.job !== null && failure === null) continue;
       this.#add({
         key: `timer:${row.id}:${row.fired}`,
         kind: "timer",
         context: row.context,
-        text: `${row.note}${whose}`,
+        text:
+          failure === null
+            ? `${row.note}${whose}`
+            : `${row.note}${whose}(排好要開的工作沒開成:${failure})`,
         person: row.person,
       });
+    }
+  }
+
+  /** Starts a due schedule's job; `null` when it started, else why not (in her words). */
+  #startJob(row: ScheduleRow): string | null {
+    const job = row.job;
+    const jobs = this.#h.jobs;
+    if (job === null) return null;
+    if (jobs === undefined) return "現在沒辦法開工作。";
+    const place = row.context !== null && row.context.kind !== "voice" ? row.context : this.#home();
+    if (place === null) return "不知道要在哪裡開這份工作。";
+    const from: WakeAuthor | null =
+      row.for_account === null
+        ? null
+        : {
+            account: row.for_account,
+            name: this.#h.agent.handleOf(row.for_account, row.for_account.id),
+          };
+    try {
+      const out = jobs.start({
+        kind: job.kind,
+        goal: job.goal,
+        budget: job.budget ?? null,
+        context: place,
+        from,
+      });
+      return out.ok ? null : out.text;
+    } catch (error) {
+      this.#h.agent.log.warn({ err: errorMessage(error) }, "a scheduled job could not start");
+      return "開工作的時候出了問題。";
     }
   }
 
@@ -1037,6 +1096,8 @@ export interface InitiativeOptions {
   settings?: InitiativeSettings;
   /** `remind_me`'s parser of absolute times (Core passes the mind's). */
   parseAt?: ParseAt | null;
+  /** Starts the job of a schedule that has one (Core passes the delegator); unset: it only wakes her. */
+  jobs?: ScheduledJobs;
   /** Her schedules and inbox; default: the store's (`StoreKey`, `initiativeTables`). */
   store?: InitiativeStore;
 }
@@ -1059,6 +1120,7 @@ export function startInitiative(
     settings: options.settings ?? initiativeSettings(),
     quiet: wiring.quiet,
     parseAt: options.parseAt ?? null,
+    ...(options.jobs === undefined ? {} : { jobs: options.jobs }),
     sessionOf: wiring.sessionOf,
     wake: wiring.wake,
     places: wiring.places,

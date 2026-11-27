@@ -51,7 +51,7 @@ describe("initiative v2", () => {
               ('s2', 'n', $at, NULL, 'schedule', $at, $at)`,
       { at: AT, context: ctxJson("discord", "gB", "b1") },
     );
-    expect(migrate(t.db, [identitySchema, initiativeSchema]).map((m) => m.version)).toEqual([2]);
+    expect(migrate(t.db, [identitySchema, initiativeSchema]).map((m) => m.version)).toEqual([2, 3]);
     const rows = t.db.all("SELECT key, space_id FROM initiative_inbox ORDER BY key") as {
       key: string;
       space_id: string | null;
@@ -66,6 +66,11 @@ describe("initiative v2", () => {
     expect(t.db.all("SELECT id, space_id FROM initiative_schedules ORDER BY id")).toEqual([
       { id: "s1", space_id: B },
       { id: "s2", space_id: null },
+    ]);
+    // Version 3 only adds the job column: an old schedule has none.
+    expect(t.db.all("SELECT id, job FROM initiative_schedules ORDER BY id")).toEqual([
+      { id: "s1", job: null },
+      { id: "s2", job: null },
     ]);
     // Running it again does nothing.
     expect(migrate(t.db, [identitySchema, initiativeSchema])).toEqual([]);

@@ -72,6 +72,10 @@ UPDATE \`initiative_schedules\` SET \`space_id\` = (
 CREATE INDEX \`initiative_inbox_space_idx\` ON \`initiative_inbox\` (\`space_id\`) WHERE "initiative_inbox"."seen_at" IS NULL;
 `;
 
+/** Version 3 (v6): the job a schedule starts when it comes due. Additive. */
+const JOB = `ALTER TABLE \`initiative_schedules\` ADD \`job\` text;
+`;
+
 /** Her schedules and her inbox. */
 export const initiativeSchema: PluginSchema = {
   plugin: "initiative",
@@ -80,5 +84,6 @@ export const initiativeSchema: PluginSchema = {
   migrations: [
     { version: 1, name: "init", sql: INIT },
     { version: 2, name: "spaces", sql: SPACES },
+    { version: 3, name: "job", sql: JOB },
   ],
 };

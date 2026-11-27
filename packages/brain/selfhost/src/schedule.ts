@@ -19,7 +19,12 @@ import {
   repairHandleText,
   sameAccount,
 } from "@miyoria/types";
-import type { InitiativeStore, ScheduleRow, ScheduleSource } from "./initiative-store.js";
+import type {
+  InitiativeStore,
+  ScheduleJob,
+  ScheduleRow,
+  ScheduleSource,
+} from "./initiative-store.js";
 import { SCHEDULE_TOOL } from "./initiative-texts.js";
 
 const MINUTE_MS = 60_000;
@@ -245,6 +250,8 @@ export class ScheduleBook {
     note: string;
     context: ContextKey | null;
     asker?: AccountRef | null;
+    /** A job to start when it comes due, for `asker`; unset: it only wakes her. */
+    job?: ScheduleJob | null;
   }): ScheduleRow {
     const asker = input.asker ?? null;
     const { perPerson } = this.#o.limits;
@@ -259,6 +266,7 @@ export class ScheduleBook {
       person: null,
       for_account: asker,
       source: "schedule",
+      job: input.job ?? null,
     });
   }
 
@@ -287,6 +295,7 @@ export class ScheduleBook {
     person: string | null;
     for_account: AccountRef | null;
     source: ScheduleSource;
+    job?: ScheduleJob | null;
   }): ScheduleRow {
     const now = this.now();
     const { max, maxDays } = this.#o.limits;
@@ -306,6 +315,7 @@ export class ScheduleBook {
       person,
       for_account: s.for_account,
       source: s.source,
+      job: s.job ?? null,
       at: now,
     });
     this.#o.publish?.(asReminder(row), "set");

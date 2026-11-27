@@ -31,12 +31,13 @@ import {
   type InboxKind,
   type InboxRow,
   initiativeSchedules as S,
+  type ScheduleJob,
   type ScheduleRow,
   type ScheduleSource,
   type ScheduleState,
 } from "./initiative-schema.js";
 
-export type { InboxKind, InboxRow, ScheduleRow, ScheduleSource, ScheduleState };
+export type { InboxKind, InboxRow, ScheduleJob, ScheduleRow, ScheduleSource, ScheduleState };
 
 /** A new schedule. */
 export interface NewSchedule {
@@ -48,6 +49,8 @@ export interface NewSchedule {
   person: string | null;
   for_account: AccountRef | null;
   source: ScheduleSource;
+  /** A job to start when it comes due; left out: none. */
+  job?: ScheduleJob | null;
   at: number;
   /** The Space of `context`; left out: the one identity knows for it. */
   space_id?: string | null;
@@ -141,6 +144,7 @@ export class InitiativeStore {
       space_id: s.space_id !== undefined ? s.space_id : this.spaceOf(s.context),
       for_account: s.for_account,
       source: s.source,
+      job: s.job ?? null,
       fired: 0,
       state: "open" as const,
       created_at: ts(s.at),
@@ -332,6 +336,7 @@ const initiativeData: readonly CategoryData[] = [
         space_id: "text",
         for_account: "json",
         source: "text",
+        job: "json",
         fired: "num",
         state: "text",
         created_at: "ts",

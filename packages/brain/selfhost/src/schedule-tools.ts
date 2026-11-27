@@ -2,15 +2,18 @@
 // sets her own later wake-up (docs/design/v5-architecture.md §7.3). Only the new runner offers
 // them (`next`); `schedule` is always offered (core), the other two are found with `find_tools`.
 
+import { WORK_DELEGATE } from "@miyoria/gate/actions";
 import { defineTool, type Tool, type ToolContext, type ToolResult } from "@miyoria/llm/tools";
 import {
   type AccountRef,
   type ContextKey,
   contextKeyString,
+  isJsonObject,
   type JsonValue,
   sameAccount,
 } from "@miyoria/types";
 import { z } from "zod";
+import { SCHEDULE_JOB_KINDS } from "./initiative-schema.js";
 import type { ScheduleRow } from "./initiative-store.js";
 import { SCHEDULE_CANCEL_TOOL, SCHEDULE_LIST_TOOL, SCHEDULE_TOOL } from "./initiative-texts.js";
 import { type ScheduleBook, ScheduleError, scheduleKey, scheduleLine } from "./schedule.js";
@@ -32,11 +35,48 @@ export interface ScheduleToolDeps {
   spaceOf?(place: ContextKey | null): string | null;
 }
 
+/** Told after the tool's own description: a schedule may start a job instead of only waking her. */
+const JOB_TEXTS = {
+  description:
+    "也可以帶 job:時間到時不只是叫醒你,而是直接替開口要的人開一份小幫手的工作" +
+    "(kind 是 worker 或 research,goal 寫清楚要做什麼),算在那個人的額度和資料夾裡。" +
+    "要定時整理檔案、查資料、做報告這類事才用;只是想起一件事不用 job。",
+  job: "時間到時要開的工作(可省略)",
+  kind: "worker(動手做,要用到檔案和程式)或 research(只查資料)",
+  goal: "這份工作要做什麼,寫清楚、一次講完",
+  budget: "最多花幾美元(通常省略)",
+  noGoal: "job 要有 goal(要做什麼)。",
+  longGoal: (max: number) => `job 的 goal 太長了,最多 ${max} 個字。`,
+  set: (key: string, at: string, daily: boolean) =>
+    `設好了(${key}),還沒到時間:${daily ? `每天 ${at}` : at}會替他開這份工作。`,
+} as const;
+
+/** The longest brief a scheduled job carries (the helper's own limit is the same). */
+const MAX_JOB_GOAL = 600;
+
+const JobParams = z.object({
+  kind: z.enum(SCHEDULE_JOB_KINDS).describe(JOB_TEXTS.kind),
+  goal: z.string().describe(JOB_TEXTS.goal),
+  budget: z.number().positive().optional().describe(JOB_TEXTS.budget),
+});
+
 const SetParams = z.object({
   when: z.string().describe(SCHEDULE_TOOL.when),
   note: z.string().describe(SCHEDULE_TOOL.note),
   where: z.string().optional().describe(SCHEDULE_TOOL.where),
+  job: JobParams.optional().describe(JOB_TEXTS.job),
 });
+
+/**
+ * The node a `schedule` call needs: a scheduled `worker` does real work for the asker later, so
+ * it takes the same node `delegate` does (the bond check at the time it is set); anything else
+ * needs none.
+ */
+export function scheduleNode(args: JsonValue): string | null {
+  const job = isJsonObject(args) ? args.job : null;
+  const kind = isJsonObject(job) && typeof job.kind === "string" ? job.kind : "";
+  return kind.trim().toLowerCase() === "worker" ? WORK_DELEGATE : null;
+}
 
 const CancelParams = z.object({
   id: z.string().describe(SCHEDULE_CANCEL_TOOL.id),
@@ -79,6 +119,12 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
         return failed(SCHEDULE_TOOL.dmPlace);
       }
     }
+    const job = args.data.job;
+    if (job !== undefined) {
+      const goal = job.goal.trim();
+      if (goal === "") return failed(JOB_TEXTS.noGoal);
+      if ([...goal].length > MAX_JOB_GOAL) return failed(JOB_TEXTS.longGoal(MAX_JOB_GOAL));
+    }
     try {
       // Whoever asked is kept with it: when it comes, the run acts for them, not as her own.
       const row = book.set({
@@ -86,9 +132,19 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
         note: args.data.note,
         context: place,
         asker: ctx.principal.requester,
+        ...(job === undefined
+          ? {}
+          : { job: { kind: job.kind, goal: job.goal.trim(), budget: job.budget ?? null } }),
       });
       const at = when.daily ?? args.data.when.trim();
-      return { ok: true, text: SCHEDULE_TOOL.set(scheduleKey(row), at, when.daily !== null) };
+      return {
+        ok: true,
+        text: (job === undefined ? SCHEDULE_TOOL.set : JOB_TEXTS.set)(
+          scheduleKey(row),
+          at,
+          when.daily !== null,
+        ),
+      };
     } catch (error) {
       if (error instanceof ScheduleError) return failed(error.message);
       throw error;
@@ -141,7 +197,7 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
     withResult(
       defineTool({
         name: SCHEDULE,
-        description: SCHEDULE_TOOL.description,
+        description: `${SCHEDULE_TOOL.description}${JOB_TEXTS.description}`,
         parameters: SetParams,
         effect: "act",
         speed: "instant",
@@ -149,6 +205,7 @@ export function scheduleTools(deps: ScheduleToolDeps): Tool[] {
         group: "schedule",
         core: true,
         next: true,
+        permissionFor: scheduleNode,
         call: call(set),
       }),
       set,
