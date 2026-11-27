@@ -257,6 +257,19 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:對假的 `SandboxClient`:上傳插件資料夾、開 proc、經 `ChildLike` 跑完 `initialize` 握手(用 `ext-hello`)、工作不見了模組重啟、`secrets` 只到 `trusted_hosts`、沒有電腦時回到主機。真的 Docker 的一個案例(`ext-hello` 在沙箱裡註冊一個工具、被呼叫一次)。
 
+**做成的樣子和上面不同的地方**(P8,2026-11-27):
+
+- `SandboxLauncherOptions` 多了:`client` 可以是函式(沙箱模組比插件晚提供 `SandboxClientKey` 時)或 `null`;`coreHost`(Core 自己那台在叢集裡的名字,有密鑰的插件也可以去);`restart(extension)`(因為沒有電腦而在主機上跑的插件,有電腦接插件時重啟它,一個插件最多一分鐘一次;app 傳 Supervisor 的 `restart("ext.<id>")`);`bootWaitMs`(預設 10 秒:開機時等 client 和電腦出現)。`fallback` 可省,預設 `"host"`。回傳的 `SandboxLauncher` 多 `placement(id)`(在哪跑、為什麼不在沙箱)和 `close()`。
+- 環境放在 `job.proc` 的 `env`,不放在 `open` 的:插件附的 MCP 伺服器在同一個工作裡用自己的環境。只描述 Core 這台的變數(`PATH`、`HOME`、`TEMP`、使用者名稱…)不送;沙箱自己設的名字(`HOME`、`PATH`、`*_PROXY`…)不送;最多 32 個、每個 4096 字,空間不夠時先留協定的和 owner 的 `secrets`。
+- 密鑰:owner 的 `secrets` 加上環境裡名字像密鑰的變數(owner 用完整名字給的 token)都算。有的話工作的 `hosts` 只有 `coreHost` 和 `trusted_hosts`;兩個都沒有就不開工作,在主機上跑(`fallback = "fail"` 時不啟動)。
+- 網路:宣告的主機去掉協定、路徑、埠成 `allowlist`;不是主機名的(`localhost`、IP)丟掉;全部都不能用時是 `none`(它要的是一小份清單,不是全部);沒宣告或 `*` 是 `open`。
+- 程式:`node` 一律用映像檔的 `node`;插件資料夾裡的路徑換成 `/ext/...`;`npx`、`python`、`uv` 等映像檔有的指令照名字;deno、bun 和這台的其他程式不能進沙箱,在主機上跑。資料夾有送不進去的東西(連結,例如 pnpm 的 `node_modules`)時關掉工作、在主機上跑,不讓插件在遠處以奇怪的方式壞掉。`.git` 不送。
+- 工作跟著主程式結束(`lifetime_s: 0`,主程式結束就 `close`),它附的伺服器跟著工作結束;重啟開新的工作。
+- 插件附的 MCP 伺服器跟著插件模組(P7 留下的):`mcp/src/module.ts` 聽 `system.module.state`,插件模組 `disabled` 時停它的伺服器(工具拿掉、程式結束),`running` 時再開;McpModule 啟動時插件已經停用的,等它回來。這是 P7 的檔,P8 改了它。
+- `run_in` 在選 launcher 時:`sandboxLauncher` 照 `LaunchSpec.runIn` 分(`host` 一律 `local`,從不問電腦);沒有 client(沒有叢集的沙箱)時在主機上跑,只寫 info,不是警告(大多數的安裝就是這樣)。`localLauncher` 照舊不看 `runIn`。
+- 測試用 `test-ext`(不用 SDK,沒有連結要送),不是 `ext-hello`。真的 Docker 的案例在 `ext-host/test/sandbox-launch.docker.test.ts`,要 Docker 和 `MIYORIA_SANDBOX_IMAGE_TESTS=1`,這台沒有跑過。
+- 沒做的:插件在沙箱裡啟動失敗(`fallback = "fail"`)時,它附的 MCP 伺服器一直等到插件跑起來或被停用;沙箱模組在執行中才開啟時,已經在主機上跑的插件不會搬過去(要重啟它);`coreHost` 目前沒有來源(Core 不知道自己在 hostd 的名字),不傳時有密鑰的插件只去 `trusted_hosts`。
+
 ### P9 整合
 
 **交付**:§4 的每個熱點檔、§5 的清單、`miyoria.example.toml` 兩份(byte 完全一樣)、文件、全部的測試。見 §4、§5。
