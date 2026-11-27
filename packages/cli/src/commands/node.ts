@@ -224,7 +224,7 @@ export async function extNew(name: string, dir: string): Promise<void> {
   // Inside the monorepo link the local SDK; elsewhere use the published one.
   const sdk = existsSync(join(process.cwd(), "packages/sdk/package.json"))
     ? "workspace:*"
-    : "^0.2.0";
+    : "^0.3.0";
   const path = await extensionsCli.newExtension(dir, name, { sdk, id: null });
   ok(t.node.created(path));
 }

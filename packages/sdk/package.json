@@ -1,6 +1,6 @@
 {
   "name": "@miyoria/sdk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "SDK for Miyoria extensions: JSON-RPC over stdio, tools, commands, events, prompts, game adapters",
   "type": "module",
   "engines": {
