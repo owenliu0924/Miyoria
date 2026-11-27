@@ -124,6 +124,10 @@ reflect = "high"       # 每晚的反思和對每個人的反思
 # args = ["-y", "@modelcontextprotocol/server-filesystem", "C:/data"]
 # tools_allow = ["read_*"]
 # trust_read_only_hint = true    # 相信 server 標的 readOnlyHint:同一步的這類呼叫同時跑
+# risk = "medium"                # 這個 server 的工具的風險;不寫 = 中風險,相信 readOnlyHint 時只看的工具是低風險
+# MCP 的工具都經過閘門(有次數上限、會記錄);成員羈絆到 work_min_bond 就能叫,你一定能叫。
+# 擴充附的 MCP server 叫 "<擴充 id>-<名字>"(點換成 _),跟著擴充在同一個地方跑;
+# 要調它就寫同名的 [mcp.servers."miyoria_osu-queue"],不寫 command / url(tools_allow、risk、permission、enabled…)
 
 # ---- 這台電腦跑什麼 ----------------------------------------------------------------
 # 這台電腦跑哪些服務(core、asr、tts、sing、turn、voice-node、stage ...)寫在同一個資料夾的 host.toml,
@@ -136,6 +140,9 @@ reflect = "high"       # 每晚的反思和對每個人的反思
 # env = { SING_CACHE_MAX_GB = "10", SING_CACHE_MAX_DAYS = "30" }
 # 判斷講完(Smart Turn + Silero,跑在 CPU)是選用的:`miyoria add turn`,並自己下載模型(workers/README.md 第 10 節);
 # 模型沒放好 worker 照常啟動,她會退回安靜多久就算講完,doctor --deep 會提醒
+# 這台電腦要替她跑程式(sandbox 服務:`miyoria add sandbox`、`miyoria sandbox build`):接誰的工作、給多少 CPU 和記憶體
+# 寫在 host.toml 的 [sandbox](members、plugins、cpus、memory_mb、disk_mb、max_job_cpus、max_job_memory_mb、runtime),
+# 不在這個檔案;workers/sandbox/README.md
 
 # ---- 語音辨識 / 合成 -------------------------------------------------------
 # 本機 worker 見 workers/README.md;也可以換成雲端(kind = "openai")
@@ -365,10 +372,20 @@ token = "${STAGE_LINK_TOKEN:-}"
 dirs = ["extensions"]
 # task_grace_ms = 5000      # 擴充的任務超過預算這麼久還沒回報結束,主機就判它逾時
 # 擴充只拿到白名單內的環境變數(PATH、TEMP、HOME…加上 manifest [env] pass 列的),拿不到這裡的密鑰。
+# 萬用字元(MIYORIA_MC_*)不會給看起來像密鑰的變數(名字裡有 KEY、TOKEN、SECRET、PASSWORD…),要寫完整名字;
+# Core 自己的金鑰和 token(LLM_*、DISCORD_*、MIYORIA_API_TOKEN…)manifest 拿不到,只有你在 secrets 列的才給。
+# 擴充的工具都經過閘門:預設中風險(有次數上限、會記錄),成員羈絆到 work_min_bond 就能叫,你一定能叫。
+# utc_offset_minutes = 480       # 擴充排程 daily = "HH:MM" 照哪個時區(寫在 [modules.extensions])
 # 要多給一個擴充變數:
 # [extensions."miyoria.minecraft"]
 # env = { MIYORIA_MC_TOKEN = "${MC_TOKEN:-}" }   # 直接設定值
-# env_pass = ["MIYORIA_MC_*"]                    # 取代 manifest 的 [env] pass
+# env_pass = ["MIYORIA_MC_*", "MIYORIA_MC_TOKEN"] # 取代 manifest 的 [env] pass
+# secrets = ["MC_API_KEY"]                       # 你同意交給它的 Core 環境變數(完整名字)
+# run_in = "host"                                # host 或 sandbox;不寫 = 遊戲轉接器和要 input 的在主機,其他的進沙箱(有沙箱時)
+# tools."minecraft.say".risk = "high"            # 改某個工具的風險:low 直接做、medium 有次數上限、high 她先審核
+# 進沙箱的擴充:資料夾送到接插件的電腦(那台 host.toml [sandbox] plugins = true),程式在那裡跑,附的 MCP server 在同一個工作裡;
+# 它有密鑰(secrets 或你用完整名字給的 token)時只去 [modules.sandbox.transfer] trusted_hosts 列的電腦,沒有就在這台跑。
+# 沒有電腦接插件時也在這台跑(log 會寫原因),有電腦接了會自己搬過去。
 # minecraft_dir = 'C:\Users\<你>\AppData\Roaming\PrismLauncher\instances\<實例>\.minecraft'
 # 她要玩時自己用 Prism Launcher 開遊戲(實例 id 從 minecraft_dir 推,Prism 執行檔自動找)
 # prism_path = 'C:\Users\<你>\AppData\Local\Programs\PrismLauncher\prismlauncher.exe'
@@ -948,12 +965,13 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # per_person_per_day = 3000      # 每 24 小時同一個人
 # per_person_per_hour = 300      # 每小時同一個人(per_hour 也可以設)
 # cooldown_ms = 0                # 沒有冷卻:一件事要寫五個檔案就連著寫
-# inline_wait_ms = 8000          # 高風險工具(跑程式等)等審核多久;來不及就晚點在後續回合告訴她結果
+# inline_wait_ms = 8000          # 會晚點回答的工具(跑程式、畫圖、高風險工具的審核)等多久;來不及就晚點在後續回合告訴她結果
 # [modules.actions.limits."code.run"]
 # per_day = 50
 # cooldown_ms = 5000
 # [modules.actions.share]        # 她把自己做的檔案當附件傳給開口要的人(設了 [modules.api.files] origin 就另外附連結)
-# max_bytes = 10485760           # 一個檔案最多幾 bytes(平台自己的上限另外算,取小的)
+# max_bytes = 0                  # 一個檔案最多幾 bytes;0 = 只看平台自己的上限。超過的有檔案網域就改給連結,沒有就說明原因
+#                                # 壓縮檔收 zip、tar、tar.gz、gz,文件收 docx / xlsx / pptx / odt / ods / odp / epub;7z、rar 讀不了裡面,不收
 # per_day = 60                   # 每 24 小時最多傳幾個(所有人加起來)
 # per_person_per_day = 10        # 每 24 小時最多傳給同一個人幾個
 # zip_max_unpacked_mb = 256      # zip / docx / xlsx / pptx 解開後合計超過這麼多(MiB)就不傳(壓縮炸彈)
@@ -1022,6 +1040,8 @@ barge_in = "selective"     # 有人插話時:selective(只有這回合要回的�
 # person_usd_per_hour = 3        # 每人最近一小時
 # person_usd_per_day = 10        # 每人她的一天(照 [modules.arbiter] 的換日時間)
 # unpriced_usd_per_mtok = 1      # 沒有價目的模型,每一百萬 token 算多少美元
+# person_cpu_seconds_per_hour = 7200   # 每人最近一小時的沙箱 CPU 秒數(兩顆 CPU 滿載一小時);0 = 不設
+# person_cpu_seconds_per_day = 28800   # 每人她的一天(八個 CPU 小時);0 = 不設
 
 # 語音聊天。也可以用 /voice mode 即時切換。要不要插話 = 她的多話程度(心智迴圈或「活躍點」)
 # × 佔比上限;有人還在講話時她不插嘴。她自己多久開一次口由 [modules.arbiter] 決定
@@ -1536,33 +1556,45 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 
 # ---- 程式沙箱 ----------------------------------------------------------------
 
-# 她寫的程式在用完即丟、不能連外的 Docker 容器裡執行(需要 Docker Desktop / Docker Engine)。
-# 預設關閉,要明確寫 enabled = true 才會啟動;Docker 沒開時模組顯示 degraded,不影響其他功能。
-# Docker 可用時她會多出工具 code_run(跑程式)、tool_propose(把寫好的程式提出成工具)與已核准的
-# sbx_<name>;前兩個是高風險,她自己審核,有疑慮才私訊你確認。/admin autonomy status 看狀態,
-# GET /api/sandbox/tools 看她寫的工具。安全說明見 packages/workspace/sandbox/README.md。
+# 她寫的程式在 Docker 容器裡執行:叢集裡有電腦跑 sandbox 服務時送到那台(一台 Linux 機器,能上網、
+# 能 pip install,docs/design/v6-sandbox.md),沒有就用這台的 Docker(需要 Docker Desktop / Docker Engine)。
+# 預設關閉,要明確寫 enabled = true 才會啟動;沒有可用的沙箱時模組顯示 degraded,不影響其他功能。
+# 可用時她會多出工具 code_run(跑程式)、shell_run(叢集才有)、tool_propose(把寫好的程式提出成工具)與
+# 已核准的 sbx_<name>。跑程式是中風險,不再每次審核(擋傷害的是沙箱、出口代理和每人的 CPU 秒數);
+# 存成之後會自動跑的(workspace_save_script、tool_propose)照舊高風險,她自己審核,有疑慮才私訊你確認。
+# 工作區的檔案工具(workspace_list / read / write / edit / grep / delete / export、workspace_attach)
+# 不需要 Docker,沙箱開著(enabled = true)就有;沒有電腦能跑程式時只收回跑程式的那些。
+# /admin autonomy status 看狀態(每台電腦一行),GET /api/sandbox/tools 看她寫的工具。
+# 安全說明見 packages/workspace/sandbox/README.md。接工作的那台電腦自己決定接誰的工作:它的 host.toml 的 [sandbox]。
 # [modules.sandbox]
 # enabled = true
+# backend = "auto"               # auto:叢集有準備好的電腦就用,沒有就用這台的 Docker;cluster:只用叢集;local:只用這台(沒有 shell)
 # root = "data/sandbox"          # runs/<id>(每次執行)與 profiles/<profile>/tools(她留下的腳本)
-# default_timeout_ms = 30000
-# max_timeout_ms = 120000
-# max_concurrent = 2
+# default_timeout_ms = 300000    # 原本 30000
+# max_timeout_ms = 600000        # 單次 10 分鐘;原本 120000
+# max_concurrent = 2             # (這台的 Docker)
 # keep_runs = 20                 # 保留最近幾次執行的輸出檔
 # result_chars = 3900            # 程式輸出回給她的字數上限;太長的存成工作區檔案,回覆裡寫檔名
 # tool_timeout_ms = 8000         # 她寫的工具每次呼叫的時間上限
-# images = { python = "python:3.12-slim", node = "node:24-slim" }  # 可釘 digest:...@sha256:<hash>
+# images = { python = "python:3.12-slim", node = "node:24-slim" }  # 只有這台的 Docker 用;可釘 digest:...@sha256:<hash>
 # max_queued = 8                 # 排隊等位子的執行最多幾個,更多的被拒絕(busy)
 # pull_timeout_ms = 600000       # 拉映像最久多久(拉映像在執行開始計時之前)
-# health_ttl_ms = 30000          # docker version 的結果信任多久
-# recheck_ms = 60000             # 多久重新檢查 Docker,決定開放或收回這些能力
-# docker = "docker"              # Docker CLI 的執行檔(直接執行,不經過 shell)
-# user = "auto"                  # 容器的 --user:auto = Linux / macOS 上用主機的 uid:gid(不是 root 時),其他用 65534:65534;永遠不是 root
+# health_ttl_ms = 30000          # 沙箱狀態的結果信任多久
+# recheck_ms = 60000             # 多久重新檢查沙箱,決定開放或收回這些能力(叢集的電腦有變化時也會馬上重算)
+# docker = "docker"              # 這台的 Docker CLI 執行檔(直接執行,不經過 shell)
+# user = "auto"                  # 這台容器的 --user:auto = Linux / macOS 上用主機的 uid:gid(不是 root 時),其他用 65534:65534;永遠不是 root
 # max_scripts = 100              # 每個 profile 的工具資料夾留幾個腳本
 # max_proposed_tools = 50        # 每個 profile 留幾個提出的工具(待審、已核准和被拒絕的都算)
-# limits = { memory_mb = 256, cpus = 1, pids_limit = 128, tmpfs_mb = 64, max_file_size_bytes = 16777216, nofile = 256 }
-#                                # tmpfs_mb:/tmp 的大小;max_file_size_bytes:單一檔案寫多大(ulimit fsize);nofile:每個程序開幾個檔
-# pool_size = 0                  # 預設 0 = 關;設 1 以上:每種語言先開好幾個等著的容器(每個只跑一次就丟),一般執行不用等容器啟動
-# sessions = { max = 3, idle_minutes = 15, lifetime_minutes = 120, disk_mb = 256 }  # 她的工作階段(同名的執行共用 /work)
+# limits = { memory_mb = 2048, cpus = 2, pids_limit = 512, tmpfs_mb = 512, max_file_size_bytes = 268435456, nofile = 4096 }
+#                                # 原本 256 MiB、1 CPU、128、64 MiB、16 MiB、256。tmpfs_mb:/tmp 的大小;max_file_size_bytes:單一檔案寫多大(ulimit fsize)
+# pool_size = 0                  # 只有這台的 Docker 用。預設 0 = 關;設 1 以上:每種語言先開好幾個等著的容器
+# sessions = { max = 8, per_person = 2, idle_minutes = 15, lifetime_minutes = 120, disk_mb = 2048 }
+#                                # 工作階段;max 是所有人加起來(原本 3,只有她一個人用);per_person 每個人同時幾個;disk_mb 原本 256
+# [modules.sandbox.transfer]     # 叢集:跟著工作送到那台電腦的資料夾
+# max_mb = 1024                  # 一次送進沙箱的資料夾最大多少
+# part_mb = 8                    # 每一段
+# lease_secs = 600               # Core 這麼久沒來,那台就關掉工作(Core 重啟不會讓工作階段不見)
+# trusted_hosts = []             # 有密鑰的插件只送到這幾台的沙箱;空 = 有密鑰的插件在這台跑
 # 一次執行進出的大小上限(都是位元組)
 # [modules.sandbox.caps]
 # max_code_bytes = 262144        # 程式最長
@@ -1592,19 +1624,37 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # enabled = true
 # max_mb = 32768                 # 全部檔案加起來,每個人的資料夾也算(MiB);是上限,不是先佔好的空間
 # max_files = 200000             # 預設放得下 100 個人各用到自己的上限
-# max_file_kb = 8192             # 單一檔案(KiB)
-# person_max_mb = 256            # 一個人的資料夾(MiB)
+# max_file_kb = 262144           # 單一檔案(KiB);原本 8192
+# person_max_mb = 1024           # 一個人的資料夾(MiB);原本 256
 # person_max_files = 2000        # 一個人的資料夾最多幾個檔案
-# export_max_kb = 8192           # workspace_export 一次拿出來的檔案最大多少(KiB;之後用 share 傳)
+# export_max_kb = 262144         # workspace_export 一次拿出來的檔案最大多少(KiB;之後用 share 傳);原本 8192
 # read_chars = 3900              # workspace_read 一次回幾字(其餘用 offset 分段讀)
 # keep_outputs = 20              # 保留幾個輸出檔(太長被截掉的執行,完整輸出存成 outputs/<run id>.txt)
-# 網路:預設全關(allow = []),每次執行都是 --network none。列了主機,要求網路的執行才會拿到一個沒有對外路由的
-# Docker 網路,唯一的出口是一個 egress proxy 容器,它只放行這些主機的 80 / 443 埠,而且永遠不連私有位址。
-# 主機名稱或 *.example.com(沒有 scheme、連接埠、路徑,也不能只寫 *)。要真的跑一次 Docker 才能驗證
+# 網路。叢集的電腦:每個工作自己一個出口代理,mode = "open"(預設)什麼都放行,只擋私有、本機、tailnet、雲端中繼資料位址
+# 和寄信的埠;"allowlist" 只放行 allow 的主機的 80 / 443;"none" 不能上網。舊設定只寫了 allow、沒寫 mode 的當作 allowlist。
+# 這台的 Docker 照舊:預設全關,列了主機,要求網路的執行才拿到只放行那些主機的 egress proxy。
 # [modules.sandbox.network]
+# mode = "open"                  # open | allowlist | none(叢集)
 # allow = []                     # 例如 ["pypi.org", "*.pythonhosted.org"]
-# proxy_port = 3128              # proxy 在它的容器內聽的埠
-# proxy_memory_mb = 128          # proxy 容器的記憶體(MiB)
+# deny_ports = [25, 465, 587]    # open 也擋的埠
+# max_connections = 64           # 每個工作同時開著的連線(叢集)
+# max_mb = 4096                  # 每個工作進出合計(MiB,叢集)
+# proxy_port = 3128              # (這台的 Docker)proxy 在它的容器內聽的埠
+# proxy_memory_mb = 128          # (這台的 Docker)proxy 容器的記憶體(MiB)
+# 瀏覽器(叢集才有):她在一台沙箱電腦上開真的 Chromium,工具 browse_open(打開網址)、browse_read(讀內容)、
+# browse_shot(截圖給她看)、browse_act(點、輸入、選、捲動、上一頁;中風險,跟跑程式一樣算次數)。
+# 流量走那個工作的出口代理,跟跑程式一樣連不到內網、tailnet 和這台電腦。那台電腦要有瀏覽器的映像檔
+# (miyoria sandbox build 會一起建)。沒有能開瀏覽器的電腦時這四個工具不會出現,/admin autonomy status 寫原因。
+# 每個人自己的工作階段(cookie、登入不會混);下載的檔案存進工作區的 downloads/(替成員做時是那個人的資料夾)。
+# [modules.sandbox.browser]
+# enabled = true
+# idle_minutes = 15              # 閒置多久自己關(關之前先把下載的檔案收回來)
+# lifetime_minutes = 120         # 一個工作階段最多開多久
+# memory_mb = 2048               # 一個瀏覽器工作的記憶體(MiB)
+# cpus = 2
+# max_sessions = 6               # 所有人加起來同時開著幾個(每個都佔那台電腦 memory_mb 的記憶體)
+# per_person = 2                 # 一個人同時幾個;再開一個名字時先關他最久沒用的
+# step_timeout_ms = 45000        # 一步(打開、點、讀、截圖)最久多久
 # 跑程式的次數上限在 [modules.actions.work](預設沒有冷卻、每人每小時 300 次),也可以在 [modules.actions.limits."code.run"] 單獨設
 
 # 生圖(docs/design/imagegen.md):連 ComfyUI 的 API 生圖,給她的其他系統用(目前沒有指令,成員叫不到)。
@@ -1629,6 +1679,8 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # check_files = true              # 送出前確認模型檔在 ComfyUI 裡
 # keep_days = 0                   # 圖保留幾天(0 永久)
 # daily_limits = { gacha = 200 }  # 每個 purpose 每天最多幾張
+# ComfyUI 連得上時她也能替開口的人畫(工具 image_make;成員要羈絆到 work_min_bond),這樣畫的算 purpose "agent":
+# daily_limits = { gacha = 200, agent = 50 }
 # [modules.imagegen.models.krea2]
 # variants.raw.files.diffusion_model = "krea2_raw_fp8_scaled.safetensors"   # RAW 檔名請改成實際下載的
 # [modules.imagegen.models.anima]
@@ -1752,6 +1804,16 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # cache_ttl_s = 600              # 同一個搜尋或網頁這段時間內不重查
 # search_per_person_hour = 60    # 每人一小時最多查幾次(付費的搜尋每次都花點數;她自己算一個人);0 = 不限。
 #                                # 讀網頁和看圖不另外計次,由她一次做事的步數和每人的 AI 額度管
+
+# 宣告式 HTTP 工具:tools/http/ 裡一個 .toml 一個工具(網址、參數、密鑰從哪來、風險),
+# 擴充的 http-tools/ 資料夾也會讀。請求一樣擋內網、不跟轉址;密鑰只放在標頭,不會出現在結果、紀錄或提示裡。
+# [modules.http_tools]
+# enabled = true
+# dirs = ["tools/http"]
+# secrets = []                   # 工具的 {secret:NAME} 只能用這裡列的環境變數
+# allow_ports = []               # 80 / 443 以外可以連的埠
+# timeout_ms = 15000
+# max_response_bytes = 1048576
 
 # ---- Stage 節點(在直播機執行 `miyoria stage`)-------------------------------
 [stage]
