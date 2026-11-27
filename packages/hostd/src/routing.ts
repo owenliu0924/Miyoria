@@ -218,8 +218,14 @@ export function serviceRouting(
 export interface LoadReading {
   running: number;
   queued: number;
+  /** The service said it cannot take work now (`ready: false`), and why. */
+  ready?: boolean;
+  reason?: string;
   at: number;
 }
+
+/** Longest reason taken from a health answer: it ends up on the panel and in Core's logs. */
+const MAX_SELF_REASON = 300;
 
 function count(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -231,13 +237,49 @@ function count(value: unknown): number | null {
  * The load in a health answer: `running` (or `busy: true` for one unit) and `queued`. `null` when
  * it says neither, as a worker that does not report its load.
  */
-export function loadOf(body: unknown): { running: number; queued: number } | null {
+export function loadOf(
+  body: unknown,
+): { running: number; queued: number; ready?: boolean; reason?: string } | null {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return null;
-  const b = body as { running?: unknown; busy?: unknown; queued?: unknown };
+  const b = body as {
+    running?: unknown;
+    busy?: unknown;
+    queued?: unknown;
+    ready?: unknown;
+    reason?: unknown;
+  };
   const running = count(b.running) ?? (typeof b.busy === "boolean" ? (b.busy ? 1 : 0) : null);
   const queued = count(b.queued);
   if (running === null && queued === null) return null;
-  return { running: running ?? 0, queued: queued ?? 0 };
+  // Only a service that says `ready: false` holds itself back (the sandbox without Docker or its
+  // image): a health answer without the field means what it always meant.
+  const ready = typeof b.ready === "boolean" ? b.ready : undefined;
+  const reason =
+    ready === false && typeof b.reason === "string" && b.reason.trim() !== ""
+      ? b.reason.trim().slice(0, MAX_SELF_REASON)
+      : undefined;
+  return {
+    running: running ?? 0,
+    queued: queued ?? 0,
+    ...(ready !== undefined ? { ready } : {}),
+    ...(reason !== undefined ? { reason } : {}),
+  };
+}
+
+/**
+ * `routing` with what the service itself said in its health answer folded in: a service that
+ * reports `ready: false` is not ready, its reason joined to those of `needs` with `;`. Without
+ * a reading, or one that does not say, `routing` is as it was.
+ */
+export function withSelfReadiness(
+  routing: HostServiceRouting | undefined,
+  reading: { ready?: boolean; reason?: string } | null,
+): HostServiceRouting | undefined {
+  if (routing === undefined || reading === null || reading.ready !== false) return routing;
+  const reasons = [routing.reason, reading.reason ?? "服務說它還沒準備好"].filter(
+    (r): r is string => r !== undefined && r !== "",
+  );
+  return { ...routing, ready: false, reason: reasons.join(";") };
 }
 
 /** The reading as the report carries it. */

@@ -7,7 +7,7 @@ import { join } from "node:path";
 import type { HostServiceList, HostServiceStatus } from "@miyoria/contracts/host";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Daemon } from "../src/index.js";
-import { loadOf, VariantHasher } from "../src/routing.js";
+import { loadOf, VariantHasher, withSelfReadiness } from "../src/routing.js";
 import { cleanup, daemonFor, fake, TMP, until, workspace, writeIn } from "./fakes.js";
 
 afterEach(cleanup);
@@ -31,6 +31,46 @@ describe("the load in a health answer", () => {
     expect(loadOf({ queued: -1, busy: "yes" })).toBeNull();
     expect(loadOf(null)).toBeNull();
     expect(loadOf([1])).toBeNull();
+  });
+
+  it("reads the service's own readiness and keeps a reason only when it is not ready", () => {
+    expect(loadOf({ running: 0, queued: 0, ready: false, reason: " 沒有 Docker " })).toEqual({
+      running: 0,
+      queued: 0,
+      ready: false,
+      reason: "沒有 Docker",
+    });
+    const ok = loadOf({ running: 1, queued: 0, ready: true, reason: "ignored" });
+    expect(ok).toEqual({ running: 1, queued: 0, ready: true });
+    expect(ok).not.toHaveProperty("reason");
+    expect(loadOf({ busy: false, ready: "no" })).not.toHaveProperty("ready");
+    const long = loadOf({ busy: false, ready: false, reason: "x".repeat(1000) });
+    expect(long?.reason?.length).toBe(300);
+  });
+
+  it("folds a service's not-ready into its routing, after the reasons of needs", () => {
+    const routing = {
+      class: "job",
+      latency: "interactive",
+      concurrency: 4,
+      queue: true,
+      yields_to: [],
+      ready: false,
+      reason: "缺少 x",
+      accept: true,
+    } as unknown as Parameters<typeof withSelfReadiness>[0];
+    expect(withSelfReadiness(routing, { ready: false, reason: "映像檔還沒建好" })).toMatchObject({
+      ready: false,
+      reason: "缺少 x;映像檔還沒建好",
+    });
+    const fine = { ...routing, ready: true, reason: undefined } as typeof routing;
+    expect(withSelfReadiness(fine, { ready: true })).toBe(fine);
+    expect(withSelfReadiness(fine, null)).toBe(fine);
+    expect(withSelfReadiness(fine, { ready: false })).toMatchObject({
+      ready: false,
+      reason: "服務說它還沒準備好",
+    });
+    expect(withSelfReadiness(undefined, { ready: false })).toBeUndefined();
   });
 });
 
