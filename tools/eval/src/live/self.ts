@@ -6,7 +6,8 @@
 // - block 4: the scene's people as person cards, rendered by today's people block (`peopleBody`)
 //   from a heart row made of the closeness the scene sets;
 // - block 7: the time (the scene's clock when it sets one), the place and her state line;
-// - the transcript: the scene's lines in a fresh in-memory transcript store;
+// - the transcript: the scene's lines in a fresh in-memory transcript store (a line of hers as one
+//   she said);
 // - tools: a fresh registry with `find_tools` and `say`, and the scene's fake-world tools, all
 //   always on except the ones `hidden` names for the scene: those she has to find first;
 // - the guard: the service guard over the one service that runs without a network, the output
@@ -203,6 +204,7 @@ export class SelfSubject implements Subject {
     const unknown = (scene.tools?.tools ?? []).filter((t) => FAKE_TOOL_SPECS[t] === undefined);
     if (unknown.length > 0) return `no fake tool definition for ${unknown.join(", ")}`;
     if (scene.lines.length === 0 && scene.world === undefined) return "the scene has no line";
+    if (scene.lines.at(-1)?.self === true) return "the scene's last line is hers";
     if (scene.place === "dm" && scene.address !== "dm") return "a DM scene is addressed by `dm`";
     if (scene.place === "text" && scene.address === "dm") return "`dm` needs the place to be a DM";
     return null;
@@ -252,6 +254,14 @@ export class SelfSubject implements Subject {
         scene.lines.map((line, i) => {
           ts += 1000;
           const lastLine = i === scene.lines.length - 1;
+          if (line.self === true) {
+            return {
+              kind: "self" as const,
+              content: line.text,
+              message_id: `m${i + 1}`,
+              at: toTimestamp(ts),
+            };
+          }
           return {
             kind: "other" as const,
             account: accountFor(line.who),
