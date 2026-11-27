@@ -546,3 +546,16 @@ export async function extractTar(
 function wholeSeconds(ms: number): number {
   return Math.floor(ms / 1000) * 1000;
 }
+
+/**
+ * Files smaller than this are always hashed when a folder is compared with its last manifest.
+ * Size and a whole-second time cannot tell two writes in the same second apart (a program that
+ * edits a file in place right after it arrived, or she changes one digit while a run is going),
+ * so only big files, where hashing every time costs, are taken as unchanged by their stamp.
+ */
+export const HASH_ALWAYS_BELOW = 8 * 1024 * 1024;
+
+/** Whether a file whose size and whole-second time match its last entry may skip hashing. */
+export function stampTrusted(size: number, sameStamp: boolean): boolean {
+  return sameStamp && size >= HASH_ALWAYS_BELOW;
+}

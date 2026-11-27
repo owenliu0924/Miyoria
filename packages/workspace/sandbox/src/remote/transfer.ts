@@ -20,7 +20,7 @@ import { newId, type SandboxJob } from "@miyoria/types";
 import { MAX_PATH_DEPTH, normalizeRelativePath, safeJoin } from "../paths.js";
 import { PEOPLE_DIR, type WorkspaceScope } from "../people.js";
 import { roomLeft } from "../sandbox.js";
-import { extractTar, type PackedEntry, TarError } from "../tar-io.js";
+import { extractTar, type PackedEntry, stampTrusted, TarError } from "../tar-io.js";
 import { SandboxError } from "../types.js";
 import type { PersistentWorkspace, Removed, WorkspaceLimits } from "../workspace-store.js";
 import type { CountedWorkspace } from "../workspace-totals.js";
@@ -154,7 +154,8 @@ export async function scanTree(
       const mtime = wholeSeconds(stat.mtimeMs);
       const before = known.get(path);
       const sha256 =
-        before !== undefined && before.size === stat.size && before.mtime_ms === mtime
+        before !== undefined &&
+        stampTrusted(stat.size, before.size === stat.size && before.mtime_ms === mtime)
           ? before.sha256
           : await hashFile(child).catch(() => null);
       if (sha256 === null) continue;
@@ -281,7 +282,8 @@ async function coreChanged(full: string, before: PackedEntry | undefined): Promi
   const stat = await lstat(full).catch(() => null);
   if (stat === null || !stat.isFile()) return false;
   if (before === undefined) return true;
-  if (stat.size === before.size && wholeSeconds(stat.mtimeMs) === before.mtime_ms) return false;
+  const same = stat.size === before.size && wholeSeconds(stat.mtimeMs) === before.mtime_ms;
+  if (stampTrusted(stat.size, same)) return false;
   return (await hashFile(full).catch(() => "")) !== before.sha256;
 }
 

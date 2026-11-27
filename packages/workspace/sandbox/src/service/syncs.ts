@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import type { ManifestEntry, SyncResult, SyncStart } from "@miyoria/contracts/workers";
 import { normalizeRelativePath, pathKey } from "../paths.js";
-import { packTree, TarError } from "../tar-io.js";
+import { packTree, stampTrusted, TarError } from "../tar-io.js";
 import type { Job } from "./jobs.js";
 import { whileQuiet } from "./quiet.js";
 import { MIB, requestHash, ServiceError } from "./util.js";
@@ -98,7 +98,8 @@ async function walk(root: string, base: ReadonlyMap<string, ManifestEntry>): Pro
       const mtime = wholeSeconds(info.mtimeMs);
       const known = base.get(normalized);
       let sha =
-        known !== undefined && known.size === info.size && wholeSeconds(known.mtime_ms) === mtime
+        known !== undefined &&
+        stampTrusted(info.size, known.size === info.size && wholeSeconds(known.mtime_ms) === mtime)
           ? known.sha256
           : null;
       sha ??= await hashFile(full);
