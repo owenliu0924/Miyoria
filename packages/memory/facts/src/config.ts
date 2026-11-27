@@ -25,6 +25,17 @@ export const FactsConfigSchema = z.object({
    * `transcript_idle_days` goes whole. The entries after the summary in use are never swept.
    */
   transcript_sweep_hours: z.number().nonnegative().default(24),
+  /**
+   * The local hour from which the night's copy of the database is made (`VACUUM INTO`, in a
+   * worker thread, off the hot path); -1: never.
+   */
+  backup_hour: z.number().int().min(-1).max(23).default(4),
+  /** Where the copies go; empty: `backups/auto` beside the database. Relative: to its folder. */
+  backup_dir: z.string().default(""),
+  /** The newest copies kept; each is about the size of the database's used pages. */
+  backup_keep: z.number().int().positive().default(3),
+  /** No copy is written when the disk would be left with less free than this (MB). */
+  backup_min_free_mb: z.number().nonnegative().default(2_048),
   /** Entries a summary covers are kept this long (the raw lines stay in the event log). */
   transcript_covered_days: z.number().positive().default(30),
   /** A session's whole transcript is deleted after this many days without a line. */

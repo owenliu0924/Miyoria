@@ -9,8 +9,10 @@
 // are (`record.ts`).
 //
 // The store's daily upkeep runs here too, beside the event log's compaction: the artifact store's
-// sweep (expired artifacts, their shares, blobs nothing uses), once every `artifact_sweep_hours`.
+// sweep (expired artifacts, their shares, blobs nothing uses), once every `artifact_sweep_hours`,
+// and the night's copy of the database (the store's `backup.ts`) from `backup_hour` on.
 
+import { dirname, resolve } from "node:path";
 import {
   defineManifest,
   errorMessage,
@@ -24,6 +26,8 @@ import {
 } from "@miyoria/runtime/kernel";
 import {
   ArtifactSweepSchedule,
+  BackupSchedule,
+  type DatabaseBackups,
   type EventCompaction,
   type EventLogStore,
   type Store,
@@ -86,6 +90,7 @@ export class FactsModule implements Module {
   readonly #events: EventLogStore | null;
   readonly #chat: ChatRecordStore | null;
   readonly #artifacts: Sweepable | null;
+  readonly #backups: DatabaseBackups | null;
   readonly #plugin: Store["plugin"] | null;
   readonly #profile: ProfileId;
   readonly #names: readonly string[];
@@ -99,7 +104,11 @@ export class FactsModule implements Module {
   constructor(
     store:
       | (Pick<Store, "events"> &
-          ChatRecordStore & { artifacts?: Sweepable | null; plugin?: Store["plugin"] })
+          ChatRecordStore & {
+            artifacts?: Sweepable | null;
+            backups?: DatabaseBackups | null;
+            plugin?: Store["plugin"];
+          })
       | null,
     profile: ProfileId,
     options: FactsModuleOptions = {},
@@ -108,6 +117,7 @@ export class FactsModule implements Module {
     this.#plugin = store?.plugin?.bind(store) ?? null;
     this.#chat = store?.chat || store?.messages ? store : null;
     this.#artifacts = store?.artifacts ?? null;
+    this.#backups = store?.backups ?? null;
     this.#profile = profile;
     this.#names = options.names ?? [];
   }
@@ -209,6 +219,24 @@ export class FactsModule implements Module {
         }
       });
     }
+    const backups = this.#backups;
+    if (backups && config.backup_hour >= 0) {
+      const dir =
+        config.backup_dir.trim() === ""
+          ? backups.defaultDir
+          : resolve(dirname(backups.path), config.backup_dir.trim());
+      const schedule = new BackupSchedule(backups, ctx.clock, {
+        hour: config.backup_hour,
+        dir,
+        keep: config.backup_keep,
+        minFreeBytes: config.backup_min_free_mb * 1024 * 1024,
+      });
+      ctx.spawn("backup", async (signal) => {
+        for await (const _ of interval(schedule.checkMs, signal)) {
+          await this.#backUp(ctx, schedule, signal);
+        }
+      });
+    }
     const transcripts = config.transcript_sweep_hours > 0 ? this.#transcripts(ctx) : null;
     if (transcripts) {
       const schedule = new TranscriptSweepSchedule(transcripts, ctx.clock, {
@@ -276,6 +304,34 @@ export class FactsModule implements Module {
     } catch (error) {
       if (signal.aborted) return;
       ctx.log.warn({ err: errorMessage(error) }, "cannot sweep the artifact store");
+    }
+  }
+
+  /** One check of the night's backup; a run that fails or is skipped waits for the next night. */
+  async #backUp(ctx: ModuleContext, schedule: BackupSchedule, signal: AbortSignal): Promise<void> {
+    try {
+      const result = await schedule.tick();
+      if (result === null) return;
+      const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
+      const sizes = { expected_mb: mb(result.expected_bytes), free_mb: mb(result.free_bytes) };
+      if (result.status === "written") {
+        ctx.log.info(
+          {
+            file: result.file,
+            mb: mb(result.bytes),
+            ...sizes,
+            removed: result.removed.length,
+            vacuumed_pages: result.vacuumed_pages,
+            ms: result.ms,
+          },
+          "backed up the database",
+        );
+      } else if (result.reason === "low_disk") {
+        ctx.log.warn(sizes, "no database backup tonight: the disk would be left too full");
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      ctx.log.warn({ err: errorMessage(error) }, "cannot back up the database");
     }
   }
 
