@@ -276,9 +276,13 @@ export class Driver {
 
   async start() {
     const proxy = process.env.HTTPS_PROXY || process.env.HTTP_PROXY || "";
+    // The job's own loopback is the job itself (a page or server a program here just made), so it
+    // does not go through the proxy, which refuses loopback as it must for everything else.
+    // Playwright sends loopback through a proxy unless told otherwise.
+    process.env.PLAYWRIGHT_DISABLE_FORCED_CHROMIUM_PROXIED_LOOPBACK = "1";
     this.#browser = await this.#playwright.chromium.launch({
       headless: true,
-      ...(proxy ? { proxy: { server: proxy } } : {}),
+      ...(proxy ? { proxy: { server: proxy, bypass: "localhost,127.0.0.1,[::1]" } } : {}),
       args: [
         "--disable-background-networking",
         "--disable-component-update",
