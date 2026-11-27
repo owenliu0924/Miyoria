@@ -28,7 +28,6 @@ import { Semaphore } from "../semaphore.js";
 import {
   FRESH,
   type KilledReason,
-  type Language,
   type RunFor,
   type RunLanguage,
   type RunRequest,
@@ -253,8 +252,17 @@ export class RemoteSandbox implements Sandbox {
     };
   }
 
-  /** The workspace a scope key reaches, or `null` when the workspace is off. */
-  #callWorkspace(scope: string): CallWorkspace | null {
+  /** Whether the owner of computer `host` said it takes members' work (`[sandbox] members`). */
+  #takesMembers(host: string): boolean {
+    return this.#client.machines().some((m) => m.host === host && m.info?.policy.members === true);
+  }
+
+  /**
+   * The workspace a scope key reaches on computer `host`, or `null` when the workspace is off.
+   * The owner's whole workspace holds the people's folders: those only go to a computer whose
+   * owner takes members' work; elsewhere the owner's run gets the workspace without them.
+   */
+  #callWorkspace(scope: string, host: string): CallWorkspace | null {
     const root = this.workspace;
     if (root === null) return null;
     if (scope.startsWith("person:")) {
@@ -268,7 +276,7 @@ export class RemoteSandbox implements Sandbox {
     }
     return {
       root,
-      scope: scope === "all" ? { kind: "all" } : { kind: "own" },
+      scope: scope === "all" && this.#takesMembers(host) ? { kind: "all" } : { kind: "own" },
       folder: null,
       limits: root.limits,
     };
@@ -392,27 +400,23 @@ export class RemoteSandbox implements Sandbox {
 
   /** Publishes `sandbox.run.finished` (no code, no output). */
   #done(result: RunResult): RunResult {
-    // `shell` is not in the event's language list yet; those runs are not announced.
-    if (result.language !== "shell") {
-      this.#publish(Events.SandboxRunFinished, {
-        run_id: result.run_id,
-        language: result.language as Language,
-        exit_code: result.exit_code,
-        duration_ms: result.duration_ms,
-        killed_reason: result.killed_reason,
-        files_out: result.files_out.length,
-        session: result.session?.name ?? null,
-        host: result.host ?? null,
-        ...(result.cpu_ms === undefined ? {} : { cpu_ms: result.cpu_ms }),
-      });
-    }
+    this.#publish(Events.SandboxRunFinished, {
+      run_id: result.run_id,
+      language: result.language,
+      exit_code: result.exit_code,
+      duration_ms: result.duration_ms,
+      killed_reason: result.killed_reason,
+      files_out: result.files_out.length,
+      session: result.session?.name ?? null,
+      host: result.host ?? null,
+      ...(result.cpu_ms === undefined ? {} : { cpu_ms: result.cpu_ms }),
+    });
     return result;
   }
 
   async #runFresh(r: Validated, payer: WorkPayer | null, signal: AbortSignal): Promise<RunResult> {
     const forWho = whom(r);
     this.#available(forWho);
-    const ws = r.mount_workspace ? this.#callWorkspace(scopeOf(r)) : null;
     const job = await this.#client.open(
       {
         kind: "run",
@@ -423,8 +427,9 @@ export class RemoteSandbox implements Sandbox {
         mounts: { tools: r.mount_tools === true },
         limits: { disk_mb: this.#config.sessions.disk_mb },
       },
-      { signal, folder: ws === null ? null : scopeOf(r) },
+      { signal, folder: r.mount_workspace && this.workspace !== null ? scopeOf(r) : null },
     );
+    const ws = r.mount_workspace ? this.#callWorkspace(scopeOf(r), job.host) : null;
     try {
       if (r.mount_tools) await job.upload("tools", { dir: await this.tools.ensure() }, { signal });
       let manifest: Manifest = [];
@@ -563,7 +568,6 @@ export class RemoteSandbox implements Sandbox {
     signal: AbortSignal,
   ): Promise<RunResult> {
     if (session.closed !== null) throw new SessionClosedError(session.name, session.closed);
-    const ws = this.#callWorkspace(session.scope);
     let created = false;
     let job = session.job;
     if (job === null) {
@@ -579,7 +583,7 @@ export class RemoteSandbox implements Sandbox {
             label: session.name,
             network: networkOf(r.network, this.#config),
           },
-          { signal, folder: ws === null ? null : session.scope, name: session.name },
+          { signal, folder: this.workspace === null ? null : session.scope, name: session.name },
         );
       } catch (error) {
         // Never opened: the name is free again, nobody needs to be told.
@@ -590,15 +594,13 @@ export class RemoteSandbox implements Sandbox {
       this.#watch(session, job);
       created = true;
       log.info({ session: session.name, host: job.host }, "sandbox session started");
-      // `shell` is not in the event's language list yet; those sessions are not announced.
-      if (session.language !== "shell") {
-        this.#publish(Events.SandboxSessionStarted, {
-          name: session.name,
-          language: session.language,
-          host: job.host,
-        });
-      }
+      this.#publish(Events.SandboxSessionStarted, {
+        name: session.name,
+        language: session.language,
+        host: job.host,
+      });
     }
+    const ws = this.#callWorkspace(session.scope, job.host);
     try {
       if (ws !== null) {
         session.manifest =

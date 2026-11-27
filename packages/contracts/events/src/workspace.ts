@@ -28,7 +28,7 @@ export const ImageJobSchema = z
 export type ImageJobData = z.output<typeof ImageJobSchema>;
 
 export const SandboxLanguageSchema = z
-  .enum(["python", "node"])
+  .enum(["python", "node", "shell"])
   .meta({ id: "EventsSandboxLanguage" });
 
 /** A tool she proposed, or one the owner reviewed: `sandbox.tool.proposed`, `sandbox.tool.reviewed`. */
