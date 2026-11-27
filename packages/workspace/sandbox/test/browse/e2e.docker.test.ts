@@ -173,7 +173,13 @@ describe.skipIf(!enabled)(
       );
 
       await run("browse_act", { action: "back" });
-      const saved = await run("browse_act", { action: "click", ref: file });
+      // A ref of the page before is refused at once, with a way forward.
+      const stale = await run("browse_act", { action: "click", ref: file });
+      expect(stale.text, JSON.stringify(stale)).toContain("browse_read");
+      const again = await run("browse_read", { mode: "outline" });
+      const fresh = /\[(e\d+)\] (?:連結 )?下載報告/.exec(again.text)?.[1];
+      expect(fresh, again.text).toBeTruthy();
+      const saved = await run("browse_act", { action: "click", ref: fresh });
       expect(saved.text, JSON.stringify(saved)).toContain("downloads/report.txt");
       expect((await workspace.read("downloads/report.txt")).text).toBe("downloaded bytes\n");
     }, 300_000);

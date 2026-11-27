@@ -421,6 +421,11 @@ export class Driver {
     const downloadsBefore = this.#downloads.length;
     let note = null;
     try {
+      // A ref from an outline of an earlier page names nothing here; say so at once rather than
+      // wait out the step for an element that will not come.
+      if (params.ref !== undefined && (await this.#locator(page, params).count()) === 0) {
+        throw new Error(`ref ${params.ref} 已經不在這一頁上(頁面換過了),用 browse_read(mode 填 outline)重新看一次大綱`);
+      }
       switch (action) {
         case "click":
           await this.#locator(page, params).click();
