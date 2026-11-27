@@ -1,21 +1,35 @@
-import { serviceKey } from "@miyoria/types";
+import { serviceKey, type WorkPayer } from "@miyoria/types";
 import { z } from "zod";
 import type { Removed, WorkspaceApi } from "./workspace-store.js";
 
-/** Languages the sandbox runs. */
+/** Languages of a program file: the local Docker backend has one image for each. */
 export const LANGUAGES = ["python", "node"] as const;
 export type Language = (typeof LANGUAGES)[number];
 export const LanguageSchema = z.enum(LANGUAGES);
 
 /**
- * Network policy of a run: `"none"` (`--network none`: no interfaces but loopback) or an
- * allowlist, which only works when the owner listed hosts in `[modules.sandbox.network]`
- * (otherwise `run` refuses it with `network_unsupported`) and goes through the egress proxy
- * (see `egress.ts`).
+ * What a run can be written in: a program file, or a bash script (`shell`), which only the
+ * computers of the cluster backend run (a whole Linux machine per job). `code_run` still offers
+ * the model only `python` and `node`; `shell_run` is the way to a shell.
  */
-export type NetworkPolicy = "none" | { allow: string[] };
+export const RUN_LANGUAGES = ["python", "node", "shell"] as const;
+export type RunLanguage = (typeof RUN_LANGUAGES)[number];
+export const RunLanguageSchema = z.enum(RUN_LANGUAGES);
+
+/** Whom a run is for (`SandboxFor` of `@miyoria/types`): decides which computers take it. */
+export type RunFor = "self" | "owner" | "member";
+
+/**
+ * Network policy of a run: `"none"` (`--network none`: no interfaces but loopback), `"open"`
+ * (what `[modules.sandbox.network]` gives a run: on the cluster backend its `mode`; on the local
+ * backend the configured allowlist, or none when there is none) or an allowlist, which only works
+ * when the owner listed hosts in `[modules.sandbox.network]` (otherwise `run` refuses it with
+ * `network_unsupported`) and goes through the egress proxy (see `egress.ts`).
+ */
+export type NetworkPolicy = "none" | "open" | { allow: string[] };
 export const NetworkPolicySchema = z.union([
   z.literal("none"),
+  z.literal("open"),
   z.object({ allow: z.array(z.string().min(1).max(253)).max(32) }),
 ]);
 
@@ -46,7 +60,8 @@ export const FileInSchema = z.object({
 
 /** What `Sandbox.run` takes (an in-process option bag; validated with `RunRequestSchema`). */
 export interface RunRequest {
-  language: Language;
+  /** `shell` only on the cluster backend (the local one refuses it). */
+  language: RunLanguage;
   /** The program: `/code/main.py` or `/code/main.mjs`, mounted read-only. */
   code: string;
   files?: FileIn[];
@@ -77,10 +92,17 @@ export interface RunRequest {
    * Sessions never mount `/tools`.
    */
   session?: string;
+  /**
+   * Whom the run is for (default `self`): a computer of the cluster takes a member's run only
+   * when its owner allowed that. The local backend does not look at it.
+   */
+  for?: RunFor;
+  /** Who pays its CPU seconds (`WorkQuota`); `null` or absent: nobody. The local backend does not look at it. */
+  payer?: WorkPayer | null;
 }
 
 export const RunRequestSchema = z.object({
-  language: LanguageSchema,
+  language: RunLanguageSchema,
   code: z.string(),
   files: z.array(FileInSchema).optional(),
   stdin: z.string().optional(),
@@ -93,6 +115,11 @@ export const RunRequestSchema = z.object({
     .regex(/^[a-z0-9_][a-z0-9_-]{0,64}$/)
     .optional(),
   session: SessionChoiceSchema.optional(),
+  for: z.enum(["self", "owner", "member"]).optional(),
+  payer: z
+    .object({ person: z.string().min(1), exempt: z.boolean().optional() })
+    .nullable()
+    .optional(),
 });
 
 /** Why the sandbox (not the program) ended a run. */
@@ -104,7 +131,13 @@ export type KilledReason =
   /** stdout + stderr passed `caps.kill_output_bytes`. */
   | "output_limit"
   /** Exit 137 without the sandbox killing it: almost always the memory limit (OOM killer). */
-  | "memory";
+  | "memory"
+  /** The person it ran for used up their CPU seconds for now (cluster backend). */
+  | "quota"
+  /** The job's folders grew over its disk limit (cluster backend). */
+  | "disk"
+  /** The computer it ran on went away, or the result never came (cluster backend). */
+  | "lost";
 
 /** A file the program left in `/work` (new, or changed from the input). */
 export interface FileOut {
@@ -142,7 +175,7 @@ export interface SessionRun {
 /** A live session (`listSessions`). */
 export interface SessionInfo {
   name: string;
-  language: Language;
+  language: RunLanguage;
   /** Epoch ms. */
   created_at: number;
   last_used_at: number;
@@ -158,7 +191,7 @@ export interface SessionInfo {
 /** Result of one run (JSON shape: snake_case, every key present). */
 export interface RunResult {
   run_id: string;
-  language: Language;
+  language: RunLanguage;
   /** Exit code of the program; `null` when it never ran to an exit (e.g. aborted early). */
   exit_code: number | null;
   stdout: string;
@@ -178,6 +211,15 @@ export interface RunResult {
    * program broke a rule (a link) or a quota. Empty when everything stayed.
    */
   workspace_removed?: Removed[];
+  /** The computer of the cluster it ran on; absent on the local backend. */
+  host?: string;
+  /** CPU the run used, milliseconds (cluster backend). */
+  cpu_ms?: number;
+  /**
+   * Files both sides changed during the run (cluster backend): the program's version is in
+   * place, hers was kept as the listed `<name>.conflict-<time>`.
+   */
+  workspace_conflicts?: string[];
 }
 
 /** Whether Docker can be used. */
@@ -223,7 +265,13 @@ export type SandboxErrorKind =
   /** Too many scripts / proposed tools / sessions. */
   | "limit"
   /** The named session closed on its own (idle, lifetime, lost); the next run starts it anew. */
-  | "session_closed";
+  | "session_closed"
+  /** No computer of the cluster takes this kind of run (their owners did not allow it). */
+  | "not_accepting"
+  /** A folder is over what one transfer to a computer of the cluster takes. */
+  | "too_large"
+  /** The person it is for used up their CPU seconds for now. */
+  | "quota";
 
 /** Why a sandbox operation was refused. */
 export class SandboxError extends Error {
@@ -280,6 +328,23 @@ export interface Sandbox {
   readonly workspace: WorkspaceApi | null;
   /** Hosts a run may reach with `network: { allow }` (empty = the network is closed). */
   readonly networkAllow: readonly string[];
+  /**
+   * What the backend in use now offers (`RemoteSandbox`, `AutoSandbox`); absent: the local
+   * Docker backend's (no shell, the network of `networkAllow`).
+   */
+  readonly features?: SandboxFeatures;
+}
+
+/** What a backend offers; the gate words its tools after it. */
+export interface SandboxFeatures {
+  /** `local`: Docker on Core's machine; `cluster`: the `sandbox` service of the cluster. */
+  where: "local" | "cluster";
+  /** `shell_run` and `language: "shell"`. */
+  shell: boolean;
+  /** What a run with `network: "open"` gets. */
+  network: "none" | "allowlist" | "open";
+  /** A session keeps the caller's workspace at `/workspace` (sent in and back each run). */
+  sessionWorkspace: boolean;
 }
 
 /** Scripts she keeps between runs (mounted read-only at `/tools` on request). */

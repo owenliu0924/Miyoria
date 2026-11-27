@@ -2,7 +2,26 @@
 
 模組 `sandbox`:讓 DeepSeek-chan 在**不能連外的 Docker 容器**裡執行她自己寫的程式(Python / Node):預設每次一個用完即丟的新容器,要分好幾步做的事可以開一個有名字的**工作階段**(session,`/work` 會留給同名的下一次執行)。另外保存她寫的腳本(工具工作區),以及管理她提出的自寫工具(`tool.propose`)。設計見 [`docs/design/autonomy.md`](../../../docs/design/autonomy.md) §7、§8.3(階段 F)。
 
-> 這個模組是 **opt-in**:`[modules.sandbox]` 要寫 `enabled = true` 才會啟動(沒有這一節 = 關閉)。啟動後只要 Docker 可用,就在自主層的閘門(`ActuatorRegistryKey`)註冊 `code.run`、`code.session`、`tool.propose` 與她已核准的工具,反應回合(和之後她自己的回合)都能用,見「閘門與工具」。
+> 這個模組是 **opt-in**:`[modules.sandbox]` 要寫 `enabled = true` 才會啟動(沒有這一節 = 關閉)。啟動後只要沙箱可用,就在自主層的閘門(`ActuatorRegistryKey`)註冊 `code.run`、`code.session`、`tool.propose` 與她已核准的工具(叢集後端另有 `shell.run`),反應回合(和之後她自己的回合)都能用,見「閘門與工具」。
+
+## 兩種後端(`[modules.sandbox] backend`)
+
+設計見 [`docs/design/v6-sandbox.md`](../../../docs/design/v6-sandbox.md) §9。`SandboxGate`、`ProposedTools`、`SandboxFileReader`、`workspace_run` 只看 `Sandbox` 介面,不知道程式在哪裡跑。
+
+| 值 | 程式在哪跑 |
+|---|---|
+| `auto`(預設) | 叢集裡有一台 `sandbox` 服務準備好了就送過去,沒有就用這台的 Docker(和以前一樣)。工作階段留在開它的那一邊。叢集的電腦不接(不接成員、滿了、沒準備好)而這台的 Docker 可用時,fresh 的 Python / Node 改在這台跑 |
+| `cluster` | 只用叢集的電腦(`src/remote/`) |
+| `local` | 只用這台的 Docker(`DockerSandbox`,下面「一次執行的流程」以下講的都是它),沒有 shell |
+
+**叢集後端**(`src/remote/`):
+
+- `HttpSandboxClient`(`client.ts`,也以 `SandboxClientKey` 提供給瀏覽器和插件):照 `EndpointRegistry.candidates("sandbox")` 的順序,每台的 `GET /v1/info` 存一分鐘;只問準備好了、映像檔在、主人接這種工作(`policy.members` / `plugins`)的那幾台。每台先 `reserve` 再 `PUT /v1/jobs/{id}`;`busy`、`not_accepting`、`unavailable`、沒送出去就換下一台。工作開了就留在那台。
+- 每台只開**一條**事件長輪詢(`GET /v1/events`):中繼每台只有 16 條串流。中繼滿了而被拒的請求(還沒送出去)會等一下再送,不當成那台壞了。每分鐘續租一次。
+- 付錢的人以 Core 自己的密鑰做 HMAC 之後才送出去(`payerId`),那台認不出是誰。CPU 秒數從事件的 cgroup 累計值算差額,記到 `WorkQuota`(`WorkQuotaKey`,沒有就不記也不擋);開始前已經到上限的不開工作,回固定的一句;跑到一半超過的停掉(`killed_reason: "quota"`)。
+- 檔案(`transfer.ts`):第一次整個資料夾打成 tar.gz、分段(`[modules.sandbox.transfer] part_mb`)送進去;工作階段之後每次 exec 前只送 Core 這邊改過的(和刪掉的),exec 後收回程式改的。收回來的東西一律不信:用 `tar-io` 解到工作區旁邊的暫存資料夾(只收一般檔案和資料夾、每個路徑過 `normalizeRelativePath`、有深度和那個資料夾的位元組 / 檔案數上限),再一個一個搬進去,目的地的每一段都 `lstat`(不穿過連結、不出那個資料夾;她自己的呼叫碰不到 `people/`);要刪的路徑同樣檢查。之後照舊 `enforce`、`replaceFolder`。兩邊都改了同一個檔:留程式的版本,她的改名成 `<檔名>.conflict-<時間>`,結果裡寫出來。
+- 開著的工作記在 `sandbox_jobs`(`sandbox` store 外掛,`jobs-store.ts`):Core 重啟後,還在那台開著的工作階段接回來;不在的標成 `lost`,她下次用那個名字時被告知一次;其他留下的工作(run、瀏覽器、插件)直接關掉。
+- 沒有電腦能用時,工具照舊撤掉,原因在模組健康和 `/admin autonomy status`(每台一行)。有電腦但不接成員的工作時工具不撤,成員要的時候回一句能轉告的話。
 
 ## 服務
 
@@ -173,7 +192,8 @@ Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 ap
 
 | 能力 | 工具 | 風險 | 權限節點(`user` 要有;她可以 `on_own`) | 內容 |
 |---|---|---|---|---|
-| `code.run` | `code_run` | 高 | `sandbox.code.run`(trusted 以上,或羈絆到 `work_min_bond`) | 跑一段 Python / Node。參數 `language`、`code`、`stdin`、`files`、`timeout_ms`、`session`(`"fresh"` 預設 / 工作階段名稱)、`use_workspace`、`use_network`(只有設定了主機時才出現,只能連那些主機);模型給不了別的網路 |
+| `code.run` | `code_run` | 中(`work`、`followup`) | `sandbox.code.run`(trusted 以上,或羈絆到 `work_min_bond`) | 跑一段 Python / Node。參數 `language`、`code`、`stdin`、`files`、`timeout_ms`、`session`(`"fresh"` 預設 / 工作階段名稱)、`use_workspace`、`use_network`(本地後端、設定了主機時才出現,只能連那些主機;叢集後端照 `[modules.sandbox.network] mode`);模型給不了別的網路 |
+| `shell.run` | `shell_run` | 中(`work`、`followup`) | `sandbox.code.run` | 叢集後端才有:一段 bash,在那個人的工作階段(預設 `main`)裡,工作目錄 `/workspace` |
 | `code.session` | `code_session` | 低 | `sandbox.code.run` | `action: "list"` 列出開著的工作階段(名稱、語言、次數、佔用空間、多久後關掉);`action: "close", name` 關掉一個並刪掉檔案。替別人時只有那個人的工作階段 |
 | `workspace.list` / `.read` / `.export` | `workspace_list` / `_read` / `_export` | 低 | `sandbox.workspace`(羈絆到 `work_min_bond`) | 見「工作區」 |
 | `workspace.write` / `.delete` | `workspace_write` / `_delete` | 中 | `sandbox.workspace` | 見「工作區」;次數上限用 `[modules.actions.work]` |
@@ -181,9 +201,10 @@ Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 ap
 | `tool.propose` | `tool_propose` | 高 | `sandbox.tool.propose`(預設只有擁有者) | 提出自寫工具;閘門放行 = **核准這個版本** |
 | `sbx.<name>` | `sbx_<name>` | 中 | `tools.sandbox.<name>`(trusted 以上透過 `tools.*`) | 已核准的自寫工具;參數在閘門依 `args_schema` 驗證,`ProposedTools.invoke` 再驗一次並比對 sha256,在沙箱裡跑(逾時 `tool_timeout_ms`) |
 
+- **跑程式不審查**(v6-sandbox §10.1):`code.run`、`shell.run` 是中風險,只照 `[modules.actions.work]` 的次數;擋傷害的是沙箱本身、出口代理和每人的 CPU 秒數。之後沒人看著就會跑的(`workspace.save_script`、`tool.propose`)照舊是高風險、要審查。
 - **審核**(§8.1):高風險 → 她自己的 `review` 呼叫,看結構化請求(含完整程式碼)與能力的 `guidance`(什麼可以放行、什麼要拒絕),不看聊天原文;`uncertain` 才私訊擁有者確認卡,卡片附上程式碼檔(`main.py` / `<name>.py`)、sha256 與參數 schema,`code.run` 的卡片也寫出是用完即丟還是哪個工作階段。
 - **選哪一種**(寫在 `code_run` 的工具說明裡,由她決定):一次就算完的事(算個數字、轉個格式)用 `"fresh"`;要分好幾步的事(先存資料、再分析、再整理)取一個名字開工作階段,做完用 `code_session` 關掉。工作階段已經不在(過期、容器不見了)或開滿時,`code_run` 回一段說明(原因、檔案已經沒了、怎麼辦)而不是錯誤,程式沒有執行;結果文字的開頭會寫「在工作階段「x」」與「這次新開的」/「被關掉了」。`code.session` 是低風險:只動她自己的工作階段,不跑程式,不審核也不受次數限制(仍要權限節點)。
-- **結果怎麼回來**:`code_run` / `tool_propose` 是 `followup` 工具:審核加執行在 `[modules.actions] inline_wait_ms`(預設 8 秒)內完成就直接回結果;否則先回「還沒有結果」,完成後用後續回合(`agent_initiative`,reason `action_result`)告訴她結果或拒絕原因。結果文字由 `formatRun` 產生:exit code、時間、被殺原因、stdout / stderr(stderr 最多佔三分之一)、輸出檔名與大小,全部在不可信資料區塊裡,總長約 `result_chars`。`ActionResult.data` 只有 `summarizeRun` 的位元組數與狀態,不含輸出。
+- **結果怎麼回來**:`code_run`、`shell_run`(中風險)和 `tool_propose`(高風險)是 `followup` 工具:(審核加)執行在 `[modules.actions] inline_wait_ms`(預設 8 秒)內完成就直接回結果;否則先回「還沒有結果」,完成後用後續回合(`agent_initiative`,reason `action_result`)告訴她結果或拒絕原因。結果文字由 `formatRun` 產生:exit code、時間、被殺原因、stdout / stderr(stderr 最多佔三分之一)、輸出檔名與大小,全部在不可信資料區塊裡,總長約 `result_chars`。`ActionResult.data` 只有 `summarizeRun` 的位元組數與狀態,不含輸出。
 - **自寫工具的生命週期**:`tool.propose` 被放行 → `propose` + `approve(name, { reviewer, version })`,`reviewer` 是 `self`(她的審核)或回覆確認卡的擁有者帳號;被她的審核或擁有者拒絕 → 存成 `rejected`(附理由);沒有人決定(擁有者沒回、聯絡不到、審核失敗)→ 存成 `pending`,擁有者之後可以從 API 核准。已經核准的工具,新版本被拒絕時**保留舊版**(不會因為一次失敗的提案讓她失去工具)。同名再提出且被放行 → 版本 +1。`sandbox.tool.*` 事件一來就重新同步 `sbx_<name>` 的註冊。
 - **中風險的理由**:程式碼在核准時已經審過(綁定版本與 sha256),每次呼叫只差參數(已驗證 schema)而且仍在離線沙箱裡;再對每次呼叫做審核既貴又慢,等於讓核准沒有意義。剩下的風險是資源用量,交給次數限制(預設中風險上限:每天 30 次、每人 8 次、冷卻 20 秒;`[modules.actions.limits."sbx.<name>"]` 可調,`forbidden = ["sbx.*"]` 可全部關掉)。
 - **做事的次數上限**:`code.run`、`workspace.write / delete / save_script / run`、`skill.write / delete` 是做事的能力(`Capability.work`),用 `[modules.actions.work]` 而不是中風險那組:沒有冷卻、每人每小時 300 次、每人每天 3000 次、所有人每天 20 000 次。一件事要寫好幾個檔案、跑好幾次程式是正常的;每個人的 AI 額度和資料夾額度擋其他的。
@@ -202,7 +223,8 @@ Docker 可用時(啟動時檢查,之後每 `recheck_ms` 再檢查),module 在 ap
 ## 測試
 
 - `pnpm --filter @miyoria/workspace test`:單元測試用注入的假 `DockerRunner`,不需要 Docker。
-- `test/gate.test.ts`:閘門路徑(審核 allow / deny / uncertain → 擁有者)、`network` 永遠是 `none`、輸出的不可信框與截斷、後續回合、自寫工具的核准 → 註冊 → 呼叫。
+- `test/remote/`:叢集後端對測試程序裡的假服務(`fake-service.ts`,經假的 `EndpointSource`):挑台和換台、不接成員時的那一句、付錢的人不送出去、額度在開始前和跑到一半擋下、資料夾送進送出、惡意的那台送回 `..`、連結、絕對路徑、別人的資料夾時都擋下、超過額度的被 `enforce` 刪掉、太大的資料夾回那一句、工作階段只送改的和刪的、兩邊都改的留下她的、那台關掉的工作階段說一次、重啟後接回;`sandbox_jobs`;模組沒有電腦時撤掉工具、有了就開放。`docker.e2e.test.ts` 對真的服務和 Docker(要 P2 的服務、建好的映像檔和 `MIYORIA_SANDBOX_IMAGE_TESTS=1`,否則跳過)。
+- `test/gate.test.ts`:閘門路徑(不審查、沒有節點不跑、太久的結果用後續告訴她)、本地後端的 `network` 永遠是 `none`、叢集後端的 `shell_run` 和她看到的原因、輸出的不可信框與截斷、後續回合、自寫工具的核准 → 註冊 → 呼叫。
 - `test/sessions.test.ts`:工作階段(同名重用、檔案只回這次改的、閒置 / 存活上限與「只說一次」、數量上限、磁碟上限、逾時只殺程式、容器不見了、一次一個、關掉時中止、輸入檔不能寫穿之前留下的路徑、停止與啟動時清理)與暖池(每個容器只跑一個程式、逾時以名稱 kill、容器死了改走 fresh、`mount_tools` 不用暖池、壞的請求也會丟掉拿走的容器、沒有 Docker / 沒有 `warm()` 時不開)。
 - `test/docker.integration.test.ts` 會真的跑容器(也有一個經過閘門的 `code_run` 與 `sbx_<name>` 案例,以及工作階段的重用 / 過期 / 上限、暖池的一次性與延遲量測);偵測不到 Docker daemon(或設 `MIYORIA_SKIP_DOCKER_TESTS=1`)時自動跳過。第一次會下載映像檔(在作者的機器上 `python:3.12-slim` 約 9 秒、`node:24-slim` 約 3 秒)。
 - 延遲(2026-11-03,Windows 11 + Docker Desktop 29.8.2 / WSL2,`print(1)`,從呼叫 `run()` 到拿到結果,7 次的中位數):fresh 沒有暖池(預設) **約 395 ms**;fresh 用暖池(測試裡明確設 `pool_size = 1`,容器已準備好)**約 185 ms**;`pool_size = 1` 連續跑時一半命中、一半等不到補上的容器(約 180 / 385 ms 交替);工作階段 **約 420 ms**(`docker exec` + 清除)。Docker CLI 每次呼叫在這台機器上本身就要 150–250 ms。

@@ -192,7 +192,11 @@ interface Launch {
   standby?: boolean;
 }
 
-type Validated = Required<Omit<RunRequest, "network" | "workspace_folder">> & {
+type Validated = Required<
+  Omit<RunRequest, "network" | "workspace_folder" | "language" | "for" | "payer">
+> & {
+  /** This backend has an image per program language and no shell. */
+  language: Language;
   network: "none" | "allow";
   workspace_folder: string | null;
 };
@@ -582,6 +586,16 @@ export class DockerSandbox implements Sandbox {
     const r = parsed.data;
     const caps = this.#config.caps;
     const configured = this.#config.network.allow;
+    const language = r.language;
+    if (language === "shell") {
+      throw new SandboxError(
+        "invalid_request",
+        "this sandbox runs Python and Node programs only (a shell needs a computer of the cluster)",
+      );
+    }
+    // `open` is whatever the owner configured: the allowlist when there is one, else nothing.
+    if (r.network === "open")
+      r.network = configured.length > 0 ? { allow: [...configured] } : "none";
     if (r.network !== undefined && r.network !== "none") {
       if (configured.length === 0) {
         throw new SandboxError(
@@ -635,7 +649,7 @@ export class DockerSandbox implements Sandbox {
       network: wantsNetwork ? "allow" : "none",
       mount_workspace: r.mount_workspace ?? false,
       workspace_folder: r.workspace_folder ?? null,
-      language: r.language,
+      language,
       code: r.code,
       files: r.files ?? [],
       stdin,
@@ -709,7 +723,8 @@ export class DockerSandbox implements Sandbox {
   #done(done: RunResult): RunResult {
     this.#publish(Events.SandboxRunFinished, {
       run_id: done.run_id,
-      language: done.language,
+      // `#validate` refuses `shell` here.
+      language: done.language as Language,
       exit_code: done.exit_code,
       duration_ms: done.duration_ms,
       killed_reason: done.killed_reason,

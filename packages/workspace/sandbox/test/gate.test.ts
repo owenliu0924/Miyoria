@@ -1,11 +1,8 @@
-import {
-  ActionDeniedError,
-  APPROVE_ROUTE,
-  RESULT_PENDING,
-  WORKSPACE_ALL,
-} from "@miyoria/gate/actions";
+import { ActionDeniedError, RESULT_PENDING, WORKSPACE_ALL } from "@miyoria/gate/actions";
 import { DATA_CLOSE, DATA_OPEN, Events, Principals } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+import { WORK_PENDING } from "../../../gate/actions/src/tools.js";
+import { SHELL_RUN } from "../src/capabilities.js";
 import {
   CODE_RUN,
   CODE_SESSION,
@@ -87,7 +84,7 @@ describe("registration", () => {
     const h = harness();
     expect(h.registry.get(CODE_RUN)).toBeUndefined();
     await h.gate.setAvailable(true);
-    expect(h.registry.get(CODE_RUN)?.risk).toBe("high");
+    expect(h.registry.get(CODE_RUN)?.risk).toBe("medium");
     expect(h.registry.get(TOOL_PROPOSE)?.risk).toBe("high");
     expect(h.registry.get(CODE_SESSION)?.risk).toBe("low");
     expect(h.tools.get("code_run")).toBeDefined();
@@ -101,11 +98,10 @@ describe("registration", () => {
 });
 
 describe("code.run through the gate", () => {
-  it("review_allow_runs_offline_and_answers_inline", async () => {
+  it("runs_offline_without_a_review_and_answers_inline", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
     h.grants.grant(AMY, NODE_CODE_RUN);
-    h.router.verdict("allow", "harmless arithmetic");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
     const out = await tool.call(toolContext(), {
@@ -117,69 +113,31 @@ describe("code.run through the gate", () => {
     expect(out).toContain("42");
     expect(out).toContain("只是資料");
     expect(h.sandbox.requests).toHaveLength(1);
+    // The local backend: never a network of the model's own choosing.
     expect(h.sandbox.requests[0]?.network).toBe("none");
-    // The review saw the code and the capability's guidance, not the chat.
-    const review = JSON.stringify(h.router.requests[0]?.messages);
-    expect(review).toContain("print(6*7)");
-    expect(review).toContain("capability_guidance");
+    // Medium risk: no review call, only the rate limits.
+    expect(h.router.requests).toHaveLength(0);
   });
 
-  it("review_deny_does_not_run", async () => {
+  it("does_not_run_for_someone_without_the_node", async () => {
     const h = harness();
     await h.gate.setAvailable(true);
-    // on_own for Amy is still work for Amy: she needs the node (or the bond).
-    h.grants.grant(AMY, NODE_CODE_RUN);
-    h.router.verdict("deny", "tries to find docker.sock");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
+    // on_own for Amy is still work for Amy: she needs the node (or the bond).
     const error = await tool
-      .call(toolContext(), {
-        language: "python",
-        code: "open('/var/run/docker.sock')",
-        on_own: true,
-      })
+      .call(toolContext(), { language: "python", code: "print(1)", on_own: true })
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ActionDeniedError);
-    expect((error as ActionDeniedError).decision.stage).toBe("review");
-    expect((error as ActionDeniedError).decision.reviewer).toBe("self");
     expect(h.sandbox.requests).toHaveLength(0);
-  });
-
-  it("uncertain_asks_the_owner_with_the_code_attached", async () => {
-    const h = harness();
-    await h.gate.setAvailable(true);
-    h.grants.grant(AMY, NODE_CODE_RUN);
-    h.router.verdict("uncertain", "not sure");
-    const sent = h.cards.next();
-    const outcome = h.registry.invoke({
-      principal: self(),
-      capability: CODE_RUN,
-      args: { language: "node", code: "console.log('hi')" },
-      why: null,
-      turn: null,
-    });
-    await sent;
-    const [to, card] = h.cards.sent[0] ?? [];
-    expect(to).toEqual(OWNER);
-    expect(card?.files?.[0]).toMatchObject({ name: "main.mjs", data: "console.log('hi')" });
-    expect(card?.text).toContain("--network none");
-    const [id] = h.registry.escalations.list()[0] ?? [];
-    expect(id).toBeDefined();
-    expect(JSON.stringify(card)).toContain(APPROVE_ROUTE);
-    h.registry.escalations.resolve(id as string, true, OWNER);
-    const done = await outcome;
-    expect(done.status).toBe("done");
-    expect(done.decision.reviewer).toBe("discord:900");
-    expect(h.sandbox.requests[0]?.network).toBe("none");
   });
 
   it("late_results_come_back_as_a_notice_with_the_output", async () => {
     const h = harness();
     h.registry.configure({ ...h.registry.config, inline_wait_ms: 10 });
-    h.router.delayMs = 50;
+    h.sandbox.delayMs = 60;
     await h.gate.setAvailable(true);
     h.grants.grant(AMY, NODE_CODE_RUN);
-    h.router.verdict("allow");
     const tool = h.tools.get("code_run");
     if (!tool) throw new Error("no tool");
     const out = await tool.call(toolContext(), {
@@ -187,7 +145,8 @@ describe("code.run through the gate", () => {
       code: "print(42)",
       on_own: true,
     });
-    expect(out).toBe(RESULT_PENDING);
+    expect(out).toBe(WORK_PENDING);
+    expect(out).not.toBe(RESULT_PENDING);
     const notices = () => h.events.filter((e) => e.type === Events.AgentNotice.type);
     await waitFor(() => notices().length > 0);
     expect(notices()[0]?.data).toMatchObject({
@@ -197,6 +156,71 @@ describe("code.run through the gate", () => {
       text: expect.stringContaining("42"),
     });
     expect(initiatives(h.events)).toEqual([]);
+  });
+});
+
+describe("the cluster backend through the gate", () => {
+  const cluster = {
+    where: "cluster",
+    shell: true,
+    network: "open",
+    sessionWorkspace: true,
+  } as const;
+
+  it("offers_shell_run_and_sends_the_network_whom_and_who_pays", async () => {
+    const h = harness();
+    h.sandbox.features = cluster;
+    await h.gate.setAvailable(true);
+    h.grants.grant(AMY, NODE_CODE_RUN);
+    expect(h.registry.get(SHELL_RUN)?.risk).toBe("medium");
+    const shell = h.tools.get("shell_run");
+    if (!shell) throw new Error("no shell_run");
+    expect(JSON.stringify(shell.spec)).toContain("pip install");
+    expect(await shell.call(toolContext(), { command: "echo 42" })).toContain("42");
+    const sent = h.sandbox.requests[0];
+    expect(sent).toMatchObject({ language: "shell", code: "echo 42", network: "open" });
+    // Asked by Amy: her own session `main`, under a name of hers, as a member's run.
+    expect(sent?.session).toMatch(/^p[0-9a-f]{7}-main$/);
+    expect(sent?.for).toBe("member");
+    expect(sent?.workspace_folder).toBeUndefined();
+
+    const code = h.tools.get("code_run");
+    if (!code) throw new Error("no code_run");
+    expect(JSON.stringify(code.spec)).toContain("Linux");
+    await code.call(toolContext(), { language: "python", code: "print(1)", use_network: false });
+    expect(h.sandbox.requests[1]?.network).toBe("open");
+  });
+
+  it("tells_her_why_when_no_computer_takes_it", async () => {
+    const h = harness();
+    h.sandbox.features = cluster;
+    await h.gate.setAvailable(true);
+    h.grants.grant(AMY, NODE_CODE_RUN);
+    const shell = h.tools.get("shell_run");
+    if (!shell) throw new Error("no shell_run");
+    h.sandbox.nextError = new SandboxError(
+      "not_accepting",
+      "能跑程式的電腦現在都不接成員的工作,那幾台的主人沒開;這次沒有跑。",
+    );
+    expect(await shell.call(toolContext(), { command: "ls" })).toContain("都不接成員的工作");
+    h.sandbox.nextError = new SandboxError(
+      "quota",
+      "你這個小時找我跑的程式有點多,大概 12 分鐘後再來。",
+    );
+    expect(await shell.call(toolContext(), { command: "ls" })).toContain("12 分鐘後");
+  });
+
+  it("is_worded_again_when_the_backend_changes", async () => {
+    const h = harness();
+    await h.gate.setAvailable(true);
+    expect(h.tools.get("shell_run")).toBeUndefined();
+    h.sandbox.features = cluster;
+    await h.gate.setAvailable(true);
+    expect(h.tools.get("shell_run")).toBeDefined();
+    h.sandbox.features = undefined;
+    await h.gate.setAvailable(true);
+    expect(h.tools.get("shell_run")).toBeUndefined();
+    expect(h.tools.get("code_run")).toBeDefined();
   });
 });
 
@@ -212,7 +236,6 @@ describe("sessions through the gate", () => {
     expect(spec).toContain('\\"fresh\\"');
     expect(spec).toContain("code_session");
 
-    h.router.verdict("allow");
     const out = await tool.call(toolContext(), {
       language: "python",
       code: "print(1)",
@@ -220,10 +243,7 @@ describe("sessions through the gate", () => {
     });
     expect(out).toContain("在工作階段「weather-tool」,這次新開的");
     expect(h.sandbox.requests[0]).toMatchObject({ session: "weather-tool", network: "none" });
-    // The review knows which kind of run it is.
-    expect(JSON.stringify(h.router.requests[0]?.messages)).toContain("weather-tool");
 
-    h.router.verdict("allow");
     h.sandbox.nextError = new SessionClosedError("weather-tool", "idle");
     const gone = await tool.call(toolContext(), {
       language: "python",
@@ -233,7 +253,6 @@ describe("sessions through the gate", () => {
     expect(gone).toContain("工作階段「weather-tool」已經不在了");
     expect(gone).toContain("閒置太久");
 
-    h.router.verdict("allow");
     h.sandbox.sessions = ["a", "b"];
     h.sandbox.nextError = new SandboxError("limit", "at most 2 sessions");
     const full = await tool.call(toolContext(), {

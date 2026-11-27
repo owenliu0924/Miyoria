@@ -14,6 +14,8 @@ import { DatabaseSync } from "node:sqlite";
 import { pathToFileURL } from "node:url";
 import { systemClock } from "@miyoria/types";
 import { generateDrizzleJson, generateMigration, pushSchema } from "drizzle-kit/payload/sqlite";
+import { sql } from "drizzle-orm";
+import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
 import { authSchema } from "../../auth/src/migrations.js";
 import * as authTables from "../../auth/src/schema.js";
 import { directiveSchema } from "../../brain/directive/src/migrations.js";
@@ -46,6 +48,7 @@ import { karaokeSchema } from "../../play/karaoke/src/migrations.js";
 import * as karaokeTables from "../../play/karaoke/src/schema.js";
 import { marketSchema } from "../../play/market/src/migrations.js";
 import * as marketTables from "../../play/market/src/schema.js";
+import { sandboxSchema } from "../../workspace/sandbox/src/remote/jobs-migrations.js";
 import { artifactSchema } from "../src/artifacts/migrations.js";
 import * as artifactTables from "../src/artifacts/schema.js";
 import { configSchema } from "../src/config/migrations.js";
@@ -54,6 +57,39 @@ import { Db } from "../src/db.js";
 import { identitySchema } from "../src/identity/migrations.js";
 import * as identityTables from "../src/identity/schema.js";
 import { coreSchema, migrate, type PluginSchema, sqlNames } from "../src/migrate.js";
+
+/**
+ * The `sandbox` plugin's table (`@miyoria/workspace/sandbox`, docs/design/v6-sandbox.md §9.3),
+ * declared here: the workspace package reads and writes it with plain SQL and does not depend on
+ * drizzle-orm, so its Drizzle definition lives with the tooling that checks the migration.
+ */
+const sandboxTables = {
+  sandboxJobs: sqliteTable(
+    "sandbox_jobs",
+    {
+      id: text().primaryKey(),
+      host: text().notNull(),
+      service: text().notNull(),
+      kind: text().notNull(),
+      name: text(),
+      folder: text(),
+      payer: text(),
+      for: text().notNull(),
+      state: text().notNull(),
+      ended_reason: text(),
+      manifest: text(),
+      cpu_ms: integer().notNull().default(0),
+      created_at: integer().notNull(),
+      updated_at: integer().notNull(),
+      expires_at: integer().notNull(),
+    },
+    (t) => [
+      index("sandbox_jobs_open_idx").on(t.state).where(sql`${t.state} = 'open'`),
+      check("sandbox_jobs_kind_check", sql`${t.kind} IN ('run','session','browser','plugin')`),
+      check("sandbox_jobs_state_check", sql`${t.state} IN ('open','ended')`),
+    ],
+  ),
+};
 
 /** Core's tables and indexes (the event log): in every database, and no plugin's business. */
 const CORE_NAMES = new Set(coreSchema.migrations.flatMap((m) => sqlNames(m.sql).created));
@@ -127,6 +163,7 @@ export const DRIZZLE_PLUGINS: Record<string, DrizzlePlugin> = {
   notes: { tables: notesTables, schema: notesSchema },
   quota: { tables: quotaTables, schema: quotaSchema },
   report: { tables: reportTables, schema: reportSchema },
+  sandbox: { tables: sandboxTables, schema: sandboxSchema },
   transcript: { tables: transcriptTables, schema: transcriptSchema },
 };
 

@@ -44,6 +44,7 @@ import {
   type SessionInfo,
   type ToolProposal,
 } from "../src/index.js";
+import type { SandboxFeatures } from "../src/types.js";
 
 export const CTX: ContextKey = { platform: "discord", scope: "g1", channel: "c1", kind: "channel" };
 export const AMY: AccountRef = { platform: "discord", id: "200" };
@@ -114,6 +115,10 @@ export class FakeSandbox implements Sandbox {
     },
     remove: async () => false,
   };
+  /** What the backend offers; unset: the local one's. */
+  features: SandboxFeatures | undefined = undefined;
+  /** How long a run takes. */
+  delayMs = 0;
   /** Thrown by the next `run`. */
   nextError: Error | null = null;
   async run(request: RunRequest): Promise<RunResult> {
@@ -121,6 +126,7 @@ export class FakeSandbox implements Sandbox {
     const error = this.nextError;
     this.nextError = null;
     if (error) throw error;
+    if (this.delayMs > 0) await new Promise((r) => setTimeout(r, this.delayMs));
     return {
       run_id: "01J00000000000000000000000",
       language: request.language,
