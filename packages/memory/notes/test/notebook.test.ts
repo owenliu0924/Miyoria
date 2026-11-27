@@ -263,6 +263,19 @@ describe("the notebook on the notes", () => {
     expect(b.notebook.read("人/Owen", inGuild)?.body ?? "").not.toContain("喜歡拉麵");
   });
 
+  it("records who asked for a line, so forgetting them takes it from topic and self pages", async () => {
+    const b = await book();
+    await b.notebook.write("主題/伺服器活動", "Owen 提議週五開團", "append", inGuild);
+    await b.notebook.write("自己/想做的事", "陪 Owen 練琴", "append", inGuild);
+    await b.notebook.write("主題/天氣", "今天下雨", "append", { context: CHANNEL, accounts: [] });
+    expect(b.notes.lines("topic:伺服器活動", "owner").map((l) => l.told_by)).toEqual([OWEN]);
+    b.notes.forgetPerson([OWEN]);
+    expect(b.notebook.read("主題/伺服器活動", inGuild)?.body ?? "").not.toContain("週五");
+    expect(b.notebook.read("自己/想做的事", inGuild)?.body ?? "").not.toContain("練琴");
+    // Nobody asked for this one: it stays.
+    expect(b.notebook.read("主題/天氣", inGuild)?.body).toContain("今天下雨");
+  });
+
   it("lists the same entries as the pages do", async () => {
     const b = await book();
     const pages = new NotebookStore({

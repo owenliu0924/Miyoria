@@ -296,6 +296,9 @@ export class NotesNotebook implements Notebook {
     if (all.length === 0 && this.#notes.writtenBy("tool") >= cfg.max_pages) {
       throw new NotebookError(`筆記本滿了(${cfg.max_pages} 頁),先刪掉或合併幾頁`);
     }
+    // Who asked for the write: what she notes at someone's word rests on them, so "forget me"
+    // takes it from a topic or self page too (as `tidy` keeps a merged line's one teller).
+    const asker = this.#personOf(where);
     const ops: NoteOp[] = [
       ...(mode === "replace"
         ? here.map((l): NoteOp => ({ op: "outdate", line: l.id, reason: "rewritten" }))
@@ -308,6 +311,7 @@ export class NotesNotebook implements Notebook {
           provenance: "observed",
           scope,
           confidence: WRITTEN_CONFIDENCE,
+          ...(asker === null ? {} : { told_by: asker }),
         }),
       ),
     ];
