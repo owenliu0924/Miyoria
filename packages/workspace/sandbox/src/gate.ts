@@ -19,7 +19,6 @@
 // with `on_own`), her own turns as `self`. A run for someone mounts only their folder of the
 // workspace and uses only their sessions (`people.ts`); her own runs and the owners' see all.
 
-import type { ExecContext } from "@miyoria/gate/actions";
 import {
   type ActionResult,
   type ActuatorRegistry,
@@ -33,7 +32,6 @@ import {
   type JsonObject,
   type JsonValue,
   principalActor,
-  WorkQuotaKey,
 } from "@miyoria/types";
 import type { z } from "zod";
 import {
@@ -58,7 +56,6 @@ import {
   type SessionView,
   scopeFor,
   sessionView,
-  type WorkspaceScope,
   workspaceFor,
 } from "./people.js";
 import {
@@ -72,7 +69,6 @@ import {
 import { localFeatures } from "./remote/auto.js";
 import {
   FRESH,
-  type RunFor,
   type RunRequest,
   type Sandbox,
   SandboxError,
@@ -80,6 +76,7 @@ import {
   type SandboxHealth,
   SessionClosedError,
 } from "./types.js";
+import { payerFor, runFor } from "./whom.js";
 import { workspaceExportCapability } from "./workspace-export.js";
 import {
   type WorkspaceGateOptions,
@@ -141,16 +138,6 @@ export interface SandboxGateOptions {
 /** What the backend in use offers now. */
 export function featuresOf(sandbox: Sandbox): SandboxFeatures {
   return sandbox.features ?? localFeatures(sandbox);
-}
-
-/** Whom a call's run is for: decides which computers of the cluster take it. */
-export function runFor(scope: WorkspaceScope): RunFor {
-  return scope.kind === "person" ? "member" : scope.kind === "all" ? "owner" : "self";
-}
-
-/** Whom a run's CPU seconds count against (`WorkQuotaKey`, when it is provided). */
-export function payerFor(ctx: ExecContext): RunRequest["payer"] {
-  return ctx.services.get(WorkQuotaKey)?.payerOf(ctx.principal) ?? null;
 }
 
 /** §10.4: what she is told when a run could not start, `null` for other errors. */

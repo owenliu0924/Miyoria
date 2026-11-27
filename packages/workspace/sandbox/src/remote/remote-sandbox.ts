@@ -29,6 +29,7 @@ import {
   FRESH,
   type KilledReason,
   type Language,
+  type RunFor,
   type RunLanguage,
   type RunRequest,
   RunRequestSchema,
@@ -119,6 +120,14 @@ function networkOf(
 function scopeOf(r: { workspace_folder?: string | undefined; for?: string | undefined }): string {
   if (r.workspace_folder !== undefined) return `person:${r.workspace_folder}`;
   return r.for === "owner" ? "all" : "own";
+}
+
+/**
+ * Whom a run is for: a person's folder is a member's run whatever the caller said, so their
+ * files only go to a computer whose owner takes members' work.
+ */
+function whom(r: { workspace_folder?: string | undefined; for?: RunFor | undefined }): RunFor {
+  return r.workspace_folder !== undefined ? "member" : (r.for ?? "self");
 }
 
 function sandboxError(error: unknown): unknown {
@@ -401,7 +410,7 @@ export class RemoteSandbox implements Sandbox {
   }
 
   async #runFresh(r: Validated, payer: WorkPayer | null, signal: AbortSignal): Promise<RunResult> {
-    const forWho = r.for ?? "self";
+    const forWho = whom(r);
     this.#available(forWho);
     const ws = r.mount_workspace ? this.#callWorkspace(scopeOf(r)) : null;
     const job = await this.#client.open(
@@ -558,7 +567,7 @@ export class RemoteSandbox implements Sandbox {
     let created = false;
     let job = session.job;
     if (job === null) {
-      const forWho = r.for ?? "self";
+      const forWho = whom(r);
       this.#available(forWho);
       try {
         job = await this.#client.open(

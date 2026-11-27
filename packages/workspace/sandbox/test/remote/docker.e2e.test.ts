@@ -36,7 +36,9 @@ function dockerAvailable(): boolean {
 type Start = (options: Record<string, unknown>) => Promise<{ url: string; close(): Promise<void> }>;
 
 /** P2's service, once it exists. */
-const service = (await import("../../src/service/index.js")) as { startSandboxService?: Start };
+const service = (await import("../../src/service/index.js")) as unknown as {
+  startSandboxService?: Start;
+};
 const start = service.startSandboxService;
 const enabled =
   typeof start === "function" &&
