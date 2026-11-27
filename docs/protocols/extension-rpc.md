@@ -91,7 +91,8 @@ agent 呼叫工具時送出。逾時 `call_timeout_ms`(預設 30 秒)。
 ```
 
 - `name` 是擴充註冊時的名字(可以含 `.`)。
-- `context.account` 是觸發這個回合的使用者(權限是對他檢查的,不是對模型)。
+- `context.account` 是觸發這個回合的使用者(權限是對他檢查的,不是對模型);沒有人開口(她自己要用)時是 `{"id":"self"}`。
+- 呼叫先過宿主的閘門(風險、次數、稽核,見 `tools.register` 的 `risk`);被擋下的呼叫不會送到擴充。
 
 結果:`{"content":"擲了 1 顆 20 面骰:17(總和 17)"}`。也接受直接回字串;其他 JSON 會被轉成字串給模型看。錯誤用 JSON-RPC error 回,`message` 會給模型看,請保持簡短。
 
@@ -219,7 +220,12 @@ agent 組 prompt 時,對每個已註冊的 prompt key 送出。逾時 `prompt_ti
 - 名稱已被其他模組(或其他擴充)用掉時回 `-32003`。同一個擴充重複註冊同名工具 = 取代。
 - `parameters` 省略時是空物件 schema;`permission` 是觸發者需要的權限節點(選填)。
 - `read_only`(選填,預設 `false`):這個工具只查不改(查詢、狀態)。模型同一步呼叫好幾個 `read_only` 工具時會同時跑,不再一個等一個。有副作用的工具不要設。SDK 寫法是 `readOnly: true`。
-- 結果:`{"name":"weather_now"}`(登記用的名字)。
+- `risk`(選填,`low` | `medium` | `high`,預設 `medium`):工具經宿主的閘門呼叫。`low` 直接做;`medium` 有次數上限、會記錄;`high` 她先審核才做。owner 可以用 `[extensions."<id>"] tools."<名字>".risk` 改。
+- `work`(選填,布林):做事的工具(寫東西、跑東西),次數照 `[modules.actions.work]`,成員羈絆到 `work_min_bond` 就叫得到。沒寫時外部工具也用 work 的次數;`work: false` 才用中風險的次數。
+- `limits`(選填):`per_hour`、`per_person_per_hour`、`per_day`、`per_person_per_day`、`cooldown_ms`,各自可省;`0` = 沒有這個上限。
+- `followup`(選填,布林):會跑很久的工具,等不到 `inline_wait_ms` 就先回她「在做了」,結果晚點在後續回合給她。
+- `permission` 是 `null`(沒寫)時,節點是 `tools.ext.<id>`:成員要有這個節點,或羈絆到 `work_min_bond`(以前沒寫就是所有人都能叫);`""` 照舊是所有人。
+- 結果:`{"name":"weather_now"}`(登記用的名字)。結果文字一律框成不可信資料給她看。
 
 `tools.unregister`:`{"name":"weather.now"}`。
 
@@ -264,6 +270,23 @@ agent 組 prompt 時,對每個已註冊的 prompt key 送出。逾時 `prompt_ti
 
 `storage.get` 結果:`{"value":{"n":3}}`,不存在時 `{"value":null}`。`storage.set` 的 `value` 是 `null` = 刪除。key 長度 1–200。
 
+### `schedule.set` / `schedule.cancel` / `schedule.list`
+
+擴充自己的鬧鐘,存在 Core 的 settings store(key 為 `ext:<id>:schedule:<sid>`,重啟後還在);每個擴充最多 32 個。
+
+```json
+{"jsonrpc":"2.0","id":9,"method":"schedule.set","params":{"id":"daily-report","daily":"09:30","payload":{"kind":"report"}}}
+{"jsonrpc":"2.0","id":10,"method":"schedule.cancel","params":{"id":"daily-report"}}
+{"jsonrpc":"2.0","id":11,"method":"schedule.list","params":{}}
+```
+
+- `id`:`^[a-z0-9][a-z0-9_-]{0,47}$`;同一個 `id` 再 `set` = 取代。
+- `at`(epoch 毫秒,一次)和 `daily`(`"HH:MM"`,照 `[modules.extensions] utc_offset_minutes` 的時區,預設 480)剛好一個。
+- `payload`:任意 JSON,最多 4 KiB,原樣送回。
+- `schedule.set` 結果是那一筆(`ScheduleEntry`:`id`、`at` 或 `daily`、`payload`、`next` 下次的時間);`schedule.cancel` 結果 `{"cancelled":true|false}`;`schedule.list` 結果 `{"schedules":[ScheduleEntry…]}`(照 `next` 排)。
+
+到了宿主送 `schedule.fire`(Host → Ext,notification):`{"id":"daily-report","payload":{"kind":"report"},"due":1764205800000}`。`at` 的那筆送出後就刪掉;擴充當時不在(停用、重啟中)時稍後再送。SDK:`ctx.schedule.set / cancel / list`,`ctx.schedule.on(handler)`。
+
 ### `log`
 
 ```json
@@ -291,10 +314,12 @@ input = ["keyboard"]                # 高風險:只有這裡也列出才會授�
 | `events` | 決定送哪些事件、能發佈哪些型別(見上;自己的 `ext.<id>.…` 和自己遊戲的 `game.<id>.…` 不需要) |
 | `tools` | 沒有就不能註冊工具(`-32001`;在 `initialize` 裡宣告則啟動失敗) |
 | `commands` | 沒有就不能註冊指令 |
-| `network` | 只做標示並傳給擴充;`deno` runtime 會轉成 `--allow-net`。跨行程不是沙箱 |
+| `network` | 只做標示並傳給擴充;`deno` runtime 會轉成 `--allow-net`。跨行程不是沙箱(`run_in = "sandbox"` 的擴充在沙箱的工作裡跑時,它是那個工作的網路白名單) |
 | `input` | 預設**不授予**,要在設定檔的 `permissions.input` 明確列出 |
 
-prompt 片段和 storage 不需要額外權限(都在擴充自己的命名空間)。
+prompt 片段、storage 和 schedule 不需要額外權限(都在擴充自己的命名空間)。
+
+**環境變數**:擴充只拿到白名單(`PATH`、`TEMP`、`HOME`…)加上 manifest `[env] pass`(或 owner 的 `env_pass`)列的。萬用字元(`MIYORIA_MC_*`)不給名字像密鑰的變數(`_` 分開的字有 `KEY`、`TOKEN`、`SECRET`、`PASSWORD`、`AUTH`、`COOKIE`、`SESSION`…),要寫完整名字;Core 自己的金鑰(`LLM_*`、`DISCORD_*`、`OPENAI_*`、`MIYORIA_API_*`…)只有 owner 的 `env_pass` 或 `[extensions."<id>"] secrets` 給得到,manifest 寫了也不給。沒給的名字(不含值)寫進啟動的警告。manifest 的 `[env] secrets` 是擴充想要、要 owner 同意的密鑰,只顯示不給。
 
 ## Game adapter
 
@@ -386,6 +411,16 @@ watch_poll_ms = 1000
 宿主在每個 `dirs` 裡往下找最多三層含 `miyoria.extension.toml` 的目錄(略過 `node_modules`、`dist`、`.git`、隱藏目錄)。manifest 格式見 `docs/ARCHITECTURE.md` §9.2;`placement = "stage"` 的擴充會被略過(宿主記為 skipped,Stage 節點沒有擴充宿主,所以不會有人跑它),只有 `core` 和 `any` 會被載入。`[[mcp_servers]]` 宿主只解析,透過 `Arc<ExtensionCatalog>` 服務提供給 MCP 模組。
 
 ## 變更紀錄
+
+### 協定 2 的增補(`@miyoria/sdk` 0.3.0)
+
+線上的版本仍是 2,舊的擴充照樣能用;新欄位都可以省略。
+
+- `tools.register` / `contributions.tools[]`:多 `risk`、`work`、`limits`、`followup`。工具經宿主的閘門呼叫;沒寫 `permission` 的工具不再是所有人都能叫(節點 `tools.ext.<id>`,成員到 `work_min_bond` 也可以)。
+- `tools.call`:沒有人開口時 `context.account` 是 `{"id":"self"}`。
+- 新的 `schedule.set`、`schedule.cancel`、`schedule.list`(Ext → Host)、`schedule.fire`(Host → Ext)。
+- 環境變數:萬用字元不再給像密鑰的名字;既有的擴充要在 `[env] pass` 寫上 token 的完整名字。
+- SDK:`ToolDefinition` 多 `risk`、`work`、`limits`、`followup`;`ctx.schedule`;型別 `ScheduleInput`、`ScheduleEntry`、`ScheduleFire`、`ScheduleHandler`。
 
 ### 協定 2(`@miyoria/sdk` 0.2.0)
 
