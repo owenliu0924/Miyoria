@@ -129,10 +129,15 @@ describe("going down", () => {
 });
 
 describe("extension launcher", () => {
-  it("is the sandbox launcher, provided before the modules start", async () => {
+  it("is the sandbox launcher when the sandbox may use the cluster, else this machine's", async () => {
     core = await buildCoreWith(catalog(), config(), { discord: false, api: false });
+    expect(core.services.get(ExtensionLauncherKey)).toBeUndefined();
+    await core.stop();
+    core = await buildCoreWith(catalog(), config("[modules.sandbox]\nenabled = true\n"), {
+      discord: false,
+      api: false,
+    });
     const launcher = core.services.get(ExtensionLauncherKey) as SandboxLauncher | undefined;
-    expect(launcher).toBeDefined();
     expect(typeof launcher?.placement).toBe("function");
     expect(launcher?.placement("miyoria.none")).toBeNull();
   });

@@ -318,17 +318,25 @@ export async function buildCoreWith(
   services.provide(k, SupervisorKey, supervisor);
   // Where extension programs run (docs/design/v6-sandbox.md §16 q3): in a job on a computer of
   // the cluster that takes plugins, else here as before. Provided before any `ext.<id>` starts;
-  // the client is read at each launch, the sandbox module provides it later (or never).
+  // the client is read at each launch, the sandbox module provides it later (or never). Only with
+  // a sandbox that can use the cluster: the launcher waits a little at boot for a computer, which
+  // an install without one should not pay (it gets this machine's launcher, as before).
   const sandboxSection = SandboxConfigSchema.safeParse(config.module("sandbox").config ?? {});
-  const launcher = sandboxLauncher({
-    client: () => services.get(SandboxClientKey),
-    trustedHosts: sandboxSection.success ? sandboxSection.data.transfer.trusted_hosts : [],
-    // Core does not know its own hostd name yet: credentials go only to trusted_hosts.
-    coreHost: null,
-    fallback: "host",
-    restart: (extension) => supervisor.restart(`ext.${extension}`),
-  });
-  services.provide(k, ExtensionLauncherKey, launcher);
+  if (
+    moduleEnabled(config, "sandbox") &&
+    sandboxSection.success &&
+    sandboxSection.data.backend !== "local"
+  ) {
+    const launcher = sandboxLauncher({
+      client: () => services.get(SandboxClientKey),
+      trustedHosts: sandboxSection.data.transfer.trusted_hosts,
+      // Core does not know its own hostd name yet: credentials go only to trusted_hosts.
+      coreHost: null,
+      fallback: "host",
+      restart: (extension) => supervisor.restart(`ext.${extension}`),
+    });
+    services.provide(k, ExtensionLauncherKey, launcher);
+  }
   // What the panel changes of a module's config, laid over the file (docs/design/v5-settings.md).
   const settings = new ModuleSettings({
     config,
