@@ -33,6 +33,7 @@ import {
   jobNow,
   REFLECT_SYSTEM,
   RESEARCH_SYSTEM,
+  WORKER_BROWSE,
   WORKER_CODE,
   WORKER_IMAGE,
   WORKER_NO_CODE,
@@ -122,6 +123,10 @@ export const WORKER_TOOLS: readonly string[] = [
   "workspace_delete",
   "workspace_export",
   "image_make",
+  "browse_open",
+  "browse_act",
+  "browse_read",
+  "browse_shot",
   ...CODE_TOOLS,
 ];
 
@@ -428,6 +433,7 @@ export function helperSystem(spec: KindSpec, tools: readonly string[]): string {
   if (spec.kind !== "worker") return spec.system;
   const lines = [spec.system, canRunCode(tools) ? WORKER_CODE : WORKER_NO_CODE];
   if (tools.includes("shell_run")) lines.push(WORKER_SHELL);
+  if (tools.includes("browse_open")) lines.push(WORKER_BROWSE);
   if (tools.includes("image_make")) lines.push(WORKER_IMAGE);
   return lines.join("\n");
 }

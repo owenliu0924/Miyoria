@@ -44,6 +44,10 @@ export const WORKER_CODE =
 export const WORKER_SHELL =
   "- 這裡有一台 Linux 機器(shell_run):bash、能上網、能 pip install / npm install 裝東西;同一個工作階段裡裝的套件和檔案會留著,/workspace 就是工作區。要改檔案裡的幾行用 workspace_edit,找字用 workspace_grep。";
 
+/** Said to a worker that can open a real browser (`browse_*`). */
+export const WORKER_BROWSE =
+  "- 這裡有真的瀏覽器(browse_open 打開、browse_read 讀、browse_act 點和輸入、browse_shot 截圖):要登入、要點按鈕、內容是程式畫出來的網頁才用它;一般的網頁用 web_read 比較快。下載的檔案會在工作區的 downloads/。";
+
 /** Said to a worker that can draw (`image_make`). */
 export const WORKER_IMAGE = "- 需要圖的話可以用 image_make 畫,畫好的圖是產物,結果裡寫它的代號。";
 
