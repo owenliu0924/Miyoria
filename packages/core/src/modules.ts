@@ -76,7 +76,7 @@ import { WatchModule } from "@miyoria/watch";
 import { ImageGenModule } from "@miyoria/workspace/imagegen";
 import { SandboxModule } from "@miyoria/workspace/sandbox";
 import { SkillsModule } from "@miyoria/workspace/skills";
-import { WebModule } from "@miyoria/workspace/web";
+import { HttpToolsModule, WebModule } from "@miyoria/workspace/web";
 import {
   buildCoreWith,
   type Core,
@@ -248,7 +248,14 @@ async function coreModules({
     // Karaoke on the member page: songs prepared on the song workers, scored again by Core.
     new KaraokeModule({ baseDir }),
     new WebModule(),
-    new SandboxModule(profileId, { baseDir }),
+    // One TOML file per outside API (tools/http/*.toml and extensions' http-tools/), behind the gate.
+    new HttpToolsModule({
+      baseDir,
+      extensionDirs: (services) => services.get(extHost.ExtensionCatalogKey)?.httpToolDirs() ?? [],
+    }),
+    // Runs go to the computers of the cluster that offer the `sandbox` service, else this machine's
+    // Docker; with neither, only the host-side file tools are offered.
+    new SandboxModule(profileId, { baseDir, endpoints }),
     new ImageGenModule({ baseDir, endpoints }),
     new SkillsModule(),
     new LiveModule({ names: profile.names() }),

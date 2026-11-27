@@ -89,6 +89,7 @@ import {
   RunningProfileKey,
   type SpaceRef,
 } from "@miyoria/types";
+import { sandboxJobsTables } from "@miyoria/workspace/sandbox";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import { type Machines, openMachines } from "./machines.js";
@@ -129,6 +130,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   notesTables,
   quotaTables,
   reportTables,
+  sandboxJobsTables,
   transcriptTables,
 ];
 
