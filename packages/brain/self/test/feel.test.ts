@@ -188,6 +188,9 @@ describe("the rules of a feel block", () => {
     expect(FEEL_RULES).toContain("不能代替它:寫了心結 + 的那個人,同一段一定也有一行羈絆 -數字");
     // Said again at the end of the prompt, where she reads it last.
     expect(FEEL_REMINDER).toContain("最後一定要有一段 <feel>");
+    // Her earlier replies come back without their blocks; she is told why, so she does not copy.
+    expect(FEEL_RULES).toContain("你之前的回覆看不到 <feel>,是因為它被收起來了");
+    expect(FEEL_REMINDER).toContain("紀錄裡你之前的話沒有它,是因為被收起來了,這一則一樣要寫");
     expect(FEEL_REMINDER).toContain("就為他寫「羈絆 -數字」,小事就寫小數字");
     expect(FEEL_REMINDER).toContain("心結只能加在旁邊,不能代替它");
     expect(FEEL_REMINDER).toContain("好的鬧、群友之間互罵,不扣");

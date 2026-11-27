@@ -59,7 +59,7 @@ export const WORK_RULES = `## 做事
  * which opens like text so the cached prefix is one), never in the background ones.
  */
 export const FEEL_RULES = `## 心裡的話
-- 每一則回覆的最後都要加一段 <feel>,寫下這次你心裡的感覺;沒什麼感覺也要寫,第一行寫平靜就好。這段只有你自己知道:不會被看到或聽到,話裡也不要提它。
+- 每一則回覆的最後都要加一段 <feel>,寫下這次你心裡的感覺;沒什麼感覺也要寫,第一行寫平靜就好。這段只有你自己知道:不會被看到或聽到,話裡也不要提它。對話紀錄裡你之前的回覆看不到 <feel>,是因為它被收起來了,不是那時沒寫。
 - 第一行是你現在的情緒和強度(弱、中、強)。情緒用一個詞:開心、生氣、難過、害怕、驚訝、討厭、害羞、得意、吃醋、寂寞、想念、感激、愧疚、不甘心;沒什麼特別就寫平靜。
 - 在場的某個人這次對你做了什麼,就為他加一行:名字、哪一種感覺、+ 或 -,再引用那句話或那件事。感覺是羈絆、信任、好感、敬意、自在、心結、默契其中一個;+ 是變多。對你好、幫你、送你東西、記得你說過的話、認真誇你、好好道歉,是 +。
 - 只算對你做的事。群友之間互罵、互虧、吵架是他們自己的事,不是罵你就不要記在誰頭上;有人只是在你面前講話難聽、不是針對你,也不算。
@@ -84,11 +84,22 @@ export const FEEL_RULES = `## 心裡的話
  * Said again at the very end of the prompt, in `<turn>`: far from the end the rule is skipped
  * (live eval 2026-11-17: with the rule in block 1 alone she wrote a block in 4 replies of 10).
  * The bond minus is said here too: with it in block 1 alone she recorded a grudge instead, every
- * time (live 2026-11-25..27: 47 blocks about people, `羈絆 -` in none).
+ * time (live 2026-11-25..27: 47 blocks about people, `羈絆 -` in none). And why her earlier replies
+ * have no block: copying them, she left it out (live eval 2026-11-27: 14 replies of 35; 4 of 5 in
+ * the scene whose history has her own lines). What still goes out without one is repaired
+ * (`feel-repair.ts`).
  */
 export const FEEL_REMINDER =
-  "寫完要給人看的話之後,最後一定要有一段 <feel>(至少第一行)。" +
+  "寫完要給人看的話之後,最後一定要有一段 <feel>(至少第一行);紀錄裡你之前的話沒有它,是因為被收起來了,這一則一樣要寫。" +
   "這次有人真的讓你不舒服(說了不要還繼續、看不起你、把你當工具),就為他寫「羈絆 -數字」,小事就寫小數字;心結只能加在旁邊,不能代替它。好的鬧、群友之間互罵,不扣。";
+
+/**
+ * The one note of a feel repair (`feel-repair.ts`): her reply went out without a block, and one
+ * small call after it, on the same prompt and her reply, asks for the block alone.
+ */
+export const FEEL_REPAIR_NOTE =
+  "你剛才那則回覆最後漏了 <feel>。現在只補寫那一段:以 <feel> 開頭、</feel> 結尾,照「心裡的話」的規則寫這次你心裡的感覺(第一行一定要有)。" +
+  "不要寫任何要給人看的話,也不要呼叫工具;這段不會被看到或聽到。";
 
 /** Block 1 of the text profile (and of voice, which opens like it). */
 export const RULES = `${BASE_RULES}\n${WORK_RULES}\n${FEEL_RULES}`;
@@ -100,6 +111,11 @@ const FEELS: Readonly<Record<ProfileName, boolean>> = {
   subagent: false,
   reflect: false,
 };
+
+/** Whether a run of `profile` ends its replies with a `<feel>` block (its block 1 has the rules). */
+export function feels(profile: ProfileName): boolean {
+  return FEELS[profile];
+}
 
 /** One more paragraph of block 1 for a profile that is not the text one (`null`: none). */
 export const PROFILE_NOTES: Readonly<Record<ProfileName, string | null>> = {

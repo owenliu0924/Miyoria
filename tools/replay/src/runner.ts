@@ -93,8 +93,9 @@ const MAX_STEP_MS = 5_000;
 
 /** The replay's defaults per module (the log's `meta.modules` are merged over them). */
 const DEFAULT_MODULES: Record<string, JsonValue> = {
-  // No gray-zone `fast` checks: the scripted LLM would only decide by fiat.
-  agent: {},
+  // No gray-zone `fast` checks: the scripted LLM would only decide by fiat. No feel repair: its
+  // call would be answered as one more reply and counted as one.
+  agent: { corrections: { feel_repair: false } },
 };
 
 class Stub implements Module {

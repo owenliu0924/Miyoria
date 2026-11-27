@@ -49,6 +49,16 @@ export {
   type ParsedFeel,
   parseFeel,
 } from "./feel.js";
+export {
+  FEEL_REPAIR_LABEL,
+  FEEL_REPAIR_MAX_TOKENS,
+  FEEL_REPAIR_TIMEOUT_MS,
+  FeelRepair,
+  type FeelRepairOptions,
+  type FeelRepairOutcome,
+  type FeelRepairSpec,
+  feelOfRepair,
+} from "./feel-repair.js";
 export { composeGuards, permissiveGuard } from "./guard.js";
 export { JOBS_PROMPT_KEY, JobsPrompt, jobsBody } from "./jobs-prompt.js";
 export {

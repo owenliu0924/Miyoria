@@ -206,6 +206,65 @@ describe("a feel block in production", () => {
     expect(second).not.toContain("很會打遊戲");
   });
 
+  it("a reply without a block: one repair call after it, applied like her block", async () => {
+    const felt: Felt[] = [];
+    const appraised: AffectInput[] = [];
+    const rig = await Rig.create({
+      ...services(felt, appraised),
+      config: { corrections: { feel_repair: true } },
+    });
+    rig.model.push(
+      says("我說了不要!"),
+      says("<feel>\n我: 生氣 中\nowen: 羈絆 -12「說了不要還一直來」\n</feel>"),
+    );
+    rig.say(mention(C1, "owen", "@她 學狗叫啦,快點"));
+    await until(() => felt.length === 1, 3_000, "the repaired block");
+    const turn = outcomes(rig)[0]?.turn;
+    expect(felt).toEqual([
+      {
+        person: "person-owen",
+        proposals: [{ field: "bond", direction: "down", quote: "說了不要還一直來", amount: 12 }],
+        turn,
+      },
+    ]);
+    expect(appraised[0]?.events[0]).toMatchObject({ emotion: "anger", strength: "medium" });
+    // Her reply went out once; nothing of the repair did, or reached the transcript.
+    expect(rig.sink.texts()).toEqual(["我說了不要!"]);
+    const own = rig.entries(C1).filter((e) => e.kind === "self");
+    expect(own.map((e) => e.content)).toEqual(["我說了不要!"]);
+    const [first, repair] = rig.model.requests;
+    expect(repair?.messages.slice(0, first?.messages.length)).toEqual(first?.messages);
+    expect(String(repair?.messages.at(-1)?.content)).toContain("漏了 <feel>");
+    expect(repair).toMatchObject({ max_tokens: 240 });
+  });
+
+  it("no repair when it is switched off, or while the day's budget is not ok", async () => {
+    for (const setup of ["off", "degraded"] as const) {
+      const felt: Felt[] = [];
+      const rig = await Rig.create({
+        ...services(felt, []),
+        config: { corrections: { feel_repair: setup !== "off" } },
+      });
+      if (setup === "degraded") {
+        rig.sup.bus.publish("llm.test", Events.LlmBudget, {
+          state: "degraded",
+          spent_today_usd: 9,
+          daily_usd: 10,
+          spent_month_usd: 9,
+          monthly_usd: null,
+        });
+        await sleep(20);
+      }
+      rig.model.push(says("好啦"), says("<feel>\n我: 開心 中\n</feel>"));
+      rig.say(mention(C1, "owen", "@她 嗨"));
+      await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
+      await rig.host?.feelRepairs.settled();
+      await sleep(30);
+      expect(rig.model.requests, setup).toHaveLength(1);
+      await rig.stop();
+    }
+  });
+
   it("a voice run: the block is never said; the people in the channel may be named", async () => {
     const felt: Felt[] = [];
     const appraised: AffectInput[] = [];
@@ -257,5 +316,58 @@ describe("a feel block in production", () => {
     // amy never spoke: she is named because she is in the channel.
     expect(felt.map((f) => f.person)).toEqual(["person-owen", "person-amy"]);
     expect(appraised).toHaveLength(1);
+  });
+
+  it("a voice reply said without a block is repaired after it, and only the reply is said", async () => {
+    const felt: Felt[] = [];
+    const rig = await Rig.create({
+      ...services(felt, []),
+      config: {
+        corrections: { feel_repair: true },
+        voice: {
+          default_mode: "normal",
+          debounce_ms: 150,
+          direct_debounce_ms: 80,
+          turn_debounce_ms: 20,
+          max_debounce_ms: 1_500,
+          speculate: false,
+          live_context_ms: 50,
+        },
+      },
+    });
+    const member = (id: string, self = false): VoiceParticipant => ({
+      account: account(id),
+      display_name: id,
+      is_self: self,
+      muted: false,
+      deafened: false,
+    });
+    rig.sup.bus.publish("voice.test", Events.VoiceJoined, {
+      context: VC,
+      participants: [member("owen"), member("her", true)],
+    });
+    await sleep(20);
+    rig.model.push(says("不要。"), says("<feel>\n我: 生氣 弱\nowen: 羈絆 -3「一直催」\n</feel>"));
+    const now = Date.now();
+    rig.sup.bus.publish("voice.test", Events.VoiceUtteranceEvent, {
+      id: "u-repair",
+      context: VC,
+      speaker: { account: account("owen"), display_name: "owen", is_bot: false },
+      text: "快點啦快點啦",
+      language: "zh",
+      emotion: null,
+      audio_events: [],
+      started_at: toTimestamp(now - 800),
+      ended_at: toTimestamp(now),
+      asr_ms: 200,
+    });
+    await until(() => felt.length === 1, 3_000, "the repaired block");
+    expect(felt[0]?.proposals).toEqual([
+      { field: "bond", direction: "down", quote: "一直催", amount: 3 },
+    ]);
+    const said = rig.sink.actions.flatMap((a) =>
+      a.payload.type === "speak" ? [a.payload.text] : [],
+    );
+    expect(said).toEqual(["不要。"]);
   });
 });

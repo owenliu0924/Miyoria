@@ -434,6 +434,11 @@ export interface RunInput {
    * call is for, and a call for someone at their quota is refused. `null`: nobody to charge.
    */
   payerOf?: (from: WakeAuthor) => Payer | null;
+  /**
+   * When a reply of a profile that writes `<feel>` blocks went out without one, keep what one
+   * repair call needs (`SelfRunner.takeFeelRepair`). Unset: nothing is kept.
+   */
+  feelRepair?: boolean;
 }
 
 /** One tool call of a run and how it ended. */

@@ -28,6 +28,8 @@ describe("the output checks", () => {
       fallback_line: true,
       tag_strip: true,
       self_talk: true,
+      // Not an output check: the repair of a missing feel block, run by the hosts.
+      feel_repair: true,
     });
     expect(Object.values(ALL_CHECKS)).toEqual([true, true, true, true, true, true]);
   });

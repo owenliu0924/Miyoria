@@ -195,7 +195,7 @@ export class SettlingSink implements ActionSink {
 // ---- the rig -------------------------------------------------------------------------------
 
 export interface RigOptions {
-  /** `[modules.agent]` (short waits unless set). */
+  /** `[modules.agent]` (short waits unless set; `corrections.feel_repair` off unless set). */
   config?: Record<string, JsonValue>;
   /** The profile's default channel mode. */
   mode?: string;
@@ -270,6 +270,11 @@ export class Rig {
         max_debounce_ms: 400,
         typing_extend_ms: 150,
         ...options.config,
+        // A repair is one more call to the scripted model: off unless the test turns it on.
+        corrections: {
+          feel_repair: false,
+          ...(options.config?.corrections as Record<string, JsonValue> | undefined),
+        },
       },
       true,
     );
