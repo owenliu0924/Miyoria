@@ -1,6 +1,5 @@
 // One extension process managed as the supervisor module `ext.<id>`.
 
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { isDeepStrictEqual } from "node:util";
@@ -17,11 +16,20 @@ import {
   ExtEventsTopicsParamsSchema,
   ExtKeyParamsSchema,
   ExtLogParamsSchema,
+  ExtScheduleCancelParamsSchema,
   ExtStatusResultSchema,
   ExtStorageSetParamsSchema,
   ExtToolsUnregisterParamsSchema,
 } from "@miyoria/contracts/ext";
-import { GatedToolsKey, isGatedToolName } from "@miyoria/gate/actions";
+import {
+  type ActuatorRegistry,
+  ActuatorRegistryKey,
+  actuatorsFor,
+  externalLimits,
+  externalToolCapability,
+  GatedToolsKey,
+  isGatedToolName,
+} from "@miyoria/gate/actions";
 import { type Tool, type ToolRegistry, ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   defineManifest,
@@ -38,6 +46,7 @@ import {
 } from "@miyoria/runtime/kernel";
 import { SettingsStoreKey } from "@miyoria/store";
 import {
+  isJsonObject,
   type JsonObject,
   type JsonValue,
   type ModuleId,
@@ -48,9 +57,16 @@ import {
   type Timestamp,
 } from "@miyoria/types";
 import { z } from "zod";
-import { type HostConfig, runtimeCommand } from "./config.js";
-import { type ExtensionEnv, extensionEnv } from "./env.js";
+import {
+  defaultRunIn,
+  type HostConfig,
+  type RunIn,
+  runtimeCommand,
+  type ToolSetting,
+} from "./config.js";
+import { type ExtensionEnv, extensionEnvReport, extensionSecrets } from "./env.js";
 import { resolvePublish, wireEnvelope } from "./events.js";
+import { type ChildLike, ExtensionLauncherKey, type LaunchSpec, localLauncher } from "./launch.js";
 import type { ExtensionManifest, Permissions } from "./manifest.js";
 import { validPattern } from "./manifest.js";
 import {
@@ -66,7 +82,14 @@ import {
   ToolDeclSchema,
   validToolName,
 } from "./protocol.js";
-import { invokeCommand, ProxyPrompt, ProxyTool } from "./proxy.js";
+import {
+  ExtensionCallError,
+  execContextJson,
+  invokeCommand,
+  ProxyPrompt,
+  ProxyTool,
+  toolResultText,
+} from "./proxy.js";
 import {
   CLOSED,
   CONFLICT,
@@ -76,6 +99,7 @@ import {
   type RpcHandler,
   UNAVAILABLE,
 } from "./rpc.js";
+import { ExtensionSchedules } from "./schedules.js";
 import { ProfileIdKey } from "./services.js";
 import { ProxyExecutor, TaskExecutorRegistry } from "./tasks.js";
 
@@ -102,6 +126,12 @@ export interface ExtensionSpec {
    * allowlist). Missing = the manifest's `[env] pass`, nothing set.
    */
   env?: ExtensionEnv;
+  /** `[extensions."<id>"] run_in`; missing: `defaultRunIn`. */
+  runIn?: RunIn | null;
+  /** `[extensions."<id>"] secrets`: Core variables the owner hands it, by name. */
+  secrets?: readonly string[];
+  /** `[extensions."<id>"] tools`: the owner's word on its tools, by wire name. */
+  tools?: Readonly<Record<string, ToolSetting>>;
 }
 
 /** What the extension's process environment is built from. */
@@ -124,7 +154,7 @@ export class ExtensionProcessError extends Error {
 
 interface ExitStatus {
   code: number | null;
-  signal: NodeJS.Signals | null;
+  signal: string | null;
 }
 
 function formatExit(status: ExitStatus): string {
@@ -152,6 +182,8 @@ export class ExtensionModule implements Module {
   readonly configJsonSchema: JsonValue | null;
   readonly #host: HostConfig;
   #session: Session | null = null;
+  /** Aborts a launch in progress and, at stop, whatever the launcher still holds. */
+  #launch: AbortController | null = null;
   /** It answers the `status` request (its `initialize` contributions said so). */
   #answersStatus = false;
 
@@ -194,27 +226,69 @@ export class ExtensionModule implements Module {
     }
   }
 
+  /** What the launcher is asked to start (environment and secrets resolved now, from `source`). */
+  launchSpec(source: NodeJS.ProcessEnv = process.env): {
+    spec: LaunchSpec;
+    held: string[];
+    missing: string[];
+  } {
+    const m = this.spec.manifest;
+    const { program, args } = this.command();
+    // Never the core's whole environment (its secrets): an allowlist (see `env.ts`).
+    const report = extensionEnvReport(m.id, specEnv(this.spec), source);
+    const wanted = this.spec.secrets ?? [];
+    const secrets = extensionSecrets(wanted, source);
+    return {
+      spec: {
+        extension: m.id,
+        dir: this.spec.dir,
+        runtime: m.runtime,
+        program,
+        args,
+        cwd: this.spec.dir,
+        env: report.env,
+        network: [...this.spec.granted.network],
+        secrets,
+        runIn: this.spec.runIn ?? defaultRunIn(m.kind, this.spec.granted),
+      },
+      held: report.held,
+      missing: wanted.filter((name) => !Object.hasOwn(secrets, name)),
+    };
+  }
+
   async start(ctx: ModuleContext): Promise<void> {
     const id = this.spec.manifest.id;
-    const { program, args } = this.command();
-    const child = spawn(program, args, {
-      cwd: this.spec.dir,
-      stdio: ["pipe", "pipe", "pipe"],
-      // Never the core's whole environment (its secrets): an allowlist (see `env.ts`).
-      env: extensionEnv(id, specEnv(this.spec)),
-      windowsHide: true,
-    });
+    const { spec, held, missing } = this.launchSpec();
+    if (held.length > 0) {
+      ctx.log.warn(
+        { ext: id, held },
+        "credentials not passed to the extension: name them exactly in env_pass, or list them in secrets",
+      );
+    }
+    if (missing.length > 0) {
+      ctx.log.warn(
+        { ext: id, missing },
+        "secrets the owner granted are not set in the environment",
+      );
+    }
+    const launcher = ctx.services.get(ExtensionLauncherKey) ?? localLauncher();
+    const launch = new AbortController();
+    this.#launch = launch;
+    let child: ChildLike;
     try {
-      await new Promise<void>((resolve, reject) => {
-        child.once("spawn", resolve);
-        child.once("error", reject);
-      });
+      child = await launcher.launch(spec, launch.signal);
     } catch (error) {
+      this.#launch = null;
       throw new ExtensionStartError(`spawning extension \`${id}\`: ${errorMessage(error)}`, {
         cause: error,
       });
     }
-    child.on("error", (err) => ctx.log.debug({ ext: id, err }, "extension process error"));
+    if (child.where.kind === "sandbox") {
+      ctx.log.info(
+        { ext: id, host: child.where.host, job: child.where.job },
+        "extension in a sandbox",
+      );
+    }
 
     const session = new Session(ctx, this.spec, this.#host, child);
     this.#session = session;
@@ -252,8 +326,11 @@ export class ExtensionModule implements Module {
     } catch (error) {
       this.#session = null;
       await this.#shutdown(session, false);
+      this.#launch?.abort();
+      this.#launch = null;
       throw error;
     }
+    ctx.spawn("schedules", (signal) => session.runSchedules(signal));
   }
 
   async #handshake(session: Session): Promise<void> {
@@ -332,6 +409,8 @@ export class ExtensionModule implements Module {
     const session = this.#session;
     this.#session = null;
     if (session) await this.#shutdown(session, true);
+    this.#launch?.abort();
+    this.#launch = null;
   }
 
   async health(): Promise<Health> {
@@ -350,11 +429,7 @@ export function protocolMismatch(theirs: number): string {
   return `the extension speaks extension protocol ${theirs} and the host speaks ${PROTOCOL_VERSION}; ${older}`;
 }
 
-async function forwardStderr(
-  child: ChildProcessWithoutNullStreams,
-  id: string,
-  signal: AbortSignal,
-): Promise<void> {
+async function forwardStderr(child: ChildLike, id: string, signal: AbortSignal): Promise<void> {
   const lines = createInterface({ input: child.stderr, crlfDelay: Number.POSITIVE_INFINITY });
   const onAbort = () => lines.close();
   signal.addEventListener("abort", onAbort, { once: true });
@@ -367,10 +442,10 @@ async function forwardStderr(
   }
 }
 
-interface ToolReg {
-  registry: ToolRegistry;
-  tool: Tool;
-}
+/** A registered tool: a game adapter's raw one in the gated registry, or a capability. */
+type ToolReg =
+  | { kind: "gated"; registry: ToolRegistry; tool: Tool }
+  | { kind: "capability"; off: () => void };
 
 interface CommandReg {
   registry: CommandRegistry;
@@ -401,7 +476,7 @@ class Session implements RpcHandler {
   readonly ctx: ModuleContext;
   readonly spec: ExtensionSpec;
   readonly host: HostConfig;
-  readonly child: ChildProcessWithoutNullStreams;
+  readonly child: ChildLike;
   readonly peer: Peer;
   readonly grants: TopicFilter;
   readonly exited: Promise<ExitStatus>;
@@ -413,29 +488,19 @@ class Session implements RpcHandler {
   #commands = new Map<string, CommandReg>();
   #prompts = new Map<string, PromptContributors>();
   #executor: { proxy: ProxyExecutor; registry: TaskExecutorRegistry } | null = null;
+  #actuators: ActuatorRegistry | null = null;
+  #schedules: ExtensionSchedules | null = null;
 
-  constructor(
-    ctx: ModuleContext,
-    spec: ExtensionSpec,
-    host: HostConfig,
-    child: ChildProcessWithoutNullStreams,
-  ) {
+  constructor(ctx: ModuleContext, spec: ExtensionSpec, host: HostConfig, child: ChildLike) {
     this.ctx = ctx;
     this.spec = spec;
     this.host = host;
     this.child = child;
     this.peer = new Peer(child.stdin);
     this.grants = new TopicFilter(spec.granted.events);
-    this.exited = new Promise((resolve) => {
-      if (child.exitCode !== null || child.signalCode !== null) {
-        this.hasExited = true;
-        resolve({ code: child.exitCode, signal: child.signalCode });
-        return;
-      }
-      child.once("exit", (code, signal) => {
-        this.hasExited = true;
-        resolve({ code, signal });
-      });
+    this.exited = child.exited.then((status) => {
+      this.hasExited = true;
+      return status;
     });
   }
 
@@ -610,16 +675,83 @@ class Session implements RpcHandler {
     const name = registryToolName(decl.name);
     // A game adapter's raw tools (`game_<id>_*`: launch, quit, game chat) are never offered to
     // chat turns: they go to the gated registry, which only capabilities behind the gate use.
-    const gated = isGatedToolName(name);
-    const registry = gated
-      ? this.ctx.services.get(GatedToolsKey)
-      : this.ctx.services.get(ToolRegistryKey);
-    if (!registry) {
-      throw new RpcError(
-        UNAVAILABLE,
-        gated ? "the gated tool registry is not available" : "the tool registry is not available",
-      );
+    if (isGatedToolName(name)) return this.#registerGated(decl, name);
+    const tools = this.ctx.services.get(ToolRegistryKey);
+    if (!tools && !this.ctx.services.get(ActuatorRegistryKey)) {
+      throw new RpcError(UNAVAILABLE, "the tool registry is not available");
     }
+    if (this.stopping) throw Session.closedError();
+    if (tools?.get(name) !== undefined && !this.#tools.has(name)) {
+      throw new RpcError(CONFLICT, `tool \`${name}\` is already registered`);
+    }
+    const capability = this.toolCapability(decl, name);
+    this.#actuators ??= actuatorsFor(this.ctx);
+    const previous = this.#tools.get(name);
+    if (previous) releaseTool(previous, name);
+    let off: () => void;
+    try {
+      off = this.#actuators.register(capability);
+    } catch (e) {
+      throw RpcError.invalidParams(e);
+    }
+    this.#tools.set(name, { kind: "capability", off });
+    return { name };
+  }
+
+  /**
+   * An extension's tool as a gated capability `ext.<id>.<wire>` (docs/design/v6-agent-split.md
+   * §3.6): the risk it declared unless the owner set one, its node (default `tools.ext.<id>`, a
+   * work node: a member she knows well enough may use it), its limits and audit. A tool that
+   * does not say otherwise counts against the work limits (`[modules.actions.work]`), not the
+   * medium tier's 20 s cooldown: an extension's tool is usually one step of what she is doing.
+   */
+  toolCapability(decl: ToolDecl, name: string) {
+    const m = this.spec.manifest;
+    const peer = this.peer;
+    const timeout = this.host.call_timeout_ms;
+    const wire = decl.name;
+    const risk = this.spec.tools?.[wire]?.risk ?? decl.risk;
+    const parameters = isJsonObject(decl.parameters)
+      ? decl.parameters
+      : { type: "object", properties: {} };
+    const limits = externalLimits(decl.limits);
+    return externalToolCapability({
+      capability: `ext.${m.id}.${wire}`,
+      tool: name,
+      summary: `擴充「${m.displayName()}」的工具 ${wire}`,
+      description: decl.description,
+      parameters,
+      risk,
+      permission: decl.permission ?? `tools.ext.${m.id}`,
+      group: "extension",
+      readOnly: decl.read_only,
+      work: decl.work ?? true,
+      ...(decl.followup === true ? { followup: true } : {}),
+      ...(limits === undefined ? {} : { limits }),
+      source: `ext.${m.id}`,
+      async call(args, ctx) {
+        let result: JsonValue;
+        try {
+          result = await peer.request(
+            "tools.call",
+            { name: wire, args, context: execContextJson(ctx) },
+            timeout,
+            ctx.signal,
+          );
+        } catch (error) {
+          if (error instanceof RpcError) {
+            throw new ExtensionCallError(error.message, { cause: error });
+          }
+          throw error;
+        }
+        return { text: toolResultText(result) };
+      },
+    });
+  }
+
+  #registerGated(decl: ToolDecl, name: string): JsonValue {
+    const registry = this.ctx.services.get(GatedToolsKey);
+    if (!registry) throw new RpcError(UNAVAILABLE, "the gated tool registry is not available");
     if (this.stopping) throw Session.closedError();
     if (registry.get(name) !== undefined && !this.#tools.has(name)) {
       throw new RpcError(CONFLICT, `tool \`${name}\` is already registered`);
@@ -637,7 +769,7 @@ class Session implements RpcHandler {
     } catch (e) {
       throw RpcError.invalidParams(e);
     }
-    this.#tools.set(name, { registry, tool });
+    this.#tools.set(name, { kind: "gated", registry, tool });
     return { name };
   }
 
@@ -645,8 +777,31 @@ class Session implements RpcHandler {
     const name = registryToolName(wire);
     const reg = this.#tools.get(name);
     this.#tools.delete(name);
-    if (reg) unregisterToolIfOurs(reg, name);
+    if (reg) releaseTool(reg, name);
     return {};
+  }
+
+  /** This extension's schedules, once the settings store is there. */
+  #scheduleBook(): ExtensionSchedules {
+    if (this.#schedules) return this.#schedules;
+    const { store, profile } = this.#storage();
+    this.#schedules = new ExtensionSchedules({
+      extension: this.id,
+      store,
+      profile,
+      clock: this.ctx.clock,
+      offsetMinutes: this.host.utc_offset_minutes,
+      fire: (p) =>
+        !this.stopping && this.peer.tryNotify("schedule.fire", p as unknown as JsonValue),
+      warn: (message, fields) => this.ctx.log.warn({ ext: this.id, ...fields }, message),
+    });
+    return this.#schedules;
+  }
+
+  /** Fires this extension's schedules while it runs (nothing without a settings store). */
+  async runSchedules(signal: AbortSignal): Promise<void> {
+    if (!this.ctx.services.get(SettingsStoreKey)) return;
+    await this.#scheduleBook().run(signal);
   }
 
   registerCommand(spec: CommandSpec): JsonValue {
@@ -752,7 +907,7 @@ class Session implements RpcHandler {
     this.#tools = new Map();
     this.#commands = new Map();
     this.#prompts = new Map();
-    for (const [name, reg] of tools) unregisterToolIfOurs(reg, name);
+    for (const [name, reg] of tools) releaseTool(reg, name);
     for (const reg of commands.values()) unregisterCommandIfOurs(reg);
     for (const [key, registry] of prompts) registry.unregister(key);
     const executor = this.#executor;
@@ -807,6 +962,14 @@ class Session implements RpcHandler {
         }
         return {};
       }
+      case "schedule.set":
+        return (await this.#scheduleBook().set(p)) as unknown as JsonValue;
+      case "schedule.cancel": {
+        const id = params(ExtScheduleCancelParamsSchema, p).id;
+        return { cancelled: await this.#scheduleBook().cancel(id) };
+      }
+      case "schedule.list":
+        return (await this.#scheduleBook().list()) as unknown as JsonValue;
       case "log":
         this.log(p);
         return {};
@@ -822,8 +985,9 @@ class Session implements RpcHandler {
   }
 }
 
-function unregisterToolIfOurs(reg: ToolReg, name: string): void {
-  if (reg.registry.get(name) === reg.tool) reg.registry.unregister(name);
+function releaseTool(reg: ToolReg, name: string): void {
+  if (reg.kind === "capability") reg.off();
+  else if (reg.registry.get(name) === reg.tool) reg.registry.unregister(name);
 }
 
 function unregisterCommandIfOurs(reg: CommandReg): void {

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { errorMessage, parseTomlJson } from "@miyoria/runtime/kernel";
 import { z } from "zod";
+import { isCoreSecret } from "./env.js";
 
 /** File name of an extension manifest. */
 export const MANIFEST_FILE = "miyoria.extension.toml";
@@ -51,15 +52,25 @@ export interface ConfigSection {
   schema: string | null;
 }
 
-/** An MCP server bundled with the extension. Parsed and exposed only. */
+/**
+ * An MCP server bundled with the extension. The `mcp` module connects it while the extension is
+ * enabled (`ExtensionCatalog.mcpServers`), started where the extension runs; its tools are gated
+ * capabilities like those of `[mcp.servers.*]`.
+ */
 export interface McpServerSpec {
   name: string;
-  /** stdio transport. */
+  /** stdio transport: the program, started in the extension's folder. */
   command: string | null;
   args: string[];
+  /** Literal values for its process, on top of the extension's own environment. */
   env: Record<string, string>;
   /** Streamable HTTP transport. */
   url: string | null;
+  /**
+   * The gate's tier for its tools; `null`: medium (low for a tool the server marks read-only
+   * when the owner trusts that, `[mcp.servers."<name>"] trust_read_only_hint`).
+   */
+  risk: "low" | "medium" | "high" | null;
 }
 
 export const PermissionsSchema = z.object({
@@ -76,6 +87,7 @@ const McpServerSpecSchema = z.object({
   args: z.array(z.string()).default([]),
   env: z.record(z.string(), z.string()).default({}),
   url: z.string().nullable().default(null),
+  risk: z.enum(["low", "medium", "high"]).nullable().default(null),
 });
 
 const ManifestSchema = z.object({
@@ -101,7 +113,12 @@ const ManifestSchema = z.object({
   placement: z.enum(["core", "stage", "any"]).default("core"),
   permissions: PermissionsSchema.prefault({}),
   config: z.object({ schema: z.string().nullable().default(null) }).prefault({}),
-  env: z.object({ pass: z.array(z.string()).default([]) }).prefault({}),
+  env: z
+    .object({
+      pass: z.array(z.string()).default([]),
+      secrets: z.array(z.string()).default([]),
+    })
+    .prefault({}),
   mcp_servers: z.array(McpServerSpecSchema).default([]),
 });
 
@@ -112,11 +129,21 @@ const ManifestSchema = z.object({
  *
  * ```toml
  * [env]
- * pass = ["MIYORIA_MC_URL", "MIYORIA_MC_*"]   # exact names, or a prefix ending in `*`
+ * pass = ["MIYORIA_MC_URL", "MIYORIA_MC_*", "MIYORIA_MC_TOKEN"]   # exact names, or a prefix ending in `*`
+ * secrets = ["MC_API_KEY"]    # credentials it would like; only the owner grants them
  * ```
+ *
+ * A wildcard never passes a credential (a name with `KEY`, `TOKEN`, `SECRET`, ...): name it
+ * exactly. Core's own credentials (`CORE_SECRET_PREFIXES`) never pass from a manifest at all;
+ * they reach an extension only when the owner lists them in `[extensions."<id>"] secrets`.
  */
 export interface EnvSpec {
   pass: string[];
+  /**
+   * Credentials the extension asks the owner for (shown by `ext validate` and `ext list`); the
+   * owner grants them in `[extensions."<id>"] secrets`. Asking grants nothing.
+   */
+  secrets: string[];
 }
 
 /** An environment variable name, or a prefix of at least three characters ending in `*`. */
@@ -265,10 +292,21 @@ export class ExtensionManifest {
         );
       }
     }
+    for (const name of this.env.secrets) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) errors.push(`invalid secret name \`${name}\``);
+    }
+    const servers = new Set<string>();
     for (const server of this.mcp_servers) {
       if ((server.command === null) === (server.url === null)) {
         errors.push(`mcp server \`${server.name}\` needs exactly one of \`command\` or \`url\``);
       }
+      if (!/^[A-Za-z0-9_-]{1,32}$/.test(server.name)) {
+        errors.push(
+          `mcp server name \`${server.name}\` must be 1-32 ASCII letters, digits, \`_\` or \`-\``,
+        );
+      }
+      if (servers.has(server.name)) errors.push(`mcp server \`${server.name}\` is listed twice`);
+      servers.add(server.name);
     }
     return errors;
   }
@@ -290,6 +328,19 @@ export class ExtensionManifest {
     }
     if (this.kind.includes("commands") && !this.permissions.commands) {
       warnings.push("kind `commands` without `permissions.commands = true`");
+    }
+    for (const pattern of this.env.pass) {
+      if (pattern.endsWith("*")) continue;
+      if (isCoreSecret(pattern)) {
+        warnings.push(
+          `\`[env] pass\` names \`${pattern}\`, one of Core's own credentials: it is not passed unless the owner lists it in [extensions."${this.id}"] secrets`,
+        );
+      }
+    }
+    if (this.env.secrets.length > 0) {
+      warnings.push(
+        `asks for credentials the owner must grant in [extensions."${this.id}"] secrets: ${this.env.secrets.join(", ")}`,
+      );
     }
     if (this.permissions.input.length > 0) {
       warnings.push(`requests high-risk input permissions: ${this.permissions.input.join(", ")}`);

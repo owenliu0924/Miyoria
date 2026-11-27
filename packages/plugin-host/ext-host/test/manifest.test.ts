@@ -116,7 +116,7 @@ describe("manifest", () => {
       placement: "core",
       permissions: { events: [], tools: false, commands: false, network: [], input: [] },
       config: { schema: null },
-      env: { pass: [] },
+      env: { pass: [], secrets: [] },
       mcp_servers: [],
     });
   });

@@ -37,6 +37,8 @@ export const HostConfigSchema = z.object({
   shutdown_grace_ms: z.number().int().nonnegative().default(2_000),
   /** Executables per runtime, e.g. `{ node = "C:/node/node.exe" }`. */
   runtimes: z.record(z.string(), z.string()).default({}),
+  /** Her clock for extension schedules (`schedule.set { daily = "HH:MM" }`), minutes east of UTC. */
+  utc_offset_minutes: z.number().int().min(-720).max(840).default(480),
 });
 
 export type HostConfig = z.output<typeof HostConfigSchema>;
@@ -77,6 +79,9 @@ export type PermissionOverride = z.output<typeof PermissionOverrideSchema>;
  * [extensions."miyoria.minecraft"]
  * env = { MIYORIA_MC_TOKEN = "${MC_TOKEN}" }   # set for the process (literal values)
  * env_pass = ["MIYORIA_MC_URL"]               # replaces the manifest's `[env] pass`
+ * secrets = ["MC_API_KEY"]                    # Core variables handed over by exact name
+ * run_in = "host"                             # or "sandbox"; default by kind (`defaultRunIn`)
+ * tools."minecraft.say".risk = "high"         # the owner's word on one tool's risk
  * ```
  */
 export interface ExtensionSettings {
@@ -86,11 +91,34 @@ export interface ExtensionSettings {
   env: Record<string, string>;
   /** Host variables passed through instead of the manifest's `[env] pass`; `null` = the manifest's. */
   envPass: string[] | null;
+  /** Where it runs (`run_in`); `null`: the default for its kind (`defaultRunIn`). */
+  runIn: RunIn | null;
+  /**
+   * Core environment variables the owner agrees to hand it (`secrets`), by exact name: the only
+   * way a key or token Core holds reaches an extension besides a literal `env` value.
+   */
+  secrets: string[];
+  /** The owner's word on its tools, by wire name (`tools."<name>".risk`). */
+  tools: Record<string, ToolSetting>;
   config: JsonObject;
+}
+
+/** Where an extension's process runs: this machine, or a sandbox job. */
+export type RunIn = "host" | "sandbox";
+
+export interface ToolSetting {
+  /** Replaces the risk the extension declared. */
+  risk?: "low" | "medium" | "high";
 }
 
 const EnvSchema = z.record(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/), z.string());
 const EnvPassSchema = z.array(z.string());
+const RunInSchema = z.enum(["host", "sandbox"]);
+const SecretsSchema = z.array(z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/));
+const ToolSettingsSchema = z.record(
+  z.string(),
+  z.strictObject({ risk: z.enum(["low", "medium", "high"]).optional() }),
+);
 
 /**
  * The top-level `[extensions]` section, one `[extensions."<id>"]` per extension, as
@@ -104,6 +132,9 @@ export const ExtensionsSectionSchema = z.record(
     permissions: PermissionOverrideSchema.optional(),
     env: EnvSchema.optional(),
     env_pass: EnvPassSchema.optional(),
+    run_in: RunInSchema.optional(),
+    secrets: SecretsSchema.optional(),
+    tools: ToolSettingsSchema.optional(),
   }),
 );
 
@@ -129,12 +160,25 @@ export function extensionSettings(config: Config, id: string): ExtensionSettings
   const all = config.section("extensions");
   const section = isJsonObject(all) && Object.hasOwn(all, id) ? all[id] : undefined;
   if (!isJsonObject(section)) {
-    return { enabled: null, permissions: null, env: {}, envPass: null, config: {} };
+    return {
+      enabled: null,
+      permissions: null,
+      env: {},
+      envPass: null,
+      runIn: null,
+      secrets: [],
+      tools: {},
+      config: {},
+    };
   }
-  const { enabled, permissions, env, env_pass, ...rest } = section;
+  const { enabled, permissions, env, env_pass, run_in, secrets, tools, ...rest } = section;
   const vars = env === undefined ? {} : parseSetting(EnvSchema, env, id, "env");
   const pass =
     env_pass === undefined ? null : parseSetting(EnvPassSchema, env_pass, id, "env_pass");
+  const runIn = run_in === undefined ? null : parseSetting(RunInSchema, run_in, id, "run_in");
+  const granted = secrets === undefined ? [] : parseSetting(SecretsSchema, secrets, id, "secrets");
+  const toolSettings =
+    tools === undefined ? {} : parseSetting(ToolSettingsSchema, tools, id, "tools");
   let parsed: PermissionOverride | null = null;
   if (permissions !== undefined) {
     const result = PermissionOverrideSchema.safeParse(permissions);
@@ -153,8 +197,21 @@ export function extensionSettings(config: Config, id: string): ExtensionSettings
     permissions: parsed,
     env: vars,
     envPass: pass,
+    runIn,
+    secrets: granted,
+    tools: toolSettings,
     config: rest,
   };
+}
+
+/**
+ * Where an extension runs when `run_in` does not say (docs/design/v6-sandbox.md §16 item 3): a
+ * game adapter and anything granted `input` stay on this machine, because they work on its game
+ * and its keyboard; everything else goes into a sandbox when the app has a launcher for that
+ * (`ExtensionLauncherKey`), and runs here otherwise.
+ */
+export function defaultRunIn(kind: readonly string[], granted: Permissions): RunIn {
+  return kind.includes("game-adapter") || granted.input.length > 0 ? "host" : "sandbox";
 }
 
 /**

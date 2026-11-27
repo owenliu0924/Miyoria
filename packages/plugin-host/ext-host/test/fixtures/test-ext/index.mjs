@@ -64,6 +64,8 @@ function notification(method, params) {
       data: { type: params.envelope.type, source: params.envelope.source },
       parent: params.envelope.id,
     });
+  } else if (method === "schedule.fire") {
+    void request("events.publish", { type: `ext.${extId}.fired`, data: params });
   } else if (method === "shutdown") {
     process.exit(0);
   }
@@ -112,6 +114,19 @@ async function onRequest(method, params) {
             { name: "try.publish", description: "Publishes on a topic" },
             { name: "store.roundtrip", description: "Writes and reads storage" },
             { name: "env.get", description: "Reports its environment" },
+            ...(config.gated_tools
+              ? [
+                  {
+                    name: "limited.ping",
+                    description: "Answers pong, once an hour per person",
+                    risk: "medium",
+                    limits: { per_person_per_hour: 1 },
+                  },
+                  { name: "look.up", description: "Only looks", risk: "low", read_only: true },
+                  { name: "risky.do", description: "Needs a review", risk: "high" },
+                  { name: "schedule.try", description: "Calls schedule.* with its arguments" },
+                ]
+              : []),
             ...(game
               ? [{ name: `game.${game}.id`, description: "Echoes the declared game id" }]
               : []),
@@ -208,6 +223,18 @@ async function onRequest(method, params) {
           const got = await request("storage.get", { key: args.key });
           return JSON.stringify(got.value);
         }
+        case "limited.ping":
+          return "pong";
+        case "look.up":
+          return `looked for ${context.account.id} in ${context.context.channel}`;
+        case "risky.do":
+          return "did it";
+        case "schedule.try":
+          try {
+            return JSON.stringify(await request(args.method, args.params ?? {}));
+          } catch (error) {
+            return `refused: ${error.code} ${error.message}`;
+          }
         case "env.get":
           return JSON.stringify({
             names: Object.keys(process.env).sort(),

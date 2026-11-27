@@ -70,7 +70,20 @@ export interface CatalogMcpServer {
   extension: string;
   dir: string;
   spec: McpServerSpec;
+  /** The extension it comes with: where it runs, its environment and its secrets. */
+  owner: ExtensionSpec;
 }
+
+/** Where an enabled extension keeps its declarative HTTP tools (`http-tools/`). */
+export interface CatalogHttpToolDir {
+  extension: string;
+  dir: string;
+  /** What the owner granted it (`[extensions."<id>"] secrets`): all its tool files may use. */
+  secrets: readonly string[];
+}
+
+/** The folder of an extension's declarative HTTP tools. */
+export const HTTP_TOOLS_DIR = "http-tools";
 
 /**
  * Every extension the core runs. Provided as the `ExtensionCatalogKey` service by the
@@ -88,8 +101,20 @@ export class ExtensionCatalog {
           extension: e.spec.manifest.id,
           dir: e.spec.dir,
           spec,
+          owner: e.spec,
         })),
       );
+  }
+
+  /** `http-tools/` folders of enabled extensions that have one (for the `http_tools` module). */
+  httpToolDirs(): CatalogHttpToolDir[] {
+    return this.entries
+      .filter((e) => e.enabled && isDir(join(e.spec.dir, HTTP_TOOLS_DIR)))
+      .map((e) => ({
+        extension: e.spec.manifest.id,
+        dir: join(e.spec.dir, HTTP_TOOLS_DIR),
+        secrets: e.spec.secrets ?? [],
+      }));
   }
 }
 
@@ -202,7 +227,14 @@ export function discover(config: Config, baseDir: string = process.cwd()): Disco
         granted: grantedPermissions(settings, manifest.permissions),
         manifest,
         dir,
-        env: { pass: settings.envPass ?? manifest.env.pass, set: settings.env },
+        env: {
+          pass: settings.envPass ?? manifest.env.pass,
+          set: settings.env,
+          owner: settings.envPass !== null,
+        },
+        runIn: settings.runIn,
+        secrets: settings.secrets,
+        tools: settings.tools,
       };
       catalog.push({ spec, enabled });
       modules.push({

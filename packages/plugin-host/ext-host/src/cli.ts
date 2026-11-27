@@ -232,8 +232,9 @@ export interface NewOptions {
 }
 
 /**
- * Scaffolds a TypeScript extension in `<parent>/<name>` and returns its directory. `name` must
- * be lowercase letters, digits and `-`.
+ * Scaffolds an extension in `<parent>/<name>` and returns its directory: one plain JavaScript
+ * file (`index.mjs`, nothing to build) that adds one low-risk tool, so a dozen lines are a new
+ * capability. `name` must be lowercase letters, digits and `-`.
  */
 export function newExtension(parent: string, name: string, opts: NewOptions = {}): string {
   if (!/^[a-z0-9-]{1,32}$/u.test(name) || name.startsWith("-")) {
@@ -253,15 +254,13 @@ export function newExtension(parent: string, name: string, opts: NewOptions = {}
       `id = "${id}"
 version = "0.1.0"
 name = "${name}"
-kind = ["tools", "commands"]
+kind = ["tools"]
 runtime = "node"
-entry = "dist/index.js"
+entry = "index.mjs"
 placement = "any"
 
 [permissions]
-events = []
 tools = true
-commands = true
 
 [config]
 schema = "config.schema.json"
@@ -274,58 +273,28 @@ schema = "config.schema.json"
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "dev": "tsc -w -p tsconfig.json"
-  },
   "dependencies": {
     "@miyoria/sdk": "${sdk}"
-  },
-  "devDependencies": {
-    "@types/node": "^24",
-    "typescript": "^5.7.2"
   }
 }
 `,
     ],
     [
-      "tsconfig.json",
-      `{
-  "compilerOptions": {
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "types": ["node"],
-    "strict": true,
-    "skipLibCheck": true,
-    "outDir": "dist",
-    "rootDir": "src"
-  },
-  "include": ["src"]
-}
-`,
-    ],
-    [
-      "src/index.ts",
+      "index.mjs",
       `import { defineExtension } from "@miyoria/sdk";
 
 export default defineExtension({
-  async activate(ctx) {
+  activate(ctx) {
     ctx.tools.register({
       name: "${tool}",
       description: "把收到的文字原樣回傳",
       params: { text: { type: "string", description: "要回傳的文字" } },
-      run: async ({ text }) => String(text),
+      // low: runs at once. medium: counted and rate limited. high: she reviews it first.
+      risk: "low",
+      readOnly: true,
+      run: ({ text }) => String(text),
     });
-
-    ctx.commands.register({
-      path: "${name}",
-      description: "跟 ${name} 打招呼",
-      run: async (inv) => \`哈囉,\${inv.invoker_display_name}!\`,
-    });
-
-    ctx.log.info("${name} activated");
+    // A daily alarm: ctx.schedule.set({ id: "morning", daily: "08:00" }) and ctx.schedule.on(...).
   },
 });
 `,
@@ -339,7 +308,7 @@ export default defineExtension({
 }
 `,
     ],
-    [".gitignore", "node_modules/\ndist/\n"],
+    [".gitignore", "node_modules/\n"],
   ];
   for (const [rel, content] of files) {
     const path = join(dir, rel);

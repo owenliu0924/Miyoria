@@ -2,6 +2,13 @@
 // the extension protocol (docs/protocols/extension-rpc.md).
 
 import type { Readable, Writable } from "node:stream";
+import type {
+  ExtScheduleEntry,
+  ExtScheduleFireParams,
+  ExtScheduleSetParams,
+  ExtToolLimits,
+  ExtToolRisk,
+} from "@miyoria/contracts/ext";
 import { type GameAdapter, type RegisteredAdapter, registerGameAdapter } from "./game.js";
 import { RpcError, RpcPeer } from "./rpc.js";
 import { type TaskExecutor, type TaskExecutorInfoInput, TaskFailure, type TaskSteer } from "./task.js";
@@ -50,9 +57,30 @@ export interface ToolDefinition {
    * calls in one step they run at the same time. Leave unset for anything with side effects.
    */
   readOnly?: boolean;
+  /**
+   * What the host's gate does with a call: `"low"` just runs, `"medium"` (the default) counts
+   * against limits and is recorded, `"high"` is also reviewed by her before it runs. The owner
+   * can change it in `[extensions."<id>"] tools."<name>".risk`.
+   */
+  risk?: ExtToolRisk;
+  /**
+   * `false`: it is held to the medium tier's limits (a cooldown between calls) instead of the
+   * work limits. Either way members she knows well enough may call it.
+   */
+  work?: boolean;
+  /** How often it may run (`0` or unset: no such limit of its own). */
+  limits?: ExtToolLimits;
+  /** High risk: she waits briefly for the result and otherwise hears it later. */
+  followup?: boolean;
   /** Returns the text the model sees; non-strings are JSON encoded. */
   run(args: Record<string, any>, ctx: ToolCallContext): unknown;
 }
+
+/** A schedule as `ctx.schedule.set` takes it: once `at` (epoch ms) or `daily` at "HH:MM" her time. */
+export type ScheduleInput = ExtScheduleSetParams;
+export type ScheduleEntry = ExtScheduleEntry;
+export type ScheduleFire = ExtScheduleFireParams;
+export type ScheduleHandler = (fire: ScheduleFire) => void | Promise<void>;
 
 export interface CommandArg {
   name: string;
@@ -141,6 +169,17 @@ export interface ExtensionContext {
     register(key: string, contribute: PromptContributor): Promise<void>;
     unregister(key: string): Promise<void>;
   };
+  /**
+   * Alarms the host keeps (also across restarts, at most 32): `on` gets each one as it comes due.
+   * A one-off that came due while Core was down arrives once on the next start.
+   */
+  readonly schedule: {
+    set(schedule: ScheduleInput): Promise<ScheduleEntry>;
+    cancel(id: string): Promise<boolean>;
+    list(): Promise<ScheduleEntry[]>;
+    /** Returns an unsubscribe function. */
+    on(handler: ScheduleHandler): () => void;
+  };
   /** Per-extension key-value storage kept by the host. */
   readonly storage: {
     get<T = unknown>(key: string): Promise<T | undefined>;
@@ -200,6 +239,10 @@ export function toolDecl(tool: ToolDefinition): ToolDecl {
     parameters,
     permission: tool.permission ?? null,
     ...(tool.readOnly === true ? { read_only: true } : {}),
+    ...(tool.risk !== undefined ? { risk: tool.risk } : {}),
+    ...(tool.work !== undefined ? { work: tool.work } : {}),
+    ...(tool.limits !== undefined ? { limits: tool.limits } : {}),
+    ...(tool.followup !== undefined ? { followup: tool.followup } : {}),
   };
 }
 
@@ -284,6 +327,7 @@ export class ExtensionRuntime {
   readonly #commands = new Map<string, CommandDefinition>();
   readonly #prompts = new Map<string, PromptContributor>();
   readonly #handlers = new Map<string, Set<EventHandler>>();
+  readonly #scheduleHandlers = new Set<ScheduleHandler>();
   readonly #shutdownHooks: Array<() => void | Promise<void>> = [];
   #executor: TaskExecutor | null = null;
 
@@ -402,6 +446,16 @@ export class ExtensionRuntime {
     if (method === "event") {
       const envelope = (params as { envelope?: unknown } | null)?.envelope;
       if (isEnvelope(envelope)) this.#deliver(envelope);
+    } else if (method === "schedule.fire") {
+      const fire = params as ScheduleFire | null;
+      if (fire === null || typeof fire.id !== "string") return;
+      for (const handler of this.#scheduleHandlers) {
+        Promise.resolve()
+          .then(() => handler({ id: fire.id, payload: fire.payload ?? null, due: fire.due }))
+          .catch((error: unknown) =>
+            this.#log("error", "schedule handler failed", { id: fire.id, error: String(error) }),
+          );
+      }
     } else if (method === "shutdown") {
       void this.shutdown();
     }
@@ -566,6 +620,25 @@ export class ExtensionRuntime {
           rt.#prompts.delete(key);
           rt.#pending.prompts = rt.#pending.prompts.filter((k) => k !== key);
           if (rt.#phase === "active") await rt.peer.request("prompt.unregister", { key });
+        },
+      },
+      schedule: {
+        async set(schedule) {
+          return rt.peer.request<ScheduleEntry>("schedule.set", schedule);
+        },
+        async cancel(id) {
+          const r = await rt.peer.request<{ cancelled: boolean }>("schedule.cancel", { id });
+          return r.cancelled;
+        },
+        async list() {
+          const r = await rt.peer.request<{ schedules: ScheduleEntry[] }>("schedule.list", {});
+          return r.schedules;
+        },
+        on(handler) {
+          rt.#scheduleHandlers.add(handler);
+          return () => {
+            rt.#scheduleHandlers.delete(handler);
+          };
         },
       },
       storage: {

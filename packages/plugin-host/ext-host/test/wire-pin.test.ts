@@ -112,6 +112,8 @@ describe("extension to host: what the host reads", () => {
       parameters: { type: "object", properties: { city: { type: "string" } } },
       permission: "tools.weather",
       read_only: true,
+      // A tool that says nothing about its risk is held to the medium tier's gate.
+      risk: "medium",
     });
     expect(ToolDeclSchema.parse({ name: "a", description: "b" })).toEqual({
       name: "a",
@@ -119,6 +121,7 @@ describe("extension to host: what the host reads", () => {
       parameters: { type: "object", properties: {} },
       permission: null,
       read_only: false,
+      risk: "medium",
     });
     expect(ToolDeclSchema.safeParse({ name: "a" }).success).toBe(false);
     expect(ToolDeclSchema.safeParse({ name: 1, description: "b" }).success).toBe(false);
@@ -233,6 +236,7 @@ describe("extension to host: what the host reads", () => {
             parameters: { type: "object", properties: {} },
             permission: null,
             read_only: false,
+            risk: "medium",
           },
         ],
         commands: [],
