@@ -18,6 +18,7 @@ import {
   type ModelUsage,
   NO_USAGE,
   type Reply,
+  rawText,
   type Scene,
   type SceneLine,
   type ScenePerson,
@@ -164,6 +165,8 @@ export interface ScreensItem {
   usage: ModelUsage;
   ms: number;
   timed_out?: boolean;
+  /** A failed item: what the model wrote, before any screen (cut, `rawText`). */
+  raw?: string;
 }
 
 export async function runScreens(
@@ -201,6 +204,7 @@ export async function runScreens(
         usage: reply.usage ?? { ...NO_USAGE },
         ms: reply.ms,
         ...(reply.timed_out ? { timed_out: true } : {}),
+        ...(fault !== null && rawText(reply) !== undefined ? { raw: rawText(reply) } : {}),
       });
       ctx.log(`screens ${c.id}: ${fault === null ? "ok" : `failed (${fault})`}`);
     }

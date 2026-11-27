@@ -15,7 +15,7 @@ import { describe, expect, it } from "vitest";
 import { routerJudge } from "../src/live/judge.js";
 import { Meter } from "../src/live/meter.js";
 import { SelfSubject } from "../src/live/self.js";
-import { NO_USAGE, type Subject } from "../src/live/subject.js";
+import { NO_USAGE, RAW_CHARS, type Subject } from "../src/live/subject.js";
 import type { SuiteContext } from "../src/live/suite.js";
 import {
   judgeScreens,
@@ -88,13 +88,25 @@ describe("the suite", () => {
       async respond(scene) {
         const feel =
           scene.id === "screens-feel-keeps-pushing" ? ["我: 生氣 中\n阿凱: 羈絆 -5「x」"] : [];
-        return { lines: ["嗯"], calls: [], silent: false, usage: { ...NO_USAGE }, ms: 1, feel };
+        const raw = ["嗯".repeat(2000)];
+        return {
+          lines: ["嗯"],
+          calls: [],
+          silent: false,
+          usage: { ...NO_USAGE },
+          ms: 1,
+          feel,
+          raw,
+        };
       },
     };
     const result = await runScreens(context(subject));
     const items = result.items as ScreensItem[];
     expect(items).toHaveLength(SCREENS_CASES.length);
     expect(items.filter((i) => !i.ok).map((i) => i.id)).toEqual(["code-fence", "code-inline"]);
+    // A failed item keeps what the model wrote, cut; a passed one does not.
+    expect([...(items.find((i) => i.id === "code-fence")?.raw ?? "")]).toHaveLength(RAW_CHARS + 1);
+    expect(items.find((i) => i.ok)?.raw).toBeUndefined();
     expect(result.headline).toMatchObject({ ordinary: 1, code: 0, feel: 1 });
     expect(result.headline.wrote_feel).toBeCloseTo(1 / SCREENS_CASES.length);
   });
@@ -144,6 +156,7 @@ describe("subject self and its screens", () => {
       "路徑寫 `/users/<user_id>`",
     ]);
     expect(reply.feel).toEqual(["\n我: 開心 弱\n"]);
+    expect(reply.raw).toEqual([text]);
     expect(judgeScreens(caseOf("code-fence"), reply)).toBeNull();
     expect(judgeScreens(caseOf("code-inline"), reply)).toBeNull();
     await subject.close?.();

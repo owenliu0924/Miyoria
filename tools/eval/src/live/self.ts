@@ -27,6 +27,7 @@ import {
   PROFILES,
   type PromptSource,
   type RunEvent,
+  type RunModel,
   SelfRunner,
   sayTool,
   serviceGuard,
@@ -350,11 +351,31 @@ export class SelfSubject implements Subject {
           (key as ServiceKey<unknown>) === ModerationKey ? (moderation as T) : undefined,
       },
     });
+    // What the model wrote, before any screen: a failed item can be read back from the run file.
+    const raw: string[] = [];
+    const model: RunModel = {
+      complete: (purpose, request, signal) => o.router.complete(purpose, request, signal),
+      prices: () => o.router.prices(),
+      async stream(purpose, request, signal) {
+        const stream = await o.router.stream(purpose, request, signal);
+        raw.push("");
+        const at = raw.length - 1;
+        return {
+          ...(stream.model === undefined ? {} : { model: stream.model }),
+          async *[Symbol.asyncIterator]() {
+            for await (const ev of stream) {
+              if (ev.type === "text_delta") raw[at] += ev.text;
+              yield ev;
+            }
+          },
+        };
+      },
+    };
     const runner = new SelfRunner(
       {
         transcript,
         tools,
-        model: o.router,
+        model,
         prompt,
         guard,
         outlet,
@@ -418,6 +439,7 @@ export class SelfSubject implements Subject {
       ...(timedOut ? { timed_out: true } : {}),
       feel,
       ...(repair ? { feel_repaired: repaired } : {}),
+      raw,
     };
   }
 }
