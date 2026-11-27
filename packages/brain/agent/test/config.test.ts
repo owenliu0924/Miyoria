@@ -71,7 +71,7 @@ describe("config", () => {
     expect(cfg.contributor_timeout_ms).toBe(800);
   });
 
-  it("the_six_output_checks_are_on_by_default", () => {
+  it("the_six_output_checks_and_the_feel_repair_are_on_by_default", () => {
     expect(defaultAgentConfig().corrections).toEqual({
       leak_screen: true,
       leak_screen_spoken: true,
@@ -79,10 +79,14 @@ describe("config", () => {
       fallback_line: true,
       tag_strip: true,
       self_talk: true,
+      feel_repair: true,
     });
     const off = AgentConfigSchema.parse({ corrections: { self_talk: false } }).corrections;
     expect(off.self_talk).toBe(false);
     expect(off.leak_screen).toBe(true);
+    expect(
+      AgentConfigSchema.parse({ corrections: { feel_repair: false } }).corrections,
+    ).toMatchObject({ feel_repair: false, self_talk: true });
   });
 
   it("defaults", () => {
@@ -124,6 +128,7 @@ describe("config", () => {
         fallback_line: true,
         tag_strip: true,
         self_talk: true,
+        feel_repair: true,
       },
       voice: {
         debounce_ms: 700,

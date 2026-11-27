@@ -255,7 +255,8 @@ export async function runFeel(
         run,
         ok: fault === null,
         fault,
-        wrote_feel: (reply.feel ?? []).length > 0,
+        // In the reply itself: a block the repair after it brought does not count here.
+        wrote_feel: (reply.feel ?? []).length - (reply.feel_repaired ?? 0) > 0,
         lines: reply.lines,
         feel: reply.feel ?? [],
         usage: reply.usage ?? { ...NO_USAGE },

@@ -5,7 +5,7 @@ import { toMessages } from "@miyoria/memory/transcript";
 import { describe, expect, it } from "vitest";
 import { isFeelLine, limitProposals, parseFeel } from "../src/feel.js";
 import { PROFILES } from "../src/profiles.js";
-import { FEEL_RULES } from "../src/rules.js";
+import { FEEL_REMINDER, FEEL_RULES } from "../src/rules.js";
 import { StepText } from "../src/screens.js";
 import { addressed, calls, done, fakeTool, rig, SESSION, say } from "./harness.js";
 
@@ -178,27 +178,46 @@ describe("the rules of a feel block", () => {
     expect(FEEL_RULES).toContain("好的鬧:");
     expect(FEEL_RULES).toContain("這種不扣分");
     expect(FEEL_RULES).toContain("壞的鬧:");
-    expect(FEEL_RULES).toContain("這種要寫「羈絆 -」,不要只記心結");
+    expect(FEEL_RULES).toContain("就為他寫一行「羈絆 -數字」");
     // Members' fights with each other are not hers to count.
     expect(FEEL_RULES).not.toContain("欺負別人");
   });
 
+  it("make the bond minus the line for what bothered her, a grudge only beside it", () => {
+    expect(FEEL_RULES).toContain("這一行不是留給最嚴重的事:有點煩就 -2、-5");
+    expect(FEEL_RULES).toContain("不能代替它:寫了心結 + 的那個人,同一段一定也有一行羈絆 -數字");
+    // Said again at the end of the prompt, where she reads it last.
+    expect(FEEL_REMINDER).toContain("最後一定要有一段 <feel>");
+    // Her earlier replies come back without their blocks; she is told why, so she does not copy.
+    expect(FEEL_RULES).toContain("你之前的回覆看不到 <feel>,是因為它被收起來了");
+    expect(FEEL_REMINDER).toContain("紀錄裡你之前的話沒有它,是因為被收起來了,這一則一樣要寫");
+    expect(FEEL_REMINDER).toContain("就為他寫「羈絆 -數字」,小事就寫小數字");
+    expect(FEEL_REMINDER).toContain("心結只能加在旁邊,不能代替它");
+    expect(FEEL_REMINDER).toContain("好的鬧、群友之間互罵,不扣");
+  });
+
   it("let her write how much bond goes, weighed against the bond they had, and only that", () => {
-    expect(FEEL_RULES).toContain("羈絆要扣多少你自己決定");
+    expect(FEEL_RULES).toContain("數字你自己決定");
     expect(FEEL_RULES).toContain("沒有上限");
     expect(FEEL_RULES).toContain("也看你們原本的羈絆");
     expect(FEEL_RULES).toContain("除了羈絆的 -,其他都只寫方向");
-    // The example has a bond minus with a number, and it reads.
-    const example = FEEL_RULES.slice(
-      FEEL_RULES.lastIndexOf("<feel>") + "<feel>".length,
-      FEEL_RULES.lastIndexOf("</feel>"),
+    // The examples: a rise; a bond minus with a grudge beside it, and a small minus. They read.
+    const examples = [...FEEL_RULES.matchAll(/<feel>\n([\s\S]*?)<\/feel>/gu)].map(
+      (m) => m[1] ?? "",
     );
-    const parsed = parseFeel(example);
-    expect(parsed.dropped).toEqual([]);
-    expect(parsed.lines.map((l) => [l.field, l.direction, l.amount])).toEqual([
-      ["bond", "up", undefined],
-      ["bond", "down", 20],
-    ]);
+    expect(examples).toHaveLength(2);
+    const parsed = examples.map((e) => parseFeel(e));
+    expect(parsed.flatMap((p) => p.dropped)).toEqual([]);
+    expect(parsed.map((p) => p.lines.map((l) => [l.name, l.field, l.direction, l.amount]))).toEqual(
+      [
+        [["小明", "bond", "up", undefined]],
+        [
+          ["阿哲", "bond", "down", 25],
+          ["阿哲", "grudge", "up", undefined],
+          ["小美", "bond", "down", 3],
+        ],
+      ],
+    );
   });
 });
 

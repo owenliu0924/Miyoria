@@ -537,6 +537,10 @@ describe("reflectionOf", () => {
     const bad = { ...(base as object), changes: [{ value: "羈絆", direction: "?", quote: "x" }] };
     expect(PersonReflectionSchema.safeParse(bad).success).toBe(false);
     expect(personRules("Owen", null)).toContain("羈絆的 - 可以在後面寫要扣多少");
+    // A fall rests on something they did to her, never on a neutral day or her own regret.
+    expect(personRules("Owen", null)).toContain("一定要有他今天對你做的一件事,讓你受傷或被惹到");
+    expect(personRules("Owen", null)).toContain("頻道太吵、沒機會聊、你自己的遺憾或後悔");
+    expect(personRules("Owen", null)).toContain("找不到這種事,就不要往下修");
   });
 
   it("asks for the anchor only when a tier is held", () => {
