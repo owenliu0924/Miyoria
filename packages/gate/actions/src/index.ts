@@ -141,7 +141,13 @@ export {
   shareLimits,
   zipLimits,
 } from "./share.js";
-export { CapabilityTool, REQUEST_RULE, RESULT_PENDING, REVIEW_PENDING } from "./tools.js";
+export {
+  CapabilityTool,
+  REQUEST_RULE,
+  RESULT_PENDING,
+  REVIEW_PENDING,
+  WORK_PENDING,
+} from "./tools.js";
 export {
   EXTERNAL_TOOL_NODE_PREFIXES,
   isWorkNode,
