@@ -10,7 +10,9 @@ import {
   type Module,
   type ModuleContext,
   type ModuleManifest,
+  SupervisorKey,
 } from "@miyoria/runtime/kernel";
+import { Events, is } from "@miyoria/types";
 import { ExtensionCatalogKey } from "../../ext-host/src/host.js";
 import { ExtensionLauncherKey, localLauncher } from "../../ext-host/src/launch.js";
 import { type BundledServer, bundledServers } from "./bundled.js";
@@ -32,6 +34,16 @@ export class McpStartError extends Error {
 interface Running {
   status: McpStatus;
   registrar: Registrar;
+}
+
+/** A server an extension bundles, run while that extension's module is not disabled. */
+interface Follow {
+  name: string;
+  runner: ServerRunner;
+  /** Stops the current run; `null` while it is not running. */
+  stop: AbortController | null;
+  /** The last run has ended. */
+  done: Promise<void>;
 }
 
 /**
@@ -77,6 +89,8 @@ export class McpModule implements Module {
     const bundled = catalog === undefined ? [] : bundledServers(catalog, this.config.servers);
     const bundledNames = new Set(bundled.map((b) => b.name));
     const launcher = () => ctx.services.get(ExtensionLauncherKey) ?? localLauncher();
+    const supervisor = ctx.services.get(SupervisorKey);
+    const followers = new Map<string, Follow[]>();
 
     const runners: [string, ServerConfig, BundledServer | null][] = [
       ...[...this.config.servers]
@@ -121,7 +135,34 @@ export class McpModule implements Module {
         backoffMaxMs: reconnectMaxMs(this.config),
         clock: ctx.clock,
       });
-      ctx.spawn("mcp-client", (signal) => runner.run(signal));
+      if (from === null) {
+        ctx.spawn("mcp-client", (signal) => runner.run(signal));
+        continue;
+      }
+      const owner = from.from.owner.manifest.moduleId();
+      const follow: Follow = { name, runner, stop: null, done: Promise.resolve() };
+      followers.set(owner, [...(followers.get(owner) ?? []), follow]);
+      // Disabled from the panel since the app started: it waits for the extension to come back.
+      if (supervisor?.list().find((m) => m.id === owner)?.enabled === false) {
+        status.update(name, (s) => {
+          s.state = "disabled";
+        });
+      } else this.#follow(ctx, status, follow);
+    }
+    if (followers.size > 0) {
+      // A bundled server is part of its extension: it stops when the extension is disabled and
+      // starts again when it runs again (the catalog only knew `enabled` at start).
+      const states = ctx.subscribe(Events.SystemModuleState.type);
+      ctx.spawn("mcp-bundled", async () => {
+        for await (const env of states) {
+          if (!is(Events.SystemModuleState, env)) continue;
+          const list = followers.get(env.data.module) ?? [];
+          for (const follow of list) {
+            if (env.data.state === "disabled") this.#unfollow(follow);
+            else if (env.data.state === "running") this.#follow(ctx, status, follow);
+          }
+        }
+      });
     }
 
     const expose = this.config.server;
@@ -154,6 +195,41 @@ export class McpModule implements Module {
 
     ctx.provide(McpStatusKey, status);
     this.#running = { status, registrar };
+  }
+
+  /** Runs a bundled server's runner unless it runs already (after the last stop ended). */
+  #follow(ctx: ModuleContext, status: McpStatus, follow: Follow): void {
+    if (follow.stop !== null) return;
+    const stop = new AbortController();
+    follow.stop = stop;
+    const before = follow.done;
+    let finished: () => void = () => {};
+    follow.done = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    ctx.spawn("mcp-client", async (signal) => {
+      try {
+        await before;
+        if (stop.signal.aborted) return;
+        await follow.runner.run(AbortSignal.any([signal, stop.signal]));
+      } finally {
+        if (follow.stop === null && !signal.aborted) {
+          status.update(follow.name, (s) => {
+            s.state = "disabled";
+            s.tools = [];
+          });
+        }
+        finished();
+      }
+    });
+  }
+
+  /** Stops a bundled server's runner: its tools go, closing the connection ends its program. */
+  #unfollow(follow: Follow): void {
+    const stop = follow.stop;
+    if (stop === null) return;
+    follow.stop = null;
+    stop.abort();
   }
 
   async stop(): Promise<void> {
