@@ -40,6 +40,29 @@ export const CodeRunArgsSchema = z.object({
 });
 export type CodeRunArgs = z.output<typeof CodeRunArgsSchema>;
 
+/** A shell on a computer of the cluster (design doc v6-sandbox §10.2). Same node as `code.run`. */
+export const SHELL_RUN = "shell.run";
+
+/** Longest command `shell_run` takes, in bytes. */
+export const MAX_COMMAND_BYTES = 256 * 1024;
+
+/** The session `shell_run` uses when none is named. */
+export const DEFAULT_SHELL_SESSION = "main";
+
+export const ShellRunArgsSchema = z.object({
+  command: z
+    .string()
+    .min(1)
+    .refine((c) => Buffer.byteLength(c, "utf8") <= MAX_COMMAND_BYTES, {
+      message: `at most ${MAX_COMMAND_BYTES} bytes`,
+    })
+    .describe("A bash script; it runs in /workspace"),
+  timeout_ms: z.number().int().positive().optional(),
+  session: SessionChoiceSchema.optional().describe("A session name (default `main`) or `fresh`"),
+  stdin: z.string().optional(),
+});
+export type ShellRunArgs = z.output<typeof ShellRunArgsSchema>;
+
 /** Capability ids of her workspace (the file tools need no Docker; `workspace.run` does). */
 export const WORKSPACE_LIST = "workspace.list";
 export const WORKSPACE_READ = "workspace.read";
@@ -107,5 +130,7 @@ export function summarizeRun(result: RunResult): JsonValue {
     stderr_truncated: result.stderr_truncated,
     files_out: result.files_out.map((f) => ({ path: f.path, size: f.size, encoding: f.encoding })),
     session: result.session === null ? null : { ...result.session },
+    ...(result.host === undefined ? {} : { host: result.host }),
+    ...(result.cpu_ms === undefined ? {} : { cpu_ms: result.cpu_ms }),
   };
 }

@@ -35,7 +35,7 @@ import {
   type ServicePlan,
   type UsedLinks,
 } from "./resolve.js";
-import { type LoadReading, loadOf, loadStatus } from "./routing.js";
+import { type LoadReading, loadOf, loadStatus, withSelfReadiness } from "./routing.js";
 
 /** Timings that tests shorten. */
 export interface Timing {
@@ -212,8 +212,9 @@ export class ManagedService {
 
   status(withToken: boolean): HostServiceStatus {
     const port = this.#port;
-    const routing = this.#host.routing?.(this);
     const load = this.load;
+    // A service that said it cannot take work (the sandbox without Docker) is not ready either.
+    const routing = withSelfReadiness(this.#host.routing?.(this), load);
     const local = localAddress(this.#host.ctx.bind);
     // What Core may call directly: the advertised address, or this machine's own when Core is
     // here too. A joined machine with neither is reached through the control link only.
@@ -270,7 +271,9 @@ export class ManagedService {
       (before !== null &&
         found !== null &&
         before.running === found.running &&
-        before.queued === found.queued);
+        before.queued === found.queued &&
+        before.ready === found.ready &&
+        before.reason === found.reason);
     // A new reading of the same load is not a change: its age shows in the next report anyway.
     if (!same) this.#host.changed();
   }

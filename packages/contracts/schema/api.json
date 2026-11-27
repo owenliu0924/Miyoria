@@ -14987,6 +14987,9 @@
         },
         "exempt": {
           "type": "boolean"
+        },
+        "work": {
+          "$ref": "#/$defs/ApiQuotaWork"
         }
       },
       "required": [
@@ -19195,6 +19198,9 @@
               "type": "null"
             }
           ]
+        },
+        "work": {
+          "$ref": "#/$defs/ApiQuotaWork"
         }
       },
       "required": [
@@ -19221,6 +19227,44 @@
       "required": [
         "limits",
         "people"
+      ]
+    },
+    "ApiQuotaWork": {
+      "type": "object",
+      "properties": {
+        "hour": {
+          "type": "number"
+        },
+        "day": {
+          "type": "number"
+        },
+        "limit_hour": {
+          "type": "number"
+        },
+        "limit_day": {
+          "type": "number"
+        },
+        "capped": {
+          "anyOf": [
+            {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "hour",
+        "day",
+        "limit_hour",
+        "limit_day",
+        "capped"
       ]
     },
     "ApiRaisedTopic": {

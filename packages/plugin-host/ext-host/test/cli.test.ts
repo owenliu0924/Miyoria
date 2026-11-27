@@ -26,8 +26,9 @@ describe("cli", () => {
       expect(v.errors).toEqual([]);
       expect(isValid(v)).toBe(true);
       expect(v.manifest?.id).toBe("my-ext");
-      // dist is not built yet.
-      expect(v.warnings).toHaveLength(1);
+      // One file, nothing to build: no warning about a missing entry.
+      expect(v.warnings).toEqual([]);
+      expect(v.manifest?.entry).toBe("index.mjs");
       expect(() => newExtension(join(root, "src"), "my-ext")).toThrow(/already exists/);
       expect(() => newExtension(root, "Bad")).toThrow(/must be 1-32 chars/);
 
@@ -37,7 +38,7 @@ describe("cli", () => {
       );
       const installed = install(config, root, dir);
       expect(installed.dir).toBe(join(root, "installed", "my-ext"));
-      expect(statSync(join(installed.dir, "src/index.ts")).isFile()).toBe(true);
+      expect(statSync(join(installed.dir, "index.mjs")).isFile()).toBe(true);
       expect(existsSync(join(installed.dir, "node_modules"))).toBe(false);
       expect(() => install(config, root, dir)).toThrow(/already exists/);
       expect(() => install(config, root, "nope-not-a-dir")).toThrow(/neither a directory/);

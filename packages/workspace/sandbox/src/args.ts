@@ -107,7 +107,32 @@ export interface ContainerSpec {
    * `-i` run of the program. Default `false`.
    */
   detached?: boolean;
+  // The fields below are the sandbox service's (docs/design/v6-sandbox.md §2.3). Left out, the
+  // arguments are exactly the local backend's.
+  /** Host directory mounted read-write at `/home/sandbox` (where `pip --user` and npm install). */
+  homeDir?: string | null;
+  /** Host directory mounted read-only at `/ext` (an extension's folder). */
+  extDir?: string | null;
+  /** `--cgroupns`: `private` so the container reads its own `cpu.stat` (§7). */
+  cgroupns?: "private" | null;
+  /**
+   * `/tmp` without `noexec`: native modules build there. The container as a whole is the
+   * boundary, not whether a file in it may run.
+   */
+  tmpExec?: boolean;
+  /** A `/dev/shm` tmpfs of this many MiB (a browser needs one; `--ipc none` has none). */
+  shmMb?: number | null;
+  /** Docker's `--runtime` (`runsc` on a Linux machine with gVisor). */
+  runtime?: string | null;
+  /** `--workdir`; default `/work`. */
+  workdir?: typeof WORK_DIR | typeof WORKSPACE_DIR | null;
 }
+
+/** Where `homeDir` and `extDir` appear inside the container. */
+export const HOME_DIR = "/home/sandbox";
+export const EXT_DIR = "/ext";
+
+const RUNTIME = /^[a-z][a-z0-9_.-]{0,63}$/;
 
 export class InvalidSpecError extends Error {
   override readonly name = "InvalidSpecError";
@@ -176,22 +201,26 @@ export function buildRunArgs(spec: ContainerSpec): string[] {
     }
     args.push("--label", `${key}=${value}`);
   }
+  args.push("--pull", "never", "--log-driver", "none");
+  if (spec.cgroupns === "private") args.push("--cgroupns", "private");
   args.push(
-    "--pull",
-    "never",
-    "--log-driver",
-    "none",
     "--network",
     network,
     "--read-only",
     "--tmpfs",
-    `/tmp:rw,noexec,nosuid,nodev,size=${limits.tmpfs_mb}m`,
-    "--mount",
-    bind(spec.workDir, WORK_DIR, false),
-    "--mount",
-    bind(spec.codeDir, CODE_DIR, true),
+    `/tmp:rw,${spec.tmpExec === true ? "" : "noexec,"}nosuid,nodev,size=${limits.tmpfs_mb}m`,
   );
+  if (spec.shmMb !== undefined && spec.shmMb !== null) {
+    if (!Number.isInteger(spec.shmMb) || spec.shmMb < 1) {
+      throw new InvalidSpecError(`bad shm size \`${spec.shmMb}\``);
+    }
+    args.push("--tmpfs", `/dev/shm:rw,nosuid,nodev,size=${spec.shmMb}m`);
+  }
+  args.push("--mount", bind(spec.workDir, WORK_DIR, false));
+  if (spec.homeDir) args.push("--mount", bind(spec.homeDir, HOME_DIR, false));
+  args.push("--mount", bind(spec.codeDir, CODE_DIR, true));
   if (spec.toolsDir !== null) args.push("--mount", bind(spec.toolsDir, TOOLS_DIR, true));
+  if (spec.extDir) args.push("--mount", bind(spec.extDir, EXT_DIR, true));
   if (spec.workspaceDir) {
     args.push("--mount", bind(spec.workspaceDir, WORKSPACE_DIR, false));
     for (const name of spec.hiddenInWorkspace ?? []) {
@@ -204,9 +233,17 @@ export function buildRunArgs(spec: ContainerSpec): string[] {
       );
     }
   }
+  const workdir = spec.workdir ?? WORK_DIR;
+  if (workdir !== WORK_DIR && workdir !== WORKSPACE_DIR) {
+    throw new InvalidSpecError(`bad workdir \`${workdir}\``);
+  }
+  if (spec.runtime !== undefined && spec.runtime !== null) {
+    if (!RUNTIME.test(spec.runtime)) throw new InvalidSpecError(`bad runtime \`${spec.runtime}\``);
+    args.push("--runtime", spec.runtime);
+  }
   args.push(
     "--workdir",
-    WORK_DIR,
+    workdir,
     "--user",
     spec.user,
     "--cap-drop",
@@ -252,6 +289,38 @@ export function execArgs(name: string, command: readonly string[], user?: string
   if (user !== undefined && !USER.test(user)) throw new InvalidSpecError(`bad user \`${user}\``);
   if (command.length === 0) throw new InvalidSpecError("empty command");
   return ["exec", "-i", ...(user === undefined ? [] : ["--user", user]), name, ...command];
+}
+
+/**
+ * `docker exec -i` with a working directory and extra environment (the sandbox service's execs
+ * and procs). Values are checked like `buildRunArgs`'s, so none can be read as a flag.
+ */
+export function execWithArgs(
+  name: string,
+  command: readonly string[],
+  options: { user: string; workdir: string; env?: Readonly<Record<string, string>> },
+): string[] {
+  if (!CONTAINER_NAME.test(name)) throw new InvalidSpecError(`bad name \`${name}\``);
+  if (!USER.test(options.user)) throw new InvalidSpecError(`bad user \`${options.user}\``);
+  if (!/^\/[a-z]+(\/[a-z]+)?$/.test(options.workdir)) {
+    throw new InvalidSpecError(`bad workdir \`${options.workdir}\``);
+  }
+  if (command.length === 0) throw new InvalidSpecError("empty command");
+  const args = ["exec", "-i", "--user", options.user, "--workdir", options.workdir];
+  for (const [key, value] of Object.entries(options.env ?? {})) {
+    if (!ENV_NAME.test(key) || /[\0\r\n]/.test(value)) {
+      throw new InvalidSpecError(`bad env \`${key}\``);
+    }
+    args.push("--env", `${key}=${value}`);
+  }
+  args.push(name, ...command);
+  return args;
+}
+
+/** `docker pause` / `docker unpause`: nothing in the container runs while the host walks it. */
+export function pauseArgs(name: string, pause: boolean): string[] {
+  if (!CONTAINER_NAME.test(name)) throw new InvalidSpecError(`bad name \`${name}\``);
+  return [pause ? "pause" : "unpause", name];
 }
 
 /**

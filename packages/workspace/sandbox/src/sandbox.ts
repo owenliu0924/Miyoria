@@ -34,9 +34,11 @@ import {
   egressProxyArgs,
   egressProxyName,
   egressReadyArgs,
+  ISOLATED_GATEWAY_DOCKER,
+  isolatesGateway,
   networkConnectArgs,
   networkCreateArgs,
-  networkInspectArgs,
+  networkGatewayModeArgs,
   networkRemoveArgs,
   proxyEnv,
 } from "./egress.js";
@@ -192,7 +194,11 @@ interface Launch {
   standby?: boolean;
 }
 
-type Validated = Required<Omit<RunRequest, "network" | "workspace_folder">> & {
+type Validated = Required<
+  Omit<RunRequest, "network" | "workspace_folder" | "language" | "for" | "payer">
+> & {
+  /** This backend has an image per program language and no shell. */
+  language: Language;
   network: "none" | "allow";
   workspace_folder: string | null;
 };
@@ -426,8 +432,24 @@ export class DockerSandbox implements Sandbox {
     await this.ensureImage("node", signal);
     const fail = (what: string, result: ExecResult): SandboxError =>
       new SandboxError("docker_failed", `egress proxy: cannot ${what}: ${why(result)}`);
-    const inspected = await this.#control(networkInspectArgs(network), signal);
-    if (inspected.exit_code !== 0) {
+    if (!isolatesGateway(this.#health.server_version)) {
+      // An older engine leaves the network's gateway on this machine: a run would reach every
+      // service Core's machine listens on (the admin pages, hostd).
+      throw new SandboxError(
+        "network_unsupported",
+        `Docker ${this.#health.server_version ?? "?"} cannot keep runs on the network away from this machine's own services; Docker ${ISOLATED_GATEWAY_DOCKER} or newer is needed`,
+      );
+    }
+    // `exit 0` is "it exists"; anything but `isolated` is one made before the gateway was taken off.
+    const inspected = await this.#control(networkGatewayModeArgs(network), signal);
+    if (inspected.exit_code === 0 && decodeOutput(inspected.stdout).trim() !== "isolated") {
+      await this.#control(removeArgs([proxy]), signal).catch(() => undefined);
+      const removed = await this.#control(networkRemoveArgs(network), signal);
+      if (removed.exit_code !== 0 || removed.error !== null) {
+        throw fail("replace the network that still leads to this machine", removed);
+      }
+    }
+    if (inspected.exit_code !== 0 || decodeOutput(inspected.stdout).trim() !== "isolated") {
       const created = await this.#control(networkCreateArgs(network, this.instance), signal);
       if (created.exit_code !== 0 || created.error !== null) {
         throw fail("create the network", created);
@@ -582,6 +604,16 @@ export class DockerSandbox implements Sandbox {
     const r = parsed.data;
     const caps = this.#config.caps;
     const configured = this.#config.network.allow;
+    const language = r.language;
+    if (language === "shell") {
+      throw new SandboxError(
+        "invalid_request",
+        "this sandbox runs Python and Node programs only (a shell needs a computer of the cluster)",
+      );
+    }
+    // `open` is whatever the owner configured: the allowlist when there is one, else nothing.
+    if (r.network === "open")
+      r.network = configured.length > 0 ? { allow: [...configured] } : "none";
     if (r.network !== undefined && r.network !== "none") {
       if (configured.length === 0) {
         throw new SandboxError(
@@ -635,7 +667,7 @@ export class DockerSandbox implements Sandbox {
       network: wantsNetwork ? "allow" : "none",
       mount_workspace: r.mount_workspace ?? false,
       workspace_folder: r.workspace_folder ?? null,
-      language: r.language,
+      language,
       code: r.code,
       files: r.files ?? [],
       stdin,
@@ -709,7 +741,8 @@ export class DockerSandbox implements Sandbox {
   #done(done: RunResult): RunResult {
     this.#publish(Events.SandboxRunFinished, {
       run_id: done.run_id,
-      language: done.language,
+      // `#validate` refuses `shell` here.
+      language: done.language as Language,
       exit_code: done.exit_code,
       duration_ms: done.duration_ms,
       killed_reason: done.killed_reason,

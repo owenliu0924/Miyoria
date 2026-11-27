@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BrowseConfigSchema } from "./browse/config.js";
 
 /**
  * An image reference the Docker CLI can never mistake for a flag: starts with a letter or digit,
@@ -14,24 +15,28 @@ export const SandboxImagesSchema = z.object({
   node: image.default("node:24-slim"),
 });
 
-/** Resource limits of one container. */
+/**
+ * Resource limits of one container. The defaults fit `pip install` and real data work (a job is
+ * a whole Linux machine now); they were 256 MiB, 1 CPU, 128 processes, a 64 MiB `/tmp`, 16 MiB
+ * files and 256 open files.
+ */
 export const SandboxLimitsSchema = z.object({
   /** `--memory` (and `--memory-swap`, so no swap), in MiB. */
-  memory_mb: z.number().int().min(16).default(256),
+  memory_mb: z.number().int().min(16).default(2048),
   /** `--cpus`. */
-  cpus: z.number().positive().default(1),
+  cpus: z.number().positive().default(2),
   /** `--pids-limit`: processes and threads inside the container. */
-  pids_limit: z.number().int().min(8).default(128),
+  pids_limit: z.number().int().min(8).default(512),
   /** Size of the `/tmp` tmpfs, in MiB. */
-  tmpfs_mb: z.number().int().min(1).default(64),
+  tmpfs_mb: z.number().int().min(1).default(512),
   /** `--ulimit fsize`: largest file a process may write, in bytes. */
   max_file_size_bytes: z
     .number()
     .int()
     .min(1024)
-    .default(16 * 1024 * 1024),
+    .default(256 * 1024 * 1024),
   /** `--ulimit nofile`: open files per process. */
-  nofile: z.number().int().min(16).default(256),
+  nofile: z.number().int().min(16).default(4096),
 });
 export type SandboxLimits = z.output<typeof SandboxLimitsSchema>;
 
@@ -85,14 +90,22 @@ export type SandboxCaps = z.output<typeof SandboxCapsSchema>;
 
 /** Her named sessions: long-lived containers whose `/work` carries over between runs. */
 export const SandboxSessionsSchema = z.object({
-  /** Sessions open at once (per profile). 0 = no sessions. */
-  max: z.number().int().min(0).default(3),
+  /**
+   * Sessions open at once, everyone's together (per profile). 0 = no sessions. It was 3 while
+   * only she had sessions.
+   */
+  max: z.number().int().min(0).default(8),
+  /** Sessions one person (or she herself) has open at once; cluster backend only. */
+  per_person: z.number().int().min(0).default(2),
   /** A session closes after this many minutes without a run. */
   idle_minutes: z.number().positive().default(15),
   /** A session closes this many minutes after it started, however busy. */
   lifetime_minutes: z.number().positive().default(120),
-  /** Largest `/work` of a session, in MiB; a run that leaves more closes the session. */
-  disk_mb: z.number().int().min(1).default(256),
+  /**
+   * Largest `/work` of a session, in MiB; a run that leaves more closes the session. On the
+   * cluster backend it is the job's disk limit (`/work`, `/workspace` and `/home` together).
+   */
+  disk_mb: z.number().int().min(1).default(2048),
 });
 
 /**
@@ -132,20 +145,20 @@ export type SandboxFiles = z.output<typeof SandboxFilesSchema>;
 export const SandboxWorkspaceSchema = z.object({
   enabled: z.boolean().default(true),
   /**
-   * All files together, everyone's folders included, in MiB: an upper bound, not a reservation.
-   * The default fits 100 people at the per-person caps (256 MiB each) and her own files.
+   * All files together, everyone's folders included, in MiB: an upper bound on Core's disk, not
+   * a reservation. Most folders stay far below the per-person cap.
    */
   max_mb: z.number().int().min(1).default(32_768),
   /** Files at most, everyone's folders included (the default: 100 people at 2000 each). */
   max_files: z.number().int().min(1).default(200_000),
-  /** One file at most, in KiB. */
-  max_file_kb: z.number().int().min(1).default(8192),
-  /** One person's folder at most, in MiB. */
-  person_max_mb: z.number().int().min(1).default(256),
+  /** One file at most, in KiB (it was 8192). */
+  max_file_kb: z.number().int().min(1).default(262_144),
+  /** One person's folder at most, in MiB (it was 256). */
+  person_max_mb: z.number().int().min(1).default(1024),
   /** Files in one person's folder at most. */
   person_max_files: z.number().int().min(1).default(2000),
-  /** The largest file `workspace_export` takes out (to hand over with `share`), in KiB. */
-  export_max_kb: z.number().int().min(1).default(8192),
+  /** The largest file `workspace_export` takes out (to hand over with `share`), in KiB (it was 8192). */
+  export_max_kb: z.number().int().min(1).default(262_144),
   /**
    * Characters of a file `workspace_read` returns at once (the rest is read with `offset`).
    */
@@ -159,13 +172,22 @@ export const ALLOWED_HOST =
   /^(\*\.)?[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/;
 
 /**
- * `[modules.sandbox.network]`: what a run may reach when it asks for the network. Closed by
- * default (`allow = []`): every run is `--network none`. With hosts listed, a run that asks
- * gets a Docker network without a route out and an egress proxy (a container of the node
- * image) as its only way out, which lets through only these hosts on ports 80 and 443 and never
- * to a private address. Needs a real Docker run to verify (see README).
+ * `[modules.sandbox.network]`: what a run may reach.
+ *
+ * On the cluster backend each job gets its own egress proxy (docs/design/v6-sandbox.md §5):
+ * `mode = "open"` (the default) lets everything through but private, link-local, tailnet and
+ * cloud metadata addresses and the mail ports (`deny_ports`); `allowlist` only the hosts in
+ * `allow` on 80 and 443; `none` no network. An old file that lists hosts in `allow` and has no
+ * `mode` is read as `allowlist` (see `networkMode`).
+ *
+ * The local backend keeps its own rule: closed unless `allow` lists hosts; then a run that asks
+ * gets a Docker network without a route out and an egress proxy (a container of the node image)
+ * as its only way out, which lets through only these hosts on ports 80 and 443 and never to a
+ * private address.
  */
 export const SandboxNetworkSchema = z.object({
+  /** Cluster backend; not given: `open`, or `allowlist` when `allow` lists hosts. */
+  mode: z.enum(["open", "allowlist", "none"]).optional(),
   allow: z
     .array(z.string().toLowerCase().regex(ALLOWED_HOST, "a host name or `*.example.com`"))
     .max(32)
@@ -174,8 +196,48 @@ export const SandboxNetworkSchema = z.object({
   proxy_port: z.number().int().min(1024).max(65535).default(3128),
   /** Memory of the proxy container, in MiB. */
   proxy_memory_mb: z.number().int().min(32).default(128),
+  /** Ports refused in `open` mode as well (mail: a job must not send spam from a friend's IP). */
+  deny_ports: z.array(z.number().int().min(1).max(65535)).max(64).default([25, 465, 587, 2525]),
+  /** Connections one job has open at once (cluster backend). */
+  max_connections: z.number().int().min(1).default(64),
+  /** What one job sends and receives in all, in MiB (cluster backend). */
+  max_mb: z.number().int().min(1).default(4096),
 });
 export type SandboxNetwork = z.output<typeof SandboxNetworkSchema>;
+
+/** The network mode a job of the cluster backend gets (an old allowlist-only file: `allowlist`). */
+export function networkMode(network: SandboxNetwork): "open" | "allowlist" | "none" {
+  return network.mode ?? (network.allow.length > 0 ? "allowlist" : "open");
+}
+
+/**
+ * `[modules.sandbox.transfer]`: the folder that travels to a computer of the cluster with a job,
+ * and how long that computer keeps a job Core stopped asking about.
+ */
+export const SandboxTransferSchema = z.object({
+  /** Largest folder sent into one job, in MiB. */
+  max_mb: z.number().int().min(1).default(1024),
+  /** One upload part, in MiB: each has its own length and can be sent again on its own. */
+  part_mb: z.number().int().min(1).max(64).default(8),
+  /**
+   * A job is closed on its computer when Core did not touch it for this long. Long enough for a
+   * restart of Core (signing in and loading models takes a minute or two).
+   */
+  lease_secs: z.number().int().min(30).default(600),
+  /**
+   * The computers (host names) a plugin with secrets may run on; empty: only Core's own one
+   * (docs/design/v6-sandbox.md §16 question 3).
+   */
+  trusted_hosts: z.array(z.string().min(1).max(253)).max(64).default([]),
+  /**
+   * The computers (host names) members' work may go to, with their folders, and that receive
+   * the `people/` tree on an owner's run over the whole workspace; Core's own machine always may.
+   * A computer must be listed here AND have its owner take members' work (`[sandbox] members`
+   * in its host.toml): that report is the computer's own word, and a hostile one would say yes.
+   */
+  member_hosts: z.array(z.string().min(1).max(253)).max(64).default([]),
+});
+export type SandboxTransfer = z.output<typeof SandboxTransferSchema>;
 
 /**
  * `[modules.sandbox]` config section. The module is opt-in: it only runs with
@@ -188,6 +250,13 @@ export type SandboxNetwork = z.output<typeof SandboxNetworkSchema>;
  * ```
  */
 export const SandboxConfigSchema = z.object({
+  /**
+   * Where runs go: `auto` (the default) uses the `sandbox` service of a computer of the cluster
+   * when one is ready, and Docker on this machine otherwise, as before; `cluster` only the
+   * cluster; `local` only this machine's Docker (no shell, the network of `network.allow`).
+   * `images`, `pool_size`, `user` and `docker` only matter to the local backend.
+   */
+  backend: z.enum(["auto", "cluster", "local"]).default("auto"),
   /**
    * Directory for per-run workspaces (`runs/<run id>`), the per-profile tools workspace
    * (`profiles/<profile>/tools`) and session workspaces (`profiles/<profile>/sessions`). Relative paths resolve against the directory of
@@ -206,10 +275,10 @@ export const SandboxConfigSchema = z.object({
     .string()
     .regex(/^(auto|[1-9][0-9]{0,9}(:[1-9][0-9]{0,9})?)$/, "`auto` or a non-root uid[:gid]")
     .default("auto"),
-  /** Timeout of a run that does not ask for one, in milliseconds. */
-  default_timeout_ms: z.number().int().min(100).default(30_000),
-  /** Longest timeout a run may ask for, in milliseconds. */
-  max_timeout_ms: z.number().int().min(100).default(120_000),
+  /** Timeout of a run that does not ask for one, in milliseconds (it was 30000). */
+  default_timeout_ms: z.number().int().min(100).default(300_000),
+  /** Longest timeout a run may ask for, in milliseconds: ten minutes (it was 120000). */
+  max_timeout_ms: z.number().int().min(100).default(600_000),
   /** Runs at the same time. */
   max_concurrent: z.number().int().min(1).default(2),
   /** Runs waiting for a slot; more are refused (`busy`). */
@@ -226,6 +295,9 @@ export const SandboxConfigSchema = z.object({
   files: SandboxFilesSchema.prefault({}),
   workspace: SandboxWorkspaceSchema.prefault({}),
   network: SandboxNetworkSchema.prefault({}),
+  transfer: SandboxTransferSchema.prefault({}),
+  /** The browser on a computer of the cluster (`[modules.sandbox.browser]`, the browse_* tools). */
+  browser: BrowseConfigSchema.prefault({}),
   /**
    * Started, idle containers kept ready per language image, so a fresh run skips the container
    * start. Each serves exactly one run, then it is destroyed and replaced. Default 0 (off):

@@ -24,6 +24,33 @@ export const HostServiceConfigSchema = z
   .meta({ id: "HostServiceConfig" });
 export type HostServiceConfig = z.output<typeof HostServiceConfigSchema>;
 
+/**
+ * `[sandbox]` of `host.toml` (docs/design/v6-sandbox.md §12.1): what this machine's owner lets the
+ * sandbox service do. Core cannot change it, and the service reads it again every 60 seconds. An
+ * older hostd rejects the table: update the machine first. Every key may be left out.
+ */
+export const HostSandboxConfigSchema = z
+  .object({
+    /** Take jobs for members. Default `false`: the owner's and her own are always taken. */
+    members: z.boolean().optional(),
+    /** Let extension processes run here. Default `false`. */
+    plugins: z.boolean().optional(),
+    /** CPUs all jobs together may use. Default half of this machine, at least 1. */
+    cpus: z.number().positive().optional(),
+    /** Memory all jobs together may use, MiB. Default half of this machine, at most 16384. */
+    memory_mb: z.number().int().positive().optional(),
+    /** Disk all job folders together may use, MiB. */
+    disk_mb: z.number().int().positive().optional(),
+    /** CPUs one job may use at most. Default `cpus`. */
+    max_job_cpus: z.number().positive().optional(),
+    max_job_memory_mb: z.number().int().positive().optional(),
+    /** Docker's `--runtime`, for a Linux machine with gVisor (`"runsc"`). */
+    runtime: z.string().min(1).optional(),
+  })
+  .strict()
+  .meta({ id: "HostSandboxConfig" });
+export type HostSandboxConfig = z.output<typeof HostSandboxConfigSchema>;
+
 /** The shape of `host.toml`. */
 export const HostConfigSchema = z
   .object({
@@ -80,6 +107,8 @@ export const HostConfigSchema = z
       .strict()
       .default({ allow_remote: true }),
     services: z.record(z.string(), HostServiceConfigSchema).default({}),
+    /** What the sandbox service may do here; see `HostSandboxConfigSchema`. */
+    sandbox: HostSandboxConfigSchema.optional(),
   })
   .strict()
   .meta({ id: "HostConfig" });

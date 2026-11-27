@@ -14,6 +14,7 @@ export {
   SKILLS_USE,
   WORK_BOND,
   WORK_DELEGATE,
+  WORK_IMAGE,
   WORK_NODES,
   WORKSPACE_ALL,
 } from "@miyoria/commands";
@@ -40,9 +41,20 @@ export interface PermitSources {
   minBond: number;
 }
 
+/**
+ * Nodes of the tools other programs bring (an extension's, an MCP server's, a declarative HTTP
+ * tool's): using them is real work too, so a member she knows well enough may ask for them like
+ * for her files, without the owner handing out each node.
+ */
+export const EXTERNAL_TOOL_NODE_PREFIXES: readonly string[] = [
+  "tools.ext.",
+  "tools.mcp.",
+  "tools.http.",
+];
+
 /** Whether `node` is one a bond can stand for. */
 export function isWorkNode(node: string): boolean {
-  return WORK_NODES.includes(node);
+  return WORK_NODES.includes(node) || EXTERNAL_TOOL_NODE_PREFIXES.some((p) => node.startsWith(p));
 }
 
 /**

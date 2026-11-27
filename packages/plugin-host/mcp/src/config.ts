@@ -13,7 +13,8 @@
 // permission = "tools.mcp.files"
 // timeout_ms = 30000
 // max_result_chars = 8000
-// trust_read_only_hint = true    # tools marked readOnlyHint may run side by side
+// trust_read_only_hint = true    # tools marked readOnlyHint may run side by side (and are low risk)
+// risk = "medium"                # the gate's tier for every tool of this server
 //
 // [mcp.servers.search]
 // transport = "http"
@@ -88,6 +89,12 @@ const ServerConfigSchema = z.object({
    * (a write marked read-only could run next to another call).
    */
   trust_read_only_hint: z.boolean().default(false),
+  /**
+   * The gate's tier for this server's tools: `low` runs at once, `medium` is counted against the
+   * limits, `high` is reviewed by her first. Unset: medium, or low for a tool marked
+   * `readOnlyHint` when `trust_read_only_hint` is on.
+   */
+  risk: z.enum(["low", "medium", "high"]).nullable().default(null),
 });
 
 export type ServerConfigData = z.output<typeof ServerConfigSchema>;
@@ -110,6 +117,7 @@ export class ServerConfig implements ServerConfigData {
   connect_timeout_ms = 20_000;
   max_result_chars = 8_000;
   trust_read_only_hint = false;
+  risk: "low" | "medium" | "high" | null = null;
 
   constructor(data: Partial<ServerConfigData> = {}) {
     Object.assign(this, ServerConfigSchema.parse(data));
@@ -178,6 +186,29 @@ export class ServerConfig implements ServerConfigData {
     }
   }
 
+  /** Every setting as plain data (secrets included: never log it; `toJSON` is for that). */
+  toData(): ServerConfigData {
+    return {
+      enabled: this.enabled,
+      transport: this.transport,
+      command: this.command,
+      args: [...this.args],
+      env: { ...this.env },
+      env_pass: [...this.env_pass],
+      cwd: this.cwd,
+      url: this.url,
+      headers: { ...this.headers },
+      tools_allow: [...this.tools_allow],
+      tools_deny: [...this.tools_deny],
+      permission: this.permission,
+      timeout_ms: this.timeout_ms,
+      connect_timeout_ms: this.connect_timeout_ms,
+      max_result_chars: this.max_result_chars,
+      trust_read_only_hint: this.trust_read_only_hint,
+      risk: this.risk,
+    };
+  }
+
   toJSON(): Record<string, unknown> {
     return {
       enabled: this.enabled,
@@ -195,6 +226,7 @@ export class ServerConfig implements ServerConfigData {
       timeout_ms: this.timeout_ms,
       max_result_chars: this.max_result_chars,
       trust_read_only_hint: this.trust_read_only_hint,
+      risk: this.risk,
     };
   }
 

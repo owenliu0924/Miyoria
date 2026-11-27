@@ -62,6 +62,8 @@ import {
   PlatformSinks,
   PlatformSinksKey,
   VoiceSinkKey,
+  type WorkQuota,
+  WorkQuotaKey,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -294,6 +296,51 @@ describe("routes", () => {
     });
     // Admins only.
     expect((await raw(h.base, "GET", "/api/llm/quota", {})).status).toBe(401);
+  });
+
+  it("llm_quota_report_work", async () => {
+    const h = await harness();
+    const now = Date.now();
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 1, usdPerDay: 5, unpricedUsdPerMtok: 1 }),
+      day: () => ({ key: "today", endsAt: now + 86_400_000 }),
+    });
+    const owen = await h.store.people.upsertAccount(account("1"), "Owen");
+    quota.add(String(owen), now - 60_000, 0.5);
+    quota.add("discord:9", now - 60_000, 0.25);
+    h.sup.services.provide("agent", PersonQuotaKey, quota);
+    // Without the work quota the people have no `work`; with it, their CPU seconds and limits,
+    // and a person at a limit shows as capped without that read using up the line she says.
+    const used = new Map([[String(owen), { hour: 7200, day: 7300 }]]);
+    let capped = 0;
+    const work: WorkQuota = {
+      payerOf: () => null,
+      capped: () => {
+        capped += 1;
+        return null;
+      },
+      charge: () => undefined,
+      claimNotice: () => false,
+      used: (person) => used.get(person) ?? { hour: 0, day: 0 },
+      rules: () => ({ cpuSecondsPerHour: 7200, cpuSecondsPerDay: 28_800 }),
+    };
+    expect(
+      ((await raw(h.base, "GET", "/api/llm/quota", { token: TOKEN })).body as { people: object[] })
+        .people[0],
+    ).not.toHaveProperty("work");
+    h.sup.services.provide("agent", WorkQuotaKey, work);
+    const r = await raw(h.base, "GET", "/api/llm/quota", { token: TOKEN });
+    expect((r.body as { people: unknown[] }).people).toEqual([
+      expect.objectContaining({
+        person: String(owen),
+        work: { hour: 7200, day: 7300, limit_hour: 7200, limit_day: 28_800, capped: "hour" },
+      }),
+      expect.objectContaining({
+        person: "discord:9",
+        work: { hour: 0, day: 0, limit_hour: 7200, limit_day: 28_800, capped: null },
+      }),
+    ]);
+    expect(capped).toBe(0);
   });
 
   it("people_list_detail_and_changes", async () => {

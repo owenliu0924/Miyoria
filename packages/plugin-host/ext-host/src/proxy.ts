@@ -3,8 +3,19 @@
 
 import type { CommandReply, CommandSpec, Invocation } from "@miyoria/commands";
 import { ExtCommandReplySchema, ExtPromptContributeResultSchema } from "@miyoria/contracts/ext";
+import type { ExecContext } from "@miyoria/gate/actions";
 import type { Tool, ToolContext, ToolMeta, ToolSpec } from "@miyoria/llm/tools";
-import type { JsonValue, PromptContributor, PromptRequest, PromptSection } from "@miyoria/types";
+import type {
+  AccountRef,
+  ContextKey,
+  JsonValue,
+  MessageRef,
+  Principal,
+  Priority,
+  PromptContributor,
+  PromptRequest,
+  PromptSection,
+} from "@miyoria/types";
 import { isJsonObject } from "@miyoria/types";
 import { z } from "zod";
 import { type Peer, RpcError } from "./rpc.js";
@@ -27,6 +38,42 @@ export function toolContextJson(ctx: ToolContext): JsonValue {
     account: ctx.account as unknown as JsonValue,
     message: ctx.message as unknown as JsonValue,
     priority: ctx.priority,
+  };
+}
+
+/** Where a call that came from nowhere in particular says it happened: the panel, never a platform. */
+const NOWHERE: ContextKey = { platform: "panel", scope: null, channel: "", kind: "dm" };
+
+function priorityOf(p: Principal): Priority {
+  switch (p.kind) {
+    case "user":
+    case "command":
+      return "direct";
+    case "self":
+      return p.requester === null ? "initiative" : "request";
+    case "panel":
+      return "system";
+    case "director":
+      return "initiative";
+  }
+}
+
+/**
+ * The `context` object of `tools.call` for a call that came through the gate: who asked (the
+ * requester; nobody asking reads as `self`), where, and in answer to which message.
+ */
+export function execContextJson(ctx: ExecContext): JsonValue {
+  const p = ctx.principal;
+  const request = ctx.request;
+  const context = p.context ?? request.message?.context ?? NOWHERE;
+  const account: AccountRef = p.requester ?? { platform: context.platform, id: "self" };
+  const message: MessageRef = request.message ?? { context, id: request.turn ?? "" };
+  return {
+    turn: request.turn ?? "",
+    context: context as unknown as JsonValue,
+    account: account as unknown as JsonValue,
+    message: message as unknown as JsonValue,
+    priority: priorityOf(p),
   };
 }
 

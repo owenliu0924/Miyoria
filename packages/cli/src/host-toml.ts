@@ -42,6 +42,32 @@ const UPDATE_HINT = [
   "",
 ].join("\n");
 
+/**
+ * At the end of a file that runs the sandbox: what its owner decides about the jobs it takes
+ * (docs/design/v6-sandbox.md §12.1). Every key commented: the defaults take no member's work.
+ */
+export const SANDBOX_HINT = [
+  "",
+  "# What the sandbox service may do on this machine (Core cannot change it; read again every",
+  "# minute). Every key may stay commented: the defaults are shown.",
+  "# [sandbox]",
+  "# members = false         # take jobs for members, not only the owner's and her own",
+  "# plugins = false         # let extension processes run here",
+  "# cpus = 4                # CPUs all jobs together; default half of this machine (at least 1)",
+  "# memory_mb = 8192        # memory all jobs together; default half of this machine, at most 16384",
+  "# disk_mb = 20480         # disk of all job folders together",
+  "# max_job_cpus = 2        # one job at most; default cpus",
+  "# max_job_memory_mb = 4096",
+  '# runtime = "runsc"       # Docker\'s --runtime (a Linux machine with gVisor only)',
+  "",
+].join("\n");
+
+/** `text` with `SANDBOX_HINT` at its end, unless it has a `[sandbox]` table or the hint already. */
+export function withSandboxHint(text: string): string {
+  if (/^\s*#?\s*\[sandbox\]/m.test(text)) return text;
+  return `${text.endsWith("\n") || text === "" ? text : `${text}\n`}${SANDBOX_HINT}`;
+}
+
 /** The services a file has enabled; `[]` for a file that is not there or cannot be read. */
 export function enabledServices(file: string): string[] {
   if (!existsSync(file)) return [];
@@ -73,7 +99,8 @@ export function planHostToml(file: string, services: readonly string[]): HostTom
     added.push(service);
   }
   const body = doc.toString();
-  const text = exists ? body : `${HEADER}${body}${UPDATE_HINT}`;
+  const made = exists ? body : `${HEADER}${body}${UPDATE_HINT}`;
+  const text = added.includes("sandbox") ? withSandboxHint(made) : made;
   parseHostConfig(file, text); // what is written must load
   return { file, exists, text, name, added };
 }

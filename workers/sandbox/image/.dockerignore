@@ -1,0 +1,2 @@
+# The browser image has its own folder and its own build; the default image does not carry it.
+browser

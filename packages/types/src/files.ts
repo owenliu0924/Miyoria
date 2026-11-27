@@ -1,3 +1,4 @@
+import type { MessageRef } from "./platform.js";
 import { serviceKey } from "./service-key.js";
 
 // Files people send her (not images). The reader downloads and extracts them in the code sandbox
@@ -37,3 +38,14 @@ export interface FileReader {
 }
 
 export const FileReaderKey = serviceKey<FileReader>("FileReader");
+
+/** The files people sent with their messages, as selfhost saw them (`workspace_attach` reads it). */
+export interface MessageFiles {
+  /**
+   * The files of `message` and of the messages the same person sent in the same place within
+   * `withinMs` (default 10 minutes) before it, the newest first. Only messages selfhost has seen.
+   */
+  filesOf(message: MessageRef, options?: { withinMs?: number }): FileRequest[];
+}
+
+export const MessageFilesKey = serviceKey<MessageFiles>("MessageFiles");

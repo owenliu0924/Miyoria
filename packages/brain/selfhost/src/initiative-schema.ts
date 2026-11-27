@@ -12,6 +12,8 @@
 //   finished; a home item is shown in the runs of its Space (`space_id`, the server it came from)
 //   and, without one (her own timers, her morning), in any run. `woke_at` is set when it woke her
 //   itself: an item wakes her at most once, whatever came of that run.
+// - `job` (schedules, v6): a worker or research job the schedule starts for the person who asked
+//   when it comes due; the job is charged to that person's quota, folder and bond.
 // - `space_id` (both tables, phase 6, docs/design/v5-places.md): identity's Space of the place a
 //   row came from; `null` for one of no server (a DM, her home). Not a foreign key, like the rest.
 //
@@ -39,6 +41,18 @@ export type ScheduleState = (typeof SCHEDULE_STATES)[number];
 export const INBOX_KINDS = ["timer", "world", "followup", "commitment", "result"] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
+/**
+ * A job a schedule starts when it comes due (a `delegate` worker or research job for the person
+ * who asked), instead of only waking her. `goal` is the worker's brief; `budget` is USD, unset:
+ * the kind's default.
+ */
+export const SCHEDULE_JOB_KINDS = ["worker", "research"] as const;
+export interface ScheduleJob {
+  kind: (typeof SCHEDULE_JOB_KINDS)[number];
+  goal: string;
+  budget?: number | null;
+}
+
 const oneOf = (values: readonly string[]) => sql.raw(values.map((v) => `'${v}'`).join(","));
 
 export const initiativeSchedules = sqliteTable(
@@ -60,6 +74,8 @@ export const initiativeSchedules = sqliteTable(
     /** Who asked for it (`remind_me` for someone); `null`: she set it herself. */
     for_account: text({ mode: "json" }).$type<AccountRef>(),
     source: text({ enum: SCHEDULE_SOURCES }).notNull(),
+    /** A job to start when it comes due, for `for_account`; `null`: it only wakes her. */
+    job: text({ mode: "json" }).$type<ScheduleJob>(),
     /** Times it came due. */
     fired: integer().notNull().default(0),
     state: text({ enum: SCHEDULE_STATES }).notNull().default("open"),

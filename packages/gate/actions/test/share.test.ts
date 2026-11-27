@@ -5,6 +5,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { gzipSync } from "node:zlib";
 import { ToolRegistry } from "@miyoria/llm/tools";
 import { ServiceRegistry } from "@miyoria/runtime/kernel";
 import {
@@ -46,6 +47,7 @@ import {
   shareCapability,
 } from "../src/index.js";
 import { ActuatorRegistry } from "../src/registry.js";
+import { buildTar } from "./tar-fixture.js";
 import { buildZip } from "./zip-fixture.js";
 
 const T0 = Date.parse("2026-11-16T00:00:00.000Z");
@@ -589,7 +591,8 @@ describe("share: what may leave", () => {
     });
     const zip = buildZip([{ name: "a.txt", data: text("a") }]);
     expect(await checkContent(zip, true)).toEqual({ ok: true, mime: "application/zip" });
-    expect(await checkContent(zip, false)).toMatchObject({ ok: false, code: "type_not_allowed" });
+    // Not only for the person it was made for: `share` only ever goes to whoever asked.
+    expect(await checkContent(zip, false)).toEqual({ ok: true, mime: "application/zip" });
     const xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     expect(await checkContent(zip, true, { mime: xlsx })).toEqual({ ok: true, mime: xlsx });
     // HTML goes as an attachment only; a page that would open it still refuses it.
@@ -759,7 +762,8 @@ describe("share: the registered capability", () => {
     expect(cap?.risk).toBe("low");
     expect(cap?.tool?.meta).toMatchObject({ effect: "say", group: "files" });
     expect(tools.names()).toContain("share");
-    expect(registry.config.share.max_bytes).toBe(10_485_760);
+    // 0: only the platform's own limit applies.
+    expect(registry.config.share.max_bytes).toBe(0);
   });
 });
 
@@ -825,11 +829,20 @@ describe("share: with a file origin and the image cleaner", () => {
     const leaky = await make(text(`KEY = "${key}"\n${"x".repeat(500)}`), ROOM, OWEN);
     sink.limit = 100;
     expect(refusal(await exec(OWEN, ROOM, { artifact: leaky.id }))).toBe("secret");
-    // A zip in a channel for someone else's artifact never reaches the link either.
-    const zip = await make(buildZip([{ name: "a.txt", data: text("x".repeat(400)) }]), ROOM, null, {
-      filename: "theirs.zip",
-    });
-    expect(refusal(await exec(OWEN, ROOM, { artifact: zip.id }))).toBe("type_not_allowed");
+    // A zip with a key in one of its files never reaches the link either.
+    const zip = await make(
+      buildZip([
+        {
+          name: "a.txt",
+          data: text(`KEY = "${key}"
+${"x".repeat(400)}`),
+        },
+      ]),
+      ROOM,
+      null,
+      { filename: "leaky.zip" },
+    );
+    expect(refusal(await exec(OWEN, ROOM, { artifact: zip.id }))).toBe("secret");
     expect(asked).toEqual([]);
     expect(sink.sent).toEqual([]);
     // The per-person limit counts a link alone like an attachment.
@@ -973,5 +986,132 @@ describe("share: why no link came with the attachment", () => {
     expect(refusal(result)).toBe("platform");
     expect(result.text).toContain("也沒辦法改給連結");
     expect(result.text).toContain("page_publish");
+  });
+});
+
+describe("share: archives and documents", () => {
+  const ODS = "application/vnd.oasis.opendocument.spreadsheet";
+
+  it("shares a zip, a tar, a tgz and a single gz she made for nobody in particular", async () => {
+    const zip = buildZip([{ name: "a.txt", data: text("hello") }]);
+    const tar = buildTar([{ name: "a.txt", data: text("hello") }]);
+    const files: [string, Uint8Array, string][] = [
+      ["pack.zip", zip, "application/zip"],
+      ["pack.tar", tar, "application/x-tar"],
+      ["pack.tgz", gzipSync(tar), "application/gzip"],
+      ["notes.txt.gz", gzipSync(text("hello")), "application/gzip"],
+    ];
+    for (const [filename, data, mime] of files) {
+      const a = await make(data, ROOM, null, { filename });
+      expect(a.mime).toBe(mime);
+      const result = await exec(OWEN, ROOM, { artifact: a.id });
+      expect(result.data).toMatchObject({ ok: true, mime });
+    }
+    expect(sink.sent.map((s) => s.files[0]?.content_type)).toEqual(files.map((f) => f[2]));
+  });
+
+  it("shares an OpenDocument spreadsheet and an epub, which are zips by their declared type", async () => {
+    const zip = buildZip([{ name: "content.xml", data: text("<a>1</a>") }]);
+    const ods = await make(zip, ROOM, OWEN, { filename: "sheet.ods", mime: ODS });
+    expect(ods.mime).toBe(ODS);
+    expect(await exec(OWEN, ROOM, { artifact: ods.id })).toMatchObject({
+      data: { ok: true, mime: ODS },
+    });
+    const epub = await make(zip, ROOM, OWEN, {
+      filename: "book.epub",
+      mime: "application/epub+zip",
+    });
+    expect(await exec(OWEN, ROOM, { artifact: epub.id })).toMatchObject({
+      data: { ok: true, mime: "application/epub+zip" },
+    });
+  });
+
+  it("refuses a tar that climbs out of its folder or holds a link, and says what", async () => {
+    const climbs = await make(buildTar([{ name: "../x", data: text("a") }]), ROOM, OWEN, {
+      filename: "bad.tar",
+    });
+    const result = await exec(OWEN, ROOM, { artifact: climbs.id });
+    expect(refusal(result)).toBe("type_not_allowed");
+    expect(result.data).toMatchObject({ what: "tar: a file name leaves the folder" });
+    const link = await make(buildTar([{ name: "ln", flag: "2" }]), ROOM, OWEN, {
+      filename: "l.tar",
+    });
+    expect(result.text).toContain("壓縮檔");
+    expect(refusal(await exec(OWEN, ROOM, { artifact: link.id }))).toBe("type_not_allowed");
+    expect(sink.sent).toEqual([]);
+  });
+
+  it("holds a key inside a tgz back, and names the file it was in", async () => {
+    const key = `sk-ant-api03-${"a".repeat(90)}`;
+    const tgz = gzipSync(
+      buildTar([
+        {
+          name: "conf/app.env",
+          data: text(`KEY = "${key}"
+`),
+        },
+      ]),
+    );
+    const a = await make(tgz, ROOM, OWEN, { filename: "conf.tgz" });
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(refusal(result)).toBe("secret");
+    expect(result.data).toMatchObject({ entry: "conf/app.env" });
+    expect(sink.sent).toEqual([]);
+  });
+
+  it("tells a 7z or rar to be sent as zip instead (they cannot be looked into)", async () => {
+    const sevenZip = Uint8Array.from([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0, 4, 1, 2, 3, 4]);
+    const verdict = await checkContent(sevenZip, true);
+    expect(verdict).toMatchObject({ ok: false, code: "type_not_allowed" });
+    expect((verdict as { say?: string }).say).toContain("改用 zip");
+    const rar = Uint8Array.from([0x52, 0x61, 0x72, 0x21, 0x1a, 0x07, 0, 1, 2, 3]);
+    expect(await checkContent(rar, true)).toMatchObject({
+      ok: false,
+      what: "archive it cannot read",
+    });
+  });
+
+  it("an archive over what the platform takes goes as a link where there is a file origin", async () => {
+    const issued: string[] = [];
+    services.provide("api", FileLinksKey, {
+      available: () => true,
+      issue: async (request) => {
+        issued.push(request.artifact_id);
+        const { share, token } = artifacts().shares.create(request.artifact_id, {
+          audience: request.audience,
+          person_id: request.person_id ?? null,
+          space_id: request.space_id ?? null,
+        });
+        return {
+          ok: true,
+          url: `https://files.test/f/${token}`,
+          share_id: share.id,
+          artifact_id: request.artifact_id,
+          audience: share.audience,
+          expires_at: share.expires_at,
+          metadata_stripped: false,
+        };
+      },
+    } satisfies FileLinks);
+    const tgz = gzipSync(buildTar([{ name: "big.txt", data: text("x".repeat(3000)) }]));
+    const a = await make(tgz, ROOM, OWEN, { filename: "big.tgz" });
+    sink.limit = 50;
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(result.data).toMatchObject({
+      ok: true,
+      url: expect.stringContaining("https://files.test/f/"),
+    });
+    expect(issued).toEqual([a.id]);
+    expect(sink.sent[0]?.message.attachments).toEqual([]);
+  });
+
+  it("an archive over what the platform takes, with no file origin, says why it cannot be sent", async () => {
+    const tgz = gzipSync(buildTar([{ name: "big.txt", data: text("x".repeat(3000)) }]));
+    const a = await make(tgz, ROOM, OWEN, { filename: "big.tgz" });
+    sink.limit = 50;
+    const result = await exec(OWEN, ROOM, { artifact: a.id });
+    expect(refusal(result)).toBe("too_large");
+    expect(result.text).toContain("最多只能傳 50 bytes");
+    expect(result.text).toContain("檔案網域沒有設定");
   });
 });

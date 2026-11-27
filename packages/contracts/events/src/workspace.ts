@@ -28,7 +28,7 @@ export const ImageJobSchema = z
 export type ImageJobData = z.output<typeof ImageJobSchema>;
 
 export const SandboxLanguageSchema = z
-  .enum(["python", "node"])
+  .enum(["python", "node", "shell"])
   .meta({ id: "EventsSandboxLanguage" });
 
 /** A tool she proposed, or one the owner reviewed: `sandbox.tool.proposed`, `sandbox.tool.reviewed`. */
@@ -57,7 +57,7 @@ export type SandboxToolRemovedData = z.output<typeof SandboxToolRemovedSchema>;
 
 /** Why the sandbox (not the program) ended a run. */
 export const SandboxKilledReasonSchema = z
-  .enum(["timeout", "aborted", "output_limit", "memory"])
+  .enum(["timeout", "aborted", "output_limit", "memory", "quota", "disk", "lost"])
   .meta({ id: "EventsSandboxKilledReason" });
 
 /** A run ended, without its code or output: `sandbox.run.finished`. */
@@ -73,6 +73,10 @@ export const SandboxRunFinishedSchema = z
     files_out: z.number(),
     /** The session the run used; `null` for a fresh run. */
     session: z.string().nullable(),
+    /** The computer that ran it, when it was not this one. */
+    host: z.string().nullable().optional(),
+    /** CPU the container used, milliseconds. */
+    cpu_ms: z.number().optional(),
   })
   .meta({ id: "EventsSandboxRunFinished" });
 export type SandboxRunFinishedData = z.output<typeof SandboxRunFinishedSchema>;
@@ -85,7 +89,12 @@ export type SandboxWorkspaceEnforcedData = z.output<typeof SandboxWorkspaceEnfor
 
 /** A session started: `sandbox.session.started`. */
 export const SandboxSessionStartedSchema = z
-  .object({ name: z.string(), language: SandboxLanguageSchema })
+  .object({
+    name: z.string(),
+    language: SandboxLanguageSchema,
+    /** The computer it runs on, when it is not this one. */
+    host: z.string().nullable().optional(),
+  })
   .meta({ id: "EventsSandboxSessionStarted" });
 export type SandboxSessionStartedData = z.output<typeof SandboxSessionStartedSchema>;
 
@@ -100,6 +109,9 @@ export const SandboxSessionClosedSchema = z
     name: z.string(),
     reason: SandboxSessionCloseReasonSchema,
     runs: z.number(),
+    host: z.string().nullable().optional(),
+    /** CPU the session used in all, milliseconds. */
+    cpu_ms: z.number().optional(),
   })
   .meta({ id: "EventsSandboxSessionClosed" });
 export type SandboxSessionClosedData = z.output<typeof SandboxSessionClosedSchema>;

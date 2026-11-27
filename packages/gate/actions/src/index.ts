@@ -64,6 +64,14 @@ export {
   WorkLimitSchema,
 } from "./config.js";
 export { type EmergencyDeps, EmergencyStop } from "./emergency.js";
+export {
+  type ExternalLimits,
+  type ExternalToolAnswer,
+  type ExternalToolGroup,
+  type ExternalToolSpec,
+  externalLimits,
+  externalToolCapability,
+} from "./external.js";
 export { GatedToolsKey, isGatedToolName } from "./gated.js";
 export { ActionsModule, actuatorsFor } from "./module.js";
 export {
@@ -133,8 +141,15 @@ export {
   shareLimits,
   zipLimits,
 } from "./share.js";
-export { CapabilityTool, REQUEST_RULE, RESULT_PENDING, REVIEW_PENDING } from "./tools.js";
 export {
+  CapabilityTool,
+  REQUEST_RULE,
+  RESULT_PENDING,
+  REVIEW_PENDING,
+  WORK_PENDING,
+} from "./tools.js";
+export {
+  EXTERNAL_TOOL_NODE_PREFIXES,
   isWorkNode,
   type Permit,
   type PermitSources,
@@ -147,6 +162,7 @@ export {
   WORK_BELOW_BOND,
   WORK_BOND,
   WORK_DELEGATE,
+  WORK_IMAGE,
   WORK_NODES,
   WORKSPACE_ALL,
 } from "./work.js";

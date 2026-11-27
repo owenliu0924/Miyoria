@@ -74,9 +74,9 @@ import { SpeechConfigSchema, SpeechModule } from "@miyoria/voice/speech";
 import { VoiceLinkModule, VoiceModule } from "@miyoria/voice/voice";
 import { WatchModule } from "@miyoria/watch";
 import { ImageGenModule } from "@miyoria/workspace/imagegen";
-import { SandboxModule } from "@miyoria/workspace/sandbox";
+import { SANDBOX_CAPABILITY, SandboxModule } from "@miyoria/workspace/sandbox";
 import { SkillsModule } from "@miyoria/workspace/skills";
-import { WebModule } from "@miyoria/workspace/web";
+import { HttpToolsModule, WebModule } from "@miyoria/workspace/web";
 import {
   buildCoreWith,
   type Core,
@@ -91,6 +91,7 @@ import { CLUSTER_GUARDS } from "./cluster-guards.js";
 import { clusterLinks } from "./cluster-links.js";
 import { clusterComplete } from "./cluster-llm.js";
 import { assertStartConfig, validateRevision } from "./config-schema.js";
+import { coreMachineHosts } from "./core-machine.js";
 import { CoreEndpoints, legacyEndpoints } from "./endpoints.js";
 import type { ExtensionsCli } from "./ext-cli.js";
 import { loadProfile, sqlitePath } from "./settings.js";
@@ -248,7 +249,19 @@ async function coreModules({
     // Karaoke on the member page: songs prepared on the song workers, scored again by Core.
     new KaraokeModule({ baseDir }),
     new WebModule(),
-    new SandboxModule(profileId, { baseDir }),
+    // One TOML file per outside API (tools/http/*.toml and extensions' http-tools/), behind the gate.
+    new HttpToolsModule({
+      baseDir,
+      extensionDirs: (services) => services.get(extHost.ExtensionCatalogKey)?.httpToolDirs() ?? [],
+    }),
+    // Runs go to the computers of the cluster that offer the `sandbox` service, else this machine's
+    // Docker; with neither, only the host-side file tools are offered.
+    new SandboxModule(profileId, {
+      baseDir,
+      endpoints,
+      // Members' folders may go to Core's own machine without the owner listing it.
+      coreHosts: (services) => coreMachineHosts(services, SANDBOX_CAPABILITY),
+    }),
     new ImageGenModule({ baseDir, endpoints }),
     new SkillsModule(),
     new LiveModule({ names: profile.names() }),

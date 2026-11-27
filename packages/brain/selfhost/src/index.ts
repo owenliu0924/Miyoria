@@ -21,6 +21,7 @@ export {
   INITIATIVE_STATE_KEY,
   Initiative,
   type InitiativeOptions,
+  type ScheduledJobs,
   ScheduleRemindersKey,
   startInitiative,
 } from "./initiative.js";
@@ -33,6 +34,7 @@ export {
   initiativeSettings,
 } from "./initiative-config.js";
 export { initiativeSchema } from "./initiative-migrations.js";
+export type { ScheduleJob } from "./initiative-schema.js";
 export {
   type InboxRow,
   InitiativeStore,
@@ -58,6 +60,7 @@ export {
   type LaneRun,
   selfStarted,
 } from "./lane.js";
+export { MessageFilesBook, recordRunFiles } from "./message-files.js";
 export { MouthOutlet, type Settled, Settlements, submitTyping, TYPING_TTL_MS } from "./outlet.js";
 export { type PlaceBook, resolvePlace } from "./places.js";
 export {
@@ -71,7 +74,7 @@ export {
 } from "./prompt.js";
 export { hostQuota, localQuotaDay, payerOf, payerOfAuthor, personKey } from "./quota.js";
 export { quotaSchema } from "./quota-migrations.js";
-export { QuotaStore, quotaTables } from "./quota-store.js";
+export { QuotaStore, quotaTables, WORK_KEY_PREFIX } from "./quota-store.js";
 export {
   type ParseAt,
   parseWhen,
@@ -79,8 +82,15 @@ export {
   ScheduleBook,
   scheduleKey,
 } from "./schedule.js";
-export { SCHEDULE, SCHEDULE_CANCEL, SCHEDULE_LIST, scheduleTools } from "./schedule-tools.js";
+export {
+  SCHEDULE,
+  SCHEDULE_CANCEL,
+  SCHEDULE_LIST,
+  scheduleNode,
+  scheduleTools,
+} from "./schedule-tools.js";
 export { silentWaits, VoiceHost, type VoiceHostDeps, type VoiceLineFacts } from "./voice.js";
 export { type VoiceInput, VoiceLane, type VoiceLaneHost, type VoiceRun } from "./voice-lane.js";
 export { PlaceOutlet, VoiceOutlet, type VoiceOutletHost } from "./voice-outlet.js";
 export { VoicePrompt, type VoiceRoom, voiceReads, WarmValues } from "./voice-prompt.js";
+export { hostWorkQuota, PrefixedBook, workQuotaOver } from "./work-quota.js";

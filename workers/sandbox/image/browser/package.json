@@ -1,0 +1,13 @@
+{
+  "name": "miyoria-sandbox-browser",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The browser driver of sandbox browser jobs; playwright-core matches the Playwright image in the Dockerfile",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "playwright-core": "1.65.1"
+  }
+}

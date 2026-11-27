@@ -460,6 +460,19 @@ describe("probing", () => {
 
 const FILE = new Uint8Array(500_000).map((_, i) => (i * 7) & 0xff);
 
+/**
+ * The same bytes, compared at memcmp speed: `toEqual` walks half a million elements one by one,
+ * which takes seconds on a CI runner and was the only slow part of these tests.
+ */
+function expectBytes(got: ArrayBuffer, want: Uint8Array): void {
+  const a = Buffer.from(got);
+  const b = Buffer.from(want.buffer, want.byteOffset, want.byteLength);
+  if (a.equals(b)) return;
+  let at = 0;
+  while (at < Math.min(a.length, b.length) && a[at] === b[at]) at += 1;
+  expect.fail(`${a.length} bytes arrived, ${b.length} expected; the first difference is at ${at}`);
+}
+
 /** Serves FILE with ranges and an ETag; `cut(attempt)` breaks a body after that many bytes. */
 function fileServer(options: {
   etag?: () => string;
@@ -533,7 +546,7 @@ describe("downloads over a route with a body limit", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-length")).toBe(String(FILE.length));
     expect(res.headers.get("content-range")).toBeNull();
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(FILE);
+    expectBytes(await res.arrayBuffer(), FILE);
     expect(server.seen).toEqual([
       "bytes=0-134463 -",
       'bytes=134464-268927 "v1"',
@@ -550,7 +563,7 @@ describe("downloads over a route with a body limit", () => {
     });
     expect(res.status).toBe(206);
     expect(res.headers.get("content-range")).toBe(`bytes 300000-499999/${FILE.length}`);
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(FILE.subarray(300_000));
+    expectBytes(await res.arrayBuffer(), FILE.subarray(300_000));
   });
 
   it("go on over the next route from the byte where a part broke", async () => {
@@ -558,7 +571,7 @@ describe("downloads over a route with a body limit", () => {
     const relay = fileServer({ gateway: false });
     const { reg, relayed } = tunnelHost(tunnel.handler, relay.handler);
     const res = await reg.request(reg.pick("sing") as never, "/songs/a/files/video.mp4");
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(FILE);
+    expectBytes(await res.arrayBuffer(), FILE);
     // The second part broke after 10,000 bytes: the rest of it came over the relay.
     expect(relayed[0]?.headers.get("range")).toBe(`bytes=${134_464 + 10_000}-`);
     expect(relayed[0]?.headers.get("if-range")).toBe('"v1"');

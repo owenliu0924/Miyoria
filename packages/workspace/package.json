@@ -12,6 +12,11 @@
       "types": "./dist/sandbox/src/index.d.ts",
       "default": "./dist/sandbox/src/index.js"
     },
+    "./sandbox-service": {
+      "@miyoria/source": "./sandbox/src/service/index.ts",
+      "types": "./dist/sandbox/src/service/index.d.ts",
+      "default": "./dist/sandbox/src/service/index.js"
+    },
     "./skills": {
       "@miyoria/source": "./skills/src/index.ts",
       "types": "./dist/skills/src/index.d.ts",
@@ -37,16 +42,19 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@miyoria/contracts": "workspace:^",
     "@miyoria/gate": "workspace:*",
     "@miyoria/runtime": "workspace:*",
     "@miyoria/store": "workspace:*",
     "@miyoria/types": "workspace:*",
+    "tar-stream": "^3.3.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@miyoria/commands": "workspace:*",
     "@miyoria/llm": "workspace:*",
     "@types/node": "^24.19.2",
+    "@types/tar-stream": "^3.1.5",
     "typescript": "~5.9.3",
     "vitest": "^4.1.12"
   }

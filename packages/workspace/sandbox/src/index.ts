@@ -9,8 +9,11 @@ export {
   type ContainerSpec,
   dockerCliEnv,
   ENTRY_FILE,
+  EXT_DIR,
   entryCommand,
   execArgs,
+  execWithArgs,
+  HOME_DIR,
   InvalidSpecError,
   inspectImageArgs,
   KEEPER_COMMAND,
@@ -25,6 +28,7 @@ export {
   listArgs,
   mountArg,
   NAME_PREFIX,
+  pauseArgs,
   pullArgs,
   removeArgs,
   runningArgs,
@@ -34,12 +38,27 @@ export {
   WORKSPACE_DIR,
 } from "./args.js";
 export {
+  INBOX,
+  inboxName,
+  WORKSPACE_ATTACH,
+  type WorkspaceAttachArgs,
+  WorkspaceAttachArgsSchema,
+  type WorkspaceAttachOptions,
+  workspaceAttachCapability,
+} from "./attach.js";
+export * from "./browse/index.js";
+export {
   CODE_RUN,
   CODE_SESSION,
   type CodeRunArgs,
   CodeRunArgsSchema,
   type CodeSessionArgs,
   CodeSessionArgsSchema,
+  DEFAULT_SHELL_SESSION,
+  MAX_COMMAND_BYTES,
+  SHELL_RUN,
+  type ShellRunArgs,
+  ShellRunArgsSchema,
   summarizeRun,
   TOOL_PROPOSE,
   WORKSPACE_DELETE,
@@ -54,6 +73,7 @@ export {
   ALLOWED_HOST,
   defaultSandboxConfig,
   IMAGE_REF,
+  networkMode,
   type SandboxCaps,
   SandboxCapsSchema,
   type SandboxConfig,
@@ -66,19 +86,29 @@ export {
   type SandboxNetwork,
   SandboxNetworkSchema,
   SandboxSessionsSchema,
+  type SandboxTransfer,
+  SandboxTransferSchema,
   SandboxWorkspaceSchema,
 } from "./config.js";
 export {
+  DEFAULT_DENY_PORTS,
   EGRESS_ALIAS,
   EGRESS_PROGRAM,
+  EGRESS_STATS_FILE,
+  type EgressStats,
   egressNetworkName,
   egressProxyArgs,
   egressProxyName,
   egressReadyArgs,
+  egressStatsArgs,
+  type JobEgress,
+  jobEgressProxyArgs,
+  LABEL_JOB,
   networkConnectArgs,
   networkCreateArgs,
   networkInspectArgs,
   networkRemoveArgs,
+  parseEgressStats,
   proxyEnv,
 } from "./egress.js";
 export { EXTRACT_PROGRAM } from "./extract.js";
@@ -103,6 +133,7 @@ export {
 export {
   codeRunCapability,
   codeSessionCapability,
+  featuresOf,
   NODE_CODE_RUN,
   NODE_PROPOSED_PREFIX,
   NODE_TOOL_PROPOSE,
@@ -110,8 +141,10 @@ export {
   PROPOSED_TOOL_PREFIX,
   proposalProblem,
   proposedToolCapability,
+  refusal,
   SandboxGate,
   type SandboxGateOptions,
+  shellRunCapability,
   toolProposeCapability,
 } from "./gate.js";
 export { SandboxModule, type SandboxModuleOptions } from "./module.js";
@@ -155,6 +188,7 @@ export {
   type ToolProposal,
   ToolProposalSchema,
 } from "./proposed.js";
+export * from "./remote/index.js";
 export {
   type DockerRunner,
   type ExecOptions,
@@ -174,6 +208,15 @@ export {
 } from "./sandbox.js";
 export { Semaphore } from "./semaphore.js";
 export {
+  type ExtractOptions,
+  extractTar,
+  type PackedEntry,
+  type PackOptions,
+  packTree,
+  TarError,
+  type TarErrorCode,
+} from "./tar-io.js";
+export {
   type FileIn,
   type FileOut,
   FRESH,
@@ -181,11 +224,16 @@ export {
   LANGUAGES,
   type Language,
   type NetworkPolicy,
+  RUN_LANGUAGES,
+  type RunFor,
+  type RunLanguage,
+  RunLanguageSchema,
   type RunRequest,
   type RunResult,
   type Sandbox,
   SandboxError,
   type SandboxErrorKind,
+  type SandboxFeatures,
   type SandboxHealth,
   SandboxKey,
   type ScriptInfo,
@@ -197,6 +245,8 @@ export {
   type SessionRun,
   type ToolsWorkspaceApi,
 } from "./types.js";
+export { payerFor, runFor } from "./whom.js";
+export { WORK_CUT_LINE, workCapLine } from "./work-line.js";
 export {
   collectOutputs,
   createRunDirs,
@@ -211,6 +261,14 @@ export {
   walkWork,
   writeInputs,
 } from "./workspace.js";
+export {
+  GREP_MAX_RESULTS,
+  grepWorkspace,
+  replaceExact,
+  WORKSPACE_EDIT,
+  WORKSPACE_GREP,
+  workspaceEditCapabilities,
+} from "./workspace-edit.js";
 export { type WorkspaceExportOptions, workspaceExportCapability } from "./workspace-export.js";
 export {
   callWorkspace,

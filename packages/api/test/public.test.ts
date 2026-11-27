@@ -86,6 +86,8 @@ import {
   PlacesKey,
   SelfStateKey,
   SocialSignalsKey,
+  type WorkQuota,
+  WorkQuotaKey,
 } from "@miyoria/types";
 import sharp from "sharp";
 import { afterEach, describe, expect, it } from "vitest";
@@ -1456,6 +1458,36 @@ describe("the member view", () => {
       hour_limit_usd: 3,
       day_limit_usd: 10,
       exempt: false,
+    });
+  });
+
+  it("shows their own sandbox CPU next to the AI quota", async () => {
+    const r = await rig();
+    const cookie = await r.login("alice");
+    const quota = new PersonQuota({
+      rules: () => ({ usdPerHour: 3, usdPerDay: 10, unpricedUsdPerMtok: 1 }),
+      day: () => ({ key: "today", endsAt: Date.now() + 86_400_000 }),
+    });
+    r.sup.services.provide("agent", PersonQuotaKey, quota);
+    const own = String(r.people.get(ALICE));
+    const work: WorkQuota = {
+      payerOf: () => null,
+      capped: () => null,
+      charge: () => undefined,
+      claimNotice: () => false,
+      used: (person) => (person === own ? { hour: 30, day: 120 } : { hour: 9999, day: 9999 }),
+      rules: () => ({ cpuSecondsPerHour: 7200, cpuSecondsPerDay: 28_800 }),
+    };
+    const before = (await r.get("/api/member/me", cookie)).body as { quota: object };
+    expect(before.quota).not.toHaveProperty("work");
+    r.sup.services.provide("agent", WorkQuotaKey, work);
+    const body = (await r.get("/api/member/me", cookie)).body as { quota: { work: unknown } };
+    expect(body.quota.work).toEqual({
+      hour: 30,
+      day: 120,
+      limit_hour: 7200,
+      limit_day: 28_800,
+      capped: null,
     });
   });
 

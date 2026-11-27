@@ -137,6 +137,12 @@ export const cli = {
       ls: "List the models in the model folder, their sizes and which services use them",
       gc: "Delete models that no enabled service uses, after confirmation (-y deletes without asking)",
     },
+    sandbox: {
+      help: "The sandbox service: this machine runs code for her in Docker containers (host.toml [sandbox] says whose)",
+      serve: "Run the sandbox service in this terminal (hostd starts it; for a hand-started one)",
+      build:
+        "Build the sandbox image (about 2 GB, minutes on the first build); -y builds without asking",
+    },
     hostd: {
       help: "Run this machine's host daemon (hostd) in this terminal; Ctrl+C stops all services",
       start:

@@ -10,6 +10,23 @@ import {
   MessageRefSchema,
 } from "../../wire/src/index.js";
 
+/** How much a tool can do to people or things outside her; the gate decides what to ask on it. */
+export const ExtToolRiskSchema = z.enum(["low", "medium", "high"]).meta({ id: "ExtToolRisk" });
+export type ExtToolRisk = z.output<typeof ExtToolRiskSchema>;
+
+/** Call counts a tool is held to; `0` or no key: no such limit. */
+export const ExtToolLimitsSchema = z
+  .object({
+    per_hour: z.number().int().nonnegative().optional(),
+    per_person_per_hour: z.number().int().nonnegative().optional(),
+    per_day: z.number().int().nonnegative().optional(),
+    per_person_per_day: z.number().int().nonnegative().optional(),
+    /** Least time between two calls. */
+    cooldown_ms: z.number().int().nonnegative().optional(),
+  })
+  .meta({ id: "ExtToolLimits" });
+export type ExtToolLimits = z.output<typeof ExtToolLimitsSchema>;
+
 /** A tool, as `tools.register` and `contributions.tools` carry it. */
 export const ExtToolDeclSchema = z
   .object({
@@ -27,6 +44,17 @@ export const ExtToolDeclSchema = z
      * It only looks (a lookup, a status): several such calls in one step run at the same time.
      */
     read_only: z.boolean().default(false),
+    /**
+     * What the gate does with a call: `low` just runs, `medium` (the default) is held to the
+     * limits and audited, `high` is also reviewed. The owner can raise or lower it in
+     * `[extensions."<id>"]`.
+     */
+    risk: ExtToolRiskSchema.default("medium"),
+    /** Real work: people who have `work_min_bond` with her can call it, not only those with the node. */
+    work: z.boolean().optional(),
+    limits: ExtToolLimitsSchema.optional(),
+    /** She is told when it finishes even if the call took longer than she waited. */
+    followup: z.boolean().optional(),
   })
   .meta({ id: "ExtToolDecl" });
 export type ExtToolDecl = z.output<typeof ExtToolDeclSchema>;

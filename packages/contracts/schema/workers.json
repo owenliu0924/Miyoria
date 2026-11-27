@@ -1371,6 +1371,1411 @@
         "state"
       ]
     },
+    "WorkersSandboxEndReason": {
+      "type": "string",
+      "enum": [
+        "closed",
+        "idle",
+        "lifetime",
+        "lease",
+        "disk",
+        "lost",
+        "shutdown",
+        "host_policy"
+      ]
+    },
+    "WorkersSandboxErrorBody": {
+      "type": "object",
+      "properties": {
+        "error": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "$ref": "#/$defs/WorkersSandboxErrorCode"
+            },
+            "message": {
+              "type": "string"
+            },
+            "retry_after_ms": {
+              "type": "number"
+            },
+            "ended": {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "$ref": "#/$defs/WorkersSandboxEndReason"
+                },
+                "at": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "reason",
+                "at"
+              ]
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ]
+        }
+      },
+      "required": [
+        "error"
+      ]
+    },
+    "WorkersSandboxErrorCode": {
+      "type": "string",
+      "enum": [
+        "bad_request",
+        "unauthorized",
+        "not_accepting",
+        "not_found",
+        "conflict",
+        "gone",
+        "too_large",
+        "limit",
+        "busy",
+        "docker_failed",
+        "unavailable",
+        "internal"
+      ]
+    },
+    "WorkersSandboxEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "state"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "starting",
+                "ready",
+                "busy",
+                "ended"
+              ]
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "kind",
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "cpu"
+            },
+            "cpu_ms": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "kind",
+            "cpu_ms"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "exec": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "stdout",
+                "stderr"
+              ]
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "exec",
+            "kind",
+            "text"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "exec": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "exit"
+            },
+            "result": {
+              "$ref": "#/$defs/WorkersSandboxExecResult"
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "exec",
+            "kind",
+            "result"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "proc": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "proc_out"
+            },
+            "stream": {
+              "type": "string",
+              "enum": [
+                "stdout",
+                "stderr"
+              ]
+            },
+            "offset": {
+              "type": "number"
+            },
+            "data_b64": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "proc",
+            "kind",
+            "stream",
+            "offset",
+            "data_b64"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "proc": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "proc_exit"
+            },
+            "code": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "signal": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "proc",
+            "kind",
+            "code",
+            "signal"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "seq": {
+              "type": "number"
+            },
+            "job": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "ended"
+            },
+            "reason": {
+              "$ref": "#/$defs/WorkersSandboxEndReason"
+            },
+            "usage": {
+              "$ref": "#/$defs/WorkersSandboxJobUsage"
+            }
+          },
+          "required": [
+            "seq",
+            "job",
+            "kind",
+            "reason",
+            "usage"
+          ]
+        }
+      ]
+    },
+    "WorkersSandboxEventsPage": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string"
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersSandboxEvent"
+          }
+        },
+        "reset": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "cursor",
+        "events",
+        "reset"
+      ]
+    },
+    "WorkersSandboxExecResult": {
+      "type": "object",
+      "properties": {
+        "exit_code": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "killed_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkersSandboxKilledReason"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "duration_ms": {
+          "type": "number"
+        },
+        "cpu_ms": {
+          "type": "number"
+        },
+        "stdout": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "string"
+        },
+        "stdout_truncated": {
+          "type": "boolean"
+        },
+        "stderr_truncated": {
+          "type": "boolean"
+        },
+        "stdout_bytes": {
+          "type": "number"
+        },
+        "stderr_bytes": {
+          "type": "number"
+        },
+        "files_out": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersSandboxFileOut"
+          }
+        },
+        "files_out_truncated": {
+          "type": "boolean"
+        },
+        "log_bytes": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "exit_code",
+        "killed_reason",
+        "duration_ms",
+        "cpu_ms",
+        "stdout",
+        "stderr",
+        "stdout_truncated",
+        "stderr_truncated",
+        "stdout_bytes",
+        "stderr_bytes",
+        "files_out",
+        "files_out_truncated",
+        "log_bytes"
+      ]
+    },
+    "WorkersSandboxExecStart": {
+      "type": "object",
+      "properties": {
+        "program": {
+          "type": "object",
+          "properties": {
+            "language": {
+              "type": "string",
+              "enum": [
+                "python",
+                "node",
+                "shell"
+              ]
+            },
+            "code": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "language",
+            "code"
+          ]
+        },
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "stdin": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersSandboxFileIn"
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "enum": [
+            "/work",
+            "/workspace"
+          ]
+        },
+        "timeout_ms": {
+          "type": "number"
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "keep_bytes": {
+              "type": "number"
+            },
+            "kill_bytes": {
+              "type": "number"
+            },
+            "stream_bytes": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "keep_bytes",
+            "kill_bytes",
+            "stream_bytes"
+          ]
+        },
+        "collect": {
+          "default": null,
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "max_files": {
+                  "type": "number"
+                },
+                "max_bytes": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "max_files",
+                "max_bytes"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "timeout_ms",
+        "output"
+      ]
+    },
+    "WorkersSandboxExecView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "done",
+            "lost"
+          ]
+        },
+        "started_at": {
+          "type": "number"
+        },
+        "result": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WorkersSandboxExecResult"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "started_at",
+        "result"
+      ]
+    },
+    "WorkersSandboxFileIn": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "utf8",
+            "base64"
+          ]
+        }
+      },
+      "required": [
+        "path",
+        "content"
+      ]
+    },
+    "WorkersSandboxFileOut": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "encoding": {
+          "type": "string",
+          "enum": [
+            "utf8",
+            "base64"
+          ]
+        },
+        "content": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "encoding",
+        "content"
+      ]
+    },
+    "WorkersSandboxFor": {
+      "type": "string",
+      "enum": [
+        "self",
+        "owner",
+        "member",
+        "plugin"
+      ]
+    },
+    "WorkersSandboxImage": {
+      "type": "string",
+      "enum": [
+        "default",
+        "browser"
+      ]
+    },
+    "WorkersSandboxInfo": {
+      "type": "object",
+      "properties": {
+        "api": {
+          "type": "number",
+          "const": 1
+        },
+        "service_version": {
+          "type": "string"
+        },
+        "boot": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "arch": {
+          "type": "string"
+        },
+        "docker": {
+          "type": "object",
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "server_version": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "cgroup": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "v2",
+                    "v1"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtime": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "available",
+            "server_version",
+            "error",
+            "cgroup",
+            "runtime"
+          ]
+        },
+        "images": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/WorkersSandboxImage"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "tag": {
+                "type": "string"
+              },
+              "present": {
+                "type": "boolean"
+              },
+              "building": {
+                "type": "boolean"
+              },
+              "stale": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "tag",
+              "present",
+              "building",
+              "stale"
+            ]
+          },
+          "required": [
+            "default",
+            "browser"
+          ]
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "object",
+          "properties": {
+            "members": {
+              "type": "boolean"
+            },
+            "plugins": {
+              "type": "boolean"
+            },
+            "cpus": {
+              "type": "number"
+            },
+            "memory_mb": {
+              "type": "number"
+            },
+            "disk_mb": {
+              "type": "number"
+            },
+            "max_job_cpus": {
+              "type": "number"
+            },
+            "max_job_memory_mb": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "members",
+            "plugins",
+            "cpus",
+            "memory_mb",
+            "disk_mb",
+            "max_job_cpus",
+            "max_job_memory_mb"
+          ]
+        },
+        "load": {
+          "type": "object",
+          "properties": {
+            "jobs": {
+              "type": "number"
+            },
+            "running": {
+              "type": "number"
+            },
+            "queued": {
+              "type": "number"
+            },
+            "cpus": {
+              "type": "number"
+            },
+            "memory_mb": {
+              "type": "number"
+            },
+            "disk_mb": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "jobs",
+            "running",
+            "queued",
+            "cpus",
+            "memory_mb",
+            "disk_mb"
+          ]
+        }
+      },
+      "required": [
+        "api",
+        "service_version",
+        "boot",
+        "platform",
+        "arch",
+        "docker",
+        "images",
+        "ready",
+        "policy",
+        "load"
+      ]
+    },
+    "WorkersSandboxJobCreate": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "run",
+            "session",
+            "browser",
+            "plugin"
+          ]
+        },
+        "image": {
+          "$ref": "#/$defs/WorkersSandboxImage"
+        },
+        "for": {
+          "$ref": "#/$defs/WorkersSandboxFor"
+        },
+        "payer": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "limits": {
+          "$ref": "#/$defs/WorkersSandboxLimits"
+        },
+        "network": {
+          "$ref": "#/$defs/WorkersSandboxNetwork"
+        },
+        "lifetime_s": {
+          "type": "number"
+        },
+        "idle_s": {
+          "type": "number"
+        },
+        "lease_s": {
+          "type": "number"
+        },
+        "mounts": {
+          "type": "object",
+          "properties": {
+            "tools": {
+              "type": "boolean"
+            },
+            "ext": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "tools",
+            "ext"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "kind",
+        "image",
+        "for",
+        "payer",
+        "limits",
+        "network",
+        "lifetime_s",
+        "idle_s",
+        "lease_s",
+        "mounts",
+        "env",
+        "label"
+      ]
+    },
+    "WorkersSandboxJobList": {
+      "type": "object",
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersSandboxJobView"
+          }
+        }
+      },
+      "required": [
+        "jobs"
+      ]
+    },
+    "WorkersSandboxJobUsage": {
+      "type": "object",
+      "properties": {
+        "cpu_ms": {
+          "type": "number"
+        },
+        "cpu_source": {
+          "type": "string",
+          "enum": [
+            "cgroup",
+            "sampled"
+          ]
+        },
+        "wall_ms": {
+          "type": "number"
+        },
+        "disk_bytes": {
+          "type": "number"
+        },
+        "egress": {
+          "type": "object",
+          "properties": {
+            "bytes_in": {
+              "type": "number"
+            },
+            "bytes_out": {
+              "type": "number"
+            },
+            "connections": {
+              "type": "number"
+            },
+            "refused": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "number"
+                },
+                "port": {
+                  "type": "number"
+                },
+                "cap": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "address",
+                "port",
+                "cap"
+              ]
+            }
+          },
+          "required": [
+            "bytes_in",
+            "bytes_out",
+            "connections",
+            "refused"
+          ]
+        }
+      },
+      "required": [
+        "cpu_ms",
+        "cpu_source",
+        "wall_ms",
+        "disk_bytes",
+        "egress"
+      ]
+    },
+    "WorkersSandboxJobView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "run",
+            "session",
+            "browser",
+            "plugin"
+          ]
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "starting",
+            "ready",
+            "busy",
+            "ended"
+          ]
+        },
+        "ended": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "reason": {
+                  "$ref": "#/$defs/WorkersSandboxEndReason"
+                },
+                "at": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "reason",
+                "at"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "image_tag": {
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/WorkersSandboxLimits"
+        },
+        "created_at": {
+          "type": "number"
+        },
+        "last_used_at": {
+          "type": "number"
+        },
+        "expires_at": {
+          "type": "number"
+        },
+        "usage": {
+          "$ref": "#/$defs/WorkersSandboxJobUsage"
+        },
+        "exec": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "procs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "state",
+        "ended",
+        "image_tag",
+        "limits",
+        "created_at",
+        "last_used_at",
+        "expires_at",
+        "usage",
+        "exec",
+        "procs"
+      ]
+    },
+    "WorkersSandboxKilledReason": {
+      "type": "string",
+      "enum": [
+        "timeout",
+        "aborted",
+        "output_limit",
+        "memory",
+        "quota",
+        "disk",
+        "lost"
+      ]
+    },
+    "WorkersSandboxLimits": {
+      "type": "object",
+      "properties": {
+        "cpus": {
+          "type": "number"
+        },
+        "memory_mb": {
+          "type": "number"
+        },
+        "pids": {
+          "type": "number"
+        },
+        "tmp_mb": {
+          "type": "number"
+        },
+        "file_mb": {
+          "type": "number"
+        },
+        "nofile": {
+          "type": "number"
+        },
+        "disk_mb": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "cpus",
+        "memory_mb",
+        "pids",
+        "tmp_mb",
+        "file_mb",
+        "nofile",
+        "disk_mb"
+      ]
+    },
+    "WorkersSandboxManifestEntry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "type": "number"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "mtime_ms": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "sha256",
+        "mtime_ms"
+      ]
+    },
+    "WorkersSandboxNetwork": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "enum": [
+            "open",
+            "allowlist",
+            "none"
+          ]
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deny_ports": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "max_connections": {
+          "type": "number"
+        },
+        "max_mb": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "mode",
+        "allow",
+        "deny_ports",
+        "max_connections",
+        "max_mb"
+      ]
+    },
+    "WorkersSandboxProcStart": {
+      "type": "object",
+      "properties": {
+        "argv": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cwd": {
+          "type": "string",
+          "enum": [
+            "/work",
+            "/workspace",
+            "/ext"
+          ]
+        },
+        "env": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "argv"
+      ]
+    },
+    "WorkersSandboxProcView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "running",
+            "exited"
+          ]
+        },
+        "code": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "signal": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stdin_offset": {
+          "type": "number"
+        },
+        "stdout_offset": {
+          "type": "number"
+        },
+        "stderr_offset": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "state",
+        "code",
+        "signal",
+        "stdin_offset",
+        "stdout_offset",
+        "stderr_offset"
+      ]
+    },
+    "WorkersSandboxSyncResult": {
+      "type": "object",
+      "properties": {
+        "changed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersSandboxManifestEntry"
+          }
+        },
+        "deleted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "why"
+            ]
+          }
+        },
+        "tar": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "bytes": {
+                  "type": "number"
+                },
+                "sha256": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "bytes",
+                "sha256"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "changed",
+        "deleted",
+        "skipped",
+        "tar"
+      ]
+    },
+    "WorkersSandboxSyncStart": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "string",
+          "const": "workspace"
+        }
+      },
+      "required": [
+        "target"
+      ]
+    },
+    "WorkersSandboxUploadCommit": {
+      "type": "object",
+      "properties": {
+        "parts": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string",
+          "enum": [
+            "tar",
+            "tar.gz"
+          ]
+        },
+        "target": {
+          "type": "string",
+          "enum": [
+            "workspace",
+            "tools",
+            "ext",
+            "work"
+          ]
+        },
+        "replace": {
+          "type": "boolean"
+        },
+        "manifest": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/WorkersSandboxManifestEntry"
+          }
+        }
+      },
+      "required": [
+        "parts",
+        "bytes",
+        "sha256",
+        "format",
+        "target",
+        "replace",
+        "manifest"
+      ]
+    },
+    "WorkersSandboxUploadPartResult": {
+      "type": "object",
+      "properties": {
+        "n": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "sha256": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "n",
+        "bytes",
+        "sha256"
+      ]
+    },
+    "WorkersSandboxUploadResult": {
+      "type": "object",
+      "properties": {
+        "files": {
+          "type": "number"
+        },
+        "bytes": {
+          "type": "number"
+        },
+        "skipped": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "why": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "path",
+              "why"
+            ]
+          }
+        }
+      },
+      "required": [
+        "files",
+        "bytes",
+        "skipped"
+      ]
+    },
     "WorkersSingBacking": {
       "type": "string",
       "enum": [

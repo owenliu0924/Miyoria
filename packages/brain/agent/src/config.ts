@@ -524,6 +524,10 @@ export const QuotaConfigSchema = z.object({
   person_usd_per_day: z.number().nonnegative().default(10),
   /** What a million tokens of a model with no price in `[llm.pricing]` count as (USD). */
   unpriced_usd_per_mtok: z.number().nonnegative().default(1),
+  /** Sandbox CPU seconds per person in a rolling hour (two CPUs flat out); 0: no hourly limit. */
+  person_cpu_seconds_per_hour: z.number().nonnegative().default(7200),
+  /** Sandbox CPU seconds per person in her local day (eight CPU hours); 0: no daily limit. */
+  person_cpu_seconds_per_day: z.number().nonnegative().default(28800),
 });
 export type QuotaConfig = z.output<typeof QuotaConfigSchema>;
 

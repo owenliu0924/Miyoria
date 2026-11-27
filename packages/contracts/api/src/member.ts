@@ -6,6 +6,7 @@
 // validated against them and what they do not name is stripped.
 
 import { z } from "zod";
+import { QuotaWorkSchema } from "./core.js";
 import { IdempotencyHeaders, route } from "./route.js";
 import { SpaceQuery } from "./shared.js";
 
@@ -105,6 +106,8 @@ export const MemberQuotaSchema = z
     day_limit_usd: z.number(),
     /** The owner: never held to them. */
     exempt: z.boolean(),
+    /** Their sandbox CPU (seconds, and the limits); left out where it is not kept. */
+    work: QuotaWorkSchema.optional(),
   })
   .meta({ id: "ApiMemberQuota" });
 export type MemberQuota = z.output<typeof MemberQuotaSchema>;

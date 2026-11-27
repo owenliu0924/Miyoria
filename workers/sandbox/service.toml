@@ -1,0 +1,29 @@
+# 程式沙箱:在這台的 Docker 裡替她跑程式、shell、瀏覽器和插件(docs/design/v6-sandbox.md)。
+name = "sandbox"
+kind = "worker"
+provides = ["sandbox"]
+platforms = ["win32", "linux", "darwin"]
+summary = "程式沙箱(Docker 容器)"
+
+[install]
+runtime = "node"
+system = ["docker"]
+
+[run]
+command = ["{miyoria}", "sandbox", "serve"]
+cwd = "{workspace}"
+port = "auto"
+host_env = "HOST"
+port_env = "PORT"
+# 服務自己讀 host.toml 的 [sandbox](§12.1);狀態放在 hostd 的狀態資料夾底下。
+env = { SANDBOX_HOST_TOML = "{workspace}/host.toml", SANDBOX_STATE = "{state}/sandbox", SANDBOX_IMAGE_DIR = "{service}/image" }
+# Docker CLI 要的;其他的照 hostd 的基本清單(packages/hostd/src/env.ts 的 workerBaseEnv)。
+pass_env = ["DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_CERT_PATH", "DOCKER_TLS_VERIFY"]
+
+[run.health]
+http = "/health"
+startup_s = 30
+interval_s = 10
+
+[run.stop]
+grace_s = 20

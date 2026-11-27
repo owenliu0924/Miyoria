@@ -27,6 +27,7 @@ import { cardsTables } from "@miyoria/play/cards";
 import { exchangeTables } from "@miyoria/play/exchange";
 import { karaokeTables } from "@miyoria/play/karaoke";
 import { marketTables } from "@miyoria/play/market";
+import { ExtensionLauncherKey, sandboxLauncher } from "@miyoria/plugin-host/ext-host";
 import {
   type Config,
   ConfigError,
@@ -87,10 +88,17 @@ import {
   PromptContributors,
   PromptContributorsKey,
   RunningProfileKey,
+  SandboxClientKey,
   type SpaceRef,
 } from "@miyoria/types";
+import {
+  SANDBOX_CAPABILITY,
+  SandboxConfigSchema,
+  sandboxJobsTables,
+} from "@miyoria/workspace/sandbox";
 import { CliPlatform, type CliPlatformOptions } from "./cli-platform.js";
 import { CLUSTER_GUARDS } from "./cluster-guards.js";
+import { coreMachineHosts } from "./core-machine.js";
 import { type Machines, openMachines } from "./machines.js";
 import {
   moduleEnabled,
@@ -129,6 +137,7 @@ export const STORE_PLUGINS: readonly StorePlugin<unknown>[] = [
   notesTables,
   quotaTables,
   reportTables,
+  sandboxJobsTables,
   transcriptTables,
 ];
 
@@ -259,6 +268,8 @@ export class Core {
     this.bus.publish(KERNEL_MODULE, Events.SystemShutdown, {});
     this.settings?.close();
     await this.supervisor.stopAll();
+    // The sandbox launcher only watches the client; it stops after the extensions it started.
+    (this.services.get(ExtensionLauncherKey) as { close?: () => void } | undefined)?.close?.();
     this.#persist.abort();
     await this.#persistTask;
     await this.#membersTask;
@@ -310,6 +321,27 @@ export async function buildCoreWith(
   services.provide(k, PlatformSinksKey, new PlatformSinks());
   services.provide(k, PlatformHistoriesKey, new PlatformHistories());
   services.provide(k, SupervisorKey, supervisor);
+  // Where extension programs run (docs/design/v6-sandbox.md §16 q3): in a job on a computer of
+  // the cluster that takes plugins, else here as before. Provided before any `ext.<id>` starts;
+  // the client is read at each launch, the sandbox module provides it later (or never). Only with
+  // a sandbox that can use the cluster: the launcher waits a little at boot for a computer, which
+  // an install without one should not pay (it gets this machine's launcher, as before).
+  const sandboxSection = SandboxConfigSchema.safeParse(config.module("sandbox").config ?? {});
+  if (
+    moduleEnabled(config, "sandbox") &&
+    sandboxSection.success &&
+    sandboxSection.data.backend !== "local"
+  ) {
+    const launcher = sandboxLauncher({
+      client: () => services.get(SandboxClientKey),
+      trustedHosts: sandboxSection.data.transfer.trusted_hosts,
+      // Core's own machine in the cluster, as the registry knows it at each launch.
+      coreHost: () => coreMachineHosts(services, SANDBOX_CAPABILITY),
+      fallback: "host",
+      restart: (extension) => supervisor.restart(`ext.${extension}`),
+    });
+    services.provide(k, ExtensionLauncherKey, launcher);
+  }
   // What the panel changes of a module's config, laid over the file (docs/design/v5-settings.md).
   const settings = new ModuleSettings({
     config,

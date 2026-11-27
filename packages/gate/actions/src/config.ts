@@ -51,13 +51,16 @@ export const WorkLimitSchema = z.object({
  * asked, as an attachment.
  */
 export const ShareConfigSchema = z.object({
-  /** The largest file she shares, in bytes (the platform's own limit applies as well). */
-  max_bytes: z.number().int().positive().default(10_485_760),
+  /**
+   * The largest file she shares, in bytes; 0: only the platform's own limit applies. Over it, the
+   * link alone goes when there is a file origin. A value written in an old config still holds.
+   */
+  max_bytes: z.number().int().nonnegative().default(0),
   /** Files shared in any rolling 24 hours, all people together. */
   per_day: z.number().int().nonnegative().default(60),
   /** Files shared to one person in any rolling 24 hours. */
   per_person_per_day: z.number().int().nonnegative().default(10),
-  /** A zip (or docx, xlsx, pptx) whose files unpack to more than this, in MiB, is refused. */
+  /** An archive (zip, Office and OpenDocument files, tar, tgz) that unpacks to more than this, in MiB, is refused. */
   zip_max_unpacked_mb: z.number().int().positive().default(256),
   /** A zip listing more files than this is refused. */
   zip_max_entries: z.number().int().positive().default(5000),

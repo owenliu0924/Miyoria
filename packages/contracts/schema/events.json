@@ -6280,14 +6280,18 @@
         "timeout",
         "aborted",
         "output_limit",
-        "memory"
+        "memory",
+        "quota",
+        "disk",
+        "lost"
       ]
     },
     "EventsSandboxLanguage": {
       "type": "string",
       "enum": [
         "python",
-        "node"
+        "node",
+        "shell"
       ]
     },
     "EventsSandboxRunFinished": {
@@ -6326,6 +6330,15 @@
             "string",
             "null"
           ]
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cpu_ms": {
+          "type": "number"
         }
       },
       "required": [
@@ -6360,6 +6373,15 @@
         },
         "runs": {
           "type": "number"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cpu_ms": {
+          "type": "number"
         }
       },
       "required": [
@@ -6376,6 +6398,12 @@
         },
         "language": {
           "$ref": "#/$defs/EventsSandboxLanguage"
+        },
+        "host": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [

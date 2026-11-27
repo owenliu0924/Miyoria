@@ -85,10 +85,11 @@ describe("kept counts", () => {
 });
 
 describe("the workspace's defaults", () => {
-  it("fit 100 people at the per-person caps", () => {
+  it("fit 100 people at the per-person file cap, and 32 full folders on disk", () => {
+    // The byte total is an upper bound on Core's disk; most folders stay far below 1 GiB.
     const ws = SandboxConfigSchema.parse({}).workspace;
     expect(ws.max_files).toBeGreaterThanOrEqual(100 * ws.person_max_files);
-    expect(ws.max_mb).toBeGreaterThanOrEqual(100 * ws.person_max_mb);
-    expect(ws).toMatchObject({ max_files: 200_000, max_mb: 32_768 });
+    expect(ws.max_mb).toBeGreaterThanOrEqual(32 * ws.person_max_mb);
+    expect(ws).toMatchObject({ max_files: 200_000, max_mb: 32_768, person_max_mb: 1024 });
   });
 });

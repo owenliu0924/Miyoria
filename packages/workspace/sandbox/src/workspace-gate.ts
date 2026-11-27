@@ -44,6 +44,7 @@ import { NODE_CODE_RUN, NODE_WORKSPACE } from "./nodes.js";
 import { normalizeRelativePath } from "./paths.js";
 import { type PersonLimits, workspaceFor } from "./people.js";
 import { type Sandbox, SandboxError } from "./types.js";
+import { payerFor, runFor } from "./whom.js";
 import { scriptLanguage, type WorkspaceApi } from "./workspace-store.js";
 
 export { NODE_WORKSPACE };
@@ -346,12 +347,11 @@ export function workspaceRunCapability(o: WorkspaceGateOptions): Capability<Work
       required: ["path"],
     },
     async execute(a, ctx): Promise<ActionResult> {
-      const { workspace: ws, folder } = workspaceFor(
-        o.workspace,
-        ctx.principal,
-        ctx.services,
-        o.people,
-      );
+      const {
+        workspace: ws,
+        folder,
+        scope,
+      } = workspaceFor(o.workspace, ctx.principal, ctx.services, o.people);
       const script = await ws.approvedScript(a.path);
       if (script === null) {
         return {
@@ -370,6 +370,9 @@ export function workspaceRunCapability(o: WorkspaceGateOptions): Capability<Work
           network: "none",
           mount_workspace: true,
           ...(folder === null ? {} : { workspace_folder: folder }),
+          // A computer of the cluster takes it by whom it is for; the local backend ignores both.
+          for: runFor(scope),
+          payer: payerFor(ctx),
         },
         { signal: ctx.signal },
       );

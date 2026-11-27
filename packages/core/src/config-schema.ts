@@ -101,7 +101,12 @@ import { WatchConfigSchema, WatchModule } from "@miyoria/watch";
 import { ImageGenConfigSchema, ImageGenModule } from "@miyoria/workspace/imagegen";
 import { SandboxConfigSchema, SandboxModule } from "@miyoria/workspace/sandbox";
 import { SkillsConfigSchema, SkillsModule } from "@miyoria/workspace/skills";
-import { WebConfigSchema, WebModule } from "@miyoria/workspace/web";
+import {
+  HttpToolsConfigSchema,
+  HttpToolsModule,
+  WebConfigSchema,
+  WebModule,
+} from "@miyoria/workspace/web";
 import { CliPlatform } from "./cli-platform.js";
 import { moduleEnabled, NEEDS_TOKEN } from "./module-ids.js";
 import { warnRemovedKeys } from "./removed-config.js";
@@ -153,6 +158,7 @@ export const MODULE_CONFIG_SCHEMAS: ReadonlyMap<string, ConfigSchema | null> = n
   [ExchangeModule.ID, ExchangeConfigSchema],
   [KaraokeModule.ID, KaraokeConfigSchema],
   [WebModule.ID, WebConfigSchema],
+  [HttpToolsModule.ID, HttpToolsConfigSchema],
   [SandboxModule.ID, SandboxConfigSchema],
   [ImageGenModule.ID, ImageGenConfigSchema],
   [SkillsModule.ID, SkillsConfigSchema],

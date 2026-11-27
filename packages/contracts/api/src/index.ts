@@ -325,6 +325,8 @@ export {
   QuotaPersonSchema,
   type QuotaReport,
   QuotaReportSchema,
+  type QuotaWork,
+  QuotaWorkSchema,
   type UsageInfo,
   UsageInfoSchema,
   type UsageMap,

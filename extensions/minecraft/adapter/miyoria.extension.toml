@@ -22,4 +22,4 @@ schema = "config.schema.json"
 
 # 從主機環境讀的變數(其他環境變數不會傳給外掛,見 docs/ARCHITECTURE.md §9.2)。
 [env]
-pass = ["MIYORIA_MC_*"]
+pass = ["MIYORIA_MC_*", "MIYORIA_MC_TOKEN"]

@@ -85,6 +85,9 @@ describe("the quota", () => {
       person_usd_per_hour: 3,
       person_usd_per_day: 10,
       unpriced_usd_per_mtok: 1,
+      // The sandbox's CPU seconds sit in the same table (docs/design/v6-sandbox.md §8).
+      person_cpu_seconds_per_hour: 7200,
+      person_cpu_seconds_per_day: 28800,
     });
     expect(QUOTA_DEFAULTS).toEqual({ usdPerHour: 3, usdPerDay: 10, unpricedUsdPerMtok: 1 });
     expect(() => AgentConfigSchema.parse({ quota: { person_usd_per_hour: -1 } })).toThrow();

@@ -39,10 +39,11 @@ export interface CapabilityTool {
   properties: JsonObject;
   required?: string[];
   /**
-   * High risk only: the result matters to her (e.g. program output). The tool waits up to
-   * `[modules.actions] inline_wait_ms` for the review and the run; when that is not enough it
-   * answers "pending" and the outcome comes back later as a notice (`agent.notice`). Without it
-   * a high-risk tool only says the request is under review.
+   * High or medium risk: the result matters to her (e.g. program output) and may take long. The
+   * tool waits up to `[modules.actions] inline_wait_ms` for the run (and, at high risk, its
+   * review); when that is not enough it answers "pending" and the outcome comes back later as a
+   * notice (`agent.notice`), so a long run does not hold her turn. Without it a high-risk tool
+   * only says the request is under review, and a medium-risk one waits for its run.
    */
   followup?: boolean;
   /** Low risk only: it only looks, so it may run next to other such calls (`Tool.readOnly`). */

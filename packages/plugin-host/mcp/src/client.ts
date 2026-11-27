@@ -1,16 +1,27 @@
-// The MCP client side: one supervised connection per configured server whose tools are
-// mirrored into the `ToolRegistry`.
+// The MCP client side: one supervised connection per server (configured in `[mcp.servers.*]`,
+// or bundled with an extension) whose tools are mirrored into the `ActuatorRegistry` as gated
+// capabilities `mcp.<server>.<tool>`: the server's risk, rate limits, audit, `on_own`, review
+// for high risk, and its node `tools.mcp.<server>` (a work node: members she knows well enough
+// may use it). The model sees them under their old registry names `mcp_<server>_<tool>`.
 
 import { statSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 import type { Stream } from "node:stream";
+import {
+  type ActuatorRegistry,
+  type Capability,
+  type ExternalToolAnswer,
+  externalToolCapability,
+  type Risk,
+} from "@miyoria/gate/actions";
 import { MIYORIA_VERSION } from "@miyoria/llm/llm";
-import type { Tool, ToolContext, ToolMeta, ToolRegistry, ToolSpec } from "@miyoria/llm/tools";
+import type { ToolRegistry } from "@miyoria/llm/tools";
 import { errorMessage, getLogger, sleep, withTimeout } from "@miyoria/runtime/kernel";
-import { type Clock, isJsonObject, type JsonValue } from "@miyoria/types";
+import { type Clock, isJsonObject, type JsonObject, type JsonValue } from "@miyoria/types";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import {
   type CallToolResult,
   ErrorCode,
@@ -45,83 +56,119 @@ export class McpConnectionError extends Error {
 }
 
 /**
- * Registers tools in the shared registry and remembers what it added, so everything can be
- * removed on stop. After `close` nothing more can be registered.
+ * Registers capabilities in the actuator registry and remembers what it added (by tool name), so
+ * everything can be removed on stop. After `close` nothing more can be registered.
  */
 export class Registrar {
-  readonly #registry: ToolRegistry;
-  readonly #names = new Set<string>();
+  readonly #actuators: ActuatorRegistry;
+  /** The model's tools, to refuse a name another module already uses. */
+  readonly #tools: ToolRegistry | null;
+  readonly #added = new Map<string, () => void>();
   #closed = false;
 
-  constructor(registry: ToolRegistry) {
-    this.#registry = registry;
+  constructor(actuators: ActuatorRegistry, tools: ToolRegistry | null = null) {
+    this.#actuators = actuators;
+    this.#tools = tools;
   }
 
-  register(tool: Tool): void {
+  register(capability: Capability<JsonObject>): void {
     if (this.#closed) throw new McpConnectionError("MCP module is stopping");
-    this.#registry.register(tool);
-    this.#names.add(tool.spec.name);
+    const name = capability.tool?.name ?? capability.name;
+    if (this.#tools?.get(name) !== undefined && !this.#added.has(name)) {
+      throw new McpConnectionError(`tool \`${name}\` is already registered by something else`);
+    }
+    this.#added.get(name)?.();
+    this.#added.set(name, this.#actuators.register(capability));
   }
 
   unregister(name: string): void {
-    if (this.#names.delete(name)) this.#registry.unregister(name);
+    const off = this.#added.get(name);
+    this.#added.delete(name);
+    off?.();
   }
 
-  /** Removes every tool this registrar added and refuses new ones. */
+  /** Removes every capability this registrar added and refuses new ones. */
   close(): void {
     this.#closed = true;
-    for (const name of this.#names) this.#registry.unregister(name);
-    this.#names.clear();
+    for (const off of this.#added.values()) off();
+    this.#added.clear();
   }
 }
 
-/** A tool of an MCP server, as the model sees it. */
-class McpTool implements Tool {
-  /** An MCP server is a program of its own: what its tool does is not known here. */
-  readonly meta: ToolMeta = { effect: "external", speed: "instant", risk: "medium", group: "mcp" };
+/** What one MCP tool becomes. */
+export interface McpToolOptions {
+  server: string;
+  /** Registry name, `mcp_<server>_<tool>` (maybe hashed). */
+  name: string;
+  info: McpToolInfo;
+  permission: string | null;
+  client: Client;
+  config: ServerConfig;
+}
 
-  constructor(
-    readonly spec: ToolSpec,
-    readonly server: string,
-    readonly remoteName: string,
-    readonly permission: string | null,
-    readonly client: Client,
-    readonly timeoutMs: number,
-    readonly maxResultChars: number,
-    /** The server says it only looks (`readOnlyHint`) and its config trusts that. */
-    readonly readOnly: boolean,
-  ) {}
+/** The gate's tier for a tool: the owner's `risk`, else low for a trusted read-only hint. */
+export function mcpToolRisk(config: ServerConfig, info: McpToolInfo): Risk {
+  if (config.risk !== null) return config.risk;
+  return trustedReadOnly(config, info) ? "low" : "medium";
+}
 
-  async call(ctx: ToolContext, args: JsonValue): Promise<string> {
-    let params: { name: string; arguments?: Record<string, unknown> };
-    if (isJsonObject(args)) params = { name: this.remoteName, arguments: args };
-    else if (args === null) params = { name: this.remoteName };
-    else {
-      throw new McpToolError(`tool arguments must be a JSON object, got ${JSON.stringify(args)}`);
-    }
-    let result: CallToolResult;
-    try {
-      result = (await this.client.callTool(params, undefined, {
-        timeout: this.timeoutMs,
-        signal: ctx.signal,
-      })) as CallToolResult;
-    } catch (error) {
-      if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
+function trustedReadOnly(config: ServerConfig, info: McpToolInfo): boolean {
+  return config.trust_read_only_hint && info.annotations?.readOnlyHint === true;
+}
+
+/** Capability name of a tool: `mcp.<server>.<tool part of its registry name>`. */
+export function mcpCapabilityName(server: string, name: string): string {
+  const prefix = `mcp_${server}_`;
+  return `mcp.${server}.${name.startsWith(prefix) ? name.slice(prefix.length) : name}`;
+}
+
+/** A tool of an MCP server as a gated capability. */
+export function mcpToolCapability(o: McpToolOptions): Capability<JsonObject> {
+  const { client, config, server } = o;
+  const remoteName = o.info.name;
+  // What the model does not need (`$schema`, `title`, `examples`, ...) costs tokens every turn.
+  const schema = compactSchema((o.info.inputSchema ?? {}) as JsonValue);
+  const parameters: JsonObject = isJsonObject(schema) ? { ...schema } : {};
+  if (Object.keys(parameters).length === 0) parameters.type = "object";
+  const description = o.info.description ?? o.info.title ?? remoteName;
+  const risk = mcpToolRisk(config, o.info);
+  return externalToolCapability({
+    capability: mcpCapabilityName(server, o.name),
+    tool: o.name,
+    summary: `MCP 伺服器「${server}」的工具 ${remoteName}`,
+    description,
+    parameters,
+    risk,
+    permission: o.permission,
+    group: "mcp",
+    readOnly: risk === "low" && trustedReadOnly(config, o.info),
+    // One step of what she is doing, like an extension's tool: the work limits, not a cooldown.
+    work: true,
+    source: `mcp.${server}`,
+    async call(args, ctx): Promise<ExternalToolAnswer> {
+      let result: CallToolResult;
+      try {
+        result = (await client.callTool({ name: remoteName, arguments: args }, undefined, {
+          timeout: config.callTimeoutMs,
+          signal: ctx.signal,
+        })) as CallToolResult;
+      } catch (error) {
+        if (error instanceof McpError && error.code === ErrorCode.RequestTimeout) {
+          throw new McpToolError(
+            `MCP tool \`${remoteName}\` on server \`${server}\` timed out after ${config.callTimeoutMs} ms`,
+            { cause: error },
+          );
+        }
         throw new McpToolError(
-          `MCP tool \`${this.remoteName}\` on server \`${this.server}\` timed out after ${this.timeoutMs} ms`,
+          `MCP tool \`${remoteName}\` on server \`${server}\` failed: ${errorMessage(error)}`,
           { cause: error },
         );
       }
-      throw new McpToolError(
-        `MCP tool \`${this.remoteName}\` on server \`${this.server}\` failed: ${errorMessage(error)}`,
-        { cause: error },
-      );
-    }
-    // The agent wraps every tool result as untrusted data; doing it here too only nested blocks.
-    const text = truncateChars(flattenResult(result), this.maxResultChars);
-    if (result.isError === true) throw new McpToolError(text === "" ? "(empty error)" : text);
-    return text;
-  }
+      const text = truncateChars(flattenResult(result), config.max_result_chars);
+      if (result.isError === true) throw new McpToolError(text === "" ? "(empty error)" : text);
+      return { text };
+    },
+  });
 }
 
 /** Why one connection attempt / session ended. */
@@ -172,6 +219,11 @@ class Notify {
 export interface ServerRunnerOptions {
   name: string;
   config: ServerConfig;
+  /**
+   * Opens the connection instead of the configured `command` / `url` (a server an extension
+   * bundles, started by its launcher).
+   */
+  transport?: (signal: AbortSignal) => Promise<Transport>;
   status: McpStatus;
   registrar: Registrar;
   backoffInitialMs: number;
@@ -188,6 +240,7 @@ export class ServerRunner {
   readonly #backoffInitialMs: number;
   readonly #backoffMaxMs: number;
   readonly #clock: Clock;
+  readonly #transport: ((signal: AbortSignal) => Promise<Transport>) | null;
   #connects = 0;
 
   constructor(options: ServerRunnerOptions) {
@@ -198,6 +251,7 @@ export class ServerRunner {
     this.#backoffInitialMs = options.backoffInitialMs;
     this.#backoffMaxMs = options.backoffMaxMs;
     this.#clock = options.clock;
+    this.#transport = options.transport ?? null;
   }
 
   /** Connects, mirrors tools and reconnects with backoff until `signal` aborts. Never rejects. */
@@ -256,6 +310,7 @@ export class ServerRunner {
     try {
       client = await connect(this.name, this.config, {
         signal,
+        transport: this.#transport,
         onToolsChanged: () => toolsChanged.notify(),
         onClose: () => {
           closed = true;
@@ -325,7 +380,7 @@ export class ServerRunner {
       .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
     const permission = this.config.permissionNode(this.name);
-    const wanted = new Map<string, Tool>();
+    const wanted = new Map<string, Capability<JsonObject>>();
     const taken = new Set<string>();
     for (const tool of allowed) {
       const name = registryName(this.name, tool.name, taken);
@@ -337,25 +392,16 @@ export class ServerRunner {
         continue;
       }
       taken.add(name);
-      // What the model does not need (`$schema`, `title`, `examples`, ...) costs tokens every turn.
-      const schema = compactSchema((tool.inputSchema ?? {}) as JsonValue) as Record<
-        string,
-        unknown
-      >;
-      if (Object.keys(schema).length === 0) schema.type = "object";
-      const description = tool.description ?? tool.title ?? tool.name;
       wanted.set(
         name,
-        new McpTool(
-          { name, description, parameters: schema as JsonValue },
-          this.name,
-          tool.name,
+        mcpToolCapability({
+          server: this.name,
+          name,
+          info: tool,
           permission,
           client,
-          this.config.callTimeoutMs,
-          this.config.max_result_chars,
-          this.config.trust_read_only_hint && tool.annotations?.readOnlyHint === true,
-        ),
+          config: this.config,
+        }),
       );
     }
 
@@ -364,7 +410,7 @@ export class ServerRunner {
     const registered: string[] = [];
     for (const name of [...wanted.keys()].sort()) {
       try {
-        this.#registrar.register(wanted.get(name) as Tool);
+        this.#registrar.register(wanted.get(name) as Capability<JsonObject>);
         registered.push(name);
       } catch (error) {
         log.warn(
@@ -403,6 +449,7 @@ async function listAllTools(client: Client, timeoutMs: number): Promise<McpToolI
 
 interface ConnectOptions {
   signal: AbortSignal;
+  transport?: ((signal: AbortSignal) => Promise<Transport>) | null;
   onToolsChanged: () => void;
   onClose: () => void;
 }
@@ -467,6 +514,28 @@ async function connect(
 ): Promise<Client> {
   const timeoutMs = config.connectTimeoutMs;
   const client = newClient(options);
+  if (options.transport) {
+    let transport: Transport;
+    try {
+      transport = await options.transport(options.signal);
+    } catch (error) {
+      throw new McpConnectionError(`cannot start the server: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+    try {
+      await withConnectTimeout(
+        client.connect(transport, { timeout: timeoutMs, signal: options.signal }),
+        timeoutMs,
+        transport,
+      );
+    } catch (error) {
+      throw new McpConnectionError(`MCP handshake failed: ${errorMessage(error)}`, {
+        cause: error,
+      });
+    }
+    return client;
+  }
   if (config.effectiveTransport() === "stdio") {
     const command = config.command ?? "";
     if (whichCommand(command) === null) {

@@ -29,6 +29,8 @@ import {
 import { MemorySettingsStore, SettingsStoreKey } from "@miyoria/store";
 import {
   type AccountRef,
+  AuthorizerKey,
+  BaseAuthorizer,
   type ContextKey,
   type Envelope,
   Events,
@@ -69,6 +71,13 @@ interface Harness {
 
 const running: Harness[] = [];
 
+/** Everyone holds every node: these tests are about the host, not who may ask. */
+class AllowAll extends BaseAuthorizer {
+  allowsSubject(): boolean {
+    return true;
+  }
+}
+
 afterEach(async () => {
   for (const h of running.splice(0)) await h.sup.stopAll();
 });
@@ -90,6 +99,7 @@ async function harness(dirs: string[], extra = "", subscribe?: string): Promise<
   services.provide("app", PromptContributorsKey, prompts);
   services.provide("app", SettingsStoreKey, new MemorySettingsStore());
   services.provide("app", SupervisorKey, sup);
+  services.provide("app", AuthorizerKey, new AllowAll());
   const discovery = discover(config, FIXTURES);
   for (const m of discovery.modules) await sup.register(m.module, m.config, m.enabled);
   await sup.startAll();
@@ -136,10 +146,17 @@ function toolCtx(): ToolContext {
   };
 }
 
+/** What the extension answered, out of the data block its capability puts it in. */
+function unframe(text: string): string {
+  const match = /^<data [^>]*>\n([\s\S]*)\n<\/data>$/u.exec(text);
+  if (!match) throw new Error(`not a data block: ${text}`);
+  return match[1] as string;
+}
+
 async function call(h: Harness, name: string, args: JsonValue): Promise<string> {
   const tool = h.tools.get(name);
   if (!tool) throw new Error(`tool ${name} missing`);
-  return tool.call(toolCtx(), args);
+  return unframe(await tool.call(toolCtx(), args));
 }
 
 function invocation(path: string, args: Record<string, string> = {}): Invocation {

@@ -34,6 +34,7 @@ import {
   FileReaderKey,
   type IncomingMessage,
   imageType,
+  MessageFilesKey,
   type MessageRef,
   PlatformHistoriesKey,
   picturesOf,
@@ -49,6 +50,7 @@ import {
   selectFiles,
   timeout,
 } from "../../agent/src/index.js";
+import { MessageFilesBook, recordRunFiles } from "./message-files.js";
 
 /** Messages of one place kept for their attachments and as reply parents. */
 const LINES_PER_PLACE = 120;
@@ -269,6 +271,9 @@ export class LookAround {
     const agent = this.#agent;
     const cfg = agent.config.files;
     const services = agent.ctx.services;
+    // Kept even while file reading is off: `workspace_attach` looks back at them.
+    const kept = services.get(MessageFilesKey);
+    if (kept instanceof MessageFilesBook) recordRunFiles(kept, run.inputs);
     const reader = services.get(FileReaderKey);
     if (!cfg.enabled || cfg.max_files === 0 || reader === undefined) return [];
     const picked = selectFiles(run.inputs, reader, services.get(AuthorizerKey), cfg);

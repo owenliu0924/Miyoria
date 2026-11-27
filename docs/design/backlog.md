@@ -520,6 +520,25 @@
 - **還有幾個沒收的花費上限**:工作線的 `[modules.agent.work] daily_tokens`(遊戲導演)、`[modules.reflect.tidy] budget_usd` / `budget_tokens`、沙箱附件的 `[modules.sandbox.files] per_person` / `global`。
 - **工具裡叫的模型**:靠 router 呼叫的標籤(`onCall`)記在執行的人身上;不經 router 的(插件自己連的模型)記不到。
 
+### 階段 7 第二到四批留下的(2026-11-27)
+
+[v6-agent.md](v6-agent.md)「第二到四批做成的樣子」、[v6-agent-split.md](v6-agent-split.md) 每一包的「不同的地方」。
+
+- **沒在真的 Docker 上跑過**:服務全部只在沒有 Docker 的 Windows 上對假的 Docker 測過(Core 的 client 對服務的整條協定也是,`test/remote/service.e2e.test.ts`)。特別是 `--cgroupns private` 在 cgroup v1、Docker Desktop 上的 `docker pause`、`--ipc none` 加 `/dev/shm` 的 tmpfs(瀏覽器)、每個工作的 `--internal` 網路加代理、瀏覽器在唯讀根目錄上以非 root 跑、插件在工作裡跑。CI 的 `docker-sandbox` 建兩個映像檔、跑這些測試,第一次過了才算驗證。
+- **映像檔沒有釘死**:`workers/sandbox/image/Dockerfile` 的 base 是標籤不是 digest,`requirements.txt` 只釘了最上層的套件(瀏覽器的映像檔釘了 digest)。
+- **出口代理**:不知道 NAT 後面這台的公開 IPv4,路由器轉發到這台的連接埠從工作裡連得到;Docker 內建的 DNS 可以拿來把資料送出去。
+- **`tar-io` 的深度**:`normalizeRelativePath` 最多 8 段,owner 的整個工作區裡 `people/<資料夾>/` 底下超過 6 段的檔進不了、出不來(送的時候寫在 `skipped`)。要放寬得四處一起改(`tar-io`、`transfer.ts` 的掃描和刪除清單、服務的 `uploads.ts`、`syncs.ts`),只對整個工作區用 `normalizeWorkspacePath`。
+- **比對資料夾的雜湊**:8 MiB 以上的檔仍然靠大小和整秒的時間判斷沒變;同一秒裡改過、大小一樣的大檔會漏掉。要完全對得照 git 的「racy」做法記下每份清單是什麼時候拍的。
+- **Core 重啟**:跑到一半的 exec 不接回(工作階段接回);瀏覽器的工作階段全部結束,還沒收回的下載跟著工作沒了;接回的工作階段的語言寫成 `shell`、次數 0。
+- **完整輸出**:`GET .../log` 還沒存進 `outputs/<run id>.txt`(回來的只有前 `max_output_bytes`)。
+- **Core 怎麼認得自己那台**:`core/src/core-machine.ts` 看叢集的 registry:hostd 從 127.0.0.1 連進來的那台,和 Core 直接用 loopback 位址叫的那筆。有密鑰的插件(`coreHost`)和成員的資料夾(`member_hosts` 之外)都可以去那裡。叢集的連接埠前面有 Core 這台上的反向代理或通道時,每一台看起來都是從 127.0.0.1 連進來的,都會被當成 Core 自己那台;要靠得住得讓 owner 寫明 Core 自己的 host 名字。
+- **插件**:`fallback = "fail"` 沒有設定鍵(預設 `host`);`fallback = "fail"` 時它附的 MCP 伺服器一直等;沙箱模組在執行中才開,已經在這台跑的插件不會搬(要重啟);deno、bun 的插件、資料夾有連結的(pnpm 的 `node_modules`)一律在這台;開機時只有在有電腦提供沙箱服務、但還沒準備好時才等(最多 10 秒),一台都沒有就馬上在這台跑,之後有電腦接插件再搬;owner 寫了 `run_in = "sandbox"` 的插件沒有電腦時不啟動(啟動失敗的原因寫在模組狀態),有電腦之後要等 supervisor 重試或手動重啟才會起來;沙箱模組關著或 `backend = "local"` 時用的是這台的 launcher,它不看 `run_in`,寫了 `"sandbox"` 也在這台跑。
+- **插件的行為改了要 owner 知道**:沒寫 `permission` 的插件和 MCP 工具以前所有人都能叫,現在要節點或羈絆到 `work_min_bond`;live 的 `miyoria.toml` 裡用萬用字元 `env_pass` 給 token 的,要加完整名字(啟動的警告列名字)。插件在執行中被停用時它附的 MCP 伺服器跟著停(P8 做了)。插件可以寫跟自己排程同名的 storage 鍵,只會弄亂自己的鬧鐘。
+- **瀏覽器**:`<iframe>` 裡的元素不在大綱、沒有 `ref`;每個工作階段是新的設定檔,登入最多留 `lifetime_minutes`。
+- **`api/src/files/links.ts`**:她做的壓縮檔沒有 `made_for` 時不給連結(`if (zip && !options.owner)`);要給就拿掉那一行(下面的內容檢查已經讀整個檔)。
+- **`available()` 的「忙」是猜的**:照 `/v1/info` 的預留算,真的決定的是服務的 `busy`。
+- **插件和 MCP 的工作 CPU 不算進任何人的額度**:`sandbox-launch.ts` 開 `plugin` 工作時 `payer: null`,它們用的 CPU 秒數不扣誰的(那台的 `cpus` 預留和每個工作的 `--cpus` 照樣擋)。先刻意不收:插件是 owner 裝的,不是哪個成員叫的;要收就決定記在誰身上(owner?叫它工具的人?)。
+
 ## 4. 自我修復與自我改進(備忘)
 
 三層,越下面風險越高:

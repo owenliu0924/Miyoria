@@ -71,3 +71,60 @@ export const ExtLogParamsSchema = z
   .meta({ id: "ExtLogParams" });
 export type ExtLogParams = z.output<typeof ExtLogParamsSchema>;
 export type ExtLogParamsIn = z.input<typeof ExtLogParamsSchema>;
+
+/**
+ * `schedule.set` params: one schedule of this extension, replaced when the id exists. Give `at`
+ * (once) or `daily`, not both. Each extension keeps at most 32.
+ */
+export const ExtScheduleSetParamsSchema = z
+  .object({
+    /** `^[a-z0-9][a-z0-9_-]{0,47}$`. */
+    id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,47}$/),
+    /** Epoch ms, once. */
+    at: z.number().optional(),
+    /** `"HH:MM"` on her clock every day. */
+    daily: z
+      .string()
+      .regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/)
+      .optional(),
+    /** At most 4 KiB as JSON; sent back as it is. */
+    payload: JsonValueSchema.optional(),
+  })
+  .meta({ id: "ExtScheduleSetParams" });
+export type ExtScheduleSetParams = z.output<typeof ExtScheduleSetParamsSchema>;
+
+/** `schedule.cancel` params. */
+export const ExtScheduleCancelParamsSchema = z
+  .object({ id: z.string() })
+  .meta({ id: "ExtScheduleCancelParams" });
+export type ExtScheduleCancelParams = z.output<typeof ExtScheduleCancelParamsSchema>;
+
+/** One schedule, as `schedule.list` returns it. */
+export const ExtScheduleEntrySchema = z
+  .object({
+    id: z.string(),
+    at: z.number().optional(),
+    daily: z.string().optional(),
+    payload: JsonValueSchema.nullable().default(null),
+    /** Epoch ms of the next time it fires. */
+    next: z.number().nullable().default(null),
+  })
+  .meta({ id: "ExtScheduleEntry" });
+export type ExtScheduleEntry = z.output<typeof ExtScheduleEntrySchema>;
+
+/** `schedule.list` result. */
+export const ExtScheduleListResultSchema = z
+  .object({ schedules: z.array(ExtScheduleEntrySchema) })
+  .meta({ id: "ExtScheduleListResult" });
+export type ExtScheduleListResult = z.output<typeof ExtScheduleListResultSchema>;
+
+/** `schedule.fire` params (host to extension, a notification): a schedule came due. */
+export const ExtScheduleFireParamsSchema = z
+  .object({
+    id: z.string(),
+    payload: JsonValueSchema.nullable(),
+    /** Epoch ms it was due. */
+    due: z.number(),
+  })
+  .meta({ id: "ExtScheduleFireParams" });
+export type ExtScheduleFireParams = z.output<typeof ExtScheduleFireParamsSchema>;

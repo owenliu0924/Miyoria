@@ -3,9 +3,12 @@
 // Extensions are separate processes described by `miyoria.extension.toml`. Each one runs as its
 // own supervisor module `ext.<id>` and talks JSON-RPC 2.0 over stdio with `Content-Length`
 // framing (`docs/protocols/extension-rpc.md`). The host proxies what an extension registers
-// into the shared registries: tools into the `ToolRegistry`, commands into the
+// into the shared registries: tools as gated capabilities into the `ActuatorRegistry`
+// (`ext.<id>.<wire>`, offered to the model under their old registry names; a game adapter's raw
+// `game_<id>_*` tools into the gated registry instead), commands into the
 // `CommandRegistry`, prompt contributors into `PromptContributors`, and forwards bus events it
-// is allowed to see.
+// is allowed to see. Its own alarms (`schedule.*`) fire as `schedule.fire`. Where the process
+// runs is the `ExtensionLauncher`'s choice (`ExtensionLauncherKey`; this machine without one).
 //
 // The app calls `discover(config, baseDir)` before starting the supervisor and registers every
 // returned module; the `cli` functions back the `miyoria ext` subcommands.
@@ -24,6 +27,7 @@ export {
   validate,
 } from "./cli.js";
 export {
+  defaultRunIn,
   type ExtensionSettings,
   ExtensionsSectionSchema,
   extensionSettings,
@@ -34,10 +38,22 @@ export {
   hostConfigFromConfig,
   type PermissionOverride,
   PermissionOverrideSchema,
+  type RunIn,
   resolvedDirs,
   runtimeCommand,
+  type ToolSetting,
 } from "./config.js";
-export { BASE_ENV, type ExtensionEnv, extensionEnv } from "./env.js";
+export {
+  BASE_ENV,
+  CORE_SECRET_PREFIXES,
+  type ExtensionEnv,
+  type ExtensionEnvReport,
+  extensionEnv,
+  extensionEnvReport,
+  extensionSecrets,
+  isCoreSecret,
+  looksLikeSecret,
+} from "./env.js";
 export {
   OPEN_EVENT_NAMESPACES,
   type Publisher,
@@ -60,6 +76,7 @@ export {
 } from "./extension.js";
 export {
   type CatalogEntry,
+  type CatalogHttpToolDir,
   type CatalogMcpServer,
   type DiscoveredModule,
   type Discovery,
@@ -69,8 +86,18 @@ export {
   ExtensionCatalogKey,
   ExtensionsModule,
   findExtensionDirs,
+  HTTP_TOOLS_DIR,
   type SkippedExtension,
 } from "./host.js";
+export {
+  type ChildLike,
+  type ExtensionLauncher,
+  ExtensionLauncherKey,
+  LaunchError,
+  type LaunchSpec,
+  localLauncher,
+  resolveProgram,
+} from "./launch.js";
 export {
   type ConfigSection,
   type EnvSpec,
@@ -112,6 +139,7 @@ export {
 } from "./protocol.js";
 export {
   ExtensionCallError,
+  execContextJson,
   invokeCommand,
   ProxyPrompt,
   ProxyTool,
@@ -138,6 +166,25 @@ export {
   TIMEOUT,
   UNAVAILABLE,
 } from "./rpc.js";
+export {
+  inExtDir,
+  type Placement as SandboxPlacement,
+  type SandboxLauncher,
+  type SandboxLauncherOptions,
+  type SandboxPlan,
+  sandboxArgv,
+  sandboxEnv,
+  sandboxLauncher,
+  sandboxNetwork,
+  sandboxPlan,
+} from "./sandbox-launch.js";
+export {
+  ExtensionSchedules,
+  MAX_SCHEDULE_PAYLOAD,
+  MAX_SCHEDULES,
+  nextDaily,
+  type SchedulesOptions,
+} from "./schedules.js";
 export { ProfileIdKey } from "./services.js";
 export {
   callFailureCode,

@@ -1,0 +1,9 @@
+# [routing] of the sandbox service (docs/design/v6-sandbox.md §1.1), beside service.toml for older hostds.
+#
+# job:每個工作各自獨立,哪台都可以做;一個工作開了之後留在那台(Core 自己記,§9.3)。
+class = "job"
+latency = "interactive"
+concurrency = 4          # 一台同時最多幾個工作;那台的主人用 [services.sandbox] concurrency 往下調
+queue = true             # /health 回報 running、busy、queued 和 ready(§1.3)
+unit_s = 60
+result_mb = 5

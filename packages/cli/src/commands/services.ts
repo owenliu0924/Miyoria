@@ -462,6 +462,11 @@ export async function add(
   if (failures > 0) {
     throw new HostCommandError(t.services.installFailed(t.common.services(failures)));
   }
+  if (entries.some((e) => e.name === "sandbox")) {
+    // The commented [sandbox] rules in host.toml, then the question whether to build the image.
+    const { sandboxAfterAdd } = await import("./sandbox.js");
+    await sandboxAfterAdd({ hostToml: target.hostToml, yes: deps.yes === true });
+  }
   const todo = printed.filter(
     (r) =>
       r.manual.some((m) => !m.present) ||

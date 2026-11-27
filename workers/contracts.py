@@ -363,6 +363,356 @@ class WorkersReloadReply(BaseModel):
     device_free_mb: float | None = None
 
 
+class WorkersSandboxEndReason(
+    RootModel[
+        Literal[
+            "closed",
+            "idle",
+            "lifetime",
+            "lease",
+            "disk",
+            "lost",
+            "shutdown",
+            "host_policy",
+        ]
+    ]
+):
+    root: Literal[
+        "closed", "idle", "lifetime", "lease", "disk", "lost", "shutdown", "host_policy"
+    ]
+
+
+class Ended(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    reason: Literal[
+        "closed", "idle", "lifetime", "lease", "disk", "lost", "shutdown", "host_policy"
+    ]
+    at: float
+
+
+class WorkersSandboxEvent1(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    kind: Literal["state"]
+    state: Literal["starting", "ready", "busy", "ended"]
+
+
+class WorkersSandboxEvent2(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    kind: Literal["cpu"]
+    cpu_ms: float
+
+
+class WorkersSandboxEvent3(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    exec: str
+    kind: Literal["stdout", "stderr"]
+    text: str
+
+
+class WorkersSandboxEvent5(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    proc: str
+    kind: Literal["proc_out"]
+    stream: Literal["stdout", "stderr"]
+    offset: float
+    data_b64: str
+
+
+class WorkersSandboxEvent6(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    proc: str
+    kind: Literal["proc_exit"]
+    code: float | None
+    signal: str | None
+
+
+class Program(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    language: Literal["python", "node", "shell"]
+    code: str
+
+
+class Output(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    keep_bytes: float
+    kill_bytes: float
+    stream_bytes: float
+
+
+class Collect(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    max_files: float
+    max_bytes: float
+
+
+class WorkersSandboxFileIn(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    path: str
+    content: str
+    encoding: Literal["utf8", "base64"] | None = None
+
+
+class WorkersSandboxFileOut(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    path: str
+    size: float
+    encoding: Literal["utf8", "base64"]
+    content: str
+
+
+class Docker(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    available: bool
+    server_version: str | None
+    error: str | None
+    cgroup: Literal["v2", "v1"] | None
+    runtime: str | None
+
+
+class Images(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    tag: str
+    present: bool
+    building: bool
+    stale: bool
+
+
+class Policy(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    members: bool
+    plugins: bool
+    cpus: float
+    memory_mb: float
+    disk_mb: float
+    max_job_cpus: float
+    max_job_memory_mb: float
+
+
+class Load(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    jobs: float
+    running: float
+    queued: float
+    cpus: float
+    memory_mb: float
+    disk_mb: float
+
+
+class WorkersSandboxInfo(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    api: Literal[1]
+    service_version: str
+    boot: str
+    platform: str
+    arch: str
+    docker: Docker
+    images: dict[Literal["default", "browser"], Images]
+    ready: bool
+    reason: str | None = None
+    policy: Policy
+    load: Load
+
+
+class Mounts(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    tools: bool
+    ext: bool
+
+
+class Refused(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    address: float
+    port: float
+    cap: float
+
+
+class Egress(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    bytes_in: float
+    bytes_out: float
+    connections: float
+    refused: Refused
+
+
+class WorkersSandboxJobUsage(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    cpu_ms: float
+    cpu_source: Literal["cgroup", "sampled"]
+    wall_ms: float
+    disk_bytes: float
+    egress: Egress
+
+
+class WorkersSandboxLimits(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    cpus: float
+    memory_mb: float
+    pids: float
+    tmp_mb: float
+    file_mb: float
+    nofile: float
+    disk_mb: float
+
+
+class WorkersSandboxManifestEntry(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    path: str
+    size: float
+    sha256: str
+    mtime_ms: float
+
+
+class WorkersSandboxNetwork(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    mode: Literal["open", "allowlist", "none"]
+    allow: list[str]
+    deny_ports: list[conint(ge=-9007199254740991, le=9007199254740991)]
+    max_connections: float
+    max_mb: float
+
+
+class WorkersSandboxProcStart(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    argv: list[str]
+    cwd: Literal["/work", "/workspace", "/ext"] | None = None
+    env: dict[str, str] | None = None
+
+
+class WorkersSandboxProcView(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    id: str
+    state: Literal["running", "exited"]
+    code: float | None
+    signal: str | None
+    stdin_offset: float
+    stdout_offset: float
+    stderr_offset: float
+
+
+class SkippedItem(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    path: str
+    why: str
+
+
+class Tar(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    bytes: float
+    sha256: str
+
+
+class WorkersSandboxSyncResult(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    changed: list[WorkersSandboxManifestEntry]
+    deleted: list[str]
+    skipped: list[SkippedItem]
+    tar: Tar | None
+
+
+class WorkersSandboxSyncStart(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    target: Literal["workspace"]
+
+
+class WorkersSandboxUploadCommit(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    parts: conint(ge=-9007199254740991, le=9007199254740991)
+    bytes: float
+    sha256: str
+    format: Literal["tar", "tar.gz"]
+    target: Literal["workspace", "tools", "ext", "work"]
+    replace: bool
+    manifest: list[WorkersSandboxManifestEntry]
+
+
+class WorkersSandboxUploadPartResult(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    n: conint(ge=-9007199254740991, le=9007199254740991)
+    bytes: float
+    sha256: str
+
+
+class WorkersSandboxUploadResult(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    files: float
+    bytes: float
+    skipped: list[SkippedItem]
+
+
 class WorkersSingGpuContext(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
@@ -752,6 +1102,133 @@ class WorkersLyricsReply(BaseModel):
     result: WorkersLyricsResult | None
 
 
+class Error(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    code: Literal[
+        "bad_request",
+        "unauthorized",
+        "not_accepting",
+        "not_found",
+        "conflict",
+        "gone",
+        "too_large",
+        "limit",
+        "busy",
+        "docker_failed",
+        "unavailable",
+        "internal",
+    ]
+    message: str
+    retry_after_ms: float | None = None
+    ended: Ended | None = None
+    reason: str | None = None
+
+
+class WorkersSandboxErrorBody(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    error: Error
+
+
+class WorkersSandboxEvent7(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    kind: Literal["ended"]
+    reason: Literal[
+        "closed", "idle", "lifetime", "lease", "disk", "lost", "shutdown", "host_policy"
+    ]
+    usage: WorkersSandboxJobUsage
+
+
+class WorkersSandboxExecResult(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    exit_code: float | None
+    killed_reason: (
+        Literal["timeout", "aborted", "output_limit", "memory", "quota", "disk", "lost"]
+        | None
+    )
+    duration_ms: float
+    cpu_ms: float
+    stdout: str
+    stderr: str
+    stdout_truncated: bool
+    stderr_truncated: bool
+    stdout_bytes: float
+    stderr_bytes: float
+    files_out: list[WorkersSandboxFileOut]
+    files_out_truncated: bool
+    log_bytes: float
+
+
+class WorkersSandboxExecStart(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    program: Program | None = None
+    argv: list[str] | None = None
+    stdin: str | None = None
+    files: list[WorkersSandboxFileIn] | None = None
+    cwd: Literal["/work", "/workspace"] | None = None
+    timeout_ms: float
+    env: dict[str, str] | None = None
+    output: Output
+    collect: Collect | None = None
+
+
+class WorkersSandboxExecView(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    id: str
+    state: Literal["running", "done", "lost"]
+    started_at: float
+    result: WorkersSandboxExecResult | None
+
+
+class WorkersSandboxJobCreate(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    kind: Literal["run", "session", "browser", "plugin"]
+    image: Literal["default", "browser"]
+    for_: Literal["self", "owner", "member", "plugin"] = Field(..., alias="for")
+    payer: str | None
+    limits: WorkersSandboxLimits
+    network: WorkersSandboxNetwork
+    lifetime_s: float
+    idle_s: float
+    lease_s: float
+    mounts: Mounts
+    env: dict[str, str]
+    label: str | None
+
+
+class WorkersSandboxJobView(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    id: str
+    kind: Literal["run", "session", "browser", "plugin"]
+    state: Literal["starting", "ready", "busy", "ended"]
+    ended: Ended | None
+    image_tag: str
+    limits: WorkersSandboxLimits
+    created_at: float
+    last_used_at: float
+    expires_at: float
+    usage: WorkersSandboxJobUsage
+    exec: str | None
+    procs: list[str]
+
+
 class WorkersSingJob(BaseModel):
     model_config = ConfigDict(
         extra="ignore",
@@ -798,3 +1275,38 @@ class WorkersKaraokeReference(
     RootModel[WorkersKaraokeReferenceV1 | WorkersKaraokeReferenceV2]
 ):
     root: WorkersKaraokeReferenceV1 | WorkersKaraokeReferenceV2
+
+
+class WorkersSandboxEvent4(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    seq: float
+    job: str
+    exec: str
+    kind: Literal["exit"]
+    result: WorkersSandboxExecResult
+
+
+class WorkersSandboxEventsPage(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    cursor: str
+    events: list[
+        WorkersSandboxEvent1
+        | WorkersSandboxEvent2
+        | WorkersSandboxEvent3
+        | WorkersSandboxEvent4
+        | WorkersSandboxEvent5
+        | WorkersSandboxEvent6
+        | WorkersSandboxEvent7
+    ]
+    reset: bool
+
+
+class WorkersSandboxJobList(BaseModel):
+    model_config = ConfigDict(
+        extra="ignore",
+    )
+    jobs: list[WorkersSandboxJobView]

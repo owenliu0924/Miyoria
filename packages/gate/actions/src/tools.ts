@@ -30,6 +30,13 @@ export const REVIEW_PENDING =
 export const RESULT_PENDING =
   "這件事要先經過審核,還沒有結果;結果出來後會再告訴你(不一定會通過)。先用自己的話回應對方,不要重複呼叫。";
 
+/**
+ * What a medium-risk `followup` tool answers when its run takes longer than it may wait: there
+ * is no review, the work goes on and its outcome comes back as a notice.
+ */
+export const WORK_PENDING =
+  "這件事還在做,還沒有結果;做完會再告訴你。先用自己的話回應對方,不要重複呼叫。";
+
 const WHY = {
   type: "string",
   description: "你為什麼要這樣做(一句話,會記錄下來)",
@@ -141,7 +148,9 @@ export class CapabilityTool implements Tool {
     if (this.capability.risk === "high") {
       // The review (and maybe the owners) take longer than a tool call may; it goes on alone.
       const running = this.registry.invoke(request, { activity: "detach" });
-      if (this.capability.tool?.followup) return this.#waitOrFollowUp(ctx, request, running);
+      if (this.capability.tool?.followup) {
+        return this.#waitOrFollowUp(ctx, request, running, RESULT_PENDING);
+      }
       // Nobody waits for it any more: the outcome reaches her as a notice (and the ledger).
       void running.then(
         (outcome) => {
@@ -152,6 +161,19 @@ export class CapabilityTool implements Tool {
           log.warn({ capability: this.capability.name, err: errorMessage(error) }, "review failed"),
       );
       return REVIEW_PENDING;
+    }
+    if (this.capability.tool?.followup) {
+      // A long run with no review (a program in the sandbox): it goes on past the turn instead
+      // of holding it, and answers inline when it is quick.
+      const running = this.registry.invoke(request, {
+        priority: ctx.priority,
+        activity: "detach",
+      });
+      const outcome = await this.#waitOrFollowUp(ctx, request, running, WORK_PENDING);
+      if (typeof outcome !== "string" && outcome.status === "done") {
+        ctx.report?.(outcome.result.data);
+      }
+      return outcome;
     }
     // Activity capabilities answer once the ActivityManager accepted them ("開始了,task 7");
     // the outcome comes back later as a notice. Timing out or a cancelled turn cancels a run
@@ -166,19 +188,20 @@ export class CapabilityTool implements Tool {
   }
 
   /**
-   * A `followup` tool: the outcome when it is ready within `inline_wait_ms`, otherwise
-   * `RESULT_PENDING` now and the outcome as a notice later (`notifyLate`).
+   * A `followup` tool: the outcome when it is ready within `inline_wait_ms`, otherwise `pending`
+   * now and the outcome as a notice later (`notifyLate`).
    */
   async #waitOrFollowUp(
     ctx: ToolContext,
     request: ActionRequest,
     running: Promise<ActionOutcome>,
+    pendingText: string,
   ): Promise<string | ActionOutcome> {
     // Decided exactly once: answered inline, or late (then the outcome becomes a notice).
     let state: "waiting" | "inline" | "late" = "waiting";
     const settled = running.then(
       (outcome) => {
-        log.info({ capability: this.capability.name, status: outcome.status }, "reviewed action");
+        log.info({ capability: this.capability.name, status: outcome.status }, "followup action");
         if (state === "late") this.registry.notifyLate(this.capability, request, outcome);
         else state = "inline";
         return outcome;
@@ -205,7 +228,7 @@ export class CapabilityTool implements Tool {
     });
     try {
       const outcome = await Promise.race([settled, pending]);
-      return outcome === null ? RESULT_PENDING : outcome;
+      return outcome === null ? pendingText : outcome;
     } finally {
       clearTimeout(timer);
       if (onAbort) ctx.signal.removeEventListener("abort", onAbort);

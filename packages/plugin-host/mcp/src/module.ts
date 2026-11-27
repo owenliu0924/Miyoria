@@ -1,4 +1,5 @@
 import type { Server } from "node:http";
+import { actuatorsFor } from "@miyoria/gate/actions";
 import { ToolRegistryKey } from "@miyoria/llm/tools";
 import {
   type Config,
@@ -9,9 +10,20 @@ import {
   type Module,
   type ModuleContext,
   type ModuleManifest,
+  SupervisorKey,
 } from "@miyoria/runtime/kernel";
+import { Events, is } from "@miyoria/types";
+import { ExtensionCatalogKey } from "../../ext-host/src/host.js";
+import { ExtensionLauncherKey, localLauncher } from "../../ext-host/src/launch.js";
+import { type BundledServer, bundledServers } from "./bundled.js";
 import { Registrar, ServerRunner } from "./client.js";
-import { type McpConfig, parseMcpConfig, reconnectInitialMs, reconnectMaxMs } from "./config.js";
+import {
+  type McpConfig,
+  parseMcpConfig,
+  reconnectInitialMs,
+  reconnectMaxMs,
+  type ServerConfig,
+} from "./config.js";
 import { bind, exposeHandler, localAddress, McpServeError, serveUntil } from "./server.js";
 import { McpStatus, McpStatusKey, newServerStatus } from "./status.js";
 
@@ -24,10 +36,21 @@ interface Running {
   registrar: Registrar;
 }
 
+/** A server an extension bundles, run while that extension's module is not disabled. */
+interface Follow {
+  name: string;
+  runner: ServerRunner;
+  /** Stops the current run; `null` while it is not running. */
+  stop: AbortController | null;
+  /** The last run has ended. */
+  done: Promise<void>;
+}
+
 /**
- * Module `mcp`: connects to configured MCP servers and mirrors their tools into the shared
- * `ToolRegistry`; optionally serves a read-only MCP endpoint. Provides `McpStatusKey`; requires
- * the `ToolRegistryKey` service to exist.
+ * Module `mcp`: connects to configured MCP servers and to the ones enabled extensions bundle, and
+ * mirrors their tools into the `ActuatorRegistry` as gated capabilities (offered to the model
+ * through the shared `ToolRegistry`); optionally serves a read-only MCP endpoint. Provides
+ * `McpStatusKey`; requires the `ToolRegistryKey` service to exist.
  *
  * Its config is the top-level `[mcp]` section (not `[modules.mcp]`), passed to the constructor.
  */
@@ -37,6 +60,8 @@ export class McpModule implements Module {
     icon: "plug",
     category: "system",
     description: "MCP client for external tools, optional read-only MCP server",
+    // Started after the extension host when there is one: its catalog lists bundled servers.
+    optional: ["extensions", "actions"],
   });
   readonly config: McpConfig;
   #running: Running | null = null;
@@ -59,9 +84,23 @@ export class McpModule implements Module {
     const registry = ctx.services.get(ToolRegistryKey);
     if (!registry) throw new McpStartError("the tool registry service is not available");
     const status = new McpStatus();
-    const registrar = new Registrar(registry);
+    const registrar = new Registrar(actuatorsFor(ctx), registry);
+    const catalog = ctx.services.get(ExtensionCatalogKey);
+    const bundled = catalog === undefined ? [] : bundledServers(catalog, this.config.servers);
+    const bundledNames = new Set(bundled.map((b) => b.name));
+    const launcher = () => ctx.services.get(ExtensionLauncherKey) ?? localLauncher();
+    const supervisor = ctx.services.get(SupervisorKey);
+    const followers = new Map<string, Follow[]>();
 
-    for (const [name, server] of this.config.servers) {
+    const runners: [string, ServerConfig, BundledServer | null][] = [
+      ...[...this.config.servers]
+        // An entry that only tunes a bundled server (no command, no url of its own) is not a
+        // server of its own.
+        .filter(([name, s]) => !(bundledNames.has(name) && s.command === null && s.url === null))
+        .map(([name, s]) => [name, s, null] as [string, ServerConfig, null]),
+      ...bundled.map((b) => [b.name, b.config, b] as [string, ServerConfig, BundledServer]),
+    ];
+    for (const [name, server, from] of runners) {
       status.insert(
         newServerStatus(
           name,
@@ -89,13 +128,41 @@ export class McpModule implements Module {
       const runner = new ServerRunner({
         name,
         config: server,
+        ...(from?.launch ? { transport: (signal) => from.connect(launcher(), signal) } : {}),
         status,
         registrar,
         backoffInitialMs: reconnectInitialMs(this.config),
         backoffMaxMs: reconnectMaxMs(this.config),
         clock: ctx.clock,
       });
-      ctx.spawn("mcp-client", (signal) => runner.run(signal));
+      if (from === null) {
+        ctx.spawn("mcp-client", (signal) => runner.run(signal));
+        continue;
+      }
+      const owner = from.from.owner.manifest.moduleId();
+      const follow: Follow = { name, runner, stop: null, done: Promise.resolve() };
+      followers.set(owner, [...(followers.get(owner) ?? []), follow]);
+      // Disabled from the panel since the app started: it waits for the extension to come back.
+      if (supervisor?.list().find((m) => m.id === owner)?.enabled === false) {
+        status.update(name, (s) => {
+          s.state = "disabled";
+        });
+      } else this.#follow(ctx, status, follow);
+    }
+    if (followers.size > 0) {
+      // A bundled server is part of its extension: it stops when the extension is disabled and
+      // starts again when it runs again (the catalog only knew `enabled` at start).
+      const states = ctx.subscribe(Events.SystemModuleState.type);
+      ctx.spawn("mcp-bundled", async () => {
+        for await (const env of states) {
+          if (!is(Events.SystemModuleState, env)) continue;
+          const list = followers.get(env.data.module) ?? [];
+          for (const follow of list) {
+            if (env.data.state === "disabled") this.#unfollow(follow);
+            else if (env.data.state === "running") this.#follow(ctx, status, follow);
+          }
+        }
+      });
     }
 
     const expose = this.config.server;
@@ -128,6 +195,41 @@ export class McpModule implements Module {
 
     ctx.provide(McpStatusKey, status);
     this.#running = { status, registrar };
+  }
+
+  /** Runs a bundled server's runner unless it runs already (after the last stop ended). */
+  #follow(ctx: ModuleContext, status: McpStatus, follow: Follow): void {
+    if (follow.stop !== null) return;
+    const stop = new AbortController();
+    follow.stop = stop;
+    const before = follow.done;
+    let finished: () => void = () => {};
+    follow.done = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    ctx.spawn("mcp-client", async (signal) => {
+      try {
+        await before;
+        if (stop.signal.aborted) return;
+        await follow.runner.run(AbortSignal.any([signal, stop.signal]));
+      } finally {
+        if (follow.stop === null && !signal.aborted) {
+          status.update(follow.name, (s) => {
+            s.state = "disabled";
+            s.tools = [];
+          });
+        }
+        finished();
+      }
+    });
+  }
+
+  /** Stops a bundled server's runner: its tools go, closing the connection ends its program. */
+  #unfollow(follow: Follow): void {
+    const stop = follow.stop;
+    if (stop === null) return;
+    follow.stop = null;
+    stop.abort();
   }
 
   async stop(): Promise<void> {
