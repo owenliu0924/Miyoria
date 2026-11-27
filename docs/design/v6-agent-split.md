@@ -208,6 +208,17 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:工具對假的 `SandboxClient`(proc 是一個在測試裡跑的假驅動);驅動本身的測試在真的 Docker 測試裡(要建瀏覽器映像檔:`MIYORIA_SANDBOX_IMAGE_TESTS=1`),開一個測試伺服器的頁面、點、讀、截圖,確認連不到 `172.17.0.1`。
 
+**做成的樣子和上面不同的地方**(P6,2026-11-27):
+
+- 沒有用 sdk 的 `RpcPeer` + `StreamTransport`:`@miyoria/workspace` 不依賴 `@miyoria/sdk`(不加相依),而且截圖的框要比插件的大(2 MiB 的 PNG 是約 2.7 MiB 的 base64),所以 `browse/rpc.ts` 自己寫了同樣的 `Content-Length` 框(上限 8 MiB,超過、沒有長度、不是 JSON 都斷線;沒問過的 id 丟掉)。
+- 多的檔:`protocol.ts`(驅動回答的 zod 形狀和大小上限,每個回答先檢查再用)、`offer.ts`(`BrowseOffer`)。工具不經 P3 的 `extraAvailable` 註冊:那個掛鉤只在開放沙箱工具的那一刻讀一次,跟不上「某台後來建好了瀏覽器映像檔」或「有映像檔的那台走了、沙箱還在」;`BrowseOffer` 在每次重新檢查後 `update`,沒有沙箱、不是叢集、沒有一台有瀏覽器映像檔、owner 關掉時撤掉,狀態行寫原因(接線在交付說明)。
+- `browseCapabilities` 回 `Browse`(`capabilities`、`close`,另外 `sessions`、`availability`、`statusLine`)。`BrowseOptions.quota` 是 `null` 時每次呼叫從 `ExecContext.services` 拿 `WorkQuotaKey`(host 比沙箱模組晚提供)。
+- 設定多了 `max_sessions = 6`(所有人加起來;每個是別人電腦上 `memory_mb` 的容器)、`per_person = 2`(再開一個名字先關那個人最久沒用的)、`step_timeout_ms = 45000`。工作在那台的閒置和壽命比 Core 的多 5 分鐘,所以 Core 先關、先把下載收回來。
+- 工作階段照呼叫碰得到的範圍分(`all`、`own`、`person:<資料夾>`,和 `people.ts` 一樣),成員碰不到她的或別人的(cookie、登入各自的);付錢的是開的人。四個工具的節點都是 `sandbox.code.run`(跟 `code_run` 一樣,成員到 `work_min_bond` 就有)。`browse_act` 多一個 `close`(先收下載再關)。`browse_open` 也收 `data:` 和 `about:blank`;`file:`、`chrome:` 等在 Core 和驅動兩邊都擋。
+- 驅動:Chromium 的代理讀工作的 `HTTPS_PROXY`(服務給每個有網路的工作設的),不寫死 `egress-proxy:3128`;Core 用環境變數 `MIYORIA_BROWSE_STEP_MS` 給它一步的時間,Core 等 `1.5 × 一步 + 10 秒`(驅動自己一步最多那麼久)。`page.evaluate` 和 `title` 沒有自己的時間上限,頁面的程式卡住時驅動關掉那一頁、換一個空白頁繼續(不然整個工作階段卡到關掉)。對話框一律取消;下載檔名去掉路徑和控制字元,最多 100 個。
+- 頁面來的每樣東西(標題、網址、內容、連結文字、下載的檔名、驅動的錯誤訊息)都在資料框裡;`data` 只放數字和她自己的字。
+- 沒做的:`<iframe>` 裡的元素不在大綱、沒有 `ref`;Core 重啟會結束每個瀏覽器工作階段(`restore` 關掉不是程式工作階段的工作),還沒收回的下載跟著工作一起沒了。真的 Docker 的兩個測試(只要映像檔的驅動測試、經 P2 服務的端到端)寫好了,這台沒有 Docker,CI 的 Linux 跑。
+
 ### P7 插件和外部工具走閘門
 
 **交付**
