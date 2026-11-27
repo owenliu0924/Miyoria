@@ -7,7 +7,6 @@
 
 import { PassThrough, Writable } from "node:stream";
 import type { SandboxProc } from "@miyoria/types";
-import { readBody } from "./wire.js";
 
 /** Most a stdin write carries at once (the service takes 1 MiB a request). */
 const STDIN_CHUNK = 512 * 1024;
@@ -18,11 +17,15 @@ const REFILL_BYTES = 4 * 1024 * 1024;
 export interface ProcLink {
   /** `PUT .../stdin?offset=` with these bytes. */
   writeStdin(proc: string, offset: number, bytes: Uint8Array): Promise<void>;
-  /** `GET .../stdout?after=`: the bytes after `after`, and whether it exited. */
+  /**
+   * `GET .../stdout?after=`: the bytes after `after` (`maxBytes` at most, read whole within the
+   * call's time), and whether it exited.
+   */
   readStdout(
     proc: string,
     after: number,
-  ): Promise<{ response: Response; next: number; exited: boolean; code: number | null }>;
+    maxBytes: number,
+  ): Promise<{ bytes: Buffer; next: number; exited: boolean; code: number | null }>;
   kill(proc: string): Promise<void>;
 }
 
@@ -86,8 +89,8 @@ export class ProcChannel implements SandboxProc {
   refill(): Promise<void> {
     this.#refilling ??= (async () => {
       try {
-        const got = await this.#link.readStdout(this.#id, this.#read.stdout);
-        const bytes = await readBody(got.response, REFILL_BYTES);
+        const got = await this.#link.readStdout(this.#id, this.#read.stdout, REFILL_BYTES);
+        const bytes = got.bytes;
         if (bytes.length > 0) {
           this.#read.stdout += bytes.length;
           this.stdout.write(bytes);

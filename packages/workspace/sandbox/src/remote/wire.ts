@@ -79,10 +79,24 @@ export interface CallOptions {
   json?: unknown;
   bytes?: Uint8Array;
   headers?: Record<string, string>;
-  /** Until the reply's head. */
+  /**
+   * Until the reply's head; for a reply read whole here (`callJson`, `callBytes`, an error body),
+   * also until its last byte, so a service that starts in time and then drips cannot hold the
+   * caller (the event poll of every job on that computer) forever.
+   */
   timeoutMs: number;
+  /** For a reply read whole: until its last byte instead (a log may be slow to arrive in full). */
+  bodyTimeoutMs?: number;
   signal?: AbortSignal;
 }
+
+/**
+ * Most of a JSON reply read unless the call allows more. The computer is someone else's: a reply
+ * of gigabytes would take Core's memory, and every small reply (info, a job, a part) fits easily.
+ */
+export const JSON_MAX_BYTES = 256 * 1024;
+/** Most of an error body read; the message is cut to 500 characters anyway. */
+const ERROR_MAX_BYTES = 64 * 1024;
 
 /** How long a request refused for a full relay waits before the next try, and how often. */
 const RELAY_RETRY_MS = 500;
@@ -109,9 +123,16 @@ function toBody(o: CallOptions): { body?: RequestInit["body"]; headers: Record<s
   return { headers };
 }
 
-/** The error a non-2xx reply stands for. */
-async function failure(response: Response): Promise<SandboxHttpError> {
-  const text = await response.text().catch(() => "");
+/** The error a non-2xx reply stands for (its body read up to a cap, within the call's time). */
+async function failure(response: Response, signal: AbortSignal): Promise<SandboxHttpError> {
+  const text = await readCapped(response, ERROR_MAX_BYTES, signal).then(
+    (bytes) => bytes.toString("utf8"),
+    (error: unknown) => {
+      // Out of time: that is the error. Too long: the start is enough to tell what it was.
+      if (signal.aborted) throw error;
+      return "";
+    },
+  );
   let parsed: unknown = null;
   try {
     parsed = JSON.parse(text);
@@ -134,25 +155,42 @@ async function failure(response: Response): Promise<SandboxHttpError> {
   });
 }
 
+/** A reply whose time limit still runs: `done()` once its body is read, or not wanted whole. */
+interface Sent {
+  response: Response;
+  /** Aborts when the call's time is up (or the caller's own signal). */
+  signal: AbortSignal;
+  done(): void;
+}
+
 /**
- * One request, its reply's head within `timeoutMs`. Refused for a full relay: waited out and
- * sent again (the request never left). A non-2xx reply throws `SandboxHttpError`.
+ * One request. Its head must come within `timeoutMs`; the whole reply, when the caller reads it
+ * here, within `bodyTimeoutMs` (default the same) until `done()`. Refused for a full relay: waited
+ * out and sent again (the request never left). A non-2xx reply throws `SandboxHttpError`.
  */
-export async function call(
+async function send(
   source: EndpointSource,
   endpoint: Endpoint,
   path: string,
   o: CallOptions,
-): Promise<Response> {
+): Promise<Sent> {
   const { body, headers } = toBody(o);
   for (let attempt = 0; ; attempt++) {
-    // The limit is on the head only: a tar or a log may take longer to arrive than to start.
-    const head = new AbortController();
-    const timer = setTimeout(
-      () => head.abort(new Error(`no answer within ${o.timeoutMs} ms`)),
+    const limit = new AbortController();
+    const headTimer = setTimeout(
+      () => limit.abort(new Error(`no answer within ${o.timeoutMs} ms`)),
       o.timeoutMs,
     );
-    const signal = o.signal ? AbortSignal.any([o.signal, head.signal]) : head.signal;
+    const wholeMs = o.bodyTimeoutMs ?? o.timeoutMs;
+    const wholeTimer = setTimeout(
+      () => limit.abort(new Error(`the answer did not arrive in full within ${wholeMs} ms`)),
+      wholeMs,
+    );
+    const done = () => {
+      clearTimeout(headTimer);
+      clearTimeout(wholeTimer);
+    };
+    const signal = o.signal ? AbortSignal.any([o.signal, limit.signal]) : limit.signal;
     try {
       const response = await source.request(endpoint, path, {
         method: o.method,
@@ -160,30 +198,53 @@ export async function call(
         ...(body === undefined ? {} : { body }),
         signal,
       });
-      clearTimeout(timer);
-      if (!response.ok) throw await failure(response);
-      return response;
+      clearTimeout(headTimer);
+      if (!response.ok) throw await failure(response, signal);
+      return { response, signal, done };
     } catch (error) {
-      clearTimeout(timer);
+      done();
       if (!relayFull(error) || attempt >= RELAY_RETRIES) throw error;
       await sleep(RELAY_RETRY_MS, o.signal);
     }
   }
 }
 
-/** A request whose reply is JSON of `schema`. */
+/**
+ * One request, its reply's head within `timeoutMs`; the body is the caller's to read (a tar or
+ * a stream may take longer to arrive than to start, and is held to its own size cap there).
+ */
+export async function call(
+  source: EndpointSource,
+  endpoint: Endpoint,
+  path: string,
+  o: CallOptions,
+): Promise<Response> {
+  const sent = await send(source, endpoint, path, o);
+  sent.done();
+  return sent.response;
+}
+
+/**
+ * A request whose reply is JSON of `schema`, `maxBytes` at most (default `JSON_MAX_BYTES`), all
+ * of it within the call's time.
+ */
 export async function callJson<S extends z.ZodType>(
   source: EndpointSource,
   endpoint: Endpoint,
   path: string,
   schema: S,
-  o: CallOptions,
+  o: CallOptions & { maxBytes?: number },
 ): Promise<z.output<S>> {
-  const response = await call(source, endpoint, path, o);
-  const text = await response.text();
+  const { response, bytes } = await callBytes(
+    source,
+    endpoint,
+    path,
+    o.maxBytes ?? JSON_MAX_BYTES,
+    o,
+  );
   let raw: unknown;
   try {
-    raw = JSON.parse(text);
+    raw = JSON.parse(bytes.toString("utf8"));
   } catch {
     throw new SandboxHttpError(response.status, "bad_reply", "the sandbox service sent no JSON");
   }
@@ -198,21 +259,76 @@ export async function callJson<S extends z.ZodType>(
   return parsed.data;
 }
 
+/** A request whose reply is read whole, `maxBytes` at most, within the call's time. */
+export async function callBytes(
+  source: EndpointSource,
+  endpoint: Endpoint,
+  path: string,
+  maxBytes: number,
+  o: CallOptions,
+): Promise<{ response: Response; bytes: Buffer }> {
+  const sent = await send(source, endpoint, path, o);
+  try {
+    return {
+      response: sent.response,
+      bytes: await readCapped(sent.response, maxBytes, sent.signal),
+    };
+  } finally {
+    sent.done();
+  }
+}
+
 /** A reply's body as bytes, `maxBytes` at most (more is refused, not cut). */
-export async function readBody(response: Response, maxBytes: number): Promise<Buffer> {
+export function readBody(response: Response, maxBytes: number): Promise<Buffer> {
+  return readCapped(response, maxBytes);
+}
+
+/**
+ * The body, `maxBytes` at most, given up when `signal` aborts. The abort is raced here as well as
+ * passed to the request: a relayed or test reply need not tie its body to the request's signal.
+ */
+async function readCapped(
+  response: Response,
+  maxBytes: number,
+  signal?: AbortSignal,
+): Promise<Buffer> {
+  const tooLarge = () =>
+    new SandboxHttpError(response.status, "too_large", `a reply over ${maxBytes} bytes`);
+  const declared = Number(response.headers.get("content-length") ?? Number.NaN);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    await response.body?.cancel().catch(() => undefined);
+    throw tooLarge();
+  }
   const reader = response.body?.getReader();
   if (!reader) return Buffer.alloc(0);
+  let onAbort: (() => void) | null = null;
+  const aborted =
+    signal === undefined
+      ? null
+      : new Promise<never>((_, reject) => {
+          onAbort = () => reject(signal.reason ?? new Error("aborted"));
+          if (signal.aborted) onAbort();
+          else signal.addEventListener("abort", onAbort, { once: true });
+        });
+  // Raced below; once the loop is over a late abort must not surface as unhandled.
+  aborted?.catch(() => undefined);
   const parts: Buffer[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      throw new SandboxHttpError(response.status, "too_large", `a reply over ${maxBytes} bytes`);
+  try {
+    for (;;) {
+      const { done, value } = await (aborted === null
+        ? reader.read()
+        : Promise.race([reader.read(), aborted]));
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) throw tooLarge();
+      parts.push(Buffer.from(value));
     }
-    parts.push(Buffer.from(value));
+  } catch (error) {
+    await reader.cancel().catch(() => undefined);
+    throw error;
+  } finally {
+    if (onAbort !== null) signal?.removeEventListener("abort", onAbort);
   }
   return Buffer.concat(parts);
 }

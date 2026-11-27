@@ -36,7 +36,7 @@ import { Semaphore } from "../semaphore.js";
 import { packTree } from "../tar-io.js";
 import { ProcChannel } from "./proc-stream.js";
 import type { Manifest, TransferJob } from "./transfer.js";
-import { bodyChunks, call, callJson, readBody, SandboxHttpError } from "./wire.js";
+import { bodyChunks, call, callBytes, callJson, SandboxHttpError } from "./wire.js";
 
 const log = getLogger("sandbox.job");
 
@@ -68,6 +68,27 @@ export const EXEC_GRACE_MS = 60_000;
 export const EXEC_POLL_MS = 15_000;
 /** Most of an exec's log fetched for `log()`. */
 const LOG_MAX_BYTES = 16 * 1024 * 1024;
+/** How long all of a log may take to arrive (16 MiB over a slow relay). */
+const LOG_BODY_MS = 5 * 60_000;
+/** How long a refill of a proc's stdout (4 MiB at most) may take to arrive in full. */
+const STDOUT_BODY_MS = 60_000;
+/**
+ * Most of a sync's or an upload's answer: it lists files (a manifest, what was skipped), up to
+ * the transfer's 200 000, so it is far larger than other replies; still bounded, since a reply of
+ * gigabytes from someone else's computer would take Core's memory.
+ */
+export const LIST_REPLY_MAX_BYTES = 64 * 1024 * 1024;
+
+/**
+ * Most an exec's answer (and its `exit` event) can rightly hold: stdout and stderr at their kept
+ * size and the collected files, each byte at worst a six-character JSON escape, plus their paths.
+ */
+export function execReplyBytes(
+  output: { keep_bytes: number },
+  collect: { max_files: number; max_bytes: number },
+): number {
+  return 64 * 1024 + 6 * (2 * output.keep_bytes + collect.max_bytes) + collect.max_files * 8192;
+}
 
 /** What the client gives each of its jobs. */
 export interface JobLink {
@@ -204,6 +225,11 @@ export class RemoteJob implements TransferJob {
 
   #path(rest = ""): string {
     return `/v1/jobs/${this.id}${rest}`;
+  }
+
+  /** Most of an exec's answer, from what Core asked it to keep. */
+  get #execReplyBytes(): number {
+    return execReplyBytes(this.#link.output, this.#link.collect);
   }
 
   #json<T>(
@@ -422,6 +448,7 @@ export class RemoteJob implements TransferJob {
           ? { headers: { "x-delete": asciiJson(options.deleted) } }
           : {}),
         timeoutMs: TIMEOUTS.commit,
+        maxBytes: LIST_REPLY_MAX_BYTES,
         ...(signal === undefined ? {} : { signal }),
       },
     );
@@ -449,6 +476,7 @@ export class RemoteJob implements TransferJob {
       method: "PUT",
       json: { target: "workspace" },
       timeoutMs: TIMEOUTS.sync,
+      maxBytes: LIST_REPLY_MAX_BYTES,
       ...(signal === undefined ? {} : { signal }),
     });
     const tar = result.tar;
@@ -503,7 +531,7 @@ export class RemoteJob implements TransferJob {
       const view = await this.#json<{ state: string; result: ExecResult | null }>(
         this.#path(`/execs/${exec}`),
         ExecViewSchema,
-        { method: "GET", timeoutMs: TIMEOUTS.execView },
+        { method: "GET", timeoutMs: TIMEOUTS.execView, maxBytes: this.#execReplyBytes },
       );
       if (view.result !== null) this.#finish(exec, view.result);
       else if (view.state === "lost") {
@@ -575,6 +603,7 @@ export class RemoteJob implements TransferJob {
           method: "PUT",
           json: body,
           timeoutMs: TIMEOUTS.execStart,
+          maxBytes: this.#execReplyBytes,
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         },
       );
@@ -610,13 +639,14 @@ export class RemoteJob implements TransferJob {
   }
 
   async #log(exec: string): Promise<string> {
-    const response = await this.#call(this.#path(`/execs/${exec}/log`), {
-      method: "GET",
-      timeoutMs: TIMEOUTS.log,
-    });
-    return new TextDecoder("utf-8", { fatal: false }).decode(
-      await readBody(response, LOG_MAX_BYTES),
+    const { bytes } = await callBytes(
+      this.#link.source,
+      this.#link.endpoint(),
+      this.#path(`/execs/${exec}/log`),
+      LOG_MAX_BYTES,
+      { method: "GET", timeoutMs: TIMEOUTS.log, bodyTimeoutMs: LOG_BODY_MS },
     );
+    return new TextDecoder("utf-8", { fatal: false }).decode(bytes);
   }
 
   async proc(
@@ -632,14 +662,17 @@ export class RemoteJob implements TransferJob {
           timeoutMs: TIMEOUTS.stdin,
         });
       },
-      readStdout: async (proc, after) => {
-        const response = await this.#call(this.#path(`/procs/${proc}/stdout?after=${after}`), {
-          method: "GET",
-          timeoutMs: TIMEOUTS.stdout,
-        });
+      readStdout: async (proc, after, maxBytes) => {
+        const { response, bytes } = await callBytes(
+          this.#link.source,
+          this.#link.endpoint(),
+          this.#path(`/procs/${proc}/stdout?after=${after}`),
+          maxBytes,
+          { method: "GET", timeoutMs: TIMEOUTS.stdout, bodyTimeoutMs: STDOUT_BODY_MS },
+        );
         const exitCode = response.headers.get("x-exit-code");
         return {
-          response,
+          bytes,
           next: Number(response.headers.get("x-next-offset") ?? after),
           exited: response.headers.get("x-proc-state") === "exited",
           code: exitCode === null || exitCode === "" ? null : Number(exitCode),

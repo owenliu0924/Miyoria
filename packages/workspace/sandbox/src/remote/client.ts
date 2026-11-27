@@ -42,7 +42,7 @@ import {
   type WorkQuota,
 } from "@miyoria/types";
 import { networkMode, type SandboxConfig } from "../config.js";
-import { type JobLink, RemoteJob, TIMEOUTS } from "./job.js";
+import { execReplyBytes, type JobLink, RemoteJob, TIMEOUTS } from "./job.js";
 import { encodePayer, type SandboxJobRow, type SandboxJobs } from "./jobs-store.js";
 import { call, callJson, notSent, SandboxHttpError } from "./wire.js";
 
@@ -57,6 +57,11 @@ export const POLL_WAIT_MS = 25_000;
 /** How often every open job's lease is renewed. */
 export const LEASE_EVERY_MS = 60_000;
 const MIB = 1024 * 1024;
+/**
+ * Most of one page of events read: the service fills a page to the 1 MiB asked for, but one
+ * `exit` event may be larger (it holds the exec's whole result), so such a page must still fit.
+ */
+const EVENTS_MAX_BYTES = 2 * MIB;
 
 export type SandboxClientErrorCode =
   | "no_machine"
@@ -598,7 +603,22 @@ export class HttpSandboxClient implements SandboxClient {
           endpoint,
           `/v1/events?${query.toString()}`,
           EventsPageSchema,
-          { method: "GET", timeoutMs: this.#pollWaitMs + 15_000, signal: this.#closing.signal },
+          {
+            method: "GET",
+            timeoutMs: this.#pollWaitMs + 15_000,
+            maxBytes: Math.max(
+              EVENTS_MAX_BYTES,
+              MIB +
+                execReplyBytes(
+                  { keep_bytes: this.#config.caps.max_output_bytes },
+                  {
+                    max_files: this.#config.caps.max_files_out,
+                    max_bytes: this.#config.caps.max_files_out_bytes,
+                  },
+                ),
+            ),
+            signal: this.#closing.signal,
+          },
         );
         const first = poller.cursor === null;
         poller.cursor = page.cursor;
