@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { BrowseConfigSchema } from "./browse/config.js";
 
 /**
  * An image reference the Docker CLI can never mistake for a flag: starts with a letter or digit,
@@ -288,6 +289,8 @@ export const SandboxConfigSchema = z.object({
   workspace: SandboxWorkspaceSchema.prefault({}),
   network: SandboxNetworkSchema.prefault({}),
   transfer: SandboxTransferSchema.prefault({}),
+  /** The browser on a computer of the cluster (`[modules.sandbox.browser]`, the browse_* tools). */
+  browser: BrowseConfigSchema.prefault({}),
   /**
    * Started, idle containers kept ready per language image, so a fresh run skips the container
    * start. Each serves exactly one run, then it is destroyed and replaced. Default 0 (off):

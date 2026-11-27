@@ -46,6 +46,7 @@ export {
   type WorkspaceAttachOptions,
   workspaceAttachCapability,
 } from "./attach.js";
+export * from "./browse/index.js";
 export {
   CODE_RUN,
   CODE_SESSION,

@@ -15,9 +15,10 @@ import {
 import { SettingsStoreKey, StoreKey } from "@miyoria/store";
 import { FileReaderKey, type ProfileId, SandboxClientKey, WorkQuotaKey } from "@miyoria/types";
 import { workspaceAttachCapability } from "./attach.js";
+import { BrowseOffer, browseCapabilities } from "./browse/index.js";
 import { type SandboxConfig, SandboxConfigSchema } from "./config.js";
 import { SandboxFileReader } from "./files.js";
-import { SandboxGate } from "./gate.js";
+import { featuresOf, SandboxGate } from "./gate.js";
 import { ProposedTools, ProposedToolsKey } from "./proposed.js";
 import { AutoSandbox } from "./remote/auto.js";
 import { HttpSandboxClient } from "./remote/client.js";
@@ -89,6 +90,8 @@ export class SandboxModule implements Module {
   #remote: RemoteSandbox | null = null;
   #gate: SandboxGate | null = null;
   #removeStatus: (() => void) | null = null;
+  #browse: BrowseOffer | null = null;
+  #removeBrowseStatus: (() => void) | null = null;
   #unwatch: (() => void) | null = null;
 
   constructor(
@@ -243,6 +246,30 @@ export class SandboxModule implements Module {
     this.#removeStatus = registry.addStatus(SandboxModule.ID, () =>
       gate.statusLines(sandbox.lastHealth),
     );
+    // The browser follows its own availability (a computer with the browser image), so it is
+    // offered apart from the gate and updated after every check.
+    const browse =
+      remote === null
+        ? null
+        : new BrowseOffer(
+            registry,
+            browseCapabilities({
+              client: remote.client,
+              // Read from the call's services: the host provides the work quota later.
+              quota: null,
+              workspace: local.workspace,
+              people,
+              config: config.browser,
+              resultChars: config.result_chars,
+              clock: ctx.clock,
+            }),
+          );
+    this.#browse = browse;
+    if (browse !== null) {
+      this.#removeBrowseStatus = registry.addStatus(`${SandboxModule.ID}.browse`, () => [
+        browse.statusLine(),
+      ]);
+    }
     // Proposals and reviews (her own, the owners' API) change which tools are offered.
     const toolEvents = ctx.subscribe(["sandbox.tool.*"]);
     ctx.spawn("tools", async () => {
@@ -252,6 +279,7 @@ export class SandboxModule implements Module {
     const recheck = async (signal: AbortSignal) => {
       const health = await sandbox.health({ signal, refresh: true });
       await gate.setAvailable(health.available);
+      browse?.update({ available: health.available, features: featuresOf(sandbox) });
       return health;
     };
     if (remote !== null) {
@@ -308,6 +336,11 @@ export class SandboxModule implements Module {
     this.#removeStatus = null;
     this.#gate?.close();
     this.#gate = null;
+    this.#removeBrowseStatus?.();
+    this.#removeBrowseStatus = null;
+    // Sessions bring their downloads back and close their jobs through the client, so first.
+    await this.#browse?.close().catch(() => undefined);
+    this.#browse = null;
     const local = this.#local;
     const remote = this.#remote;
     this.#sandbox = null;
