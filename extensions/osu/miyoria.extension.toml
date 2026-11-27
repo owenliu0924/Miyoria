@@ -20,4 +20,4 @@ network = ["127.0.0.1:8766", "127.0.0.1:8767"]
 schema = "config.schema.json"
 
 [env]
-pass = ["MIYORIA_OSU_*"]
+pass = ["MIYORIA_OSU_*", "MIYORIA_OSU_TOKEN"]

@@ -23,4 +23,4 @@ network = ["www.threads.com:443"]
 schema = "config.schema.json"
 
 [env]
-pass = ["MIYORIA_THREADS_*"]
+pass = ["MIYORIA_THREADS_*", "MIYORIA_THREADS_VISION_KEY"]
