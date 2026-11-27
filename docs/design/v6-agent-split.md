@@ -89,6 +89,19 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:沙箱文件 §14 的單元、HTTP、代理、真的 Docker(服務那一側)。`MIYORIA_SANDBOX_IMAGE_TESTS=1` 時用建好的映像檔。
 
+**做成的樣子和上面不同的地方**(P2,2026-11-27):
+
+- `service/` 多了 `util.ts`(錯誤、編號、請求雜湊、Docker 的小呼叫)、`validate.ts`(wire 形狀沒寫的上下限)、`quiet.ts`(主機讀寫工作的資料夾時容器裡沒有程式在跑:工作階段殺掉程式的 uid 的所有程序,有背景程序的用 `docker pause`)、`spawner.ts`(proc 的 `docker exec -i` 一直開著;`DockerRunner` 只跑到結束)。
+- `SandboxServiceOptions` 多可省略的 `parseHostConfig`(CLI 傳 hostd 的 `parseHostConfig` 進來,所以 `@miyoria/workspace` 不依賴 `@miyoria/hostd`,也不需要 TOML 套件;沒給就是 `[sandbox]` 的預設)、`spawner`、`images`(測試用固定的映像檔)、`hostUser`、`denyAddresses`、`checkEveryMs`、`killGraceMs`、`version`。`RunningSandboxService` 多 `refresh()`、`sweep()`(測試用)。`close()` 不關工作:下次啟動接回來(§13.3)。
+- `@miyoria/workspace` 要依賴 `@miyoria/contracts`(P1 沒加,整合者在 ccccb1a7 加了)。
+- hostd:「服務自己說沒準備好」不是在 `serviceRouting` 裡併,是 `routing.ts` 新的 `withSelfReadiness`,在 `service.ts` 的 `status` 裡套在 routing 上(`daemon.ts` 不用動);`loadOf` 多讀 `ready`、`reason`。
+- `sandboxDoctorChecks({ hostToml })` 收參數;`DoctorCheck` 定義在 `commands/sandbox.ts`(`{ group: "services"; run(): Promise<Finding> }`)。`sandboxAfterAdd` 也替 `add` 在 `host.toml` 尾巴加 `[sandbox]` 的註解(`host-toml.ts` 的 `withSandboxHint`;`planHostToml` 在加 `sandbox` 時也加)。CLI 的訊息先放在 `commands/sandbox.ts` 自己的兩種語言表。
+- 協定細節(沙箱文件沒寫的):結束了的工作 `GET` 回 410、`DELETE` 回 200;exec 的結果在工作結束後還拿得到;proc 的回應形狀 `{ id, state, code, signal, stdin_offset, stdout_offset, stderr_offset }`;`stdout?stream=stderr`;上傳完成可以帶 `x-delete`;sync 的 tar 不壓縮;事件的一頁只續租頁裡有事件的工作。
+- 比沙箱文件多擋的:`open` 模式在服務這邊一律擋 25、465、587(Core 設什麼都一樣);一個付錢的人在一台最多 `ceil(concurrency / 2)` 個工作;代理另外擋這台自己的位址和網段、Docker 的 bridge、單一標籤的名字、`2001::/23`、`64:ff9b:1::/48`、`3fff::/20`、`::ffff:0:0:0/96`;沒有 token 時只聽 loopback。
+- 工作裡的 Python 不加 `-I`(要讀得到 `pip install` 裝在 `/home/sandbox/.local` 的套件)。
+- `workers/sandbox/image/.dockerignore`:預設映像檔不帶 `browser/`(標籤的雜湊也不算它)。
+- 只在這台 Windows(沒有 Docker)用假的 Docker 測過;真的 Docker 的測試寫好了,CI 的 Linux 跑。
+
 ### P3 Core 的沙箱
 
 **交付**:沙箱文件 §9、§10、§13.1–§13.2,和 §4 在 Core 這一側。

@@ -700,7 +700,17 @@ export class JobManager {
 
   /** Every 15 s: times, the host policy, containers that went away, forgotten ends. */
   start(): void {
-    this.#sweep ??= setInterval(() => void this.sweep(), SWEEP_MS);
+    let sweeping = false;
+    // One sweep at a time: ending a job can take longer than the interval.
+    this.#sweep ??= setInterval(() => {
+      if (sweeping) return;
+      sweeping = true;
+      void this.sweep()
+        .catch((error: unknown) => log.error({ err: String(error) }, "sandbox sweep failed"))
+        .finally(() => {
+          sweeping = false;
+        });
+    }, SWEEP_MS);
   }
 
   stop(): void {
