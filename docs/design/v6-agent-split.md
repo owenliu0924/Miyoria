@@ -285,6 +285,15 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **交付**:§4 的每個熱點檔、§5 的清單、`miyoria.example.toml` 兩份(byte 完全一樣)、文件、全部的測試。見 §4、§5。
 
+**做成的樣子和上面不同的地方**(P9,2026-11-27):
+
+- 瀏覽器照 P6 的 `BrowseOffer` 接在 `module.ts`(每次重新檢查後 `update`),不是 `extraAvailable`。
+- `ExtensionLauncherKey` 在 `boot.ts` 提供(`SupervisorKey` 旁邊,插件模組啟動之前),而且只在 `[modules.sandbox]` 開著、`backend` 不是 `local` 時:`sandboxLauncher` 開機時會等 client 最多 10 秒,沒有沙箱的安裝不該等。`coreHost` 是 `null`(沒有來源,backlog)。`fallback` 沒有設定鍵。
+- 接線時對 P2、P3 的協定跑了一個同一個程序裡的端到端測試(`test/remote/service.e2e.test.ts`,P3 的 client 對 P2 的服務,假的 Docker),找到並修了:同一秒、同樣大小的修改兩邊都看不到(大小加整秒的時間當作沒變;現在 8 MiB 以下每次算雜湊,`tar-io.ts` 的 `stampTrusted`)。proc 的編號要是小寫的 ULID(P6、P8 本來就是)。
+- 安全:owner 的整個工作區(`all`)以前會把 `people/` 一起送到不接成員的電腦;現在只送到 `members = true` 的,其他台拿到扣掉 `people/` 的(`remote-sandbox.ts` 的 `#callWorkspace`)。
+- contracts:事件的語言加 `shell`(`RemoteSandbox` 不再跳過 shell 的事件),`ProcViewSchema`(服務用它的型別,Core 用它讀 `PUT .../procs/{proc}` 的回答)。`@miyoria/contracts` 和 `@miyoria/sdk` 一起升到 0.3.0(SDK 的型別來自 contracts,發佈時一起)。
+- `tar-io` 的深度沒有放寬(backlog)。插件從沒人開口的地方被叫時(面板),`tools.call` 的 `context.platform` 是 `panel`,不是 `discord`。`packages/cli/package.json` 多 `tar-stream`(打包的 CLI 把 `@miyoria/workspace` 包進去,外部的相依要在 CLI 自己的清單裡,`build.mjs` 會檢查);lockfile 只多了那個 importer 的一行,`node_modules` 裡 `packages/cli` 還沒有它的連結(下一次 `pnpm install` 才有;開發和打包都從 `packages/workspace` 解析,不受影響)。
+
 ## 3. 介面
 
 ### 3.1 工作額度(P1 定義,P4 實作,P3 用)

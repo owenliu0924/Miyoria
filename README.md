@@ -68,6 +68,32 @@ name = "gpu-pc"
 [services.sing]
 ```
 
+### Lending a machine as her sandbox
+
+A machine with Docker can run code for her: a shell (`shell_run`), Python and Node, a real browser, and extension programs, each job in its own container. Core sends the job there over the same control link; nothing on that machine is shared with Core but the job's own folder.
+
+```bash
+miyoria add sandbox                       # adds [services.sandbox] and a commented [sandbox] table to host.toml, offers to build the image
+miyoria sandbox build                     # builds the job image (and the browser image); about 2 GB the first time, asks first (--yes does not)
+miyoria host approve <name> sandbox       # on the Core machine
+```
+
+The machine's owner decides in its own `host.toml`, read again every minute; Core cannot change it:
+
+```toml
+[sandbox]
+members = false            # take jobs for members, not only the owner's and her own (default: no)
+plugins = false            # let extension programs run here (default: no)
+cpus = 4                   # all jobs together; default half of this machine
+memory_mb = 8192           # all jobs together; default half of this machine, at most 16384
+disk_mb = 20480            # all job folders together
+max_job_cpus = 2           # one job at most
+max_job_memory_mb = 4096
+# runtime = "runsc"        # gVisor, Linux only
+```
+
+What a job can touch: its own folder (the asker's workspace folder goes in and the changes come back, through one checked tar reader), the internet through its own egress proxy, and the CPU, memory and disk its limits give. What it cannot: this machine's files, environment, keys, Docker socket or root; private, loopback, tailnet, LAN and cloud metadata addresses, this machine's own addresses; mail ports. A member's folder only goes to a machine whose owner set `members = true`; an owner's run takes the other people's folders only there too. Extensions holding credentials only go to the machines listed in Core's `[modules.sandbox.transfer] trusted_hosts`. A container is not a VM: what is left is in [workers/sandbox/README.md](workers/sandbox/README.md). Without any machine offering the service, every code tool is withdrawn and the file tools (`workspace_edit`, `workspace_grep`, `workspace_attach`, ...) still work; Core has no sandbox of its own unless Docker runs there.
+
 Old config files with `[machine]` and `[stack]` are no longer read; `miyoria host migrate` writes a `host.toml` from them. One thing is not handled yet when running split (see the [backlog](docs/design/backlog.md)): the Minecraft extension launches the game on the core machine. Song videos are fetched from the sing worker into Core's own `data/songs`, so Core and Stage must share a machine.
 
 ## Autonomy at a glance

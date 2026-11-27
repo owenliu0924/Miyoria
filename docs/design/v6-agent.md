@@ -92,6 +92,17 @@
 - 插件可以有排程和背景工作。
 - `miyoria ext new` 的範本做到「十幾行就多一個能力」。
 
+### 第二到四批做成的樣子(2026-11-27)
+
+設計在 [v6-sandbox.md](v6-sandbox.md),分工和每一包和計畫不同的地方在 [v6-agent-split.md](v6-agent-split.md)。合在一起是:
+
+- **沙箱服務**(`workers/sandbox/`,`miyoria add sandbox`、`miyoria sandbox build`、`miyoria sandbox serve`):每個工作一個長駐容器、自己的資料夾、自己的 `--internal` 網路和出口代理;這台的主人在 `host.toml` 的 `[sandbox]` 決定接不接成員和插件、給多少。`miyoria doctor` 看 Docker 和映像檔。
+- **Core 這邊**:`[modules.sandbox] backend = "auto"`(預設)是叢集裡有一台準備好了就送過去,沒有就用這台的 Docker。**Core 自己沒有沙箱,除非 Core 那台跑著 Docker**:沒有一台提供服務、這台也沒有 Docker 時,跑程式的工具(`code_run`、`shell_run`、`code_session`、`workspace_run`、`workspace_save_script`、`tool_propose`、`browse_*`)都撤掉,狀態行寫原因;不需要沙箱的照樣有:`workspace_list / read / write / edit / grep / delete / export`、`workspace_attach`、放寬的 `share`、走閘門的插件和 MCP 工具、HTTP 工具、能開工作的排程,ComfyUI 連得上時的 `image_make`。
+- **每人的工作額度**(CPU 秒,`[modules.agent.quota] person_cpu_seconds_per_hour / _per_day`)跟 AI 額度記在同一張表;`code_run` 改成中風險、不再每次審查。
+- **瀏覽器**只在叢集的電腦上開(這台的 Docker 不開),而且要那台有瀏覽器的映像檔;工具跟著「有沒有一台能開」出現和撤掉(`BrowseOffer`),不是跟著沙箱一次決定。
+- **插件**:工具經閘門(沒寫風險是中風險,次數照 `[modules.actions.work]`);沒寫 `permission` 的工具不再是所有人都能叫(節點 `tools.ext.<id>`,成員到 `work_min_bond`)。萬用字元不再給名字像密鑰的變數,三個內建插件的 manifest 改寫完整名字。插件的程序在沙箱模組能用叢集時才經 `sandboxLauncher`:有電腦接插件(`plugins = true`)就在那裡跑,有密鑰的只去 `[modules.sandbox.transfer] trusted_hosts`;沒有就在這台,跟以前一樣。
+- **和計畫不同的**:她和 owner 的整個工作區(有 `people/`)只送到接成員工作的電腦,別台只拿到扣掉 `people/` 的;比對資料夾時 8 MiB 以下的檔每次算雜湊(大小和整秒的時間分不出同一秒的兩次寫入);事件的語言加了 `shell`;proc 的回答進了 contracts(`WorkersSandboxProcView`);proc 的編號要是小寫的 ULID。留下的事在 [backlog.md](backlog.md)「階段 7 第二到四批留下的」。
+
 ## 上限收成三種
 
 > 2026-11-23。owner 問上限是不是太多、有沒有重疊:有。一個人的一個要求原本要過十來層(每次執行的輪數、每步幾個工具、時間、每個工具的時間、token;每個對話每小時的美元和 token;每天的美元;小幫手同時幾個、排隊、每天的美元和 token、每種的輪數 / 分鐘 / 美元 / token;閘門的層級;每人每 10 分鐘的上網次數……)。上限只為四件事:錢、洗版、一個人濫用她、停不下來的迴圈。owner 同意每件事只留一個地方管,而且每人有一份 AI 額度,一開始設很高。
