@@ -426,7 +426,7 @@ export class HttpSandboxClient implements SandboxClient {
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         });
         unit?.accepted();
-        const job = this.#adopt(view, endpoint, spec.payer, 0);
+        const job = this.#adopt(view, endpoint, spec.payer, 0, body.limits.cpus);
         if (unit) this.#units.set(job.id, unit);
         const now = this.#clock.now();
         this.#remember({
@@ -510,8 +510,14 @@ export class HttpSandboxClient implements SandboxClient {
     }
   }
 
-  /** A job object for `view`, its events polled. */
-  #adopt(view: JobView, endpoint: Endpoint, payer: WorkPayer | null, charged: number): RemoteJob {
+  /** A job object for `view`, its events polled; `cpus` what Core asked (bounds its charges). */
+  #adopt(
+    view: JobView,
+    endpoint: Endpoint,
+    payer: WorkPayer | null,
+    charged: number,
+    cpus: number,
+  ): RemoteJob {
     const host = endpoint.host;
     const service = endpoint.service;
     const link: JobLink = {
@@ -532,7 +538,7 @@ export class HttpSandboxClient implements SandboxClient {
       charge: (job, deltaMs) => this.#charge(job, deltaMs),
       ended: (job, reason) => this.#ended(job, reason),
     };
-    const job = new RemoteJob(view, { host, service, payer, link, charged });
+    const job = new RemoteJob(view, { host, service, payer, link, charged, cpus });
     const key = keyOf(endpoint);
     let poller = this.#pollers.get(key);
     if (!poller) {
@@ -669,7 +675,9 @@ export class HttpSandboxClient implements SandboxClient {
       this.#jobs?.end(row.id, view?.ended?.reason ?? "lost", this.#clock.now());
       return null;
     }
-    const job = this.#adopt(view, endpoint, payer, row.cpu_ms);
+    // What it was opened with is not remembered; jobs kept across a restart are sessions, which
+    // take the configured CPUs.
+    const job = this.#adopt(view, endpoint, payer, row.cpu_ms, this.#config.limits.cpus);
     return job;
   }
 

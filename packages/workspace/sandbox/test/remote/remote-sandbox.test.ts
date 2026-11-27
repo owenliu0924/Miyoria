@@ -191,6 +191,8 @@ describe("CPU seconds", () => {
 
   it("are_charged_and_stop_a_run_that_goes_over", async () => {
     const program: Program = async (exec) => {
+      // A second of wall time first: on its 2 CPUs a job cannot be charged more than that allows.
+      await new Promise((r) => setTimeout(r, 1000));
       exec.cpu(1500);
       // Stopped by Core once the charge passes the limit.
       return { stdout: `stopped:${await exec.stopped}` };

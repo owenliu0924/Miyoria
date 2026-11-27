@@ -171,8 +171,15 @@ export class RemoteJob implements TransferJob {
   #view: JobView;
   #endedReason: string | null = null;
   #resolveEnded: (value: { reason: string }) => void = () => {};
-  /** CPU charged to the payer so far (the job's cgroup total as last seen), ms. */
+  /**
+   * CPU charged to the payer so far, ms: the job's cgroup total as last seen, or less while a
+   * report past what its CPUs could have used is still being carried over.
+   */
   #charged: number;
+  /** When CPU was last charged (or Core took up the job). */
+  #chargedAt: number;
+  /** The most CPU one ms of wall time can add: the job's CPUs. */
+  readonly #cpus: number;
   /** Time its execs ran, for the cluster's estimates. */
   runMs = 0;
   /** Set by the sandbox: the workspace this job holds and its manifest. */
@@ -186,6 +193,8 @@ export class RemoteJob implements TransferJob {
       payer: WorkPayer | null;
       link: JobLink;
       charged?: number;
+      /** The CPUs Core asked for; the computer's own view may only lower them. */
+      cpus?: number;
     },
   ) {
     this.id = view.id;
@@ -196,6 +205,8 @@ export class RemoteJob implements TransferJob {
     this.#link = o.link;
     this.#view = view;
     this.#charged = o.charged ?? 0;
+    this.#chargedAt = o.link.clock.now();
+    this.#cpus = chargeCpus(view.limits.cpus, o.cpus);
     this.ended = new Promise((resolve) => {
       this.#resolveEnded = resolve;
     });
@@ -244,12 +255,26 @@ export class RemoteJob implements TransferJob {
     return call(this.#link.source, this.#link.endpoint(), path, o);
   }
 
-  /** Counts the job's CPU up to `total` ms (its cgroup's running total). */
+  /**
+   * Counts the job's CPU up to `total` ms (its cgroup's running total), as the computer reports
+   * it. That computer is someone else's: one report of `1e12` would lock the payer out of their
+   * CPU seconds for days. So a total must be a finite non-negative number, and one charge is at
+   * most the job's CPUs times the wall time since the last one; the rest of an honest report
+   * that came late is carried over to the next charges.
+   */
   #chargeTo(total: number): void {
+    if (!Number.isFinite(total) || total < 0) {
+      log.warn({ job: this.id, host: this.host }, "a sandbox computer reported no valid CPU total");
+      return;
+    }
     const delta = total - this.#charged;
     if (!(delta > 0)) return;
-    this.#charged = total;
-    this.#link.charge(this, delta);
+    const now = this.#link.clock.now();
+    const charge = Math.min(delta, this.#cpus * Math.max(0, now - this.#chargedAt));
+    if (!(charge > 0)) return;
+    this.#charged += charge;
+    this.#chargedAt = now;
+    this.#link.charge(this, charge);
   }
 
   /** One event of the computer's long-poll for this job. */
@@ -721,6 +746,19 @@ export class RemoteJob implements TransferJob {
     }
     this.end("closed");
   }
+}
+
+/**
+ * The CPUs a charge is bounded by: what the computer says it applied when that is a positive
+ * number, never more than Core asked for (the computer may lower the limits, not raise them).
+ */
+function chargeCpus(told: number, asked: number | undefined): number {
+  const valid = (n: number | undefined): n is number =>
+    n !== undefined && Number.isFinite(n) && n > 0;
+  if (valid(told) && valid(asked)) return Math.min(told, asked);
+  if (valid(asked)) return asked;
+  if (valid(told)) return told;
+  return 1;
 }
 
 /** The job is over; nothing more can be done in it. */
