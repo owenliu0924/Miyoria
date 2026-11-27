@@ -439,6 +439,31 @@ describe("the sandbox launcher", { timeout: 30_000 }, () => {
     await none.exited;
   });
 
+  it("an owner's run_in = sandbox is not undone: no computer means no start, with the reason", async () => {
+    const chosen = echoSpec({ runInChosen: true });
+    const strict = new FakeClient([{ host: "friend-pc", plugins: false }]);
+    const l = launcher(strict);
+    await expect(l.launch(chosen, new AbortController().signal)).rejects.toThrow(
+      /run_in = "sandbox".*不接插件/u,
+    );
+    expect(l.placement("made.up")).toBeNull();
+    await expect(launcher(null).launch(chosen, new AbortController().signal)).rejects.toThrow(
+      /there is no sandbox/u,
+    );
+    // Credentials with nowhere trusted to go: refused too, not run here.
+    await expect(
+      launcher(new FakeClient()).launch(
+        echoSpec({ runInChosen: true, secrets: { MADE_KEY: "k" } }),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(/credentials/u);
+    // A computer that takes it: it goes there as before.
+    const child = await launcher(new FakeClient()).launch(chosen, new AbortController().signal);
+    expect(child.where).toMatchObject({ kind: "sandbox", host: "friend-pc" });
+    child.kill();
+    await child.exited;
+  });
+
   it("a folder that does not go in whole runs here, and its job is closed", async () => {
     const client = new FakeClient();
     client.skipped = [{ path: "node_modules/@made/sdk", why: "link" }];

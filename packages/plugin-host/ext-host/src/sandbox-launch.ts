@@ -14,7 +14,8 @@
 // - A game adapter and anything granted `input` stay here by default (`defaultRunIn`): they work
 //   on this machine's game and keyboard.
 // When no computer takes the job, the extension runs here (`fallback = "host"`, the default) or
-// does not start (`"fail"`), and the log says why.
+// does not start (`"fail"`), and the log says why. One the owner wrote `run_in = "sandbox"` for
+// never runs here instead: its start fails with the reason.
 
 import { isAbsolute, relative, sep } from "node:path";
 import { errorMessage, getLogger, sleep } from "@miyoria/runtime/kernel";
@@ -580,6 +581,13 @@ class SandboxLauncherImpl implements SandboxLauncher {
   ): Promise<ChildLike> {
     if ((this.#o.fallback ?? "host") === "fail") {
       throw new LaunchError(`\`${spec.extension}\` should run in a sandbox, but ${why}`);
+    }
+    // The owner wrote `run_in = "sandbox"` for this one: running it on Core's machine anyway
+    // would undo their choice without a word. Only the default of its kind falls back here.
+    if (spec.runInChosen === true) {
+      throw new LaunchError(
+        `\`${spec.extension}\` has run_in = "sandbox", so it does not start on this machine instead; ${why}`,
+      );
     }
     const fields = { ext: spec.extension, reason: why };
     if (quiet) log.info(fields, "extension runs on this machine, not in a sandbox");

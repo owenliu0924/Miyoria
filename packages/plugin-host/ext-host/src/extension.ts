@@ -250,6 +250,7 @@ export class ExtensionModule implements Module {
         network: [...this.spec.granted.network],
         secrets,
         runIn: this.spec.runIn ?? defaultRunIn(m.kind, this.spec.granted),
+        runInChosen: this.spec.runIn !== undefined && this.spec.runIn !== null,
       },
       held: report.held,
       missing: wanted.filter((name) => !Object.hasOwn(secrets, name)),

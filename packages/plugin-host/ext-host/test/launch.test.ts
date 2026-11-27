@@ -151,6 +151,9 @@ describe("launch spec", () => {
       host,
     );
     expect(owner.launchSpec({}).spec.runIn).toBe("host");
+    // Only what the owner wrote counts as chosen (a launcher does not undo it).
+    expect(owner.launchSpec({}).spec.runInChosen).toBe(true);
+    expect(plain.launchSpec({}).spec.runInChosen).toBe(false);
   });
 
   it("hands over the owner's secrets apart from the environment and says what it held back", () => {

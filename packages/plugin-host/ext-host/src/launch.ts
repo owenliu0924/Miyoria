@@ -37,6 +37,11 @@ export interface LaunchSpec {
   /** Variables the owner named in `[extensions."<id>"] secrets`, with their values. */
   secrets: Readonly<Record<string, string>>;
   runIn: "host" | "sandbox";
+  /**
+   * The owner wrote `run_in` for it (not the default of its kind): a launcher that cannot put it
+   * there refuses instead of running it somewhere else. Missing: the default.
+   */
+  runInChosen?: boolean;
 }
 
 export interface ExtensionLauncher {
