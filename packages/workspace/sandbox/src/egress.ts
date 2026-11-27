@@ -30,8 +30,11 @@ export const LABEL_JOB = "miyoria.sandbox.job";
 /** Where the proxy writes its counters (inside its own container, a 1 MiB tmpfs). */
 export const EGRESS_STATS_FILE = "/tmp/egress.json";
 
-/** Ports `open` refuses unless told otherwise: SMTP, so nobody mails through a friend's line. */
-export const DEFAULT_DENY_PORTS: readonly number[] = [25, 465, 587];
+/**
+ * Ports `open` refuses unless told otherwise: SMTP (2525 is the submission port mail services
+ * offer where 587 is blocked), so nobody mails through a friend's line.
+ */
+export const DEFAULT_DENY_PORTS: readonly number[] = [25, 465, 587, 2525];
 
 /** The instance's shared network (local backend), or a job's own one (`job` given). */
 export function egressNetworkName(instance: string, job?: string): string {
@@ -339,8 +342,11 @@ export function jobEgressProxyArgs(options: {
  * - `EGRESS_MODE`: `allowlist` (default) or `open`;
  * - `EGRESS_ALLOW`: comma separated hosts and `*.suffix` patterns (`allowlist`);
  * - `EGRESS_PORTS`: ports a target may have in `allowlist`, default `80,443`;
- * - `EGRESS_DENY_PORTS`: ports refused in both modes (default `25,465,587` in `open`);
+ * - `EGRESS_DENY_PORTS`: ports refused in both modes (default `25,465,587,2525` in `open`);
  * - `EGRESS_MAX_CONNECTIONS` (default 64), `EGRESS_MAX_BYTES` (in + out, default no cap);
+ * - `EGRESS_MAX_PER_MINUTE`: new connections in any minute (default 600), and
+ *   `EGRESS_MAX_DESTINATIONS`: distinct `host:port` places in the proxy's life (default 2000);
+ *   both answer 429, generous for installs and browsing and in the way of a scan;
  * - `EGRESS_DENY_ADDRS`: addresses or CIDRs refused on top of the built-in table;
  * - `EGRESS_STATS`: a file the counters are written to every second, when they changed;
  * - `EGRESS_PORT` (0 = any, printed on stdout);
@@ -365,8 +371,10 @@ const list = (v) => (v || "").split(",").map((s) => s.trim().toLowerCase()).filt
 const mode = env.EGRESS_MODE === "open" ? "open" : "allowlist";
 const allow = list(env.EGRESS_ALLOW);
 const ports = new Set(list(env.EGRESS_PORTS || "80,443").map(Number));
-const denyPorts = new Set(list(env.EGRESS_DENY_PORTS !== undefined ? env.EGRESS_DENY_PORTS : mode === "open" ? "25,465,587" : "").map(Number));
+const denyPorts = new Set(list(env.EGRESS_DENY_PORTS !== undefined ? env.EGRESS_DENY_PORTS : mode === "open" ? "25,465,587,2525" : "").map(Number));
 const maxConnections = Number(env.EGRESS_MAX_CONNECTIONS) >= 1 ? Math.floor(Number(env.EGRESS_MAX_CONNECTIONS)) : 64;
+const maxPerMinute = Number(env.EGRESS_MAX_PER_MINUTE) >= 1 ? Math.floor(Number(env.EGRESS_MAX_PER_MINUTE)) : 600;
+const maxDestinations = Number(env.EGRESS_MAX_DESTINATIONS) >= 1 ? Math.floor(Number(env.EGRESS_MAX_DESTINATIONS)) : 2000;
 const maxBytes = Number(env.EGRESS_MAX_BYTES) > 0 ? Number(env.EGRESS_MAX_BYTES) : Infinity;
 const statsFile = env.EGRESS_STATS || "";
 const allowPrivate = env.EGRESS_ALLOW_PRIVATE === "1";
@@ -535,6 +543,22 @@ function track(s) {
 function full() {
   return pending + live.size >= maxConnections;
 }
+// Scanning or flooding public hosts from a friend's address: open connections alone do not stop
+// a program that opens and drops thousands a minute, or walks a whole range one place at a time.
+const recent = [];
+const places = new Set();
+function overRate(host, port) {
+  const now = Date.now();
+  while (recent.length > 0 && now - recent[0] >= 60000) recent.shift();
+  if (recent.length >= maxPerMinute) { stats.refused.cap++; return true; }
+  const place = host.toLowerCase() + ":" + port;
+  if (!places.has(place)) {
+    if (places.size >= maxDestinations) { stats.refused.cap++; return true; }
+    places.add(place);
+  }
+  recent.push(now);
+  return false;
+}
 function refusal(host, port) {
   if (host === null) { stats.refused.address++; return "host not allowed"; }
   if (!(Number.isInteger(port) && port >= 1 && port <= 65535) || denyPorts.has(port) || (mode === "allowlist" && !ports.has(port))) {
@@ -603,6 +627,7 @@ async function handle(req, res) {
   const why = refusal(host, port);
   if (why !== null) return deny(403, why);
   if (full()) { stats.refused.cap++; return deny(503, "too many connections"); }
+  if (overRate(host, port)) return deny(429, "too many new connections or places");
   pending++;
   let counted = true;
   const release = () => { if (counted) { counted = false; pending--; } };
@@ -648,6 +673,7 @@ server.on("connect", (req, client, head) => {
   const port = Number(m[2]);
   if (refusal(host, port) !== null) return refuse("403 Forbidden");
   if (full()) { stats.refused.cap++; return refuse("503 Service Unavailable"); }
+  if (overRate(host, port)) return refuse("429 Too Many Requests");
   pending++;
   let counted = true;
   const release = () => { if (counted) { counted = false; pending--; } };

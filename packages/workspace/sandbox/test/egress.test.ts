@@ -318,7 +318,7 @@ describe("egress proxy in open mode", () => {
       EGRESS_DENY_ADDRS: "127.0.0.2",
     });
     expect((await viaProxy(proxy, `http://127.0.0.1:${target}/x`)).status).toBe(200);
-    for (const port of [25, 465, 587]) {
+    for (const port of [25, 465, 587, 2525]) {
       expect(await connectThrough(proxy, `127.0.0.1:${port}`), String(port)).toBe(
         "HTTP/1.1 403 Forbidden",
       );
@@ -383,6 +383,37 @@ describe("egress proxy in open mode", () => {
       async () => (await connectThrough(proxy, `127.0.0.1:${port}`)).includes("200"),
       5000,
     );
+  });
+
+  it("caps_new_connections_per_minute_and_the_places_one_job_may_reach", async () => {
+    const tcp = createTcp((s) => s.end("up"));
+    servers.push(tcp);
+    await new Promise<void>((resolve) => tcp.listen(0, "127.0.0.1", resolve));
+    const port = (tcp.address() as { port: number }).port;
+    const rate = await startProxy({
+      EGRESS_MODE: "open",
+      EGRESS_ALLOW_PRIVATE: "1",
+      EGRESS_MAX_PER_MINUTE: "3",
+    });
+    for (let i = 0; i < 3; i++) {
+      expect(await connectThrough(rate, `127.0.0.1:${port}`), String(i)).toContain("200");
+    }
+    // A fourth new connection within the minute: a scan or a flood from a friend's address.
+    expect(await connectThrough(rate, `127.0.0.1:${port}`)).toBe("HTTP/1.1 429 Too Many Requests");
+    expect((await viaProxy(rate, `http://127.0.0.1:${port}/`)).status).toBe(429);
+
+    const places = await startProxy({
+      EGRESS_MODE: "open",
+      EGRESS_ALLOW_PRIVATE: "1",
+      EGRESS_MAX_DESTINATIONS: "2",
+    });
+    expect(await connectThrough(places, `127.0.0.1:${port}`)).toContain("200");
+    expect(await connectThrough(places, `localhost:${port}`)).toContain("200");
+    // A third place is refused; the two it has been to stay open to it.
+    expect(await connectThrough(places, `127.0.0.3:${port}`)).toBe(
+      "HTTP/1.1 429 Too Many Requests",
+    );
+    expect(await connectThrough(places, `127.0.0.1:${port}`)).toContain("200");
   });
 
   it("cuts_everything_once_the_bytes_are_used_up_and_says_so_after", async () => {

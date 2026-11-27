@@ -1642,7 +1642,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # [modules.sandbox.network]
 # mode = "open"                  # open | allowlist | none(叢集)
 # allow = []                     # 例如 ["pypi.org", "*.pythonhosted.org"]
-# deny_ports = [25, 465, 587]    # open 也擋的埠
+# deny_ports = [25, 465, 587, 2525] # open 也擋的埠(寄信的埠)
 # max_connections = 64           # 每個工作同時開著的連線(叢集)
 # max_mb = 4096                  # 每個工作進出合計(MiB,叢集)
 # proxy_port = 3128              # (這台的 Docker)proxy 在它的容器內聽的埠

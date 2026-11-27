@@ -197,7 +197,7 @@ export const SandboxNetworkSchema = z.object({
   /** Memory of the proxy container, in MiB. */
   proxy_memory_mb: z.number().int().min(32).default(128),
   /** Ports refused in `open` mode as well (mail: a job must not send spam from a friend's IP). */
-  deny_ports: z.array(z.number().int().min(1).max(65535)).max(64).default([25, 465, 587]),
+  deny_ports: z.array(z.number().int().min(1).max(65535)).max(64).default([25, 465, 587, 2525]),
   /** Connections one job has open at once (cluster backend). */
   max_connections: z.number().int().min(1).default(64),
   /** What one job sends and receives in all, in MiB (cluster backend). */

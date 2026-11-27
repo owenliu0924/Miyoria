@@ -892,7 +892,7 @@ enabled = true
 # [modules.sandbox.network]
 # mode = "open"                    # open | allowlist | none。舊設定 allow 有寫主機、沒寫 mode 的當作 allowlist
 # allow = []
-# deny_ports = [25, 465, 587]
+# deny_ports = [25, 465, 587, 2525]
 # max_connections = 64             # 每個工作同時開著的連線
 # max_mb = 4096                    # 每個工作進出合計
 # [modules.sandbox.workspace]
