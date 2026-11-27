@@ -133,6 +133,17 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **測試**:額度的前綴不會出現在 AI 額度的管理頁;CPU 秒的滾動一小時和她的一天;到上限只說一次;`workspace_attach` 只從允許的主機、量著下載、寫進那個人的 `inbox/`;`share` 的 tar / tgz / ods 收、7z 拒絕並說原因、她自己做的 zip 可以給、`max_bytes = 0` 照平台的上限、超過給連結。
 
+**實作時和上面不同的地方(P4,2026-11-27)**
+
+- `tar.ts` 是自己寫的唯讀解析(`inspectTar`、`inspectGzip`、`isTar`、`isGzip`、`isUnreadableArchive`),沒有用 `tar-stream`:`@miyoria/gate` 沒有這個依賴,也不能 `pnpm install`;自己讀才能照 zip 的規則逐項拒絕(檢查碼、padding 裡藏東西、結尾之後的資料、連結、裝置、重複的名字、超過上限)。單一 `.gz` 和 `tar.gz` 都走 `inspectGzip`(先在上限內解開,而且 gzip 後面不能還有資料)。7z、rar、xz、bzip2、zstd、lzip 一律拒絕並說「改用 zip」。
+- `ZIP_MIMES` 也加了 tar 和 gzip(不只 OpenDocument 和 epub):`api/src/files/links.ts` 用它決定哪些型別要讀過全部才做連結,不加的話 tar / gz 的連結會沒檢查就發出去。`checkContent` 多回一個 `say`(她要照著說的那一句);`owner` 參數留著但不再用。
+- `media.ts` 的 `SNIFF_BYTES` 從 64 改成 512(tar 的 `ustar` 在第 257 個位元組);原來在頭 64 個位元組裡找 `theora`、`webm` 的搜尋範圍不變。
+- `workspace_attach` 不走 `WorkspaceApi.write`(只收文字):它要求 `workspace` 是 `PersistentWorkspace`,用 `subdir(people/<資料夾>)` 和 `subdir("inbox")` 拿到資料夾,下載串流寫進暫存檔再 `rename`;額度照那個人的資料夾(`PersonLimits`)。不是 `PersistentWorkspace` 時回「工作區現在不能收檔案」。
+- 沒有放在 `selfhost` 的 `workCapLine`:到上限的那一句在 `packages/workspace/sandbox/src/work-line.ts`(`workCapLine`、`WORK_CUT_LINE`),因為用它的是 P3 的閘門和 client,沙箱套件不依賴 agent 套件。
+- `QuotaStore` 多一個 `dayTotalsUnder(day, prefix)`(`PrefixedBook` 用),`forgetPerson` 連 `~cpu:` 的列一起刪(「忘了我」本來只刪 AI 額度的列)。
+- `api/src/quota.ts` 的 `work.capped` 由數字算,不叫 `WorkQuota.capped`:那個會把這段時間標成「已經擋過」,管理頁一讀就會吃掉她要說的那一句。
+- `MessageFilesBook` 記每一則非 bot 的輸入(沒附檔也記,當作回頭找的錨),不管 `[modules.agent.files]` 開不開。
+
 ### P5 第三批的工具
 
 **交付**

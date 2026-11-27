@@ -1,12 +1,12 @@
 // The media type of an artifact, decided from its bytes (v5-architecture §11.2: "型別看內容判斷,不信副
 // 檔名"). The kinds she makes have fixed signatures in their first bytes: PNG, JPEG, WebP, GIF, WAV,
-// MP3, OGG, MP4, WebM, PDF, zip. Anything without one is accepted only as plain text, and only when
+// MP3, OGG, MP4, WebM, PDF, zip, gzip, tar. Anything without one is accepted only as plain text, and only when
 // the whole content is UTF-8 without NUL or control characters (tab, newline, carriage return and
 // form feed allowed). Everything else is refused, so HTML, SVG, scripts and executables never come
 // in under a type a browser would run: HTML or SVG text is stored as `text/plain`. A text keeps
 // its own extension when it is a known text one (`.md`, `.csv`, `.py`, ...), its type stays
-// `text/plain`. A zip is `application/zip`, or the Office type it was declared as (docx, xlsx,
-// pptx are zips): the declaration only names which, the bytes must be a zip either way.
+// `text/plain`. A zip is `application/zip`, or the Office, OpenDocument or epub type it was declared as (they
+// are zips): the declaration only names which, the bytes must be a zip either way.
 //
 // A caller may declare the type it believes it has. A declaration the content contradicts is
 // refused; one that agrees (an alias, a text subtype for text) is replaced by the sniffed type.
@@ -15,7 +15,9 @@ import type { ArtifactKind } from "@miyoria/contracts/events";
 import { StoreError } from "../common.js";
 
 /** How many leading bytes `sniff` looks at. */
-export const SNIFF_BYTES = 64;
+export const SNIFF_BYTES = 512;
+/** How far into the head the signature searches (`contains`) look: they were written for 64. */
+const SEARCH_BYTES = 64;
 
 /** A media type the store accepts, with its kind and download extension. */
 export interface MediaType {
@@ -53,11 +55,33 @@ const TYPES = {
     kind: "document",
     extension: "pptx",
   },
+  odt: { mime: "application/vnd.oasis.opendocument.text", kind: "document", extension: "odt" },
+  ods: {
+    mime: "application/vnd.oasis.opendocument.spreadsheet",
+    kind: "document",
+    extension: "ods",
+  },
+  odp: {
+    mime: "application/vnd.oasis.opendocument.presentation",
+    kind: "document",
+    extension: "odp",
+  },
+  epub: { mime: "application/epub+zip", kind: "document", extension: "epub" },
+  gzip: { mime: "application/gzip", kind: "document", extension: "gz" },
+  tar: { mime: "application/x-tar", kind: "document", extension: "tar" },
   text: { mime: "text/plain", kind: "text", extension: "txt" },
 } as const satisfies Record<string, MediaType>;
 
 /** The zip family: what a zip may be declared as. */
-const ZIP_FAMILY: readonly MediaType[] = [TYPES.docx, TYPES.xlsx, TYPES.pptx];
+const ZIP_FAMILY: readonly MediaType[] = [
+  TYPES.docx,
+  TYPES.xlsx,
+  TYPES.pptx,
+  TYPES.odt,
+  TYPES.ods,
+  TYPES.odp,
+  TYPES.epub,
+];
 
 /**
  * Text extensions a text artifact keeps (its type stays `text/plain`, so nothing renders it):
@@ -288,12 +312,15 @@ export function sniff(head: Uint8Array): MediaType | null {
   if (startsWith(head, [0x50, 0x4b, 0x03, 0x04]) || startsWith(head, [0x50, 0x4b, 0x05, 0x06])) {
     return TYPES.zip;
   }
+  // A gzip file (deflate), and a POSIX tar, whose `ustar` magic sits in its first header.
+  if (startsWith(head, [0x1f, 0x8b, 0x08])) return TYPES.gzip;
+  if (ascii(head, 257, "ustar")) return TYPES.tar;
   if (ascii(head, 0, "OggS")) {
-    return contains(head, "theora") ? TYPES.oggVideo : TYPES.ogg;
+    return contains(head.subarray(0, SEARCH_BYTES), "theora") ? TYPES.oggVideo : TYPES.ogg;
   }
   if (startsWith(head, [0x1a, 0x45, 0xdf, 0xa3])) {
     // Matroska's EBML header; WebM says so in its DocType.
-    return contains(head, "webm") ? TYPES.webm : null;
+    return contains(head.subarray(0, SEARCH_BYTES), "webm") ? TYPES.webm : null;
   }
   if (ascii(head, 4, "ftyp") && head.length >= 12) {
     const brand = String.fromCharCode(...head.subarray(8, 12));
@@ -366,6 +393,10 @@ const ALIASES: Record<string, string> = {
   "audio/m4a": "audio/mp4",
   "application/x-zip-compressed": "application/zip",
   "application/x-zip": "application/zip",
+  "application/x-gzip": "application/gzip",
+  "application/x-gtar": "application/x-tar",
+  "application/x-compressed-tar": "application/gzip",
+  "application/tar": "application/x-tar",
 };
 
 /** One container, two kinds: a declaration of either agrees with the content. */
@@ -409,7 +440,7 @@ export function decideType(
   if (type === null) {
     throw new ArtifactTypeError(
       "the content is not one of the accepted types (PNG, JPEG, WebP, GIF, WAV, MP3, OGG, MP4, " +
-        "WebM, PDF, zip, docx, xlsx, pptx, plain text)",
+        "WebM, PDF, zip, docx, xlsx, pptx, OpenDocument, epub, tar, gzip, plain text)",
     );
   }
   const want = normalizeMime(declared);

@@ -18,15 +18,18 @@
 // 5. Nothing withdrawn: deleted, expired, blocked or taken down.
 // 6. A type allow-list by content, read again from the bytes: images, audio, video, PDF, text
 //    (markdown, CSV, JSON, source code and HTML too: it goes as a file and is only ever served as
-//    `text/plain`, never rendered) and the zip family (zip, docx, xlsx, pptx) only for the person
-//    it was made for, read whole (`zip.ts`). SVG, executables and anything unrecognised are
-//    refused.
-// 7. Text passes the outgoing checks first, and so does every text entry of a zip and the XML
-//    parts of an Office file: a credential in it (a known format, or a protected value such as
-//    the admin token) or any other moderation block refuses the share.
+//    `text/plain`, never rendered) and the archive family, read whole: zip, Office and
+//    OpenDocument files, epub (`zip.ts`), tar, tar.gz / tgz and a single .gz (`tar.ts`). Since
+//    `share` only ever goes to the person who asked (rule 2), a file she made for nobody in
+//    particular is shared like any other. SVG, executables and anything unrecognised are refused,
+//    and so are 7z, rar, xz and the like, whose inside it cannot read (she is told to use zip).
+// 7. Text passes the outgoing checks first, and so does every text entry of an archive and the
+//    XML parts of an Office file: a credential in it (a known format, or a protected value such
+//    as the admin token) or any other moderation block refuses the share.
 // 8. A limit per person and for everyone, per rolling 24 hours.
-// 9. A size cap (`[modules.actions.share] max_bytes`, and what the platform takes there); over it,
-//    the link alone goes, when there is one. Rules 6 to 8 hold for the link the same.
+// 9. A size cap: what the platform takes there, and `[modules.actions.share] max_bytes` when that
+//    is set (0: only the platform's); over it, the link alone goes, when there is one, and when
+//    there is none she is told why. Rules 6 to 8 hold for the link the same.
 //
 // A text a double-click or a browser would run (`runsWhenOpened`: .bat, .ps1, .html, .sh, ...)
 // goes out with `.txt` added to its name anywhere but a DM with the asker (the attachment source
@@ -87,6 +90,14 @@ import { handleLookup, type NameLookup, recipient } from "./builtin.js";
 import { type ActionResult, type Capability, defineCapability } from "./capability.js";
 import type { ShareConfig } from "./config.js";
 import { RateLimiter } from "./rate.js";
+import {
+  inspectGzip,
+  inspectTar,
+  isGzip,
+  isTar,
+  isUnreadableArchive,
+  UNREADABLE_ARCHIVE,
+} from "./tar.js";
 import { inspectZip, isZip, ZIP_MIMES, type ZipLimits } from "./zip.js";
 
 const log = getLogger("actions.share");
@@ -108,7 +119,7 @@ export const ReplyReferencesKey = serviceKey<ReplyReferences>("ReplyReferences")
 /** What can go out, for her. */
 const SHAREABLE =
   "可以傳的是圖片、音訊、影片、PDF、文字檔(markdown、CSV、JSON、程式碼、網頁原始檔都算)," +
-  "以及壓縮檔和 Word / Excel / PowerPoint 檔(這兩種只給做給的那個人,而且不能是會解壓出超大檔案的)。";
+  "以及壓縮檔(zip、tar、tar.gz、gz)和 Word / Excel / PowerPoint / OpenDocument / epub 檔(不能是會解壓出超大檔案的)。";
 
 /** Why a share was refused (`data.refused`). */
 export type ShareRefusalCode =
@@ -139,7 +150,7 @@ type ShareArgs = z.output<typeof ShareArgs>;
 /** What a content check found. */
 export type ContentVerdict =
   | { ok: true; mime: string }
-  | { ok: false; code: "type_not_allowed"; what: string }
+  | { ok: false; code: "type_not_allowed"; what: string; say?: string }
   /** The outgoing checks block a text, or a text entry of a zip (`entry`). */
   | { ok: false; code: "secret" | "moderation"; rule: string; entry: string | null };
 
@@ -188,9 +199,15 @@ export function zipLimits(config: ShareConfig): ZipLimits {
 
 const DEFAULT_ZIP: ZipLimits = { maxUnpackedBytes: 256 * 1024 * 1024, maxEntries: 5000 };
 
+/** The zip family (the archives `inspectZip` reads): `ZIP_MIMES` without tar and gzip. */
+const ZIP_ONLY: readonly string[] = ZIP_MIMES.filter(
+  (m) => m !== "application/x-tar" && m !== "application/gzip",
+);
+
 /**
- * The type of `bytes` by content, against the allow-list. `owner`: the share goes to the person
- * the artifact was made for (the zip family goes to nobody else). `mime`: the type the artifact
+ * The type of `bytes` by content, against the allow-list. `owner`: whether the share goes to the
+ * person the artifact was made for; archives and Office files no longer depend on it (a share only
+ * goes to whoever asked), the parameter stays for callers that pass it. `mime`: the type the artifact
  * was stored as, which names which member of the zip family it is. `attachment`: it leaves as a
  * file attachment, so HTML, PHP and scripts are text files like any other (SVG is still refused);
  * otherwise (a page that opens it) they are refused too. `screen`: the outgoing checks, run on a
@@ -198,7 +215,7 @@ const DEFAULT_ZIP: ZipLimits = { maxUnpackedBytes: 256 * 1024 * 1024, maxEntries
  */
 export async function checkContent(
   bytes: Uint8Array,
-  owner: boolean,
+  _owner: boolean,
   options: {
     mime?: string | null;
     zip?: ZipLimits;
@@ -206,18 +223,32 @@ export async function checkContent(
     screen?: TextScreen;
   } = {},
 ): Promise<ContentVerdict> {
-  const refuse = (what: string): ContentVerdict => ({ ok: false, code: "type_not_allowed", what });
+  const refuse = (what: string, say?: string): ContentVerdict => ({
+    ok: false,
+    code: "type_not_allowed",
+    what,
+    ...(say === undefined ? {} : { say }),
+  });
   const screen = options.screen;
-  if (isZip(bytes)) {
-    if (!owner) return refuse("zip (only for its own person)");
-    const listing = await inspectZip(
-      bytes,
-      options.zip ?? DEFAULT_ZIP,
-      screen === undefined ? undefined : (text) => screen(text),
-    );
+  const limits = options.zip ?? DEFAULT_ZIP;
+  const scan = screen === undefined ? undefined : (text: string) => screen(text);
+  const archive = isZip(bytes)
+    ? ({ name: "zip", mime: "application/zip" } as const)
+    : isGzip(bytes)
+      ? ({ name: "gzip", mime: "application/gzip" } as const)
+      : isTar(bytes)
+        ? ({ name: "tar", mime: "application/x-tar" } as const)
+        : null;
+  if (archive !== null) {
+    const listing =
+      archive.name === "zip"
+        ? await inspectZip(bytes, limits, scan)
+        : archive.name === "gzip"
+          ? await inspectGzip(bytes, limits, scan)
+          : inspectTar(bytes, limits, scan);
     if (!listing.ok) {
       const block = listing.block;
-      if (block === undefined) return refuse(`zip: ${listing.why}`);
+      if (block === undefined) return refuse(`${archive.name}: ${listing.why}`);
       return {
         ok: false,
         code: block.code === "secret" ? "secret" : "moderation",
@@ -226,8 +257,10 @@ export async function checkContent(
       };
     }
     const mime = options.mime ?? null;
-    return { ok: true, mime: mime !== null && ZIP_MIMES.includes(mime) ? mime : "application/zip" };
+    const family = archive.name === "zip" ? ZIP_ONLY : [archive.mime];
+    return { ok: true, mime: mime !== null && family.includes(mime) ? mime : archive.mime };
   }
+  if (isUnreadableArchive(bytes)) return refuse("archive it cannot read", UNREADABLE_ARCHIVE);
   const known = sniff(bytes.subarray(0, SNIFF_BYTES));
   if (known !== null) return { ok: true, mime: known.mime };
   const check = new TextCheck();
@@ -380,7 +413,9 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
       if (content.code === "type_not_allowed") {
         return refused(
           "type_not_allowed",
-          `這種內容不能當附件傳出去(${content.what})。${SHAREABLE}`,
+          content.say === undefined
+            ? `這種內容不能當附件傳出去(${content.what})。${SHAREABLE}`
+            : `這個檔案不能傳:${content.say}。${SHAREABLE}`,
           { what: content.what },
         );
       }
@@ -420,7 +455,8 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
     if (!sink || platformLimit === null) {
       return refused("platform", "這個地方收不了附件,所以沒辦法把檔案傳過去。");
     }
-    const cap = Math.min(options.config().max_bytes, platformLimit);
+    const configured = options.config().max_bytes;
+    const cap = configured > 0 ? Math.min(configured, platformLimit) : platformLimit;
     if (artifact.size > cap) {
       return refused(
         "too_large",
@@ -547,7 +583,8 @@ export function shareCapability(options: ShareOptions): Capability<ShareArgs> {
         "把你做出來的檔案(產物)當附件傳給開口要的那個人,就傳在現在這個頻道或私訊裡。" +
         "artifact 填產物的 id(workspace_export 或生圖回給你的那個 id,不是檔名也不是路徑)。" +
         "只能傳給現在跟你要的人:to 省略或填 speaker。私訊裡做的東西不能傳到頻道,幫別人做的不能給另一個人;" +
-        "翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔和 Office 文件。不行的時候會告訴你原因,照原因跟對方說就好。" +
+        "翻唱的成品不能傳;收圖片、音訊、影片、PDF、文字檔(含程式碼、CSV、網頁原始檔)、壓縮檔(zip、tar、tar.gz、gz;7z 和 rar 不收)、Word / Excel / PowerPoint / OpenDocument 文件和 epub。" +
+        "檔案太大、平台收不下時,有檔案網域就改傳下載連結,沒有的話會告訴你原因。不行的時候會告訴你原因,照原因跟對方說就好。" +
         "有檔案網域時也會附一條下載連結(結果裡的 url):to 是 speaker 時只有對方登入後打得開,在伺服器裡填 here 就是這個伺服器的成員都打得開;hours 是連結幾小時後失效(預設 7 天)。" +
         "有人想在瀏覽器裡打開的網頁用 page_publish 發成網頁,不是用這個傳檔案。",
       properties: {

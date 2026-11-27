@@ -13,12 +13,22 @@
 import { createInflateRaw } from "node:zlib";
 import { TextCheck } from "@miyoria/store";
 
-/** The zip family the store keeps (by declared type; the bytes are a zip either way). */
+/**
+ * The archive family the store keeps. The zips (by declared type; the bytes are a zip either way)
+ * are read by `inspectZip`, a tar and a gzip by `tar.ts`; every one of them is read whole before
+ * it goes out, which is what a caller checking membership of this list relies on.
+ */
 export const ZIP_MIMES: readonly string[] = [
   "application/zip",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.oasis.opendocument.text",
+  "application/vnd.oasis.opendocument.spreadsheet",
+  "application/vnd.oasis.opendocument.presentation",
+  "application/epub+zip",
+  "application/x-tar",
+  "application/gzip",
 ];
 
 /** Starts like a zip: a local file header, or the end record of an empty archive. */
