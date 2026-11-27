@@ -41,8 +41,8 @@ export function toolContextJson(ctx: ToolContext): JsonValue {
   };
 }
 
-/** Where a call that came from nowhere in particular (the panel) says it happened. */
-const NOWHERE: ContextKey = { platform: "discord", scope: null, channel: "", kind: "dm" };
+/** Where a call that came from nowhere in particular says it happened: the panel, never a platform. */
+const NOWHERE: ContextKey = { platform: "panel", scope: null, channel: "", kind: "dm" };
 
 function priorityOf(p: Principal): Priority {
   switch (p.kind) {
