@@ -3,10 +3,16 @@
 
 import type { Db, PersonForget, StorePlugin } from "@miyoria/store";
 import { accountRefString, toTimestamp } from "@miyoria/types";
-import { and, desc, eq, inArray, lt, notInArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, notInArray, notLike, sql } from "drizzle-orm";
 import type { QuotaBook } from "../../self/src/index.js";
 import { quotaSchema } from "./quota-migrations.js";
 import { quotaSpend as Q } from "./quota-schema.js";
+
+/**
+ * What marks a sandbox-CPU row in `person` (`work-quota.ts`): `~` never starts a person id or an
+ * account, so these rows cannot meet the AI quota's.
+ */
+export const WORK_KEY_PREFIX = "~cpu:";
 
 export class QuotaStore implements QuotaBook {
   readonly #db: Db;
@@ -55,12 +61,32 @@ export class QuotaStore implements QuotaBook {
   }
 
   dayTotals(day: string): { person: string; micros: number }[] {
+    return (
+      this.#db.orm
+        .select({ person: Q.person, micros: Q.micros })
+        .from(Q)
+        // `~` rows are the sandbox's CPU seconds (`work-quota.ts`), not dollars.
+        .where(and(eq(Q.slot, "day"), eq(Q.key, day), notLike(Q.person, "~%")))
+        .orderBy(desc(Q.micros))
+        .all()
+    );
+  }
+
+  /** The day's totals of the rows under `prefix` (the sandbox's CPU), the prefix taken off. */
+  dayTotalsUnder(day: string, prefix: string): { person: string; micros: number }[] {
     return this.#db.orm
       .select({ person: Q.person, micros: Q.micros })
       .from(Q)
-      .where(and(eq(Q.slot, "day"), eq(Q.key, day)))
+      .where(
+        and(
+          eq(Q.slot, "day"),
+          eq(Q.key, day),
+          sql`substr(${Q.person}, 1, ${prefix.length}) = ${prefix}`,
+        ),
+      )
       .orderBy(desc(Q.micros))
-      .all();
+      .all()
+      .map((r) => ({ person: r.person.slice(prefix.length), micros: r.micros }));
   }
 
   prune(beforeMinute: number, keepDays: readonly string[]): void {
@@ -87,8 +113,10 @@ export class QuotaStore implements QuotaBook {
 
   /** "Forget me": the person's rows, by id and by account, are deleted. */
   forgetPerson(request: PersonForget): { spend: number } {
-    const keys = [...request.ids, ...request.accounts.map((a) => accountRefString(a))];
-    if (keys.length === 0) return { spend: 0 };
+    const who = [...request.ids, ...request.accounts.map((a) => accountRefString(a))];
+    if (who.length === 0) return { spend: 0 };
+    // The person's sandbox CPU rows go with their AI rows.
+    const keys = [...who, ...who.map((k) => WORK_KEY_PREFIX + k)];
     const out = this.#db.orm.delete(Q).where(inArray(Q.person, keys)).run();
     return { spend: Number(out.changes ?? 0) };
   }
