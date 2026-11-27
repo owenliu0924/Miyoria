@@ -201,7 +201,9 @@ describe("the registry behind them", () => {
       "web_image",
       "web_read",
       "web_search",
+      "workspace_edit",
       "workspace_export",
+      "workspace_grep",
       "workspace_list",
       "workspace_read",
       "workspace_write",
@@ -228,6 +230,7 @@ describe("the registry behind them", () => {
     // What starts something that ends later.
     const long = tools.entries().filter((e) => e.speed === "long");
     expect(long.map((e) => e.name)).toEqual([
+      "code_run",
       "delegate",
       "game_start",
       "party_start",

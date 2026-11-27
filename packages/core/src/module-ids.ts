@@ -41,6 +41,7 @@ export const MODULE_IDS: readonly string[] = [
   "exchange",
   "karaoke",
   "web",
+  "http_tools",
   "sandbox",
   "imagegen",
   "skills",
