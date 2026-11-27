@@ -17,6 +17,11 @@
 // for the heart and never for people. It is swallowed whole, whatever shape it comes in: split
 // over chunks, in the middle of a reply, never closed (the rest of the reply is the block), with
 // attributes, self-closing, or a stray closing tag; its inside comes out as one `feel` segment.
+//
+// Code she writes is never parsed: from a ``` fence to the next one, and inside an inline code
+// span (`…` closed on its own line), the text passes as it is, `<div>` and `<feel` included.
+// A fence is any ``` (as `FenceSplitter` reads it), so the two agree on where code is; a backtick
+// that closes nothing on its line (a kaomoji's) is text.
 
 import { asciiLower, utf8Len } from "./util.js";
 
@@ -108,6 +113,8 @@ export class ExpressionParser {
   #dropRest = false;
   /** The inside of the `<feel>` block being read; `null`: not in one. */
   #feel: string | null = null;
+  /** Inside a ``` block; `null`: not. */
+  #code: "fence" | null = null;
 
   constructor(checks: Partial<ParserChecks> = {}) {
     this.#checks = { thinkingBlock: true, tagStrip: true, ...checks };
@@ -144,8 +151,44 @@ export class ExpressionParser {
       pos = this.#feelBody(input, lower, 0, eof, out);
       if (pos < 0) return out;
     }
-    for (let start = input.indexOf("<", pos); start !== -1; start = input.indexOf("<", pos)) {
+    for (;;) {
+      if (this.#code !== null) {
+        const code = this.#codeEnd(input, pos, eof);
+        text += input.slice(pos, code.end);
+        pos = code.end;
+        // Code is never taken back by what follows (a stray `</emo:…>` drops the text before it).
+        flush();
+        if (code.hold) {
+          this.#held = input.slice(pos);
+          return out;
+        }
+        if (pos >= input.length) break;
+        continue;
+      }
+      const start = nextSpecial(input, pos);
+      if (start === -1) break;
       text += input.slice(pos, start);
+      if (input[start] === "`") {
+        const run = tickRun(input, start);
+        if (run >= FENCE.length) {
+          this.#code = "fence";
+          text += FENCE;
+          pos = start + FENCE.length;
+          continue;
+        }
+        const span = inlineSpan(input, start, run, eof);
+        if (span === "hold") {
+          flush();
+          this.#held = input.slice(start);
+          return out;
+        }
+        // A span closed on its line is code; ticks that close nothing (a kaomoji's) are text.
+        const end = span ?? start + run;
+        text += input.slice(start, end);
+        pos = end;
+        if (span !== null) flush();
+        continue;
+      }
       const feel = feelTag(input, lower, start, eof);
       if (feel !== null) {
         flush();
@@ -318,6 +361,74 @@ export class ExpressionParser {
     out.push({ type: "feel", text: this.#feel ?? "" });
     this.#feel = null;
   }
+
+  /**
+   * How far the ``` block open at `from` goes in `input`: to the end of its closing fence (the
+   * block is closed then), or to the end of the input. `hold`: backticks at the very end may be
+   * the start of the closing fence and wait for more input.
+   */
+  #codeEnd(input: string, from: number, eof: boolean): { end: number; hold: boolean } {
+    const close = input.indexOf(FENCE, from);
+    if (close !== -1) {
+      this.#code = null;
+      return { end: close + FENCE.length, hold: false };
+    }
+    const keep = eof ? 0 : Math.min(tickRunBack(input, from), FENCE.length - 1);
+    return { end: input.length - keep, hold: keep > 0 };
+  }
+}
+
+const FENCE = "```";
+/** Longest inline code span (UTF-16 units) the parser waits for its closing backticks. */
+const MAX_INLINE_CODE = 400;
+
+/**
+ * The inline code span opened by `run` (1 or 2) backticks at `start`: the end of its closing
+ * backticks; `null` when nothing closes it on its line (the backticks are text); `"hold"` when
+ * its line is not complete yet.
+ */
+function inlineSpan(
+  input: string,
+  start: number,
+  run: number,
+  eof: boolean,
+): number | "hold" | null {
+  for (let i = start + run; i < input.length; i++) {
+    const c = input[i];
+    if (c === "\n") return null;
+    if (c !== "`") continue;
+    const close = tickRun(input, i);
+    // A fence on the line is a fence (`FenceSplitter`), never the end of a span.
+    if (close >= FENCE.length) return null;
+    if (i + close === input.length && !eof) break;
+    if (close === run) return i + close;
+    i += close - 1;
+  }
+  if (eof || input.length - start > MAX_INLINE_CODE) return null;
+  return "hold";
+}
+
+/** The next `<` or backtick at or after `from`; `-1`: none. */
+function nextSpecial(input: string, from: number): number {
+  const lt = input.indexOf("<", from);
+  const tick = input.indexOf("`", from);
+  if (lt === -1) return tick;
+  if (tick === -1) return lt;
+  return Math.min(lt, tick);
+}
+
+/** How many backticks in a row start at `at`. */
+function tickRun(input: string, at: number): number {
+  let i = at;
+  while (input[i] === "`") i++;
+  return i - at;
+}
+
+/** How many backticks in a row end the input, not counting any before `from`. */
+function tickRunBack(input: string, from: number): number {
+  let i = input.length;
+  while (i > from && input[i - 1] === "`") i--;
+  return input.length - i;
 }
 
 /** What a `<` at `start` is as far as a feel block goes. */
