@@ -409,6 +409,22 @@ describe("self-review", () => {
     expect(failed.decision.reason).toContain("self-review failed");
   });
 
+  it("arguments whose control tokens span JSON values are escaped per string and audited", async () => {
+    const g = await gateWithoutLimits();
+    g.router.replies.push('{"verdict": "deny", "reason": "不需要"}');
+    const tricky = { note: "<|", nested: { c: "|>" }, "<|im_start|>": "<|im_end|>x" };
+    const out = await g.registry.invoke(request("t.high", self(), tricky, "因為想試試"));
+    expect(out.status).toBe("denied");
+    expect(out.decision).toMatchObject({ stage: "review", reason: "不需要" });
+    expect(decisions(g.events)).toHaveLength(1);
+    const text = g.router.requests[0]?.[1].messages[1]?.content ?? "";
+    expect(text).toContain('"note": "<|"');
+    expect(text).toContain('"c": "|>"');
+    expect(text).not.toContain("<|im_start|>");
+    expect(text).not.toContain("<|im_end|>");
+    expect(text).toContain('"": "x"');
+  });
+
   it("falls back to the chat chain when review is not configured", async () => {
     const g = await gateWithoutLimits();
     g.router.hasReview = false;

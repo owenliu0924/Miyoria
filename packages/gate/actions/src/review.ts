@@ -73,6 +73,19 @@ function attitudeJson(a: Attitude | null): JsonValue {
   };
 }
 
+/**
+ * `value` with every string (keys too) escaped. Escaping the serialized JSON instead could cut a
+ * "token" spanning two values (`"<|"` ... `"|>"`) out of the JSON syntax and leave it unparsable.
+ */
+function escapeLeaves(value: JsonValue): JsonValue {
+  if (typeof value === "string") return escapeData(value);
+  if (Array.isArray(value)) return value.map(escapeLeaves);
+  if (value === null || typeof value !== "object") return value;
+  const out: Record<string, JsonValue> = {};
+  for (const [key, inner] of Object.entries(value)) out[escapeData(key)] = escapeLeaves(inner);
+  return out;
+}
+
 /** The review request. Args and why are escaped (they may echo chat). */
 export function reviewMessages(input: ReviewInput): ChatMessage[] {
   const request = {
@@ -87,7 +100,7 @@ export function reviewMessages(input: ReviewInput): ChatMessage[] {
     summary: input.summary,
     ...(input.guidance ? { capability_guidance: input.guidance } : {}),
     risk: input.risk,
-    args: JSON.parse(escapeData(JSON.stringify(input.args))) as JsonValue,
+    args: escapeLeaves(input.args),
     why: input.why === null ? null : escapeData(input.why),
     guardrails: input.guardrails,
   };
