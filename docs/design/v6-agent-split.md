@@ -51,15 +51,15 @@ P1 ──┬─▶ P2 ──────────────┐
 
 **交付**
 
-- `packages/contracts/workers/src/sandbox.ts`:沙箱文件 §3.3、§3.8 的每個形狀,zod,`.meta({ id: "Sandbox…" })`,沒有 transform,新欄位可省或有預設。`workers/src/index.ts` 加一行 `export * from "./sandbox.js"`。重新產生 `schema/workers.json`。
-- `packages/contracts/host/src/host-config.ts`:`HostConfigSchema` 加可省略的 `sandbox`(沙箱文件 §12.1 的鍵,strict,全部可省);`protocol.ts` 的 `HOST_CAPABILITIES` 加 `"sandbox"`。重新產生 `schema/host.json`。
-- `packages/contracts/ext/src/tools.ts`:`ExtToolDeclSchema` 加可省略的 `risk`(`"low" | "medium" | "high"`,預設 `"medium"`)、`work`(布林)、`limits`(`per_hour`、`per_person_per_hour`、`per_day`、`per_person_per_day`、`cooldown_ms`)、`followup`(布林)。`contracts/ext` 多 `schedule.set`、`schedule.cancel`、`schedule.list`(插件到 host)和 `schedule.fire`(host 到插件,通知)的參數形狀(§3.6)。重新產生 `schema/ext.json`。
-- `packages/contracts/api/src/core.ts`:額度的回應多可省略的 `work`(`{ hour: number; day: number; limit_hour: number; limit_day: number; capped: "hour" | "day" | null }`)。
-- `packages/contracts/events/`:`sandbox.run.finished`、`sandbox.session.started`、`sandbox.session.closed` 的 payload 多可省略的 `host`、`cpu_ms`。
+- `packages/contracts/workers/src/sandbox.ts`:沙箱文件 §3.3、§3.8 的每個形狀,zod,沒有 transform,新欄位可省或有預設。匯出名字照沙箱文件(`SandboxInfoSchema` / `SandboxInfo`、`JobCreateSchema` / `JobCreate`……);JSON Schema 的 id 是 `WorkersSandbox<名字>`(`WorkersSandboxJobCreate`),因為 kit 規定 id 以部分的名字(`Workers`)開頭。另外多了 `JobList`(`GET /v1/jobs` 的回應,`{ jobs: JobView[] }`,沙箱文件沒寫形狀)和 `SANDBOX_ERROR_STATUS`(錯誤碼到 HTTP 狀態)。重新產生 `workers/contracts.py`(Python 那邊的 pydantic 模型,CI 會比對)。`workers/src/index.ts` 加一行 `export * from "./sandbox.js"`。重新產生 `schema/workers.json`。
+- `packages/contracts/host/src/host-config.ts`:`HostConfigSchema` 加可省略的 `sandbox`(`HostSandboxConfigSchema`,沙箱文件 §12.1 的鍵,strict,全部可省);`protocol.ts` 的 `HOST_CAPABILITIES` 加 `"sandbox"`。重新產生 `schema/host.json`。
+- `packages/contracts/ext/src/tools.ts`:`ExtToolDeclSchema` 加 `risk`(`ExtToolRiskSchema`:`"low" | "medium" | "high"`,預設 `"medium"`,所以輸出型別裡一定有)、`work`(可省的布林)、`limits`(可省的 `ExtToolLimitsSchema`:`per_hour`、`per_person_per_hour`、`per_day`、`per_person_per_day`、`cooldown_ms`,各自可省)、`followup`(可省的布林)。`contracts/ext` 多 `schedule.set`、`schedule.cancel`、`schedule.list`(插件到 host)和 `schedule.fire`(host 到插件,通知)的參數形狀(§3.6):`ExtScheduleSetParamsSchema`、`ExtScheduleCancelParamsSchema`、`ExtScheduleListResultSchema`(裡面是 `ExtScheduleEntrySchema`)、`ExtScheduleFireParamsSchema`,都從 `@miyoria/contracts/ext` 匯出。重新產生 `schema/ext.json`。
+- `packages/contracts/api/src/core.ts`:`QuotaWorkSchema`(`{ hour: number; day: number; limit_hour: number; limit_day: number; capped: "hour" | "day" | null }`),`QuotaPersonSchema`(管理端)多可省略的 `work`;會員頁的 `MemberQuotaSchema`(`member.ts`)也多可省略的 `work`(同一個形狀,從 `core.ts` import)。
+- `packages/contracts/events/src/workspace.ts`:`sandbox.run.finished`(`host`、`cpu_ms`)、`sandbox.session.started`(`host`)、`sandbox.session.closed`(`host`、`cpu_ms`)的 payload 多可省略的欄位(`host` 是可省略、可 `null`);`EventsSandboxKilledReason` 加 `quota`、`disk`、`lost`。
 - `packages/types/src/work-quota.ts`、`packages/types/src/sandbox-client.ts`(新),`packages/types/src/files.ts` 加 `MessageFiles`,`packages/types/src/index.ts` 匯出(§3.1–§3.3)。
-- `packages/commands/src/nodes.ts`:`WORK_IMAGE = "work.image"` 加進 `WORK_NODES`。
-- `packages/workspace/sandbox/src/tar-io.ts`(新):`packTree`、`extractTar`(§3.4),和它的測試。
-- 相依:`tar-stream` 和 `@types/tar-stream` 加到 `packages/workspace/package.json`;`packages/cli/package.json` 加 `@miyoria/workspace`。`packages/workspace/package.json` 的 `exports` 加 `"./sandbox-service"`(指到 `./sandbox/src/service/index.ts`,P2 寫內容;P1 放一個只有 `export {}` 的檔讓路徑存在)。跑 `pnpm install`,更新 `pnpm-lock.yaml`。
+- `packages/commands/src/nodes.ts`:`WORK_IMAGE = "work.image"` 加進 `WORK_NODES`,`packages/commands/src/index.ts` 匯出(`packages/gate/actions/src/index.ts` 重新匯出 `WORK_DELEGATE` 那一行是 P7 的,P5 要從 `@miyoria/gate/actions` 用時告訴 P7;直接從 `@miyoria/commands` 拿不用)。
+- `packages/workspace/sandbox/src/tar-io.ts`(新):`packTree`、`extractTar`、`TarError`(§3.4),和它的測試 `packages/workspace/sandbox/test/tar-io.test.ts`。`sandbox/src/index.ts` 的匯出是 P9 的,所以現在從同套件裡用 `../tar-io.js` / `./tar-io.js`。
+- 相依:`tar-stream` 和 `@types/tar-stream` 加到 `packages/workspace/package.json`;`packages/cli/package.json` 的 devDependencies 加 `@miyoria/workspace`(和其他 `@miyoria/*` 一樣,打包時一起 bundle)。`packages/workspace/package.json` 的 `exports` 加 `"./sandbox-service"`(指到 `./sandbox/src/service/index.ts`,P2 寫內容;P1 放一個只有 `export {}` 的檔讓路徑存在)。用 `pnpm add --filter` 加,更新 `pnpm-lock.yaml`。
 
 **擁有**:上面每個檔;`packages/contracts/schema/*.json`;`pnpm-lock.yaml`;`packages/workspace/package.json`;`packages/cli/package.json`;`packages/plugin-host/package.json`(P7 若要新的子路徑,告訴 P1)。
 
@@ -371,12 +371,14 @@ export const SandboxClientKey = serviceKey<SandboxClient>("SandboxClient");
 // packages/workspace/sandbox/src/tar-io.ts(P1)
 export interface PackedEntry { path: string; size: number; sha256: string; mtime_ms: number }
 export interface PackOptions {
-  /** 相對路徑,`/` 分隔;回 false 的不收(people/、超過上限的)。 */
+  /** 相對路徑,`/` 分隔;回 true 的不收(`people/` 之類呼叫者自己決定不送的;資料夾連裡面的都不收)。不收的不算 `skipped`。 */
   skip?: (relativePath: string) => boolean;
   gzip?: boolean;
   limits: { maxFiles: number; maxBytes: number; maxFileBytes: number };
 }
-/** 走 `dir`,只收一般檔案和資料夾(逐段 lstat),打成 tar;邊打邊給位元組。 */
+/**
+ * 走 `dir`,只收一般檔案和資料夾(逐段 lstat),打成 tar;邊打邊給位元組。路徑不合 `normalizeRelativePath`、大小寫以外相同的名字、超過 `maxFileBytes` 的單檔進 `skipped`;檔案數或總位元組超過 `maxFiles`、`maxBytes` 時在給出第一個位元組之前以 `TarError`(`too_many_files`、`too_large`)失敗(`done` 也 reject)。`mtime_ms` 是整秒(tar 只存整秒)。`SandboxJob.upload` 的 `skip` 同一個意思(true = 不送)。
+ */
 export function packTree(dir: string, options: PackOptions): {
   stream: AsyncIterable<Uint8Array>;
   /** stream 讀完後 resolve。 */
@@ -387,8 +389,12 @@ export interface ExtractOptions {
   limits: { maxFiles: number; maxBytes: number; maxFileBytes: number; maxDepth: number };
   /** 已經存在的同名檔:取代(先刪再以 O_EXCL 寫),或改名留著(衝突)。 */
   onExisting?: (relativePath: string) => "replace" | "keep-as-conflict";
+  /** 衝突名字用的時鐘(epoch ms);測試用,預設 `Date.now`。 */
+  now?: () => number;
 }
-/** 把 tar 解進 `dir`:只收一般檔案和資料夾,路徑過 normalizeRelativePath,不照 tar 裡的權限。 */
+/**
+ * 把 tar 解進 `dir`(要先存在):只收一般檔案和資料夾,路徑過 normalizeRelativePath(開頭的 `./` 接受),不照 tar 裡的權限,不穿過已經在那裡的連結,不收的進 `skipped`。超過 `maxFiles`、`maxBytes`、解壓後的總量,或 tar 讀不了,丟 `TarError`(`code`:`too_many_files` | `too_large` | `corrupt`)。`keep-as-conflict`:舊的搬到 `<檔名>.conflict-<時間>`,新的放在原來的路徑,`conflicts` 列搬過去的名字。
+ */
 export function extractTar(source: AsyncIterable<Uint8Array>, dir: string, options: ExtractOptions): Promise<{
   written: PackedEntry[]; skipped: { path: string; why: string }[]; conflicts: string[];
 }>;
