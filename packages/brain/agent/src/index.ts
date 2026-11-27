@@ -130,7 +130,15 @@ export {
   voiceScope,
 } from "./handle.js";
 export { backfillLimit } from "./history.js";
-export { isSelfTalk, looksLikeReasoning, ReplyScreen } from "./leak.js";
+export {
+  isSelfTalk,
+  judgeLine,
+  type LineVerdict,
+  looksLikeReasoning,
+  PromptEcho,
+  promptEcho,
+  ReplyScreen,
+} from "./leak.js";
 export {
   CEILINGS,
   type Ceiling,

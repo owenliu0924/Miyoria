@@ -27,8 +27,9 @@ import {
   FenceSplitter,
   isSelfTalk,
   isSpeakable,
+  judgeLine,
   LinkSplitter,
-  looksLikeReasoning,
+  type PromptEcho,
   ReplyScreen,
   type Segment,
   SentenceSplitter,
@@ -102,13 +103,21 @@ export class StepText {
   /** Lines (sentences, spoken) left out because they read like a feel block without its tags. */
   feelCut = 0;
 
-  constructor(unit: TextUnit = "line", checks: OutputChecks = ALL_CHECKS) {
+  readonly #echo: PromptEcho | null;
+
+  /** `echo`: her prompt, so a line that recites it is a leak (`PromptEcho`). */
+  constructor(
+    unit: TextUnit = "line",
+    checks: OutputChecks = ALL_CHECKS,
+    echo: PromptEcho | null = null,
+  ) {
     this.#checks = checks;
+    this.#echo = echo;
     this.#parser = new ExpressionParser({
       thinkingBlock: checks.thinkingBlock,
       tagStrip: checks.tagStrip,
     });
-    this.#screen = new ReplyScreen<ScreenedLine>(checks.leakScreen, checks.selfTalk);
+    this.#screen = new ReplyScreen<ScreenedLine>(checks.leakScreen, checks.selfTalk, echo);
     this.#sentences = unit === "sentence";
   }
 
@@ -240,7 +249,7 @@ export class StepText {
     if (code) {
       const out = this.#line(this.#buffer);
       this.#buffer = "";
-      return text.trim() === "" ? out : [...out, ...this.#line(`\`\`\`${text}\`\`\``)];
+      return text.trim() === "" ? out : [...out, ...this.#codeLine(`\`\`\`${text}\`\`\``)];
     }
     const lines = (this.#buffer + text).split("\n");
     this.#buffer = lines.pop() ?? "";
@@ -278,11 +287,13 @@ export class StepText {
       this.#selfTalkSentences += 1;
       return [];
     }
-    if (this.#checks.leakScreenSpoken && looksLikeReasoning(text)) {
+    if (!this.#checks.leakScreenSpoken) return [{ text, emotion: this.#emotion }];
+    const verdict = judgeLine(text, this.#echo);
+    if (verdict.text === null || verdict.score >= 2) {
       this.#leakSentences += 1;
       return [];
     }
-    return [{ text, emotion: this.#emotion }];
+    return [{ text: verdict.text, emotion: this.#emotion }];
   }
 
   #line(raw: string): ScreenedLine[] {
@@ -294,5 +305,11 @@ export class StepText {
     }
     this.#kept = true;
     return this.#screen.push({ text, emotion: this.#emotion }).send;
+  }
+
+  /** A ``` block as one message: code is never judged as words (#9, the feel check). */
+  #codeLine(text: string): ScreenedLine[] {
+    this.#kept = true;
+    return this.#screen.push({ text: text.trim(), emotion: this.#emotion }, true).send;
   }
 }
