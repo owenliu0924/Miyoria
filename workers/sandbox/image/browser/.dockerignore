@@ -1,0 +1,2 @@
+# Only what the Dockerfile copies; a node_modules from trying the driver locally stays out.
+node_modules
