@@ -122,6 +122,15 @@ export {
   scopeAllows,
   type VisibleArtifact,
 } from "./artifacts/visibility.js";
+export {
+  type BackupOptions,
+  type BackupResult,
+  BackupSchedule,
+  type BackupScheduleOptions,
+  backupName,
+  DatabaseBackups,
+  localDay,
+} from "./backup.js";
 export { DATA_CATEGORIES, dataCategory, STORE_DATA, storeRegistry } from "./categories.js";
 export {
   authScopeKey,

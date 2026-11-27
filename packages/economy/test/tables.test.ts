@@ -266,6 +266,50 @@ describe("the coin ledger", () => {
     ]);
   });
 
+  it("posts rows of several wallets together, each wallet covered on its own", async () => {
+    const { economy, person } = await rig();
+    const x = person(discord("1"));
+    const y = person(discord("2"));
+    await economy.ledger.post(coin(x, 10, "checkin", "c", 1_000));
+    const rows = (amount: number, key: string) => [
+      coin(x, -amount, "transfer_out", `${key}:out`, 2_000),
+      coin(y, amount, "transfer_in", `${key}:in`, 2_000),
+    ];
+    expect(await economy.ledger.postAll(rows(11, "a"), { covered: true })).toMatchObject({
+      status: "short",
+      balance: 10,
+    });
+    expect(await economy.ledger.balance("p", y)).toBe(0);
+    expect(await economy.ledger.postAll(rows(7, "b"), { covered: true })).toMatchObject({
+      status: "posted",
+      balance: 3,
+    });
+    expect(await economy.ledger.postAll(rows(7, "b"), { covered: true })).toMatchObject({
+      status: "duplicate",
+    });
+    expect([await economy.ledger.balance("p", x), await economy.ledger.balance("p", y)]).toEqual([
+      3, 7,
+    ]);
+  });
+
+  it("names what a refund of the day gave back", async () => {
+    const { economy, person } = await rig();
+    const x = person(discord("1"));
+    const fed = coin(x, -4, "feed", null, 1_000);
+    const bet = coin(x, -5, "bet", null, 2_000);
+    await economy.ledger.post(fed);
+    await economy.ledger.post(bet);
+    await economy.ledger.post({ ...coin(x, 4, "refund", "r1", 3_000), ref: fed.id });
+    await economy.ledger.post({ ...coin(x, 5, "refund", "r2", 4_000), ref: bet.id });
+    const rows = await economy.ledger.dailyTotals("p", at(0), 0);
+    expect(rows).toEqual([
+      { day: 0, reason: "bet", positive: 0, negative: 5 },
+      { day: 0, reason: "feed", positive: 0, negative: 4 },
+      { day: 0, reason: "refund", positive: 5, negative: 0, of: "bet" },
+      { day: 0, reason: "refund", positive: 4, negative: 0, of: "feed" },
+    ]);
+  });
+
   it("adds what a person spent across whoever they absorbed, by their first account", async () => {
     const { economy, person, store } = await rig();
     const id = person(discord("1"), "Alice");

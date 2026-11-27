@@ -140,6 +140,17 @@ const BANNER_BOX =
   "text-align:center!important;opacity:1!important;visibility:visible!important;";
 
 /**
+ * Text in which a `<body>` is not a tag, scanned left to right so whichever starts first wins:
+ * a comment; a raw-text, RCDATA or inert element (script, style, title, textarea, ...; template
+ * and noscript would hide the banner) up to its end tag or, unclosed, the end of the page; and
+ * any other tag, whose quoted attribute values are masked by the caller. Every branch runs to
+ * the end of the page when unclosed, so each `<` is tried once and the scan stays linear.
+ */
+const HIDDEN_FROM_TAGS =
+  /<!--[\s\S]*?(?:-->|$)|<(script|style|title|textarea|xmp|iframe|noembed|noframes|noscript|template|plaintext)\b(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^'">])*(?:>|$)[\s\S]*?(?:<\/\1\s*>|$)|<[a-z][^\s/>]*(?:"[^"]*(?:"|$)|'[^']*(?:'|$)|[^'">])*(?:>|$)/gi;
+const QUOTED = /"[^"]*(?:"|$)|'[^']*(?:'|$)/g;
+
+/**
  * `html` with the banner as the first child of its body: a fixed bar (inline styles marked
  * important, a random id) and an invisible copy in the flow that keeps the page's own top clear.
  * A page's stylesheet cannot hide it in the trivial case; a page that means to (a script, an
@@ -153,9 +164,11 @@ export function withBanner(html: string, name: string, id: string): string {
     "background:#1d1d1f!important;color:#f5f5f7!important;border-bottom:1px solid #444!important;" +
     `pointer-events:none!important;">${words}</div>` +
     `<div id="${id}-gap" aria-hidden="true" style="${BANNER_BOX}visibility:hidden!important;">${words}</div>`;
-  // Where the body starts, not counting what comments and scripts say (lengths kept).
-  const masked = html.replace(/<!--[\s\S]*?-->|<script\b[\s\S]*?<\/script\s*>/gi, (m) =>
-    " ".repeat(m.length),
+  // Where the body starts, not counting what the parser never reads as tags (lengths kept).
+  const masked = html.replace(HIDDEN_FROM_TAGS, (m, rawText: string | undefined) =>
+    rawText === undefined && !m.startsWith("<!--")
+      ? m.replace(QUOTED, (q) => " ".repeat(q.length))
+      : " ".repeat(m.length),
   );
   const after = (re: RegExp): number | null => {
     const m = re.exec(masked);

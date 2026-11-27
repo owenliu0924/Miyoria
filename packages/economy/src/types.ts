@@ -126,6 +126,13 @@ export interface SpendResult {
 export const DANMAKU_REASON = "danmaku";
 export const DANMAKU_REFUND_REASON = "danmaku_refund";
 
+/**
+ * Ledger reasons of a prediction's cut (predictions.ts), both on her purse: the cut taken out of
+ * the pool, and the same coins burned. The purse keeps none of it; the rows say what burned.
+ */
+export const BET_CUT_REASON = "bet_cut";
+export const BET_RAKE_REASON = "bet_rake";
+
 /** `GET /api/member/danmaku`: what a danmaku line costs this person now. */
 export interface DanmakuView {
   /** Danmaku are on (`danmaku_on`). */

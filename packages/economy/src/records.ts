@@ -69,7 +69,15 @@ export interface LedgerDayTotal {
   positive: number;
   /** The sum of the rows with `delta < 0`, as a positive number. */
   negative: number;
+  /**
+   * For `refund` and `refund_removed` rows: the reason of the rows they gave back (their `ref`),
+   * so a refund of a spend that was recovered is told from one that was not (a stake).
+   */
+  of?: string;
 }
+
+/** The generic refund reasons, whose `ref` is the row they give back. */
+export const REFUND_REASONS: readonly string[] = ["refund", "refund_removed"];
 
 /** Totals over the whole coin ledger, for the economy's health table (docs/design/v4-plan.md §10). */
 export interface LedgerStatsStore {
@@ -96,10 +104,11 @@ export interface CoinLedgerStore extends LedgerStatsStore {
    */
   post(entry: CoinEntry, rule?: CoinRule): Promise<CoinPost>;
   /**
-   * Appends `rows` (one wallet, each with its own key) in one transaction: all of them or none.
-   * The first row's key decides a retry (`duplicate`, with that row); with `covered`, refused
-   * (`short`) when their sum would take the balance below zero. The exchange books a sale and its
-   * burned fee this way, so the fee is a row of its own without a moment the two disagree.
+   * Appends `rows` (each with its own key, of one wallet or several) in one transaction: all of
+   * them or none. The first row's key, in its wallet, decides a retry (`duplicate`, with that
+   * row; `balance` is that wallet's); with `covered`, refused (`short`) when the rows of a wallet
+   * would take its balance below zero. The exchange books a sale and its burned fee this way, so
+   * the fee is a row of its own without a moment the two disagree; a transfer books both sides.
    */
   postAll?(rows: readonly CoinEntry[], rule?: { covered?: boolean }): Promise<CoinPost>;
   balance(profile: ProfileId, wallet: PersonId): Promise<number>;

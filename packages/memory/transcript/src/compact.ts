@@ -152,6 +152,8 @@ export async function compactIfNeeded(
   options: CompactOptions,
 ): Promise<TranscriptSummary | null> {
   const tail = store.tail(session);
+  // Read with `tail` (no await between): what was forgotten when the entries were read.
+  const redactedAtRead = store.redactedSeqs(session, Number.MAX_SAFE_INTEGER);
   const meta = { turn: options.turn ?? null };
   const names = speakerNamesOf(store);
   // Only when known: a summariser of two arguments is called as before.
@@ -159,14 +161,23 @@ export async function compactIfNeeded(
     names === null
       ? options.summarise(entries, previous)
       : options.summarise(entries, previous, names);
-  const unchanged = () => (store.summaries(session)[0]?.id ?? null) === (tail.summary?.id ?? null);
+  // What was read must still stand when the summary is written: no other compaction finished, and
+  // nothing in the summarised range (the summary in use's too) was forgotten during the model
+  // call, else the fresh summary would bring back what a person asked her to forget. A dropped
+  // compaction is made again by the next run, from the tombstones.
+  const unchanged = (upto: number) => {
+    if ((store.summaries(session)[0]?.id ?? null) !== (tail.summary?.id ?? null)) return false;
+    const before = new Set(redactedAtRead);
+    return store.redactedSeqs(session, upto).every((seq) => before.has(seq));
+  };
 
   if (tail.summary?.stale === true) {
+    const upto = tail.summary.upto_seq;
     const covered = store.covered(session);
     const tokens = covered.reduce((n, e) => n + e.tokens, 0);
     const text = await summarise(covered, null);
-    if (!unchanged()) return null;
-    return store.compact(session, tail.summary.upto_seq, text, { ...meta, tokensReplaced: tokens });
+    if (!unchanged(upto)) return null;
+    return store.compact(session, upto, text, { ...meta, tokensReplaced: tokens });
   }
 
   const upto = pickCut(tail, options);
@@ -174,6 +185,6 @@ export async function compactIfNeeded(
   if (options.before) await options.before(upto).catch(() => undefined);
   const old = tail.entries.filter((e) => e.seq <= upto);
   const text = await summarise(old, tail.summary?.summary ?? null);
-  if (!unchanged()) return null;
+  if (!unchanged(upto)) return null;
   return store.compact(session, upto, text, meta);
 }

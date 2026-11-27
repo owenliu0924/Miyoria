@@ -9658,6 +9658,9 @@
         },
         "kind": {
           "$ref": "#/$defs/WireContextKind"
+        },
+        "group": {
+          "type": "boolean"
         }
       },
       "required": [

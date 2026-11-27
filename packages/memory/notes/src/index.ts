@@ -122,12 +122,14 @@ export {
   PROVENANCES,
 } from "./schema.js";
 export {
+  groupDm,
   identityResolver,
   type NotePlace,
   type NoteScope,
   type NotesReader,
   type NotesViewer,
   noteScopeLabel,
+  outsideSpace,
   placeScope,
   replacementScope,
   type ScopeResolver,

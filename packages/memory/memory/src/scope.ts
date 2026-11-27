@@ -300,7 +300,7 @@ export function isPrivate(context: ContextKey): boolean {
  * Scope of a new memory learned in `context`.
  *
  * * DM (or guild-less context): `dm { partner }`, or `channel` when the partner is unknown or
- *   there are several. With `allow_global_from_dm`, global facts about a known person become
+ *   there are several (a group DM, always). With `allow_global_from_dm`, global facts about a known person become
  *   `person`.
  * * Guild: self notes about her alone → `global`, about one person alone → `person` (see
  *   `noteAbout`); global facts about a known person → `person`; everything else, self notes about
@@ -318,7 +318,10 @@ export function scopeForNew(
     if (kind === "fact" && config.allow_global_from_dm && globalPerson !== null) {
       return { type: "person", person: globalPerson };
     }
-    if (dmPartner !== null && context.kind === "dm") return { type: "dm", account: dmPartner };
+    // A group DM is never one member's DM, whoever spoke last.
+    if (dmPartner !== null && context.kind === "dm" && context.group !== true) {
+      return { type: "dm", account: dmPartner };
+    }
     return { type: "channel", context };
   }
   if (kind === "self_note" && about.type === "self") return { type: "global" };

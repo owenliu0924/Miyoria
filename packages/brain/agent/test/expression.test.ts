@@ -350,6 +350,23 @@ describe("an emotion tag used as a thinking block", () => {
     expect(segments).toEqual([emo("smug"), text(REPLY)]);
   });
 
+  // Live eval 2026-11-27: her whole analysis came in the tags, and only her feel block followed.
+  it("a block that nothing of hers follows but her feel block was her reply", () => {
+    const whole = `<emo:thinking>${REPLY}</emo:thinking>\n<feel>\n我: 平靜\n</feel>`;
+    for (let i = 0; i <= whole.length; i++) {
+      const e = new Expression();
+      for (const s of parseChunks([whole.slice(0, i), whole.slice(i)])) e.apply(s);
+      expect(e.text.trim(), `split at ${i}`).toBe(REPLY);
+      expect(e.emotions, `split at ${i}`).toEqual(["thinking"]);
+      expect(e.feel, `split at ${i}`).toEqual(["\n我: 平靜\n"]);
+    }
+    expect(Expression.parse(`<emo:thinking>${REPLY}</emo:thinking>`).text).toBe(REPLY);
+    // A plan before her words is still a plan, a feel block after them or not.
+    expect(
+      Expression.parse(`<emo:thinking>${PLAN}</emo:thinking>\n${REPLY}<feel>x</feel>`).text,
+    ).toBe(`\n${REPLY}`);
+  });
+
   it("an emotion she really means, with no closing tag, is still the emotion", () => {
     expect(parseChunks(["<emo:thinking>嗯……讓我想想。"])).toEqual([
       emo("thinking"),
@@ -407,5 +424,67 @@ describe("an emotion tag used as a thinking block", () => {
   it("leaves a long stretch after <react> as words", () => {
     const long = "字".repeat(300);
     expect(Expression.parse(`<react>${long}</react>`).text).toBe(long);
+  });
+});
+
+// Review 2026-11-27: the parser ran before the ``` splitter, so `<div>`, `<a href="…">` and
+// `<user_id>` came out of the code she wrote, and an unclosed `<feel` in code took the rest.
+describe("code she writes", () => {
+  const FENCED = [
+    "給你:",
+    "```html",
+    '<div class="card"><a href="https://example.com">連結</a>',
+    '<img src="cat.png"/><span emo="happy">x</span>',
+    "<react/> <user_id> <silence/> <emo:happy> <pause 300/> <feel",
+    "```",
+    "<emo:smug>這樣就好。",
+  ].join("\n");
+  const FENCED_OUT = FENCED.replace("<emo:smug>", "");
+
+  it("passes a ``` block as it is, tags and an unclosed feel included", () => {
+    const e = Expression.parse(FENCED);
+    expect(e.text).toBe(FENCED_OUT);
+    expect(e.emotions).toEqual(["smug"]);
+    expect(e.feel).toEqual([]);
+    expect(e.tools).toEqual([]);
+  });
+
+  it("also split at every point, and one character at a time", () => {
+    const code = FENCED.slice(0, FENCED.indexOf("<emo:smug>"));
+    const expected = [text(code), emo("smug"), text("這樣就好。")];
+    for (let i = 0; i <= FENCED.length; i++) {
+      const segments = parseChunks([FENCED.slice(0, i), FENCED.slice(i)]);
+      expect(segments, `split at ${i}`).toEqual(expected);
+    }
+    const e = new Expression();
+    for (const s of parseChunks([...FENCED])) e.apply(s);
+    expect(e.text).toBe(FENCED_OUT);
+  });
+
+  it("passes inline code as it is", () => {
+    for (const line of [
+      "用 `<div>` 包起來",
+      '網址寫 `<a href="/x">` 就好',
+      "把 `<user_id>` 換成你的 ID",
+      "``<b>`` 和 `<feel>` 都是字",
+    ]) {
+      expect(Expression.parse(line).text, line).toBe(line);
+    }
+    expect(parseChunks(["把 `<us", "er_id>` 換掉"])).toEqual([text("把 `<user_id>` 換掉")]);
+    expect(parseChunks(["把 `", "<user_id>", "`", " 換掉"])).toEqual([text("把 `<user_id>` 換掉")]);
+  });
+
+  it("keeps her tags working outside code, and a lone backtick is text", () => {
+    const e = Expression.parse(
+      "(`・ω・´)<emo:smug>哼 <user_id>\n`<b>` <feel>\n我: 得意 弱\n</feel>",
+    );
+    expect(e.text).toBe("(`・ω・´)哼 \n`<b>` ");
+    expect(e.emotions).toEqual(["smug"]);
+    expect(e.feel).toEqual(["\n我: 得意 弱\n"]);
+    expect(e.tools).toEqual(["user_id"]);
+  });
+
+  it("an unclosed ``` block is code to the end", () => {
+    expect(Expression.parse("```\n<div>\n<feel>").text).toBe("```\n<div>\n<feel>");
   });
 });

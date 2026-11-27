@@ -186,6 +186,28 @@ describe("each gate stops what it should, and says which", () => {
     start(timers, opp("timer", C1), T0);
     expect(timers.check(opp("timer", C2), facts(T0 + 2 * MIN))).toEqual({ pass: true });
   });
+  // Review 2026-11-27: a reminder someone asked for is her answer to them, not a start of hers.
+  it("a reminder someone asked for: the limits of her own starts do not hold it", () => {
+    const asker = { account: { platform: "test", id: "amy" }, name: "amy" };
+    const book = new GateBook(
+      config({ maxPerDay: 1, maxPerPlacePerDay: 1, maxUnanswered: 1, gapMs: 10 * MIN }),
+    );
+    start(book, opp("timer", C1), T0);
+    book.spoke(keyOf(C1), T0);
+    expect(book.check(opp("timer", C1), facts(T0 + MIN))).toMatchObject({ pass: false });
+    const asked = opp("timer", C1, { asker });
+    expect(book.check(asked, facts(T0 + MIN))).toEqual({ pass: true });
+    expect(book.check(asked, facts(T0 + MIN, { level: () => "mention-only" }))).toEqual({
+      pass: true,
+    });
+    // What holds every start holds it too.
+    expect(book.check(asked, facts(T0 + MIN, { paused: true }))).toMatchObject({ gate: "switch" });
+    expect(book.check(asked, facts(T0 + MIN, { level: () => "off" }))).toMatchObject({
+      gate: "level",
+    });
+    const night = Date.UTC(2026, 10, 16, 18, 0, 0);
+    expect(book.check(asked, facts(night))).toMatchObject({ gate: "quiet_hours" });
+  });
 });
 
 describe("back-off", () => {

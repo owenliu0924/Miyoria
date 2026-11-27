@@ -14,7 +14,9 @@ import {
   type PublishMetaArgs,
 } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
+import { PURSE } from "../src/records.js";
 import { v2Capabilities } from "../src/v2-tools.js";
+import { ledgerOf } from "./ledger.js";
 import {
   ALICE,
   BOB,
@@ -132,6 +134,15 @@ describe("the cut a win burns", () => {
     expect(await balance(r, ALICE)).toBe(100 - 30 + 48);
     // The 50 held come back to people less the 2 burned; nothing goes anywhere else.
     expect(await everything(r, [ALICE, BOB])).toBe(before + 50 - 2);
+    // The burned cut is on the ledger: it passes through her purse, which keeps nothing of it.
+    const purse = await ledgerOf(r.store).entries("p", PURSE, {
+      reasons: ["bet_cut", "bet_rake"],
+      limit: 10,
+    });
+    expect(purse.map((e) => [e.reason, e.delta]).sort()).toEqual([
+      ["bet_cut", 2],
+      ["bet_rake", -2],
+    ]);
 
     const q = await r.economy.v2.openPrediction({
       question: "q2",

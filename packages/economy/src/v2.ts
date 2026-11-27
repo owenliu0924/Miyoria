@@ -50,6 +50,10 @@ export function labelV2(r: CoinEntry, _config: EconomyConfig): string | null {
       return "押預測";
     case "bet_win":
       return "預測猜中了";
+    case "bet_cut":
+      return "預測的抽成";
+    case "bet_rake":
+      return "預測的抽成燒掉了";
     case "room":
       return "一起佈置她的房間";
     case "quest":

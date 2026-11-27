@@ -22,7 +22,15 @@
 //   unanswered   `max_unanswered` starts there in a row with no person speaking since;
 //   cooldown     the time between two starts of the same kind (by kind; `0`: none);
 //   same_kind    the start before was of the same kind, within `row_window_ms` (her timers are
-//                exempt: each is a time she asked for).
+//                exempt: each is a time she asked for);
+//   floor        the Floor of the place refuses a start of hers there now (nobody there, her
+//                budget of lines, the waits after lines nobody answered): asked before she is
+//                woken, so a start it would refuse costs no model call and is not used up.
+//
+// A reminder someone asked her for (`Opportunity.asker`) is her answer to them: the switch, the
+// quiet hours, the budget, consent and the owner's opt-out hold it, the limits of her own starts
+// (caps, gaps, back-off) do not. Once said it counts as a start all the same, so her own starts
+// after it keep their distance.
 //
 // A day is her local day (`day_start_hour`). Pure but for the book's own state.
 
@@ -121,7 +129,8 @@ export type GateName =
   | "backoff"
   | "unanswered"
   | "cooldown"
-  | "same_kind";
+  | "same_kind"
+  | "floor";
 
 export type GateVerdict =
   | { pass: true }
@@ -250,12 +259,15 @@ export class GateBook {
       const why = f.consent(o.account);
       if (why !== null) return stop("consent", why);
     }
+    const asked = o.asker != null;
     if (o.place.kind !== "dm") {
       const level = f.level(o.place);
-      if (level === "off" || level === "mention-only")
+      // Someone asked for it there: a place where she answers only when called lets it through.
+      if (level === "off" || (level === "mention-only" && !asked))
         return stop("level", `這裡的等級是 ${level}`);
     }
     if (cfg.disabled(o.place)) return stop("level", "這裡設定成不主動說話");
+    if (asked) return { pass: true };
     const today = this.#today(now);
     const tomorrow = cfg.quiet === null ? null : nextDayStart(now, cfg.quiet);
     if (cfg.maxPerDay > 0 && today.length >= cfg.maxPerDay) {

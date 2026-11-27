@@ -31,7 +31,12 @@ import type {
 } from "@miyoria/types";
 import { safeName, timestampMs } from "@miyoria/types";
 import { precise } from "../../notes/src/precision.js";
-import type { NotesViewer, ScopeResolver } from "../../notes/src/scope.js";
+import {
+  groupDm,
+  type NotesViewer,
+  outsideSpace,
+  type ScopeResolver,
+} from "../../notes/src/scope.js";
 import { type NotesStore, personSubject, placeSubject } from "../../notes/src/store.js";
 import { type RebuildState, rebuildState, switched, writtenSince } from "../../notes/src/switch.js";
 import type { NotesSearch } from "../../notes/src/vectors.js";
@@ -279,15 +284,15 @@ export class NotesRecall implements MemoryRetrieval {
       if (p !== null && !present.includes(p)) present.push(p);
     }
     const context = ask.context;
-    const dm = context.kind === "dm" || context.scope === null;
-    // The DM's own person only when they are the one there: a group DM is a `dm` context too, and
-    // one member's DM with her is not the others'.
+    const dm = outsideSpace(context);
+    // The DM's own person only in a private DM (the platform marks a group DM: one member's DM
+    // with her is not the others'), and only when they are the one there.
     const one =
       present.length === 1 && (ask.accounts.length === 0 || onlyAccount(ask.accounts) !== null);
     return {
       space: dm ? null : resolver.spaceOf(context.platform, context.scope as string),
       room: resolver.roomOf(context),
-      dm: dm && one ? (present[0] ?? null) : null,
+      dm: dm && one && !groupDm(context) ? (present[0] ?? null) : null,
       present,
     };
   }

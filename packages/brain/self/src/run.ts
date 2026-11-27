@@ -71,13 +71,21 @@ import {
   EXHAUSTED_LINE,
   FALLBACK_LINES,
   FOR_ARG,
+  type PromptEcho,
+  promptEcho,
   quotaLine,
   roughWait,
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
 import { FeelRepair } from "./feel-repair.js";
-import { HANDOFF_TOOL, type LimitName, type RunLimits, type RunProfile } from "./profiles.js";
+import {
+  HANDOFF_TOOL,
+  type LimitName,
+  PREFIX_PROFILE,
+  type RunLimits,
+  type RunProfile,
+} from "./profiles.js";
 import { gatherBlocks, type RunMessages, runMessages, toolSpecs } from "./prompt.js";
 import {
   capMinutes,
@@ -91,6 +99,7 @@ import {
 import {
   BLOCKED_LABEL,
   blockedNote,
+  FEEL_REMINDER,
   feels,
   HANDED_OFF_NOTE,
   HANDOFF_NOTES,
@@ -100,7 +109,9 @@ import {
   longReceipt,
   NO_MORE_CALLS,
   ONLY_HANDOFF,
+  PROFILE_NOTES,
   REFUSALS,
+  rulesFor,
 } from "./rules.js";
 import type { Spoken } from "./say.js";
 import { ALL_CHECKS, type OutputChecks, type ScreenedLine, StepText } from "./screens.js";
@@ -263,6 +274,11 @@ interface Step {
   later: boolean[];
   /** Reasons of the lines the guard or the outlet did not let out. */
   blocked: string[];
+  /**
+   * Every line not let out was refused by the Floor of the place: no other words would pass it now
+   * (it refuses by place and by what woke her, not by the line).
+   */
+  floorOnly: boolean;
   reasoning: string;
   calls: ToolCall[];
   /** `<silence/>` before any text, or only a feel block. */
@@ -648,8 +664,9 @@ class Run {
         break;
       }
       this.#record(assistant, [], step.blocked, step);
-      // A line that did not go out is hers to know about: one more step reads the note.
-      if (step.blocked.length > 0 && limit === null && !retriedBlocked) {
+      // A line that did not go out is hers to know about: one more step reads the note. Not when
+      // the Floor refused them all: another try is a model call it refuses the same way.
+      if (step.blocked.length > 0 && !step.floorOnly && limit === null && !retriedBlocked) {
         retriedBlocked = true;
         continue;
       }
@@ -897,13 +914,36 @@ class Run {
 
   // ---- one step ---------------------------------------------------------------------------
 
+  /**
+   * The output checks of this run's text. Work a profile that does not speak writes (a helper's
+   * report, her notes when she reflects) is no chat reply: the screens for leaks of a reply and
+   * notes to herself are not for it (a report may well open with 「分析:」).
+   */
+  #textChecks(): OutputChecks {
+    if (this.#profile.speaks) return this.#checks;
+    return { ...this.#checks, leakScreen: false, leakScreenSpoken: false, selfTalk: false };
+  }
+
+  /**
+   * The runner's rules she reads (block 1 after the persona, her profile's note, the reminder in
+   * `<turn>`), so a line that recites them is a leak. Not the persona: introducing herself, she
+   * may well say a line of it word for word.
+   */
+  #echo(): PromptEcho | null {
+    if (!this.#profile.speaks) return null;
+    const name = this.#profile.name;
+    const rules = [rulesFor(PREFIX_PROFILE[name]), PROFILE_NOTES[name] ?? "", FEEL_REMINDER];
+    return promptEcho(rules.join("\n"));
+  }
+
   async #step(request: ChatRequest, final: boolean): Promise<Step> {
-    const screen = new StepText(this.#profile.unit, this.#checks);
+    const screen = new StepText(this.#profile.unit, this.#textChecks(), this.#echo());
     const step: Step = {
       lines: [],
       ids: [],
       later: [],
       blocked: [],
+      floorOnly: true,
       reasoning: "",
       calls: [],
       silence: false,
@@ -921,9 +961,13 @@ class Run {
           step.lines.push(out.text);
           step.ids.push(out.message_id);
           step.later.push(out.later);
-          if (out.replaced !== null) step.blocked.push(out.replaced);
+          if (out.replaced !== null) {
+            step.blocked.push(out.replaced);
+            step.floorOnly = false;
+          }
         } else {
           step.blocked.push(out.reason);
+          if (out.code !== "floor") step.floorOnly = false;
         }
       }
     };
@@ -1160,7 +1204,7 @@ class Run {
 
   /** A `say` of this run: her words for another place, screened like her written lines. */
   async speakElsewhere(place: ContextKey, raw: string): Promise<Spoken> {
-    const screen = new StepText("line", this.#checks);
+    const screen = new StepText("line", this.#checks, this.#echo());
     const lines = [...screen.push(raw), ...screen.finish()];
     const text = lines.map((l) => l.text).join("\n");
     if (text === "") return { ok: false, code: "empty", reason: LINE_REFUSALS.empty };

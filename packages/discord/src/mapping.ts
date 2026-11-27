@@ -35,14 +35,19 @@ export function account(userId: string): AccountRef {
   return { platform: PLATFORM, id: userId };
 }
 
-export function contextKey(guild: string | null, channel: string, kind: ContextKind): ContextKey {
-  return { platform: PLATFORM, scope: guild, channel, kind };
+export function contextKey(
+  guild: string | null,
+  channel: string,
+  kind: ContextKind,
+  group = false,
+): ContextKey {
+  return { platform: PLATFORM, scope: guild, channel, kind, ...(group ? { group: true } : {}) };
 }
 
 /**
  * Context kind of a channel type. Text chat in voice channels counts as a normal channel; voice
  * contexts belong to the voice node (while she is in the voice channel, the agent routes its
- * text chat to the voice context).
+ * text chat to the voice context). A group DM is a `dm` too; `ContextKey.group` tells it apart.
  */
 export function kindOf(channel: ChannelType): ContextKind {
   switch (channel) {
@@ -153,6 +158,8 @@ export interface MessageLike {
   messageSnapshots?: Values<SnapshotLike> | null;
   /** Components V2 (her cards): their text displays are read when there is no content. */
   components?: readonly unknown[] | null;
+  /** The channel, when at hand: its type tells a group DM from a private one. */
+  channel?: { type?: ChannelType | null } | null;
 }
 
 /** Longest text read from a message's components. */
@@ -401,7 +408,9 @@ export function incomingMessage(
       break;
     }
   }
-  const context = contextKey(msg.guildId, msg.channelId, effectiveKind);
+  // Several people share a group DM: what is said there is never one member's DM with her.
+  const group = msg.guildId === null && msg.channel?.type === ChannelType.GroupDM;
+  const context = contextKey(msg.guildId, msg.channelId, effectiveKind, group);
   const text = msg.content.trim() === "" ? componentsText(msg.components) : msg.content;
   return {
     id: { context, id: msg.id },

@@ -128,6 +128,21 @@ export interface Reply {
   feel?: string[];
   /** How many of `feel` the repair after the reply brought (it wrote none itself); unset: no repair. */
   feel_repaired?: number;
+  /**
+   * What the model wrote in each step, before any screen or parser (the repair's call included);
+   * unset: the subject does not report it.
+   */
+  raw?: string[];
+}
+
+/** Characters of a failed item's raw model text kept in the run file. */
+export const RAW_CHARS = 1500;
+
+/** `reply.raw` as one text cut to `RAW_CHARS`, for the run file; `undefined`: none reported. */
+export function rawText(reply: Pick<Reply, "raw">): string | undefined {
+  if (reply.raw === undefined) return undefined;
+  const chars = [...reply.raw.join("\n---\n")];
+  return chars.length > RAW_CHARS ? `${chars.slice(0, RAW_CHARS).join("")}…` : chars.join("");
 }
 
 export interface Subject {

@@ -921,8 +921,9 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
 
   /**
    * One call per person who did anything with her since the last pass (most first, at most
-   * `people_per_night`), each at most once a local day: what she makes of them is applied whole
-   * through the heart (`HeartKey.reflect`) or, for a reply that cannot be, logged and skipped.
+   * `people_per_night`), each at most once a local day: what she makes of them is applied through
+   * the heart (`HeartKey.reflect`), an item that cannot be left out and logged; a reply that is no
+   * reflection at all (the call failed) is logged and skipped.
    * Stops when `signal` aborts (the nightly figure ran out): the pass is then over for the day.
    * The names of the people she reflected on.
    */
@@ -980,7 +981,7 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
     return done;
   }
 
-  /** One person: the call, the check, and the reflection applied whole. Whether it was applied. */
+  /** One person: the call, the check, and the reflection applied. Whether it was applied. */
   async #reflectOn(
     person: PersonId,
     name: string,
@@ -1015,7 +1016,10 @@ ${selfRules(notes.limits.selfLines, notes.limits.lineChars)}`,
         { signal },
       ),
     );
-    const { reflection, public_feeling } = reflectionOf(result.value, today, memories);
+    const { reflection, public_feeling, dropped } = reflectionOf(result.value, today, memories);
+    if (dropped.length > 0) {
+      log.warn({ person, dropped }, "items of her reflection on someone were left out");
+    }
     if (public_feeling !== null) {
       const names = await knownNames(d.services);
       const entry = { person, account: null, name, handle: this.#handleOf(person, new Map()) };

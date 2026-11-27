@@ -15,7 +15,16 @@ import {
 } from "../../memory/src/notebook-tools.js";
 import { dm, FakeHandles, guild } from "../../memory/test/recent-helpers.js";
 import { NotesNotebook } from "../src/notebook.js";
-import { CHANNEL, DM_CHANNEL, fakeResolver, OWEN, OWEN_ACCOUNT, type Rig, rig } from "./helpers.js";
+import {
+  CHANNEL,
+  DM_CHANNEL,
+  fakeResolver,
+  GROUP_ROOM,
+  OWEN,
+  OWEN_ACCOUNT,
+  type Rig,
+  rig,
+} from "./helpers.js";
 
 const inGuild: NotebookWhere = { context: CHANNEL, accounts: [OWEN_ACCOUNT] };
 const inDm: NotebookWhere = { context: DM_CHANNEL, accounts: [OWEN_ACCOUNT] };
@@ -90,6 +99,23 @@ describe("the notebook on the notes", () => {
     ).toEqual(["主題/伺服器活動", "自己/想做的事"]);
     expect(b.notebook.read("人/Owen", inGuild)).toBeNull();
     expect(b.notebook.read("主題/伺服器活動", inDm)).toBeNull();
+  });
+
+  it("keeps a group DM apart from each member's own DM", async () => {
+    const b = await book();
+    const inGroup: NotebookWhere = {
+      context: { platform: "discord", scope: null, channel: "gd", kind: "dm", group: true },
+      accounts: [OWEN_ACCOUNT],
+    };
+    await b.notebook.write("人/Owen", "私訊裡說的事", "append", inDm);
+    expect(b.notebook.index(inGroup).map((e) => e.path)).not.toContain("人/Owen");
+    expect(b.notebook.read("人/Owen", inGroup)).toBeNull();
+    await b.notebook.write("人/Owen", "群組裡說的事", "append", inGroup);
+    const scopes = b.notes.lines(`person:${OWEN}`, "owner").map((l) => [l.text, l.scope]);
+    expect(scopes).toContainEqual(["群組裡說的事", { type: "room", room: GROUP_ROOM }]);
+    expect(b.notebook.read("人/Owen", inDm)?.body).not.toContain("群組裡說的事");
+    expect(b.notebook.read("人/Owen", inGroup)?.body).toContain("群組裡說的事");
+    expect(b.notebook.read("人/Owen", inGroup)?.body).not.toContain("私訊裡說的事");
   });
 
   it("puts her own pages in the self document, one section each", async () => {
@@ -235,6 +261,19 @@ describe("the notebook on the notes", () => {
     await b.notebook.write("人/Owen", "喜歡拉麵", "append", inGuild);
     expect(await b.notebook.forgetPerson(OWEN)).toBeGreaterThan(0);
     expect(b.notebook.read("人/Owen", inGuild)?.body ?? "").not.toContain("喜歡拉麵");
+  });
+
+  it("records who asked for a line, so forgetting them takes it from topic and self pages", async () => {
+    const b = await book();
+    await b.notebook.write("主題/伺服器活動", "Owen 提議週五開團", "append", inGuild);
+    await b.notebook.write("自己/想做的事", "陪 Owen 練琴", "append", inGuild);
+    await b.notebook.write("主題/天氣", "今天下雨", "append", { context: CHANNEL, accounts: [] });
+    expect(b.notes.lines("topic:伺服器活動", "owner").map((l) => l.told_by)).toEqual([OWEN]);
+    b.notes.forgetPerson([OWEN]);
+    expect(b.notebook.read("主題/伺服器活動", inGuild)?.body ?? "").not.toContain("週五");
+    expect(b.notebook.read("自己/想做的事", inGuild)?.body ?? "").not.toContain("練琴");
+    // Nobody asked for this one: it stays.
+    expect(b.notebook.read("主題/天氣", inGuild)?.body).toContain("今天下雨");
   });
 
   it("lists the same entries as the pages do", async () => {

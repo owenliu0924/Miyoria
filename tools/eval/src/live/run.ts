@@ -13,6 +13,7 @@ import { runFeel } from "./suites/feel.js";
 import { runPersona } from "./suites/persona.js";
 import { runPlay } from "./suites/play.js";
 import { runRelationship } from "./suites/relationship.js";
+import { runScreens } from "./suites/screens.js";
 import { runTools } from "./suites/tools.js";
 
 export {
@@ -34,15 +35,16 @@ export function defaultSuites(): SuiteRegistry {
     .register("corrections", (ctx) => runCorrections(ctx))
     .register("feel", (ctx) => runFeel(ctx))
     .register("play", (ctx) => runPlay(ctx))
-    .register("bond", (ctx) => runBond(ctx));
+    .register("bond", (ctx) => runBond(ctx))
+    .register("screens", (ctx) => runScreens(ctx));
 }
 
 /**
  * Suites that run only when named: `corrections` is for comparing brains, not the nightly, `play`
- * is a few hundred model calls at 8 repeats, and `bond` is for checking her feel rules after a
- * change to them.
+ * is a few hundred model calls at 8 repeats, `bond` is for checking her feel rules after a
+ * change to them, and `screens` for a change to the send-boundary screens or her examples.
  */
-const OPT_IN: ReadonlySet<string> = new Set(["corrections", "play", "bond"]);
+const OPT_IN: ReadonlySet<string> = new Set(["corrections", "play", "bond", "screens"]);
 
 /** How many times a suite runs each item when the run names no `repeat` (others: once). */
 export const SUITE_REPEAT: Readonly<Record<string, number>> = { bond: BOND_REPEAT };

@@ -4,17 +4,18 @@
 // * Both sides are members (she knows them, neither is blocked). Whatever stops the receiver
 //   (a stranger, a block, a role without `me.wallet`, the day's limit) answers the same words, so
 //   the answer never says who is blocked.
-// * The ledger has no transaction over two rows, so a transfer is two rows posted in turn: the
-//   sender's `transfer_out` first (covered, under the key), then the receiver's `transfer_in` under
-//   a key derived from the out row's id. Retrying with the same key finds the out row and posts
-//   whatever of the in row is missing, so a crash between them is finished by the retry, never
-//   paid twice. An in row the receiver's limit refuses gives the out row back.
+// * A transfer is the sender's `transfer_out` (covered, under the key), the receiver's
+//   `transfer_in` under a key derived from the out row's id, and the fee (below), posted together
+//   (`CoinLedgerStore.postAll`): a crash leaves all of them or none. Retrying with the same key
+//   finds the out row and posts whatever of the others is missing, which finishes a transfer an
+//   older version (rows posted in turn) left halfway, never paying twice. An in row the receiver's
+//   limit refuses then gives the out row back.
 // * The two rows point at each other through `ref` (`<other row id>:<other's name>`); the in row's
 //   id is the out row's plus `~in`, which is how a retry finds it.
 // * The sender pays a fee on top of the amount (`transfer_fee` of it, rounded up, at least 1 coin):
 //   a third row, the sender's `transfer_fee`, with no row on the other side, so the coins are burned.
-//   It is posted after the in row lands (a refused transfer costs nothing) and under a key derived
-//   from the out row, so a retry finishes it too. The day limits count the amount, not the fee.
+//   It is under a key derived from the out row, so a retry finishes it too (a refused transfer
+//   costs nothing). The day limits count the amount, not the fee.
 // * Spends take turns inside this process (`serial`), so the sender's day limit holds.
 
 import { type AccountRef, accountRefString, newId, safeName, toTimestamp } from "@miyoria/types";
@@ -125,10 +126,38 @@ export async function sendCoins(
         throw new EconomyError(402, `${c.currency}不夠(要 ${amount + fee},含手續費 ${fee})`);
       }
       const id = newId();
-      const post = await ledger.post(
-        row(e, sender, id, -amount, "transfer_out", `${inIdOf(id)}:${receiverName}`, outKey),
-        { covered: true },
+      const outRow = row(
+        e,
+        sender,
+        id,
+        -amount,
+        "transfer_out",
+        `${inIdOf(id)}:${receiverName}`,
+        outKey,
       );
+      // The three rows in one posting where the ledger has one: a crash leaves all or none. The
+      // receiver's day limit was checked just above, inside `serial`. Without one, the rows go in
+      // turn and a retry finishes them (below).
+      const post = ledger.postAll
+        ? await ledger.postAll(
+            [
+              outRow,
+              row(
+                e,
+                receiver,
+                inIdOf(id),
+                amount,
+                "transfer_in",
+                `${id}:${senderName}`,
+                `transfer_in:${id}`,
+              ),
+              ...(fee > 0
+                ? [row(e, sender, `${id}~fee`, -fee, "transfer_fee", id, `transfer_fee:${id}`)]
+                : []),
+            ],
+            { covered: true },
+          )
+        : await ledger.post(outRow, { covered: true });
       if (post.status === "short") throw new EconomyError(402, `${c.currency}不夠`);
       if (post.status === "capped") throw new EconomyError(429, "今天到上限了");
       out = post.entry;
@@ -138,7 +167,8 @@ export async function sendCoins(
         to: accountRefString(receiver.account),
       });
     }
-    // A retry owes whatever the first try did not finish, of the amount it started with.
+    // A retry owes whatever the first try did not finish, of the amount it started with (a row
+    // already there is found by its key and not written again).
     const owed = -out.delta;
     const since = e.todayStart();
     const landed = await ledger.post(

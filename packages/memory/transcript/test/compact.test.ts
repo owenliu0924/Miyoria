@@ -188,6 +188,44 @@ describe("compactIfNeeded", () => {
     expect(await compactIfNeeded(t, ROOM, { ...budget, summarise: raced })).toBeNull();
     expect(t.tail(ROOM).summary?.summary).toBe("別人先做了");
   });
+
+  it("drops a summary when something it read was forgotten while the model was writing", async () => {
+    const { t } = await open();
+    const ten = { tokens: 10 };
+    t.append(ROOM, [
+      said("Owen", "祕密", { ...ten, message_id: "m1" }),
+      ...Array.from({ length: 7 }, (_, i) => said("Amy", `${i}`, ten)),
+    ]);
+    const forgetting: Summarise = async (old) => {
+      t.redactMessage("m1");
+      return old.map((e) => e.content).join("/");
+    };
+    // The forgotten line is after the summary in use: no summary went stale.
+    expect(await compactIfNeeded(t, ROOM, { ...budget, summarise: forgetting })).toBeNull();
+    expect(t.summaries(ROOM)).toEqual([]);
+    // The next run reads the tombstone.
+    const plain: Summarise = async (old) => old.map((e) => e.content || "∅").join("/");
+    expect(await compactIfNeeded(t, ROOM, { ...budget, summarise: plain })).toMatchObject({
+      summary: "∅/0/1/2/3/4",
+    });
+  });
+
+  it("drops a redone summary when another covered line is forgotten meanwhile", async () => {
+    const { t } = await open();
+    t.append(ROOM, [
+      said("Owen", "一", { message_id: "m1" }),
+      said("Amy", "二", { message_id: "m2" }),
+      said("Owen", "三"),
+    ]);
+    t.compact(ROOM, 2, "Owen 說一,Amy 說二");
+    t.redactMessage("m1");
+    const forgetting: Summarise = async (old) => {
+      t.redactMessage("m2");
+      return old.map((e) => e.content || "∅").join("/");
+    };
+    expect(await compactIfNeeded(t, ROOM, { ...budget, summarise: forgetting })).toBeNull();
+    expect(t.tail(ROOM).summary).toMatchObject({ stale: true, summary: "" });
+  });
 });
 
 describe("compactIdle", () => {

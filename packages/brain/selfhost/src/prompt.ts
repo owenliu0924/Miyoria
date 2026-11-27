@@ -113,7 +113,7 @@ import {
   whenAndWhere,
 } from "../../agent/src/index.js";
 import { personTag, shownAs } from "../../agent/src/self-block.js";
-import { type PromptInput, type PromptSource, wakeAuthor } from "../../self/src/index.js";
+import { type PromptInput, type PromptSource, rules, wakeAuthor } from "../../self/src/index.js";
 import { NOTICES_TITLE, TASKS_HEAD, VIEWERS_TITLE } from "./texts.js";
 
 /** People shown in block 4 at most (today's `MAX_PEOPLE`). */
@@ -515,7 +515,10 @@ export class HostPrompt implements PromptSource {
     if (chars > 0) {
       const dialogues = exampleDialogues(agent.persona.examples());
       const picked = rotatedExamples(dialogues, stableHash(input.session.id), chars);
-      const examples = examplesBlock(picked, agent.persona.names());
+      // Her replies there show their feel block where her rules ask for one.
+      const examples = examplesBlock(picked, agent.persona.names(), {
+        feel: rules.feels(input.profile),
+      });
       if (examples !== null) parts.push(examples);
     }
     return { text: parts.length === 0 ? null : parts.join("\n\n"), settled };

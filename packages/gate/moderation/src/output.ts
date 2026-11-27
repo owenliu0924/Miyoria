@@ -96,8 +96,11 @@ export class OutputGuard {
   /** The first rule `text` breaks, or `null`. */
   check(text: string): Hit | null {
     if (text.trim() === "") return null;
-    const forms = new Forms(this.#clip(text), this.#allow);
-    const secret = this.#secretHit(forms);
+    const clipped = this.#clip(text);
+    const forms = new Forms(clipped, this.#allow);
+    // The secret checks are linear (substring search, one regex pass), so they see the whole
+    // text: a key in the middle of a long file must not slip past. Only the rules are clipped.
+    const secret = this.#secretHit(clipped === text ? forms : new Forms(text, this.#allow));
     if (secret !== null) return secret;
     for (const rule of this.rules) {
       if (ruleMatches(rule, forms)) return { category: rule.category, rule: rule.id };
@@ -122,7 +125,7 @@ export class OutputGuard {
     return null;
   }
 
-  /** A text longer than the scan limit is scanned at both ends. */
+  /** A text longer than the scan limit is scanned at both ends by the rules. */
   #clip(text: string): string {
     if (text.length <= this.#maxScan) return text;
     const half = Math.floor(this.#maxScan / 2);
