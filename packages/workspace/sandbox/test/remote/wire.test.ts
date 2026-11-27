@@ -65,7 +65,7 @@ describe("a reply's size", () => {
       timeoutMs: 5_000,
     }).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SandboxHttpError);
-    expect((error as SandboxHttpError).code).toBe("too_large");
+    expect((error as SandboxHttpError).code).toBe("bad_reply");
   });
 
   it("takes a reply over the default cap when the call allows more", async () => {
@@ -94,7 +94,8 @@ describe("a reply's size", () => {
       method: "GET",
       timeoutMs: 5_000,
     }).catch((e: unknown) => e);
-    expect((error as SandboxHttpError).code).toBe("too_large");
+    expect((error as SandboxHttpError).code).toBe("bad_reply");
+    expect((error as SandboxHttpError).message).toContain("over");
     expect(pulled).toBeLessThanOrEqual(2);
   });
 
@@ -115,7 +116,7 @@ describe("a reply's size", () => {
       method: "GET",
       timeoutMs: 5_000,
     }).catch((e: unknown) => e);
-    expect((error as SandboxHttpError).code).toBe("too_large");
+    expect((error as SandboxHttpError).code).toBe("bad_reply");
   });
 });
 

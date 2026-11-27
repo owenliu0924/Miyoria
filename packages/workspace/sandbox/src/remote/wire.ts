@@ -292,8 +292,14 @@ async function readCapped(
   maxBytes: number,
   signal?: AbortSignal,
 ): Promise<Buffer> {
+  // `bad_reply`, not `too_large`: that code is the service refusing what Core sent (her folder
+  // too large, a body refused everywhere), while a reply past its cap is the computer's fault.
   const tooLarge = () =>
-    new SandboxHttpError(response.status, "too_large", `a reply over ${maxBytes} bytes`);
+    new SandboxHttpError(
+      response.status,
+      "bad_reply",
+      `the sandbox service sent a reply over ${maxBytes} bytes`,
+    );
   const declared = Number(response.headers.get("content-length") ?? Number.NaN);
   if (Number.isFinite(declared) && declared > maxBytes) {
     await response.body?.cancel().catch(() => undefined);
