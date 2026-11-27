@@ -47,6 +47,15 @@ export { ImageGenModule } from "./module.js";
 export { ImageGenError, ImageGenService, type ImageGenServiceOptions } from "./service.js";
 export { JobStore } from "./store.js";
 export {
+  IMAGE_MAKE,
+  IMAGE_PURPOSE,
+  type ImageMakeArgs,
+  ImageMakeArgsSchema,
+  type ImageMakeOptions,
+  imageMakeCapability,
+  parseSize,
+} from "./tool.js";
+export {
   detectParams,
   fillWorkflow,
   parseWorkflow,
