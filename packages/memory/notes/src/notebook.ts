@@ -182,7 +182,7 @@ export class NotesNotebook implements Notebook {
       const room = this.#resolver.roomOf(c);
       return room === null ? null : { type: "room", room };
     }
-    if (outsideSpace(c)) {
+    if (c.kind === "dm" || c.scope === null) {
       const person = this.#personOf(where);
       return person === null ? null : { type: "dm", person };
     }

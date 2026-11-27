@@ -178,7 +178,7 @@ export class NotesKnowledge {
       const room = this.resolver.roomOf(c);
       return room === null ? null : { type: "room", room };
     }
-    if (outsideSpace(c)) {
+    if (c.kind === "dm" || c.scope === null) {
       const person =
         writer.person ?? (writer.account === null ? null : this.resolver.personOf(writer.account));
       return person === null ? null : { type: "dm", person };
