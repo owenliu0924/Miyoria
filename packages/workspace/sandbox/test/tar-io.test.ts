@@ -364,6 +364,34 @@ describe("extractTar", () => {
     ).rejects.toMatchObject({ code: "too_large" });
   });
 
+  it("counts_directories_and_left_out_entries_against_the_entry_limit", async () => {
+    // maxFiles 5 allows 5 files and 10 folders, what `packTree` itself can write.
+    const limits = { ...EXTRACT_LIMITS, maxFiles: 5 };
+    const fits = await rawTar([
+      ...Array.from({ length: 10 }, (_, i) => ({ name: `d${i}/`, type: "directory" as const })),
+      ...Array.from({ length: 5 }, (_, i) => ({ name: `d${i}/f.txt`, content: "1" })),
+    ]);
+    expect((await extract(fits, { limits })).written).toHaveLength(5);
+
+    const folders = await rawTar(
+      Array.from({ length: 16 }, (_, i) => ({ name: `d${i}/`, type: "directory" as const })),
+    );
+    const dst = folder("folders");
+    await expect(extract(folders, { limits }, dst)).rejects.toMatchObject({
+      code: "too_many_files",
+    });
+    expect(readdirSync(dst).length).toBeLessThanOrEqual(15);
+
+    const links = await rawTar(
+      Array.from({ length: 16 }, (_, i) => ({
+        name: `l${i}`,
+        type: "symlink" as const,
+        linkname: "x",
+      })),
+    );
+    await expect(extract(links, { limits })).rejects.toMatchObject({ code: "too_many_files" });
+  });
+
   it("stops_a_gzip_bomb_by_what_it_unpacks_to", async () => {
     const bomb = gzipSync(Buffer.alloc(20 * 1024 * 1024));
     expect(bomb.length).toBeLessThan(100_000);

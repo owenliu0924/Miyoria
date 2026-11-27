@@ -387,6 +387,9 @@ export async function extractTar(
   const directories = new Set<string>();
   let files = 0;
   let bytes = 0;
+  let entries = 0;
+  // What `packTree` can write under the same limits: the files, and up to twice as many folders.
+  const maxEntries = limits.maxFiles * 3;
 
   const extract = tar.extract();
   const input = Readable.from(source, { objectMode: false });
@@ -418,6 +421,13 @@ export async function extractTar(
       if (name === "" || name === ".") {
         entry.resume();
         continue;
+      }
+      // Every entry counts, not only the files written: a folder is a `mkdir` and a link or a
+      // refused name a line in `skipped`, and at 512 bytes a header the byte cap alone would let
+      // millions through (empty folders filling the disk's inodes, a list that fills memory).
+      entries += 1;
+      if (entries > maxEntries) {
+        throw new TarError("too_many_files", `more than ${maxEntries} entries`);
       }
       if (name.endsWith("/")) name = name.slice(0, -1);
       const isDirectory = header.type === "directory";
