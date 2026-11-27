@@ -252,6 +252,7 @@ describe("the descriptors of this repository", () => {
       lyrics: "job",
       mediamtx: "single",
       obs: "single",
+      sandbox: "job",
       sing: "job",
       stage: "single",
       tts: "session",
@@ -265,7 +266,7 @@ describe("the descriptors of this repository", () => {
     expect(catalog.services.get("tts")?.descriptor.routing?.variant?.files.length).toBe(2);
   });
 
-  it("all load, and they are the twelve of the design", () => {
+  it("all load, and they are the twelve of the design and the sandbox", () => {
     const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..");
     const catalog = loadCatalog(root);
     expect(catalog.problems).toEqual([]);
@@ -277,6 +278,7 @@ describe("the descriptors of this repository", () => {
         "lyrics",
         "mediamtx",
         "obs",
+        "sandbox",
         "sing",
         "stage",
         "tts",

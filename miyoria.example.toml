@@ -1657,7 +1657,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # step_timeout_ms = 45000        # 一步(打開、點、讀、截圖)最久多久
 # 跑程式的次數上限在 [modules.actions.work](預設沒有冷卻、每人每小時 300 次),也可以在 [modules.actions.limits."code.run"] 單獨設
 
-# 生圖(docs/design/imagegen.md):連 ComfyUI 的 API 生圖,給她的其他系統用(目前沒有指令,成員叫不到)。
+# 生圖(docs/design/imagegen.md):連 ComfyUI 的 API 生圖,給她的其他系統用;ComfyUI 連得上時她也能用 image_make 替人畫。
 # 內建三個模型:krea2(turbo / raw)、moss_image(sft / base)、anima(base / turbo);
 # 或把 ComfyUI 的「Export (API)」存成 <workflows_dir>/<id>.json 當 workflow 用。她唱歌時 GPU 先讓給歌
 # [modules.imagegen]
@@ -1678,8 +1678,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # max_batch = 8
 # check_files = true              # 送出前確認模型檔在 ComfyUI 裡
 # keep_days = 0                   # 圖保留幾天(0 永久)
-# daily_limits = { gacha = 200 }  # 每個 purpose 每天最多幾張
-# ComfyUI 連得上時她也能替開口的人畫(工具 image_make;成員要羈絆到 work_min_bond),這樣畫的算 purpose "agent":
+# # 每個 purpose 每天最多幾張;agent 是她替開口的人畫的(工具 image_make,成員要羈絆到 work_min_bond)
 # daily_limits = { gacha = 200, agent = 50 }
 # [modules.imagegen.models.krea2]
 # variants.raw.files.diffusion_model = "krea2_raw_fp8_scaled.safetensors"   # RAW 檔名請改成實際下載的
