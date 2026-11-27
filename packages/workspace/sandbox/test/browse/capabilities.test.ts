@@ -329,6 +329,17 @@ describe("browse_read", () => {
     expect(out.text).toContain("那台電腦的主人改了設定");
     expect(out.text).toContain("browse_open 重新打開");
   });
+
+  it("notices a session closed because its person ran out of CPU seconds, and says why", async () => {
+    const { client, call } = setup();
+    await call("browse_open", { url: "https://shop.example.test/" });
+    // The sandbox client closes a capped person's browser job with the reason `quota`.
+    client.jobs[0]?.end("quota");
+    await waitFor(() => client.jobs[0]?.closed === true);
+    const out = await call("browse_read", {});
+    expect(out.text).toContain("找我跑的東西有點多,先關掉了");
+    expect(out.text).toContain("browse_open 重新打開");
+  });
 });
 
 describe("browse_act", () => {

@@ -11,7 +11,8 @@
 //   stream each while they run; a request refused for a full relay is sent again (`wire.ts`).
 // - Every job's lease is renewed every minute; the long-poll renews it too.
 // - CPU seconds: every rise of a job's cgroup total is charged to its payer (`WorkQuota`); a
-//   payer over their limit has their running exec stopped (`quota`).
+//   payer over their limit has their running execs stopped and their browser and plugin jobs
+//   closed (`quota`).
 
 import { createHmac, randomBytes } from "node:crypto";
 import {
@@ -560,7 +561,23 @@ export class HttpSandboxClient implements SandboxClient {
     const quota = this.#quota();
     if (quota === null || job.payer === null) return;
     quota.charge(job.payer, now, deltaMs / 1000);
-    if (job.busy && quota.capped(job.payer, now) !== null) job.stopAll("quota");
+    if (quota.capped(job.payer, now) !== null) this.#stopPayer(job.payer.person);
+  }
+
+  /**
+   * A person over their CPU seconds: every run of theirs stops, and their browser and plugin
+   * jobs close, since those have no run to stop: a page mining in web workers would go on using
+   * a friend's computer until its idle close. Their sessions stay open (their files are kept);
+   * only the runs in them stop.
+   */
+  #stopPayer(person: string): void {
+    for (const poller of this.#pollers.values()) {
+      for (const job of [...poller.jobs.values()]) {
+        if (job.payer?.person !== person) continue;
+        if (job.kind === "browser" || job.kind === "plugin") void job.close("quota");
+        else if (job.busy) job.stopAll("quota");
+      }
+    }
   }
 
   #ended(job: RemoteJob, reason: string): void {

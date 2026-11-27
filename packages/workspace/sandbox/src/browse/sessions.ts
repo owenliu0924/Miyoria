@@ -90,6 +90,7 @@ export const BROWSE_END: Readonly<Record<string, string>> = {
   host_policy: "那台電腦的主人改了設定,不再接這種工作",
   exited: "瀏覽器自己結束了",
   replaced: "開了新的工作階段,這個最久沒用的先關掉了",
+  quota: "因為你這陣子找我跑的東西有點多,先關掉了",
   stopped: "系統正在關閉",
 };
 

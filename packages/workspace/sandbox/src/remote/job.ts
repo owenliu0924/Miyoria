@@ -170,6 +170,9 @@ export class RemoteJob implements TransferJob {
   readonly #procs = new Map<string, ProcChannel>();
   #view: JobView;
   #endedReason: string | null = null;
+  /** Why Core is closing it; it wins over the computer's own `closed` that answers the close. */
+  #closeReason: string | null = null;
+  #closing: Promise<void> | null = null;
   #resolveEnded: (value: { reason: string }) => void = () => {};
   /**
    * CPU charged to the payer so far, ms: the job's cgroup total as last seen, or less while a
@@ -320,7 +323,7 @@ export class RemoteJob implements TransferJob {
   /** The job is over: waiting execs get a `lost` result, procs end. Once. */
   end(reason: string): void {
     if (this.#endedReason !== null) return;
-    this.#endedReason = reason;
+    this.#endedReason = this.#closeReason ?? reason;
     const now = this.#link.clock.now();
     for (const [id, pending] of [...this.#execs]) {
       this.#execs.delete(id);
@@ -329,8 +332,8 @@ export class RemoteJob implements TransferJob {
     for (const proc of this.#procs.values()) proc.exit(null, "lost");
     this.#procs.clear();
     this.#view = { ...this.#view, state: "ended" };
-    this.#resolveEnded({ reason });
-    this.#link.ended(this, reason);
+    this.#resolveEnded({ reason: this.#endedReason });
+    this.#link.ended(this, this.#endedReason);
   }
 
   /** Re-reads the job (after a reset of the events, or a restart of Core). */
@@ -732,19 +735,27 @@ export class RemoteJob implements TransferJob {
     return { cpu_ms: u.cpu_ms, wall_ms: u.wall_ms, disk_bytes: u.disk_bytes };
   }
 
-  /** `DELETE` the job; it is over whether the computer answered or not. */
-  async close(): Promise<void> {
-    if (this.#endedReason !== null) return;
-    try {
-      const view = await this.#json<JobView>(this.#path(), JobViewSchema, {
-        method: "DELETE",
-        timeoutMs: TIMEOUTS.close,
-      });
-      this.#chargeTo(view.usage.cpu_ms);
-    } catch (error) {
-      log.debug({ job: this.id, err: errorMessage(error) }, "closing a job did not answer");
-    }
-    this.end("closed");
+  /**
+   * `DELETE` the job; it is over whether the computer answered or not. `reason`: why Core closed
+   * it (`quota`: its payer ran out of CPU seconds), what its users are told. Asked twice, one
+   * `DELETE` is sent.
+   */
+  close(reason = "closed"): Promise<void> {
+    if (this.#endedReason !== null) return Promise.resolve();
+    this.#closeReason ??= reason;
+    this.#closing ??= (async () => {
+      try {
+        const view = await this.#json<JobView>(this.#path(), JobViewSchema, {
+          method: "DELETE",
+          timeoutMs: TIMEOUTS.close,
+        });
+        this.#chargeTo(view.usage.cpu_ms);
+      } catch (error) {
+        log.debug({ job: this.id, err: errorMessage(error) }, "closing a job did not answer");
+      }
+      this.end("closed");
+    })();
+    return this.#closing;
   }
 }
 
