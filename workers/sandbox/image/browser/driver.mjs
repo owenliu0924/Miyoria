@@ -19,6 +19,7 @@
 // `read` in `outline` and `links` mode; `act` finds it again by that attribute. A page can see and
 // move the attribute; it is a page anyone wrote either way, and Core frames all of it as data.
 
+import { existsSync } from "node:fs";
 import { mkdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -107,12 +108,17 @@ export function checkUrl(raw) {
   throw new ParamsError(`${url.protocol} addresses are not opened`);
 }
 
-/** A file name of a download: no path, no control characters, not hidden, at most 120 chars. */
+/**
+ * A file name of a download: no path, no control characters, not hidden, at most 120 chars.
+ * Chromium has already turned the separators of a name like `../../report.txt` into `_`
+ * (`_.._report.txt`), so what is left of the climb is dropped as well.
+ */
 export function safeFileName(raw) {
   const base = String(raw ?? "")
     .split(/[\\/]/)
     .pop()
     .replace(/[\u0000-\u001f\u007f<>:"|?*]/g, "_")
+    .replace(/^(?:[_\s.]*\.\.[_\s]*)+/, "")
     .replace(/^[.\s]+/, "")
     .trim();
   const chars = [...base];
@@ -260,6 +266,8 @@ export class Driver {
   #refs = new WeakMap();
   #downloads = [];
   #pending = new Set();
+  /** Paths given to a download that may not be on the disk yet (two at once get two names). */
+  #taken = new Set();
   #saved = 0;
 
   constructor(playwright) {
@@ -295,6 +303,12 @@ export class Driver {
   }
 
   #adopt(page) {
+    // The context's "page" event comes for `newPage()` too: a page adopted twice would save each
+    // of its downloads twice.
+    if (this.#pages.includes(page)) {
+      this.#page = page;
+      return;
+    }
     this.#pages.push(page);
     this.#page = page;
     page.on("download", (download) => this.#download(download));
@@ -321,7 +335,11 @@ export class Driver {
       const stem = dot > 0 ? name.slice(0, dot) : name;
       const ext = dot > 0 ? name.slice(dot) : "";
       let target = join(DOWNLOADS, name);
-      for (let n = 2; await exists(target); n++) target = join(DOWNLOADS, `${stem}-${n}${ext}`);
+      // Chosen without awaiting in between, so two downloads of one name cannot pick the same.
+      for (let n = 2; this.#taken.has(target) || existsSync(target); n++) {
+        target = join(DOWNLOADS, `${stem}-${n}${ext}`);
+      }
+      this.#taken.add(target);
       await download.saveAs(target);
       const info = await stat(target);
       this.#downloads.push({ path: target.slice("/workspace/".length), bytes: info.size });
@@ -558,15 +576,6 @@ export class Driver {
 
   async close() {
     await this.#browser?.close().catch(() => {});
-  }
-}
-
-async function exists(path) {
-  try {
-    await stat(path);
-    return true;
-  } catch {
-    return false;
   }
 }
 

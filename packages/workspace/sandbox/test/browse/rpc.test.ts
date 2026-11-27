@@ -130,6 +130,11 @@ describe("the driver's own checks", () => {
     expect(driver.safeFileName(".bashrc")).toBe("bashrc");
     expect(driver.safeFileName("a\u0000b|c.pdf")).toBe("a_b_c.pdf");
     expect(driver.safeFileName("")).toBe("download");
+    // What Chromium makes of `../../report.txt` before the driver sees it.
+    expect(driver.safeFileName("_.._report.txt")).toBe("report.txt");
+    expect(driver.safeFileName(".._.._report.txt")).toBe("report.txt");
+    expect(driver.safeFileName("__init__.py")).toBe("__init__.py");
+    expect(driver.safeFileName("a..b.txt")).toBe("a..b.txt");
     expect([...driver.safeFileName(`${"長".repeat(300)}.pdf`)]).toHaveLength(120);
   });
 
@@ -161,6 +166,34 @@ describe("the driver's own checks", () => {
     const failed = await driver.handle(stub, { id: 3, method: "browse.read", params: {} });
     expect(failed.error).toEqual({ code: -32603, message: "Execution context was destroyed" });
     expect((await driver.handle(stub, { id: 4, method: "constructor" })).error?.code).toBe(-32601);
+  });
+
+  it("listens to each page once, though the context also announces the pages it opens", async () => {
+    const listeners: string[] = [];
+    let announce: (page: unknown) => void = () => {};
+    const page = {
+      on: (event: string) => listeners.push(event),
+      isClosed: () => false,
+    };
+    const context = {
+      setDefaultTimeout: () => {},
+      setDefaultNavigationTimeout: () => {},
+      on: (event: string, fn: (p: unknown) => void) => {
+        if (event === "page") announce = fn;
+      },
+      // As Playwright does: the "page" event fires before newPage() resolves.
+      newPage: async () => {
+        announce(page);
+        return page;
+      },
+    };
+    const playwright = {
+      chromium: {
+        launch: async () => ({ newContext: async () => context, version: () => "1" }),
+      },
+    };
+    await new driver.Driver(playwright).start();
+    expect(listeners.filter((e) => e === "download")).toHaveLength(1);
   });
 
   it("closes a page whose scripts never let it answer, and goes on with a fresh one", async () => {
