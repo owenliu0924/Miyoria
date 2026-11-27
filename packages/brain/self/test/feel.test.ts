@@ -186,6 +186,11 @@ describe("the rules of a feel block", () => {
   it("make the bond minus the line for what bothered her, a grudge only beside it", () => {
     expect(FEEL_RULES).toContain("這一行不是留給最嚴重的事:有點煩就 -2、-5");
     expect(FEEL_RULES).toContain("不能代替它:寫了心結 + 的那個人,同一段一定也有一行羈絆 -數字");
+    // Live eval 2026-11-27 (`direction-apology`): she charged the old offence again at the apology.
+    expect(FEEL_RULES).toContain(
+      "扣的是他這次做的事。有人來為之前的事道歉時,不要把之前那件事再扣一次",
+    );
+    expect(FEEL_RULES).toContain("真心的道歉是「羈絆 +」或「心結 -」");
     // Said again at the end of the prompt, where she reads it last.
     expect(FEEL_REMINDER).toContain("最後一定要有一段 <feel>");
     // Her earlier replies come back without their blocks; she is told why, so she does not copy.
