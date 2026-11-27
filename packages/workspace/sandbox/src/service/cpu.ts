@@ -34,6 +34,8 @@ export class CpuMeter {
   #source: "cgroup" | "sampled" = "cgroup";
   #sampledAt: number | null = null;
   #which: "v2" | "v1" | null = null;
+  /** When the cgroup was last read. */
+  #readAt: number | null = null;
 
   constructor(
     readonly docker: DockerControl,
@@ -48,6 +50,24 @@ export class CpuMeter {
 
   get source(): "cgroup" | "sampled" {
     return this.#source;
+  }
+
+  /**
+   * The total at the end of an exec whose processes could not be cleared (a fork bomb that used
+   * every pid, so not even `cat` of the cgroup can start in the container). Without a fresh
+   * reading, the time since the last one is counted at the job's full `cpus`: such a container
+   * spins at its ceiling, and the payer must not get those seconds free.
+   */
+  async final(cpus: number): Promise<number> {
+    const before = this.#readAt;
+    await this.read();
+    if (this.#readAt === before && before !== null) {
+      const now = this.now();
+      this.#total += Math.round(Math.max(0, cpus) * Math.max(0, now - before));
+      this.#readAt = now;
+      this.#source = "sampled";
+    }
+    return this.#total;
   }
 
   /** Reads the total now. A reading that fails leaves the last total; it is a running total. */
@@ -69,6 +89,7 @@ export class CpuMeter {
       // After a sampled stretch the true total takes over again once it is the larger one.
       this.#total = Math.max(this.#total, ms);
       this.#sampledAt = null;
+      this.#readAt = this.now();
       return this.#total;
     }
     await this.#sample();

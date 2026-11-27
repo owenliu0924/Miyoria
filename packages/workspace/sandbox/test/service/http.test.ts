@@ -448,6 +448,26 @@ describe("sandbox service: execs", () => {
     expect(gone.json.error.ended.reason).toBe("lost");
   });
 
+  it("still counts the CPU of a program that used up the pids, at the job's ceiling", async () => {
+    h = await harness();
+    const job = await open();
+    const docker = h.docker;
+    const now = h.now;
+    docker.cpuUsec = 1_000_000;
+    // The program forks until no pid is left, for ten seconds of the clock.
+    docker.onProgram = async () => {
+      now.t += 10_000;
+      docker.killFails = true;
+      return result({ exit_code: 137 });
+    };
+    const exec = nextId();
+    await h.call("PUT", `/v1/jobs/${job}/execs/${exec}`, execBody());
+    const done = await finished(job, exec);
+    expect(done.result.killed_reason).toBe("lost");
+    // Two CPUs for ten seconds; nothing could be read at the end.
+    expect(done.result.cpu_ms, JSON.stringify(done.result)).toBe(20_000);
+  });
+
   it("refuses input files through a link an earlier exec left in /work", async () => {
     h = await harness();
     const job = await open();

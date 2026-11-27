@@ -245,6 +245,10 @@ export class FakeDocker implements DockerRunner {
       });
     const joined = call.command.join(" ");
     if (call.command[0] === "node" && call.command[1] === "-e") return result();
+    if (joined.startsWith("cat /sys/fs/cgroup/") && this.killFails) {
+      // Pids used up: nothing more can start in the container.
+      return result({ exit_code: 126, stderr: Buffer.from("fork: retry\n") });
+    }
     if (joined === "cat /sys/fs/cgroup/cpu.stat") {
       return result({
         stdout: Buffer.from(`usage_usec ${this.cpuUsec}\nuser_usec 1\nsystem_usec 1\n`),

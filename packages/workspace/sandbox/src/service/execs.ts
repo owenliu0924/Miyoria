@@ -264,13 +264,20 @@ function run(
     const duration = ctx.clock.now() - startedAt;
 
     // Nothing it started outlives it; a container where even that fails is not trusted again.
+    const wasThere = !state.containerGone;
     const cleared =
-      !state.containerGone && succeeded(await ctx.docker.run(killAllArgs(job.container, ctx.user)));
+      wasThere && succeeded(await ctx.docker.run(killAllArgs(job.container, ctx.user)));
     if (!cleared) {
       state.containerGone = true;
       state.killed ??= "lost";
     }
-    const cpuAtEnd = cleared ? await job.cpu.read() : job.cpu.totalMs;
+    // A container that is there but could not be cleared is read (or estimated) one last time
+    // before it is removed; one Docker already lost keeps what was read.
+    const cpuAtEnd = cleared
+      ? await job.cpu.read()
+      : wasThere
+        ? await job.cpu.final(job.limits.cpus)
+        : job.cpu.totalMs;
     let files: { files: ExecResult["files_out"]; truncated: boolean } = {
       files: [],
       truncated: false,
