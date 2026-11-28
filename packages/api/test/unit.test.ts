@@ -407,6 +407,7 @@ describe("config and helpers", () => {
         figure_model: "",
         figure_textures: [1024, 2048],
         figure_cache: "data/room/figure",
+        backdrop: "",
       },
     });
   });

@@ -26,6 +26,8 @@ export const roomFilePath = (line: string, n: number) =>
   `/api/member/room/files/${encodeURIComponent(line)}/${n}`;
 /** Her Live2D figure's manifest (`RoomState.figure`); its files are under it, by content hash. */
 export const ROOM_FIGURE_PATH = "/api/member/room/figure";
+/** The room's backdrop picture (`RoomState.backdrop`); the picture is under it, named by its content's hash. */
+export const ROOM_BACKDROP_PATH = "/api/member/room/backdrop";
 
 /**
  * Her faces on the room's Live2D figure: the avatar's emotions, and two for what she is doing.
@@ -88,6 +90,11 @@ export const RoomStateSchema = z
      * version). Absent or `null`: the page shows the recorded loops.
      */
     figure: z.object({ manifest: z.string() }).nullable().optional(),
+    /**
+     * The picture that stands behind her: its URL (`ROOM_BACKDROP_PATH/<name>`; the name changes
+     * with the picture). Absent or `null`: the page draws its own backdrop.
+     */
+    backdrop: z.object({ image: z.string() }).nullable().optional(),
   })
   .meta({ id: "ApiRoomState" });
 export type RoomState = z.output<typeof RoomStateSchema>;

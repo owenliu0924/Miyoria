@@ -70,6 +70,7 @@ import { backgroundPath, PictureRenderer, PictureService } from "./pictures.js";
 import { PublicConfigSchema, PublicSide, STATS_EVERY_MS } from "./public.js";
 import { QuestPickService } from "./quest-words.js";
 import { RingImages } from "./ring-image.js";
+import { backdropPath, RoomBackdrop } from "./room/backdrop.js";
 import { RoomConfigSchema } from "./room/config.js";
 import { figureOptions, RoomFigure } from "./room/figure.js";
 import { Room } from "./room/room.js";
@@ -396,6 +397,10 @@ export class ApiModule implements Module {
         // Made ready in the background: the loops until then (the page swaps when it is).
         room.figure = new RoomFigure(figureOptions(config.room, this.#portrait, ctx.log));
         void room.figure.prepare();
+      }
+      if (config.room.backdrop !== "") {
+        room.backdrop = new RoomBackdrop({ path: backdropPath(config.room), log: ctx.log });
+        void room.backdrop.prepare();
       }
       state.room = room;
       startRoom(ctx, state, room);
