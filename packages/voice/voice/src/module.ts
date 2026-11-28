@@ -2,7 +2,7 @@
 
 import { CommandMount } from "@miyoria/commands";
 import { actuatorsFor } from "@miyoria/gate/actions";
-import { contextSession, LlmRouterKey } from "@miyoria/llm/llm";
+import { contextSession, LlmRouterKey, sessionId } from "@miyoria/llm/llm";
 import {
   defineManifest,
   HEALTHY,
@@ -15,6 +15,7 @@ import { SettingsStoreKey } from "@miyoria/store";
 import {
   type EventPayload,
   Events,
+  HerVoiceKey,
   type JsonObject,
   type ProfileId,
   SpeechPauseKey,
@@ -25,6 +26,7 @@ import {
 } from "@miyoria/types";
 import {
   type EndpointsOption,
+  firstEndpoint,
   type SpeechService,
   SpeechServiceKey,
 } from "../../speech/src/index.js";
@@ -38,6 +40,7 @@ import { E2eLatency, e2eJson } from "./e2e.js";
 import { SelfEchoGuard } from "./echo.js";
 import { Filler, FillerBank } from "./filler.js";
 import { Hearing, StreamHearingKey } from "./hearing.js";
+import { HerVoiceService } from "./her-voice.js";
 import { type VoiceLink, VoiceLinkKey } from "./link/link.js";
 import { VoiceLinkModule } from "./link/module.js";
 import { Listener } from "./listen.js";
@@ -224,6 +227,24 @@ export class VoiceModule implements Module {
       gate,
     });
     ctx.provide(VoiceSinkKey, speaker);
+    // Her room (docs/design/her-room.md §3.8). A worker is reachable when the registry has a
+    // healthy `tts` endpoint Core can call, the one an `http-worker` provider would pick.
+    ctx.provide(
+      HerVoiceKey,
+      new HerVoiceService({
+        services: ctx.services,
+        speech,
+        profile,
+        language: config.tts_language,
+        translator,
+        session: sessionId(this.#profileId, "room-voice"),
+        ...(endpoints === null
+          ? {}
+          : { reachable: () => firstEndpoint(endpoints, "tts", { direct: true }) !== null }),
+        now: () => ctx.clock.now(),
+        log: ctx.log,
+      }),
+    );
 
     let listener: Listener | null = null;
     const filler = this.#filler(
