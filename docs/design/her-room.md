@@ -78,7 +78,7 @@
 | bus | 事件 |
 |---|---|
 | `agent.turn.started` `{turn, context}` | `thinking`(她開始想) |
-| `agent.tool.running` `{turn, context, tool, state}` | `step`(工具名換成幾個字:查資料、看網頁、畫圖、在電腦上做事、交給助手、想一想) |
+| `agent.tool.running` `{turn, context, tool, state}` | `step`(工具名換成幾個字:查資料、看網頁、畫圖、用電腦做事、請助手幫忙、想事情;頁面寫「她在…」「在幫你…」,所以是動詞片語) |
 | `agent.emotion` `{turn, context, emotion}` | `face`(她那一行的表情,給她的樣子換姿勢) |
 | `agent.turn.completed` `{turn, context}` | `done` |
 | `heart` 的變動(新的 `onChanged`,§6) | `bond`:那一輪 `cause = "feel"`、`field = "bond"`、`delta ≠ 0` 的變動,只給方向和她引用的理由 |

@@ -7,6 +7,7 @@ import { ModerationKey, ROOM_SELF, roomContext } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import type { Outgoing } from "../src/room/channel.js";
 import { roomText, WebSink } from "../src/room/sink.js";
+import { stepLabel } from "../src/room/texts.js";
 import { ALICE, BOB, makeRig } from "./room-rig.js";
 
 function sinkRig(config: Record<string, unknown> = {}) {
@@ -38,7 +39,10 @@ describe("her lines in the room", () => {
     const alice = r.heard(ALICE);
     const sent = await r.sink.send(roomContext(ALICE), { text: "不該說的話", reply_to: null });
     expect(sent.blocked).toBe("test.rule");
-    expect((alice[0]?.event as Extract<RoomEvent, { kind: "line" }>).text).toBe("(這句不能說)");
+    expect(alice).toHaveLength(1);
+    expect(((alice[0] as Outgoing).event as Extract<RoomEvent, { kind: "line" }>).text).toBe(
+      "(這句不能說)",
+    );
   });
 
   it("sends a line only to that account's hub, and echoes it as hers", async () => {
@@ -116,5 +120,15 @@ describe("her lines in the room", () => {
     await r.sink.react({ context: roomContext(BOB), id: "L1" }, "👍");
     expect(alice).toEqual([]);
     expect(bob.map((o) => o.event)).toEqual([{ kind: "reaction", to: "L1", emoji: "👍" }]);
+  });
+});
+
+describe("her steps as the page says them", () => {
+  it("names a tool as a verb phrase that reads after 她在 and 在幫你", () => {
+    const tools = ["web_search", "web_fetch", "imagegen", "workspace_attach", "delegate", "remind"];
+    const labels = tools.map(stepLabel);
+    expect(labels).toEqual(["查資料", "看網頁", "畫圖", "用電腦做事", "請助手幫忙", "想事情"]);
+    // The page puts 在 before the label: a label of its own starting with 在 would read 「她在在…」.
+    for (const label of labels) expect(label.startsWith("在")).toBe(false);
   });
 });

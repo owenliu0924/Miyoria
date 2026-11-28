@@ -21,15 +21,18 @@ export const ROOM_TEXT = {
   notFound: "找不到",
 } as const;
 
-/** A tool's name as a few words of what she is doing (the stream's `step`). */
+/**
+ * A tool's name as a few words of what she is doing (the stream's `step`): a verb phrase, since the
+ * page says 「她在{label}」 and 「在幫你{label}」.
+ */
 export function stepLabel(tool: string): string {
   const name = tool.toLowerCase().replaceAll(".", "_");
   if (/^(web_search|search|knowledge|recall|memory|lookup)/.test(name)) return "查資料";
   if (/^(web_|browse|fetch|read_url|page_read)/.test(name)) return "看網頁";
   if (/^(image|draw|picture|imagegen)/.test(name)) return "畫圖";
-  if (/^(sandbox|workspace|exec|run_|code|shell|file)/.test(name)) return "在電腦上做事";
-  if (/^(delegate|task|agent|helper|ask_)/.test(name)) return "交給助手";
-  return "想一想";
+  if (/^(sandbox|workspace|exec|run_|code|shell|file)/.test(name)) return "用電腦做事";
+  if (/^(delegate|task|agent|helper|ask_)/.test(name)) return "請助手幫忙";
+  return "想事情";
 }
 
 /** Her emotions as a member reads them: one word, no cause. */
