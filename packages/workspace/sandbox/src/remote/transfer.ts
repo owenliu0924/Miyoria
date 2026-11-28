@@ -324,16 +324,37 @@ async function existing(dir: string, path: string): Promise<string | null> {
   return safeJoin(dir, path);
 }
 
-/** Bytes of `source` with their SHA-256 counted on the way; gzip found by its magic bytes. */
-async function* counted(
+/**
+ * Bytes of `source` with their SHA-256 counted on the way, stopped as soon as they are more than
+ * `maxBytes`: the other computer said how many it would send, and one that sends on is not read
+ * to its end (leaving the loop cancels `source`).
+ */
+export async function* counted(
   source: AsyncIterable<Uint8Array>,
   sink: { hash: ReturnType<typeof createHash>; bytes: number },
+  maxBytes: number,
 ): AsyncGenerator<Uint8Array> {
   for await (const chunk of source) {
     sink.hash.update(chunk);
     sink.bytes += chunk.byteLength;
+    if (sink.bytes > maxBytes) {
+      throw new SandboxError(
+        "docker_failed",
+        "the files that came back from the sandbox were more than it said it would send",
+      );
+    }
     yield chunk;
   }
+}
+
+/**
+ * The most a tar of a folder within `limits` can take: its bytes, a header and the padding of
+ * each file and of a directory above each, the end blocks, and what gzip adds to bytes it cannot
+ * make smaller. More than that from the other computer is not a folder this call can take,
+ * whatever it says it is.
+ */
+export function tarCap(limits: WorkspaceLimits): number {
+  return Math.ceil(limits.maxBytes * 1.01) + limits.maxFiles * 3 * 1024 + 64 * 1024;
 }
 
 async function peekGzip(
@@ -344,11 +365,17 @@ async function peekGzip(
   const head = first.done ? new Uint8Array(0) : first.value;
   const gzip = head.byteLength >= 2 && head[0] === 0x1f && head[1] === 0x8b;
   async function* rest(): AsyncGenerator<Uint8Array> {
-    if (head.byteLength > 0) yield head;
-    for (;;) {
-      const next = await iterator.next();
-      if (next.done) return;
-      yield next.value;
+    let finished = first.done === true;
+    try {
+      if (head.byteLength > 0) yield head;
+      while (!finished) {
+        const next = await iterator.next();
+        if (next.done) finished = true;
+        else yield next.value;
+      }
+    } finally {
+      // The reader stopped early (the tar refused, an error): the source is let go of too.
+      if (!finished) await iterator.return?.();
     }
   }
   return { gzip, stream: rest() };
@@ -385,10 +412,19 @@ export async function receiveWorkspace(
   // and are not taken either (half of an exec's result would leave the folder in neither state).
   let refused = false;
   try {
-    if (sync.tar !== null) {
+    const cap = tarCap(ws.limits);
+    if (sync.tar !== null && sync.tar.bytes > cap) {
+      // Over the folder's caps as a whole, as a tar refused while unpacking is: none of it is
+      // taken, and not one byte of it is read, since no tar this big holds a folder within them.
+      log.warn(
+        { job: job.id, bytes: sync.tar.bytes, cap },
+        "the changes of a job were refused: more than the folder can hold",
+      );
+      refused = true;
+    } else if (sync.tar !== null) {
       await mkdir(staging, { recursive: true });
       const sink = { hash: createHash("sha256"), bytes: 0 };
-      const { gzip, stream } = await peekGzip(counted(await sync.tar.body(), sink));
+      const { gzip, stream } = await peekGzip(counted(await sync.tar.body(), sink, sync.tar.bytes));
       let written: PackedEntry[] = [];
       try {
         written = (

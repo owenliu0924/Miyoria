@@ -36,7 +36,7 @@ import { Semaphore } from "../semaphore.js";
 import { packTree } from "../tar-io.js";
 import { ProcChannel } from "./proc-stream.js";
 import type { Manifest, TransferJob } from "./transfer.js";
-import { bodyChunks, call, callBytes, callJson, SandboxHttpError } from "./wire.js";
+import { call, callBytes, callJson, callStream, SandboxHttpError } from "./wire.js";
 
 const log = getLogger("sandbox.job");
 
@@ -70,6 +70,11 @@ export const EXEC_POLL_MS = 15_000;
 const LOG_MAX_BYTES = 16 * 1024 * 1024;
 /** How long all of a log may take to arrive (16 MiB over a slow relay). */
 const LOG_BODY_MS = 5 * 60_000;
+/**
+ * How long the tar of a sync may take to arrive in full: the transfer's cap (a few hundred MB)
+ * over a slow relay.
+ */
+export const SYNC_TAR_BODY_MS = 15 * 60_000;
 /** How long a refill of a proc's stdout (4 MiB at most) may take to arrive in full. */
 const STDOUT_BODY_MS = 60_000;
 /**
@@ -527,13 +532,20 @@ export class RemoteJob implements TransferJob {
           : {
               bytes: tar.bytes,
               sha256: tar.sha256,
+              // No more than the computer said it would send, and all of it in time: a body
+              // that drips or does not end would hold the run (and its folder) forever.
               body: async () =>
-                bodyChunks(
-                  await this.#call(`${base}/tar`, {
+                await callStream(
+                  this.#link.source,
+                  this.#link.endpoint(),
+                  `${base}/tar`,
+                  tar.bytes,
+                  {
                     method: "GET",
                     timeoutMs: TIMEOUTS.syncTar,
+                    bodyTimeoutMs: SYNC_TAR_BODY_MS,
                     ...(signal === undefined ? {} : { signal }),
-                  }),
+                  },
                 ),
             },
       done: async () => {

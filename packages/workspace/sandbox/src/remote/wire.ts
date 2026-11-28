@@ -343,17 +343,60 @@ async function readCapped(
   return Buffer.concat(parts);
 }
 
-/** A reply's body as an async iterable of bytes (a tar coming back). */
-export async function* bodyChunks(response: Response): AsyncGenerator<Uint8Array> {
-  const reader = response.body?.getReader();
-  if (!reader) return;
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return;
-      yield value;
-    }
-  } finally {
-    reader.releaseLock();
+/**
+ * A request whose reply is streamed to the caller (a tar coming back): its head within
+ * `timeoutMs`, its last byte within `bodyTimeoutMs`, `maxBytes` at most. The computer is someone
+ * else's, so a body that drips or does not end is given up, and the reader is cancelled however
+ * the caller stops reading (an error of its own included), so the connection does not stay open.
+ */
+export async function callStream(
+  source: EndpointSource,
+  endpoint: Endpoint,
+  path: string,
+  maxBytes: number,
+  o: CallOptions & { bodyTimeoutMs: number },
+): Promise<AsyncGenerator<Uint8Array>> {
+  const sent = await send(source, endpoint, path, o);
+  const { response, signal } = sent;
+  const tooLarge = () =>
+    new SandboxHttpError(
+      response.status,
+      "bad_reply",
+      `the sandbox service sent a reply over ${maxBytes} bytes`,
+    );
+  const declared = Number(response.headers.get("content-length") ?? Number.NaN);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    sent.done();
+    await response.body?.cancel().catch(() => undefined);
+    throw tooLarge();
   }
+  return (async function* stream(): AsyncGenerator<Uint8Array> {
+    const reader = response.body?.getReader();
+    let finished = false;
+    let onAbort: (() => void) | null = null;
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason ?? new Error("aborted"));
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    });
+    aborted.catch(() => undefined);
+    try {
+      if (!reader) return;
+      let total = 0;
+      for (;;) {
+        const { done, value } = await Promise.race([reader.read(), aborted]);
+        if (done) {
+          finished = true;
+          return;
+        }
+        total += value.byteLength;
+        if (total > maxBytes) throw tooLarge();
+        yield value;
+      }
+    } finally {
+      if (onAbort !== null) signal.removeEventListener("abort", onAbort);
+      sent.done();
+      if (reader && !finished) await reader.cancel().catch(() => undefined);
+    }
+  })();
 }
