@@ -372,6 +372,27 @@ describe("tools in the loop", () => {
     expect(asked).toEqual({ account: OWEN.account, principal: "user", priority: "direct" });
   });
 
+  it("open plan steps get one more step for a helper's run only", async () => {
+    const open = () => ["寫成表格"];
+    const chat = await rig([say("好"), say("不該有這一步")]);
+    chat.line("Owen", "@她 嗨");
+    await chat.run(undefined, { openSteps: open });
+    expect(chat.model.requests).toHaveLength(1);
+    const helper = await rig([say("先這樣"), say("表格做不出來,資料不夠")]);
+    const result = await helper.run(
+      { kind: "self", note: null },
+      {
+        profile: PROFILES.subagent,
+        openSteps: open,
+      },
+    );
+    expect(helper.model.requests).toHaveLength(2);
+    expect(contentText(helper.model.requests[1]?.messages.at(-1)?.content ?? "")).toContain(
+      "1. 寫成表格",
+    );
+    expect(result.text).toBe("表格做不出來,資料不夠");
+  });
+
   it("a helper's run tells its tools to wait for their outcome; a chat run does not", async () => {
     const seen: (boolean | undefined)[] = [];
     const look = fakeTool("look", "", {

@@ -13,7 +13,8 @@
 // When a limit is reached one more step runs, told that only `delegate` runs any more (the rest of
 // the work to a helper; for a run that speaks and is not at a money limit) or that no tool does.
 // The tools stay in the request (the prefix cache) and any other call is refused. A hand-off made
-// without a word gets one more step, without tools, to tell the person.
+// without a word gets one more step, without tools, to tell the person. A helper that stops with
+// steps of its plan not marked done, by no limit, gets one more step that lists them, once.
 //
 // Money. Every step is charged in USD (`chargeOf`: a model without a price at the quota's fallback
 // rate) to the run's own budget (`RunLimits.usd`, a helper job's) and to the people the run is for
@@ -78,6 +79,7 @@ import {
   TimeoutError,
   timeout,
 } from "../../agent/src/index.js";
+import { PLAN_TEXTS } from "./delegate-texts.js";
 import { FeelRepair } from "./feel-repair.js";
 import {
   HANDOFF_TOOL,
@@ -624,6 +626,11 @@ class Run {
     let failure: unknown = null;
     let empty = false;
     let retriedBlocked = false;
+    /** A helper stopped with plan steps open: the note of its one more step (`openStepsNote`). */
+    let nudge: string | null = null;
+    let nudged = false;
+    /** What the helper wrote before that step: its result if the step writes nothing. */
+    let beforeNudge = "";
     /** The limit that ended the loop, once one did. */
     let ended: LimitName | null = null;
     /** The last step tried to hand the rest off and said nothing: one more step, without tools. */
@@ -640,7 +647,8 @@ class Run {
         limit !== null && handed === null && this.#mayHandOff(limit, offered);
       this.#rounds += 1;
       this.#stepPictures = [];
-      const note = limit === null ? null : this.#limitNote(limit, handoff, handed);
+      const note = limit === null ? nudge : this.#limitNote(limit, handoff, handed);
+      nudge = null;
       const step = await this.#step(this.#request(base, offered, note), limit !== null);
       if (step.error !== null) {
         failure = step.error;
@@ -695,6 +703,23 @@ class Run {
         retriedBlocked = true;
         continue;
       }
+      // A helper that wrote its result with plan steps not marked done: once, one more step that
+      // lists them (done: mark them and write the result; not: go on; cannot: say why). Never at
+      // a limit, nor when the next step would be one.
+      if (!nudged && limit === null && text !== "" && !this.#profile.speaks) {
+        const open = this.#openSteps();
+        if (open.length > 0 && this.#limitReached() === null) {
+          nudged = true;
+          nudge = PLAN_TEXTS.open(open);
+          beforeNudge = this.#text;
+          continue;
+        }
+      }
+      // The step after the note wrote nothing: the result is the one before it.
+      if (nudged && this.#text === "" && beforeNudge !== "") {
+        this.#text = beforeNudge;
+        break;
+      }
       empty =
         !step.silence &&
         step.lines.length === 0 &&
@@ -710,6 +735,16 @@ class Run {
     return this.#lines.length > 0 || (!this.#profile.speaks && this.#text !== "")
       ? "said"
       : "silent";
+  }
+
+  /** The helper's plan steps not marked done (`RunInput.openSteps`); none when it cannot tell. */
+  #openSteps(): readonly string[] {
+    try {
+      return this.#in.openSteps?.() ?? [];
+    } catch (error) {
+      this.#p.log.warn({ turn: this.turn, err: errorMessage(error) }, "cannot read the plan");
+      return [];
+    }
   }
 
   /** The limit that ends the loop before the next step, if one is reached. */

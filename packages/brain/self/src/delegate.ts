@@ -784,6 +784,7 @@ export class Delegator {
           signal: live.controller.signal,
           turn: `delegate-${row.id}`,
           payer: this.payerOf(row),
+          openSteps: () => row.plan.filter((s) => s.state !== "done").map((s) => s.text),
         }),
       );
     } catch (error) {

@@ -230,6 +230,7 @@ export interface Rig {
       payer?: Payer | null;
       payerOf?: (from: WakeAuthor) => Payer | null;
       feelRepair?: boolean;
+      openSteps?: () => readonly string[];
     },
   ): Promise<RunResult>;
   /** Appends someone's line to the session's transcript. */
@@ -306,6 +307,7 @@ export async function rig(script: readonly ScriptStep[], options: RigOptions = {
         ...(o.payer === undefined ? {} : { payer: o.payer }),
         ...(o.payerOf === undefined ? {} : { payerOf: o.payerOf }),
         ...(o.feelRepair === undefined ? {} : { feelRepair: o.feelRepair }),
+        ...(o.openSteps === undefined ? {} : { openSteps: o.openSteps }),
       }),
     line: (author, content, extra = {}) => {
       transcript.append(
