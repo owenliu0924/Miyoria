@@ -16,7 +16,7 @@ import { imageHash, imageSource, imageTag } from "../../src/service/images.js";
 import { accepts, policyOf } from "../../src/service/policy.js";
 import { Retained } from "../../src/service/procs.js";
 import { requestHash, stableJson } from "../../src/service/util.js";
-import { applyLimits } from "../../src/service/validate.js";
+import { applyLimits, checkEnv } from "../../src/service/validate.js";
 import { tempDir } from "./helpers.js";
 
 describe("event ring", () => {
@@ -203,6 +203,15 @@ describe("disk measure", () => {
       }
     },
   );
+});
+
+describe("environment of a program", () => {
+  it("refuses a value with a line break as a bad request", () => {
+    expect(checkEnv({ MADE_A: "one line" })).toEqual({ MADE_A: "one line" });
+    for (const value of ["two\nlines", "carriage\rreturn"]) {
+      expect(() => checkEnv({ MADE_A: value })).toThrow(/line break/);
+    }
+  });
 });
 
 describe("job limits", () => {
