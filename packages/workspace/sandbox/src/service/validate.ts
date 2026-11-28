@@ -64,13 +64,17 @@ export function applyLimits(limits: SandboxLimits, policy: SandboxPolicy): Sandb
   inRange("limits.file_mb", limits.file_mb, 1, 1_048_576);
   inRange("limits.nofile", limits.nofile, 64, 1_048_576);
   inRange("limits.disk_mb", limits.disk_mb, 16, 4_194_304);
+  const disk_mb = Math.min(limits.disk_mb, policy.disk_mb);
   return {
     ...limits,
     cpus: Math.min(limits.cpus, policy.max_job_cpus),
     memory_mb: Math.min(limits.memory_mb, policy.max_job_memory_mb),
     // /tmp is memory: never more than the job's memory.
     tmp_mb: Math.min(limits.tmp_mb, limits.memory_mb, policy.max_job_memory_mb),
-    disk_mb: Math.min(limits.disk_mb, policy.disk_mb),
+    disk_mb,
+    // The disk is measured every few seconds, the file size held by the kernel at every write:
+    // one file is never let grow past what the whole job may hold between two measurements.
+    file_mb: Math.min(limits.file_mb, disk_mb),
   };
 }
 

@@ -371,7 +371,9 @@ export class Job {
     this.diskBytes = reading.bytes;
     return {
       bytes: reading.bytes,
-      over: reading.truncated || reading.bytes > this.limits.disk_mb * MIB,
+      // What could not be read is not known to be small: over, never under-counted.
+      over:
+        reading.truncated || reading.unreadable > 0 || reading.bytes > this.limits.disk_mb * MIB,
     };
   }
 
