@@ -49,6 +49,8 @@ describe("isBlockedAddress", () => {
     ["IPv4-compatible", "::127.0.0.1"],
     ["NAT64 of loopback", "64:ff9b::7f00:1"],
     ["NAT64 dotted", "64:ff9b::10.0.0.1"],
+    ["local-use NAT64", "64:ff9b:1::a00:1"],
+    ["local-use NAT64 of a public address", "64:ff9b:1:808:8:800::"],
     ["6to4 of private", "2002:c0a8:101::1"],
     ["zone id", "fe80::1%eth0"],
     ["garbage", "not-an-ip"],
