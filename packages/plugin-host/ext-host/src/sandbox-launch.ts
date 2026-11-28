@@ -204,13 +204,22 @@ export function sandboxArgv(spec: LaunchSpec): string[] | string {
   }
 }
 
-/** The job's network: the hosts it declared (and was granted), or open when it declared none. */
-export function sandboxNetwork(granted: readonly string[]): {
+/**
+ * The job's network: the hosts it declared (and was granted), or open when it declared none or
+ * `*`. `declared`: its manifest listed hosts (default: `granted` is not empty); one that did and
+ * was granted none of them (`permissions.network = []`) gets no network, never an open one.
+ */
+export function sandboxNetwork(
+  granted: readonly string[],
+  declared = granted.length > 0,
+): {
   network: NonNullable<SandboxJobSpec["network"]>;
   dropped: string[];
 } {
-  if (granted.length === 0 || granted.includes("*"))
-    return { network: { mode: "open" }, dropped: [] };
+  if (granted.includes("*")) return { network: { mode: "open" }, dropped: [] };
+  if (granted.length === 0) {
+    return { network: declared ? { mode: "none" } : { mode: "open" }, dropped: [] };
+  }
   const allow: string[] = [];
   const dropped: string[] = [];
   for (const entry of granted) {
@@ -278,7 +287,7 @@ export function sandboxPlan(
       ...Object.keys(env).filter(looksLikeSecret),
     ]),
   ].sort();
-  const { network, dropped: hosts } = sandboxNetwork(spec.network);
+  const { network, dropped: hosts } = sandboxNetwork(spec.network, spec.networkDeclared);
   for (const host of hosts) dropped.push({ name: host, why: "not a host name the proxy allows" });
   if (credentials.length === 0) return { ok: true, argv, env, dropped, network, credentials };
   const allowed = [

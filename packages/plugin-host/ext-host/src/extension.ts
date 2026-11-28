@@ -248,6 +248,7 @@ export class ExtensionModule implements Module {
         cwd: this.spec.dir,
         env: report.env,
         network: [...this.spec.granted.network],
+        networkDeclared: m.permissions.network.length > 0,
         secrets,
         runIn: this.spec.runIn ?? defaultRunIn(m.kind, this.spec.granted),
         runInChosen: this.spec.runIn !== undefined && this.spec.runIn !== null,

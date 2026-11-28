@@ -28,7 +28,15 @@ import {
   type SandboxProc,
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
-import { discover, ExtensionLauncherKey, type LaunchSpec } from "../src/index.js";
+import {
+  discover,
+  ExtensionLauncherKey,
+  ExtensionManifest,
+  ExtensionModule,
+  extensionSettings,
+  grantedPermissions,
+  type LaunchSpec,
+} from "../src/index.js";
 import {
   inExtDir,
   type SandboxLauncherOptions,
@@ -321,6 +329,30 @@ describe("what goes into a job", () => {
       MADE_TOKEN: "t",
     });
     expect(dropped).toHaveLength(11);
+  });
+
+  it("declared hosts of which the owner granted none is no network, not an open one", () => {
+    const manifest = ExtensionManifest.parse(
+      'id = "made.up"\nversion = "1"\nruntime = "node"\nentry = "i.js"\n' +
+        '[permissions]\nnetwork = ["api.made.example"]',
+    );
+    const settings = extensionSettings(
+      Config.fromValue({ extensions: { "made.up": { permissions: { network: [] } } } }),
+      "made.up",
+    );
+    const granted = grantedPermissions(settings, manifest.permissions);
+    expect(granted.network).toEqual([]);
+    const { spec } = new ExtensionModule({ manifest, dir: ECHO_DIR, granted }, {
+      runtimes: {},
+    } as never).launchSpec({});
+    expect(sandboxPlan(spec, { trustedHosts: [] })).toMatchObject({
+      ok: true,
+      network: { mode: "none" },
+    });
+    expect(sandboxNetwork([], true).network).toEqual({ mode: "none" });
+    // `*`, or nothing declared at all, is the documented open default.
+    expect(sandboxNetwork(["*"], true).network).toEqual({ mode: "open" });
+    expect(sandboxNetwork([], false).network).toEqual({ mode: "open" });
   });
 
   it("the hosts it declared, or the open network when it declared none", () => {
