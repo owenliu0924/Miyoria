@@ -989,6 +989,24 @@ export {
   type TurnRetrievalQuery,
   type Whereabouts,
 } from "./recent-past.js";
+export {
+  type HerVoice,
+  type HerVoiceDown,
+  HerVoiceKey,
+  INCOMING_FILE_HOST,
+  type IncomingFetchLike,
+  type IncomingFiles,
+  IncomingFilesKey,
+  type IncomingFilesLookup,
+  incomingAllowed,
+  incomingFetch,
+  isIncomingFileUrl,
+  isRoomContext,
+  ROOM_PLATFORM,
+  ROOM_SELF,
+  roomAccount,
+  roomContext,
+} from "./room.js";
 export { type SceneRule, type SceneRuleInput, SceneRuleKey } from "./scene-rule.js";
 export {
   type SkillShelf,

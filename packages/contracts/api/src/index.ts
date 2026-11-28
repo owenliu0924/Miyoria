@@ -74,6 +74,7 @@ import { publicView } from "./public.js";
 import { push } from "./push.js";
 import { reports } from "./reports.js";
 import { roles } from "./roles.js";
+import { room } from "./room.js";
 import { sandbox } from "./sandbox.js";
 import { moduleSettings, places } from "./settings.js";
 import { memberSpaces, placesSpaces } from "./spaces.js";
@@ -1044,6 +1045,39 @@ export {
   type UpsertRoleRequest,
   UpsertRoleRequestSchema,
 } from "./roles.js";
+export {
+  ROOM_CLIENT_ID,
+  ROOM_CURSOR,
+  ROOM_LINE_ID,
+  ROOM_MEMORY_ID,
+  ROOM_UPLOAD_ID,
+  ROOM_UPLOAD_PATH,
+  type RoomBacklog,
+  RoomBacklogSchema,
+  type RoomDoing,
+  RoomDoingSchema,
+  type RoomEntry,
+  RoomEntrySchema,
+  type RoomEvent,
+  RoomEventSchema,
+  RoomFaceSchema,
+  type RoomFile,
+  RoomFileSchema,
+  type RoomMemory,
+  RoomMemorySchema,
+  type RoomRelation,
+  RoomRelationSchema,
+  type RoomSendRequest,
+  RoomSendRequestSchema,
+  type RoomSendResult,
+  RoomSendResultSchema,
+  type RoomState,
+  RoomStateSchema,
+  type RoomUpload,
+  RoomUploadSchema,
+  roomFilePath,
+  roomVoicePath,
+} from "./room.js";
 export { type Audience, eventRouteSchemas, type RouteMeta, route, routeMeta } from "./route.js";
 export {
   type ProposedTool,
@@ -1262,6 +1296,7 @@ export const contract = {
   karaoke,
   karaokeAdmin,
   karaokeRooms,
+  room,
   reports,
   githubLink,
   memberFiles,
