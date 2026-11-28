@@ -19,6 +19,7 @@ import {
   IMAGE_TYPES,
   type IncomingMessage,
   type MessageRef,
+  ModerationKey,
   newId,
   type OutgoingMessage,
   type PlatformSink,
@@ -26,6 +27,7 @@ import {
   ROOM_SELF,
   roomAccount,
   type SentMessage,
+  safeOutgoing,
   toTimestamp,
 } from "@miyoria/types";
 import type { ApiState } from "../state.js";
@@ -105,7 +107,13 @@ export class WebSink implements PlatformSink {
     }
     const id = newId();
     const now = this.state.now();
-    const text = roomText(message.text);
+    // Last line of defence, as on Discord: nothing moderation stops, no secrets, whoever got here.
+    const safe = safeOutgoing(this.state.optional(ModerationKey), {
+      path: "reply",
+      text: message.text,
+      context,
+    });
+    const text = roomText(safe.text);
     const turn = hub.lastTurn;
     hub.lines.set(id, {
       id,
@@ -142,7 +150,7 @@ export class WebSink implements PlatformSink {
     };
     await this.#record(echo, turn);
     this.state.ctx.publish(Events.PlatformMessageCreated, echo, turn === null ? {} : { turn });
-    return { context, id };
+    return safe.blocked === null ? { context, id } : { context, id, blocked: safe.blocked };
   }
 
   /** Her line in the chat log now, with its turn (the chat record skips it later: same key). */

@@ -3,7 +3,7 @@
 // (`ROOM_SELF`), and `typing` at most once a second.
 
 import type { RoomEvent } from "@miyoria/contracts/api";
-import { ROOM_SELF, roomContext } from "@miyoria/types";
+import { ModerationKey, ROOM_SELF, roomContext } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import type { Outgoing } from "../src/room/channel.js";
 import { roomText, WebSink } from "../src/room/sink.js";
@@ -26,6 +26,19 @@ describe("her lines in the room", () => {
     expect(roomText("<:smile:111> <a:wave:222>")).toBe(":smile: :wave:");
     expect(roomText("好 <@123> <:cat_2:333>")).toBe("好 :cat_2:");
     expect(roomText("line one\nline two")).toBe("line one\nline two");
+  });
+
+  it("reviews a line once more before it goes out, as Discord's sink does", async () => {
+    const r = sinkRig();
+    r.services.set(ModerationKey, {
+      screen: () => ({ ok: false, blocked: [{ rule: "test.rule" }] }),
+      filteredLine: "(這句不能說)",
+      filteredVoiceLine: "(這句不能說)",
+    });
+    const alice = r.heard(ALICE);
+    const sent = await r.sink.send(roomContext(ALICE), { text: "不該說的話", reply_to: null });
+    expect(sent.blocked).toBe("test.rule");
+    expect((alice[0]?.event as Extract<RoomEvent, { kind: "line" }>).text).toBe("(這句不能說)");
   });
 
   it("sends a line only to that account's hub, and echoes it as hers", async () => {

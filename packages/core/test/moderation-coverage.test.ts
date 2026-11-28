@@ -97,10 +97,13 @@ describe("every line of hers is reviewed", () => {
         "packages/core/src/cli-platform.ts",
         "packages/discord/src/sink.ts",
         "packages/play/game/src/chat.ts",
+        // Her room on the member site: reviewed in `send` like Discord.
+        "packages/api/src/room/sink.ts",
       ].sort(),
     );
     const discord = read("packages/discord/src/sink.ts");
     expect(bodyOf(discord, "async send(")).toContain("safeOutgoing(");
+    expect(bodyOf(read("packages/api/src/room/sink.ts"), "async send(")).toContain("safeOutgoing(");
     expect(bodyOf(discord, "async setVoiceStatus(")).toContain("safeOutgoing(");
     const voice = read("packages/voice/voice/src/sink.ts");
     const producer = bodyOf(voice, "#producer(");
@@ -115,7 +118,16 @@ describe("every line of hers is reviewed", () => {
   });
 
   it("the voice sink is only reached by the scheduler; the other voices go through the mouth, reviewed", () => {
-    expect(using(/\.speak\(/)).toEqual(["packages/runtime/scheduler/src/scheduler.ts"]);
+    expect(using(/\.speak\(/)).toEqual(
+      [
+        "packages/runtime/scheduler/src/scheduler.ts",
+        // Not the voice sink: `HerVoice` reads out a line of hers that already went to her room
+        // (through the mouth and the room's sink), and reviews the `tts` path itself.
+        "packages/api/src/room/voice.ts",
+      ].sort(),
+    );
+    const her = read("packages/voice/voice/src/her-voice.ts");
+    expect(her).toContain('this.#review(text, "tts")');
     for (const file of ["packages/gate/actions/src/builtin.ts", "packages/play/game/src/chat.ts"]) {
       const text = read(file);
       expect(text.indexOf("safeOutgoing("), file).toBeGreaterThan(-1);
