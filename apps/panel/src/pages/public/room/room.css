@@ -454,8 +454,8 @@
   -webkit-user-select: text;
 }
 /* Nothing is shaded behind the dock: what is behind her stays as it is to the bottom edge. Her
-   line and the member's are plain text with a dark outline, as subtitles are, so they read over
-   her white stockings and over a bright picture alike. */
+   line and the member's are plain text with a little shadow of their own and nothing behind
+   them (the owner's choice: a band, a plate, a pool of shade and an outline were all tried). */
 .hr-dock[data-dragging] {
   transition: none;
 }
@@ -470,9 +470,9 @@
   opacity: 0;
   transition: opacity 1.2s var(--ease-out);
   color: var(--soft);
-  -webkit-text-stroke: 3px rgba(10, 12, 18, 0.9);
-  paint-order: stroke fill;
-  text-shadow: 0 1px 5px rgba(6, 8, 12, 0.6);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.75),
+    0 0 5px rgba(0, 0, 0, 0.45);
 }
 .hr-you[data-show] {
   opacity: 1;
@@ -495,9 +495,9 @@
   line-height: 1.65;
   font-weight: 500;
   text-wrap: balance;
-  -webkit-text-stroke: 4px rgba(10, 12, 18, 0.9);
-  paint-order: stroke fill;
-  text-shadow: 0 1px 6px rgba(6, 8, 12, 0.6);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.75),
+    0 0 6px rgba(0, 0, 0, 0.45);
   overflow-wrap: anywhere;
 }
 .hr-her[data-more] {
