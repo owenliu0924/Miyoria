@@ -4,7 +4,9 @@
 // that is not in it or not marked, so the live `data/miyoria.db` can never be opened by it.
 //
 //   room-dev.ts init [--fresh]            the config, the ports, the panel's env (--fresh: a new database)
-//   room-dev.ts member [--name 測試小澄]   a member's session and server membership; prints the cookie
+//   room-dev.ts member [--name 測試小澄] [--id 900000000000000002]
+//                                          a member's session and server membership; prints the cookie
+//                                          (--id: another made-up account, to try one member against another)
 //
 // Not part of any build: `pnpm exec tsx --conditions=@miyoria/source packages/api/dev/room-dev.ts …`.
 
@@ -108,6 +110,12 @@ mind = ["deepseek:chat"]
 enabled = false
 
 ${off.map((id) => `[modules.${id.includes(".") ? `"${id}"` : id}]\nenabled = false\n`).join("\n")}
+# Her memory sums a conversation up soon after it goes quiet, so the relation panel has memories
+# (the stub's summarizer writes one) without waiting five minutes.
+[modules.memory]
+consolidate_idle_secs = 20
+tick_secs = 5
+
 [modules.api]
 bind = "127.0.0.1:${ports.api}"
 token = "${token}"
@@ -149,7 +157,10 @@ async function init(fresh: boolean): Promise<void> {
   );
 }
 
-async function member(name: string): Promise<void> {
+async function member(name: string, id: string = DEV_ACCOUNT.id): Promise<void> {
+  if (!/^9\d{17}$/.test(id))
+    throw new Error(`refusing --id ${id}: made-up ids are 18 digits starting with 9`);
+  const account = { platform: "discord", id } as const;
   assertDevPath(DB);
   const store = await openStore(`sqlite:${DB}`);
   try {
@@ -159,12 +170,12 @@ async function member(name: string): Promise<void> {
     if (!places) throw new Error("this store has no places");
     // A made-up server she is in, and the member in it (the room is only for server members).
     const space = places.seen("discord", DEV_GUILD, "開發用伺服器");
-    places.memberSeen(space, DEV_ACCOUNT, name);
+    places.memberSeen(space, account, name);
     const token = randomBytes(32).toString("base64url");
     const hash = createHash("sha256").update(token, "utf8").digest("hex");
     const now = Date.now();
     await store.settings.set("_global", `panel_session:${hash}`, {
-      account: { ...DEV_ACCOUNT },
+      account: { ...account },
       name,
       avatar_url: null,
       tier: "member",
@@ -172,7 +183,7 @@ async function member(name: string): Promise<void> {
       expires_at: toTimestamp(now + 7 * 86_400_000),
     });
     process.stdout.write(
-      `member ${name} (${DEV_ACCOUNT.platform}:${DEV_ACCOUNT.id}) in server ${space}\n` +
+      `member ${name} (${account.platform}:${account.id}) in server ${space}\n` +
         `in the browser at the panel's address: document.cookie = "miyoria_session=${token}; path=/"\n` +
         `curl: -H "cookie: miyoria_session=${token}" -H "x-miyoria-request: 1"\n`,
     );
@@ -193,7 +204,7 @@ if (isMain()) {
   };
   try {
     if (command === "init") await init(rest.includes("--fresh"));
-    else if (command === "member") await member(flag("--name") ?? "測試小澄");
+    else if (command === "member") await member(flag("--name") ?? "測試小澄", flag("--id"));
     else {
       process.stderr.write("usage: room-dev.ts init [--fresh] | member [--name <name>]\n");
       process.exitCode = 2;

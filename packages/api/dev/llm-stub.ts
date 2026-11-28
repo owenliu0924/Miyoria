@@ -2,10 +2,12 @@
 // model (docs/design/her-room.md §8). OpenAI-compatible `POST /v1/chat/completions` (streamed or
 // not), answering by a script:
 //
-// * a request that wants JSON (`response_format`, or a system message that asks for JSON): `{}`;
+// * her memory's summarizer: an episode and one fact about the member (for the relation panel);
+// * any other request that wants JSON (`response_format`, or a system message asking for it): `{}`;
 // * a request with an image part: 「我看到你的圖了」;
 // * otherwise two lines after a `<feel>` block that moves the member's bond up, or down when their
-//   last line has 「鬧」 in it.
+//   last line has 「鬧」 in it; 「長」 asks for a reply of five lines (「慢」: streamed two seconds a
+//   line), 「看看」 for what reached her (the end of the member's text as the model got it).
 //
 // Every request is kept; `GET /requests` lists them (to see that an image really reached the model).
 // Not part of any build; `pnpm exec tsx --conditions=@miyoria/source packages/api/dev/llm-stub.ts`.
@@ -18,8 +20,8 @@ import { fileURLToPath } from "node:url";
 
 /** What one request is answered with. */
 export type StubReply =
-  | { text: string }
-  | { tool: { name: string; args: Record<string, unknown> } };
+  /** `paceMs`: a streamed reply sends one line at a time, this long apart. */
+  { text: string; paceMs?: number } | { tool: { name: string; args: Record<string, unknown> } };
 
 export interface StubRequest {
   model?: string;
@@ -56,6 +58,14 @@ function hasImage(request: StubRequest): boolean {
   );
 }
 
+/** Her memory's consolidation (`@miyoria/memory/memory`'s `systemPrompt`). */
+function isSummarizer(request: StubRequest): boolean {
+  return (request.messages ?? []).some(
+    (m) =>
+      m.role === "system" && contentText(m.content).startsWith("你正在回想自己剛剛參與的一段對話"),
+  );
+}
+
 function wantsJson(request: StubRequest): boolean {
   if (request.response_format !== undefined) return true;
   return (request.messages ?? []).some(
@@ -78,15 +88,66 @@ export function lastUserText(request: StubRequest): string {
     .join("\n");
 }
 
+/**
+ * The member's own newest transcript line (`<name>: …`), or `lastUserText` without one. Not every
+ * user message is theirs: her examples (with 「鬧」 in them) and the `<data>` blocks are too.
+ */
+export function memberText(request: StubRequest, name: string): string {
+  const messages = request.messages ?? [];
+  for (let at = messages.length - 1; at >= 0; at -= 1) {
+    const m = messages[at];
+    if (m?.role !== "user") continue;
+    const text = contentText(m.content);
+    if (text.startsWith(`${name}: `)) return text.slice(name.length + 2);
+  }
+  return lastUserText(request);
+}
+
 /** The dev script: her two lines and a `<feel>` about `name`. */
 export function devScript(name: string): StubScript {
   return (request) => {
+    // Her memory's summarizer: one episode and one fact about the member, so the relation panel has
+    // something to show and to forget.
+    if (isSummarizer(request)) {
+      return {
+        text: JSON.stringify({
+          episode: { summary: `我和${name}在房間裡聊天`, importance: 0.6, emotion: "開心" },
+          facts: [
+            {
+              subject_name: name,
+              statement: `${name}把傘忘在店裡了`,
+              importance: 0.7,
+              confidence: 0.9,
+              global: false,
+              valid_hours: null,
+              lines: [1],
+            },
+          ],
+          self_notes: [],
+          followups: [],
+          answered_followups: [],
+        }),
+      };
+    }
     if (wantsJson(request)) return { text: "{}" };
     if (hasImage(request)) return { text: "我看到你的圖了" };
-    const teased = lastUserText(request).includes("鬧");
+    const said = memberText(request, name);
+    const teased = said.includes("鬧");
     const feel = teased
       ? `<feel>\n我: 生氣 弱\n${name}: 羈絆 -3「又在鬧我」\n</feel>`
       : `<feel>\n我: 開心 中\n${name}: 羈絆 + 「記得答應我的事」\n</feel>`;
+    // 「看看」: she says back what reached her (a file's name or text), to see it got there.
+    if (said.includes("看看")) {
+      const seen = said.replace(/\s+/g, " ").trim().slice(-240);
+      return { text: `${feel}\n我收到的是:${seen}` };
+    }
+    // 「長」: a reply of several lines, to step through; 「慢」 streams them two seconds apart.
+    if (said.includes("長") || said.includes("慢")) {
+      return {
+        text: `${feel}\n好,那我慢慢說。\n第一件事,今天下午的雨很大。\n第二件事,我把傘忘在店裡了。\n第三件事,店員幫我收好了。\n所以明天要記得去拿。`,
+        ...(said.includes("慢") ? { paceMs: 2_000 } : {}),
+      };
+    }
     return { text: `${feel}\n好呀,我在這裡。\n你今天過得怎麼樣?` };
   };
 }
@@ -103,7 +164,7 @@ function chunk(model: string, delta: Record<string, unknown>, finish: string | n
 
 const USAGE = { prompt_tokens: 100, completion_tokens: 10, total_tokens: 110 };
 
-function answer(res: ServerResponse, request: StubRequest, reply: StubReply): void {
+async function answer(res: ServerResponse, request: StubRequest, reply: StubReply): Promise<void> {
   const model = request.model ?? "stub";
   const finish = "tool" in reply ? "tool_calls" : "stop";
   const toolCall =
@@ -137,7 +198,14 @@ function answer(res: ServerResponse, request: StubRequest, reply: StubReply): vo
   const send = (value: unknown) => res.write(`data: ${JSON.stringify(value)}\n\n`);
   send(chunk(model, { role: "assistant", content: "" }, null));
   if (toolCall !== null) send(chunk(model, { tool_calls: [toolCall] }, null));
-  else send(chunk(model, { content: "text" in reply ? reply.text : "" }, null));
+  else if ("text" in reply && reply.paceMs !== undefined) {
+    const parts = reply.text.split(/(?<=\n)/);
+    for (const [i, part] of parts.entries()) {
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, reply.paceMs));
+      if (res.destroyed) return;
+      send(chunk(model, { content: part }, null));
+    }
+  } else send(chunk(model, { content: "text" in reply ? reply.text : "" }, null));
   send({ ...chunk(model, {}, finish), usage: USAGE });
   res.write("data: [DONE]\n\n");
   res.end();
@@ -189,7 +257,7 @@ export async function startLlmStub(options: {
         return;
       }
       requests.push(request);
-      answer(res, request, options.script(request) ?? { text: "嗯。" });
+      await answer(res, request, options.script(request) ?? { text: "嗯。" });
     })().catch(() => {
       if (!res.headersSent) res.writeHead(500);
       res.end();
