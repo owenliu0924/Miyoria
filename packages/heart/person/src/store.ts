@@ -10,6 +10,8 @@
 // A bond that enters a tier never reached before (`tier_floor` goes up) is told to whoever listens
 // (`onTierEntered`) once the write is committed: the cards plugin gives a milestone card for it
 // (docs/design/v5-play.md §6.1). The migration's rows and a merge are no rise, and tell nothing.
+// Every change written is told the same way (`onChanged`): her room marks the bond moving after her
+// line of the turn it came from (docs/design/her-room.md §2.5).
 //
 // Core's store opens this plugin (`STORE_PLUGINS`); the module `heart` (`module.ts`) owns it.
 
@@ -35,6 +37,7 @@ import {
   type Clock,
   HEART_TEXT_FIELDS,
   type HeartActivity,
+  type HeartChange as HeartChangeTold,
   type HeartDay,
   type HeartLine,
   type HeartReflected,
@@ -112,6 +115,9 @@ export interface TierEntered {
 
 /** Told of every `TierEntered` once its write is committed; it must not throw. */
 export type TierListener = (entered: TierEntered) => void;
+
+/** Told of every change once its write is committed (a throw is logged, not passed on). */
+export type ChangeListener = (change: HeartChangeTold) => void;
 
 /** Options of a write that moves a number. */
 export interface HeartApplyOptions {
@@ -225,6 +231,7 @@ export class HeartStore {
   #rules: HeartPersonConfig;
   #log: HeartLog;
   readonly #tierListeners = new Set<TierListener>();
+  readonly #changeListeners = new Set<ChangeListener>();
 
   constructor(
     db: Db,
@@ -277,6 +284,47 @@ export class HeartStore {
         }
       }
     });
+  }
+
+  /**
+   * Tells `listener` of every `heart.changed` written (`feel`, `reflect`, the daily pass, an owner's
+   * edit, the migration, a forget), after the write is committed (never one that rolls back),
+   * `delta` 0 included. The way to stop listening is the returned function.
+   */
+  onChanged(listener: ChangeListener): () => void {
+    this.#changeListeners.add(listener);
+    return () => {
+      this.#changeListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Appends `change` to the log (inside the caller's transaction) and queues it for the change
+   * listeners, once the outermost transaction commits. The event's id.
+   */
+  #appendChange(change: HeartChange, at: Timestamp, turn: string | null = null): string {
+    const id = this.#events.appendNow(changeWrite(change, at, turn)).id;
+    if (this.#changeListeners.size === 0) return id;
+    const told: HeartChangeTold = {
+      person: change.person,
+      field: change.field,
+      delta: change.delta,
+      quote: change.reason_quote,
+      cause: change.cause,
+      turn,
+      at,
+      event_id: id,
+    };
+    this.#db.afterCommit(() => {
+      for (const listener of this.#changeListeners) {
+        try {
+          listener(told);
+        } catch (error) {
+          log.warn({ err: errorMessage(error), person: told.person }, "a change listener failed");
+        }
+      }
+    });
+    return id;
   }
 
   #now(now: number | undefined): number {
@@ -397,13 +445,14 @@ export class HeartStore {
     const changes = this.#log
       .changesBetween(person, from, to)
       .filter((e) => e.change.cause !== "decay" && e.change.cause !== "migrate")
-      .map(({ at, change: c }) => ({
+      .map(({ at, turn, change: c }) => ({
         at,
         field: c.field,
         delta: c.delta,
         proposed: c.proposed,
         quote: c.reason_quote,
         cause: c.cause,
+        turn,
       }));
     const evidence = this.#log.evidence(person, from, to).map(({ evidence: e }) => ({
       at: e.at,
@@ -525,11 +574,11 @@ export class HeartStore {
         const applied = applyChange(current, request, ledger, this.#rules, now);
         current = applied.person;
         ledger = applied.ledger;
-        const event = this.#events.appendNow(changeWrite(applied.change, at, options.turn ?? null));
+        const eventId = this.#appendChange(applied.change, at, options.turn ?? null);
         out.push({
           person: current,
           change: applied.change,
-          event_id: event.id,
+          event_id: eventId,
           held: applied.held,
           created: stored === null,
         });
@@ -719,7 +768,7 @@ export class HeartStore {
       }
       // Decay is not capped, so the day's ledger does not matter to it.
       const result = applyDecay(current, pass, emptyLedger(pass.day), this.#rules, now);
-      for (const change of result.changes) this.#events.appendNow(changeWrite(change, at));
+      for (const change of result.changes) this.#appendChange(change, at);
       const next = { ...result.person, updated_at: at };
       this.upsert(next);
       return { person: next, changes: result.changes };
@@ -773,7 +822,7 @@ export class HeartStore {
     return this.#write(() => {
       const result = migrateLegacy(input, (p) => this.has(p), this.#rules, now);
       for (const row of result.rows) this.upsert(row);
-      for (const change of result.changes) this.#events.appendNow(changeWrite(change, at));
+      for (const change of result.changes) this.#appendChange(change, at);
       return result;
     });
   }
@@ -828,19 +877,17 @@ export class HeartStore {
         this.upsert(next);
         for (const field of HEART_FIELDS) {
           if (next[field] === row[field]) continue;
-          this.#events.appendNow(
-            changeWrite(
-              {
-                person: id,
-                field,
-                delta: next[field] - row[field],
-                value_after: next[field],
-                proposed: null,
-                reason_quote: "",
-                cause: "admin",
-              },
-              at,
-            ),
+          this.#appendChange(
+            {
+              person: id,
+              field,
+              delta: next[field] - row[field],
+              value_after: next[field],
+              proposed: null,
+              reason_quote: "",
+              cause: "admin",
+            },
+            at,
           );
         }
         people += 1;

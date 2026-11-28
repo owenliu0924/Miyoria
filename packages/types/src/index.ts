@@ -1140,6 +1140,7 @@ export {
   HEART_TEXT_FIELDS,
   type HeartActivity,
   type HeartAnchorView,
+  type HeartChange,
   type HeartDay,
   type HeartDayChange,
   type HeartDayEvidence,

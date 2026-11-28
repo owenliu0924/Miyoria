@@ -35,6 +35,8 @@ export interface HeartHistoryEntry {
   /** The event's id: the cursor for the next page (`before`). */
   id: string;
   at: Timestamp;
+  /** The turn it came from (the envelope's); `null`: none or unknown. */
+  turn: string | null;
   change: HeartChange;
 }
 
@@ -109,7 +111,12 @@ export class HeartLog {
     for (const row of rows) {
       const parsed = HeartChanged.data.safeParse(row.envelope.data);
       if (parsed.success)
-        out.push({ id: row.envelope.id, at: row.envelope.at, change: parsed.data });
+        out.push({
+          id: row.envelope.id,
+          at: row.envelope.at,
+          turn: row.envelope.turn,
+          change: parsed.data,
+        });
     }
     return out;
   }
@@ -152,7 +159,12 @@ export class HeartLog {
     for (const row of rows) {
       const parsed = HeartChanged.data.safeParse(row.envelope.data);
       if (parsed.success)
-        out.push({ id: row.envelope.id, at: row.envelope.at, change: parsed.data });
+        out.push({
+          id: row.envelope.id,
+          at: row.envelope.at,
+          turn: row.envelope.turn,
+          change: parsed.data,
+        });
     }
     return out;
   }
