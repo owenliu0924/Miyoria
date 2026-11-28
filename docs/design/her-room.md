@@ -683,6 +683,12 @@ export interface HerFigure {
   feel?(face: RoomFigureFace, doing: RoomDoing | "still"): void;
   /** Her line is being read out (a mouth for Live2D). */
   speaking(on: boolean): void;
+  /** She is working out her reply (the thinking pose for Live2D). */
+  thinking?(on: boolean): void;
+  /** Her line as far as it is shown while it comes in, `null` once whole: the mouth follows the text when no voice plays. */
+  mouthing?(shown: string | null): void;
+  /** A gesture: `heard` the member's line, her bond went `up` or `down`. */
+  react?(kind: "heard" | "up" | "down"): void;
   dispose(): void;
 }
 /** The pose for her state and face: singing → sing; joy / pride → heart; anger / disgust → finger; … */
@@ -693,6 +699,7 @@ F 的細節(示意圖沒寫死、這裡定下來的):
 
 - 她的話:`thinking` → 「她在想」;每個 `line` 一字一字出來;同一輪後面還有行就出現往下的小箭頭,點她的話或空膠囊按 Enter 換下一段(示意圖的行為);`done` 之後幾秒你的那句淡掉。
 - `bond` 事件:環下方的 + / − 和她的引用,幾秒後淡掉,紀錄裡留著;然後重讀 `relation`(環可能動了)。
+- 對話中她的身影會反應(2026-11-28 加,§7.5「對話中的反應」):你送出一句她點頭看你、她在想時是思考的表情和姿勢、她的話打出來時沒有聲音就照字動嘴、羈絆動了開心地晃一下或別過頭。
 - 聲音鍵:`state.voice.available` 為否就是灰的,`title` 和 `aria-describedby` 是原因。開著時照順序拿每一行的 WAV 播;用 `BroadcastChannel("miyoria-room")` 選「最後按過鍵 / 送出過」的那一頁播,其他頁不播。
 - 膠囊提示:`paused` →「她現在暫停中,你說的她會記得」;`quota.capped` →「她晚點才能回你(HH:MM)」;其他都是「跟她說點什麼」,**不寫「只會簡短回你」**(§4)。沒有麥克風鍵。
 - 紀錄:往上翻用 `older`;自己的那句旁邊有「不要記住這句」(確認一次);底部那行小字照示意圖,但「拿掉的她不會再提」改成「她會忘掉這件事」。
@@ -715,7 +722,7 @@ owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,
 
 **三塊:**
 
-- **身影的 bundle**:`tools/card-studio/src/figure.ts`,`vite.figure.config.ts` 建成 `dist/figure/figure.js`(一個 ES module,Live2D 的 Web Framework 打包在裡面,Cubism Core 不在)。`mount(canvas, { manifest, size, reduced, frame }) → { setMood, setState, speak, lookAt, resize, stats, destroy }`。做的事:模型自己的待機動作(`IDLE.motion3.json`,VTube Studio 的 `IdleAnimation`)循環、呼吸和輕微擺動、眨眼、物理(頭髮、裙子、尾巴)、眼睛和頭輕輕跟著游標或觸控(四秒沒動就回正)、每個表情之間 0.45 秒淡入淡出、嘴巴跟著她聲音的音量;裝置像素比最多 2、長邊最多 2560 px;分頁藏起來就停;`prefers-reduced-motion` 時不動只眨眼;WebGL context 掉了會在瀏覽器還回來時重建。這個模型很重(桌機一格約 10 ms:Core 自己的 `csmUpdateModel` 約 6 ms、畫約 3 ms、物理約 1.4 ms)。**所以她在 worker 裡畫**(2026-11-28 改;第一版在主執行緒上自己限制成 30 或 20 格,owner 說不順):`figure-engine.ts` 是不碰頁面的引擎,`figure-worker.ts` 建成另一支傳統 worker 腳本 `dist/figure/figure-worker.js`(manifest 的 `worker`),頁面把 canvas 交給它(`transferControlToOffscreen`);Cubism Core 在 worker 裡用 `importScripts` 載(頁面的 CSP 沒有 `eval`),它的 WebAssembly 要等一下才好。worker 先回答自己能不能畫(有 `requestAnimationFrame`、`OffscreenCanvas` 的 WebGL),不能或沒有 worker 檔就照舊在主執行緒畫。格數:她每隔幾個螢幕的更新畫一次,取放得進她那一格工作的最小間隔(worker 可以用到九成、主執行緒七成),最多約每秒 75 格、最少 20 格;在 75 Hz 的螢幕上實測 worker 是 75 格、頁面自己的 75 格不受影響,主執行緒是 38 格。
+- **身影的 bundle**:`tools/card-studio/src/figure.ts`,`vite.figure.config.ts` 建成 `dist/figure/figure.js`(一個 ES module,Live2D 的 Web Framework 打包在裡面,Cubism Core 不在)。`mount(canvas, { manifest, size, reduced, frame }) → { setMood, setState, react, speak, lookAt, resize, stats, destroy }`(`react` 是 2026-11-28 加的,見下面「對話中的反應」)。做的事:模型自己的待機動作(`IDLE.motion3.json`,VTube Studio 的 `IdleAnimation`)循環、呼吸和輕微擺動、眨眼、物理(頭髮、裙子、尾巴)、眼睛和頭輕輕跟著游標或觸控(四秒沒動就回正)、每個表情之間 0.45 秒淡入淡出、嘴巴跟著她聲音的音量;裝置像素比最多 2、長邊最多 2560 px;分頁藏起來就停;`prefers-reduced-motion` 時不動只眨眼;WebGL context 掉了會在瀏覽器還回來時重建。這個模型很重(桌機一格約 10 ms:Core 自己的 `csmUpdateModel` 約 6 ms、畫約 3 ms、物理約 1.4 ms)。**所以她在 worker 裡畫**(2026-11-28 改;第一版在主執行緒上自己限制成 30 或 20 格,owner 說不順):`figure-engine.ts` 是不碰頁面的引擎,`figure-worker.ts` 建成另一支傳統 worker 腳本 `dist/figure/figure-worker.js`(manifest 的 `worker`),頁面把 canvas 交給它(`transferControlToOffscreen`);Cubism Core 在 worker 裡用 `importScripts` 載(頁面的 CSP 沒有 `eval`),它的 WebAssembly 要等一下才好。worker 先回答自己能不能畫(有 `requestAnimationFrame`、`OffscreenCanvas` 的 WebGL),不能或沒有 worker 檔就照舊在主執行緒畫。格數:她每隔幾個螢幕的更新畫一次,取放得進她那一格工作的最小間隔(worker 可以用到九成、主執行緒七成),最多約每秒 75 格、最少 20 格;在 75 Hz 的螢幕上實測 worker 是 75 格、頁面自己的 75 格不受影響,主執行緒是 38 格。
 - **Core 端**:`packages/api/src/room/figure.ts`(`RoomFigure`)、`figure-faces.ts`(表情表)。啟動時在背景準備一次:讀 `.model3.json` 和它指到的檔(moc、貼圖、物理、display info),待機動作從旁邊同名的 `.vtube.json` 讀,表情檔照 VTube Studio 的找法在資料夾裡按檔名找;只收資料夾裡面、副檔名對的檔(路徑往外爬、符號連結指出去、種類不對都拒絕)。要給頁面的檔複製到 `figure_cache`,用內容的 hash 命名:moc、物理、待機動作、bundle、Core(各另存 Brotli 和 gzip),貼圖按 `figure_textures` 縮成 WebP(q90,alpha 100;同一組裡每張貼圖用同一個比例縮,細節一致)。表情檔不給頁面,參數在 Core 讀好直接寫進 manifest。大約一分鐘看一次 bundle、Core、模型有沒有換,換了就重新準備(不用重開)。
 - **頁面**:`live2d.ts`、`FigureView.tsx`。房間狀態多了選填的 `figure: { manifest } | null`(`RoomStateSchema`),有才用 Live2D。第一次畫完之後(rAF + idle)才去拿 manifest、`import()` bundle,canvas 從透明在背景上淡入 0.6 秒;中間任何一步失敗就移掉 canvas,舞台維持沒有身影(只在 console 的 debug 層留一句)。`?room-demo` 沒有 `figure`,所以只有背景。
 
@@ -746,7 +753,19 @@ owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,
 
 順序:她在唱歌或做事 → 她這一行的 face → 心情的 face → 心情的字 → `neutral`。關著、她不在(offline)是 `neutral`。鋼盆、加载、圈圈眼、兔牙、手勢動作這些直播上的梗沒放:房間裡每一行都有表情,太吵。表情表對著模型檢查:模型沒有的表情檔或參數(照 `.cdi3.json`)就跳過,換一個模型也只拿到合用的部分。
 
-**嘴型**:`RoomVoice.level()` 從那一行的 WAV 自己算音量包絡(`OfflineAudioContext` 解碼,每 1/60 秒的 RMS,以那一行的第 95 百分位為滿,太小的切掉),播的時候照 `audio.currentTime` 讀;播放本身不經過 Web Audio。沒有聲音時嘴巴不動(串流的字不帶嘴型,假的嘴型不好看)。
+**嘴型**:`RoomVoice.level()` 從那一行的 WAV 自己算音量包絡(`OfflineAudioContext` 解碼,每 1/60 秒的 RMS,以那一行的第 95 百分位為滿,太小的切掉),播的時候照 `audio.currentTime` 讀;播放本身不經過 Web Audio。原本沒有聲音時嘴巴不動;2026-11-28 改成沒有聲音時嘴巴照字動(owner 要她在對話中看得出反應,見下面「對話中的反應」)。
+
+**對話中的反應**(2026-11-28 加,owner:她只會換表情、跟游標、待機,要在對話中看得出反應)。只用 manifest `rig` 裡模型原本的參數和表情,沒有新的動作檔;全部疊加在待機動作、呼吸、物理和游標上面,有緩入緩出,後來的動作把前一個在 0.3 秒內淡掉換過去,幅度刻意小(她是安靜的角色);`prefers-reduced-motion` 時全部沒有(照舊不動只眨眼);worker 和主執行緒是同一個引擎,一樣。曲線是 `tools/card-studio/src/figure-gestures.ts` 的小純函式(不 import vendor);引擎用自己的時鐘(只在畫她時走),分頁藏起來時進行中的動作直接結束,不會回來才補演。
+
+| 什麼時候 | 她做什麼 |
+|---|---|
+| 你送出一句(這一頁送的,或另一頁送的那句出現) | 看著你:視線目標回正 1.5 秒,這段時間游標不帶她的眼睛;點頭:`angleY` 往下 9 度再回來,0.6 秒(sin² 的鼓包,頭尾都平) |
+| 她在想(這一輪在 thinking、她的話還沒出來) | `thinking` 表情;頭歪 `angleZ` 6 度、頭往旁邊 `angleX` 6 度、往上 `angleY` 5 度、眼睛 `eyeX` 0.45、`eyeY` 0.5,0.5 秒緩入、0.5 秒緩出;每次想往上一次的另一邊;再加很慢的小晃(`angleZ` ±1.2 度約 6 秒一次、`angleX` ±1.5 度約 8 秒、`angleY` ±0.8 度約 5 秒),游標的影響降到四成。她在用工具(`doing` 是 working / browsing)時照舊往下看她的工作,不擺思考姿勢(往下看現在也是 0.5 秒緩入緩出,不再一下跳過去) |
+| 她的話一個一個字出來、沒有聲音在播 | 嘴巴照字動:每個音節 130–190 毫秒(大約一秒 5–7 下),張開 0.35–0.75,在音節的前 62% 張開再閉上,大約八個裡有一個後面多停 80 毫秒;新出來的字有標點(,。!?、…)就閉上 220 毫秒;字打完就閉上。在播她的聲音時聲音的音量優先 |
+| 羈絆往上 | 開心地晃一下:`angleZ` 4.5 度、每秒 2.4 下、很快衰減的擺動,`angleY` 抬 3.5 度,共 0.9 秒 |
+| 羈絆往下 | 別過頭垂下:`angleX` 往旁邊(她現在看的另一邊)10 度、`angleY` 往下 8 度、眼睛跟著(`eyeX` 0.5、`eyeY` −0.35),0.4 秒緩入、停 0.8 秒、0.6 秒緩出 |
+
+頁面:`RoomPage` 從已經有的狀態推出來:`thinking` = 這一輪在想而且還沒有她的話;`revealing` = 她這一行打到哪裡(打完或從紀錄來的是 `null`);`cue` = `{ kind, n }`,你那一句換了是 `heard`、`model.bond` 換了一筆是 `up` / `down`(`figure.ts` 的 `nextCue`),一開頁面時已經在的不演。`live2d.ts` 告訴引擎 `setState("thinking")`(唱歌、工作、瀏覽時不)、`react(kind)`,嘴型在頁面這邊算好用 `speak(level)` 給。舊的 bundle 沒有 `react`(Core 換 bundle 前那一分鐘)就不演,頁面不會壞。
 
 **取景**:(原本和錄影一樣,錄影已不用;)她從頭頂(呆毛)到腳底占舞台高度的 136%(手機 108%),頂端在舞台 1% 的地方,所以臉在上面,手機上不會落在膠囊底下。模型座標的範圍是 `FIGURE_FRAMING`(0.83 到 -0.98),在 1440 × 900 對著錄影量過。
 

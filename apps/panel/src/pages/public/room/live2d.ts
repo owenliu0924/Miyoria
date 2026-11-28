@@ -7,7 +7,7 @@
 // video of her (the owner's word, 2026-11-28).
 
 import type { RoomDoing, RoomFigureFace, RoomState } from "@miyoria/contracts/api";
-import type { HerFigure } from "./figure";
+import type { FigureReaction, HerFigure } from "./figure";
 
 /** The faces the Core describes (`ROOM_FIGURE_FACES`, written out: no zod in the page). */
 export const FIGURE_FACES = [
@@ -59,13 +59,15 @@ const BY_NAME = new Map<string, RoomFigureFace>();
 for (const [face, names] of Object.entries(NAMES)) for (const n of names) BY_NAME.set(n, face as RoomFigureFace);
 
 /**
- * Her face on the figure: singing and working first (what she does shows), then her last line's
- * face, then her mood's face, then the word of her mood; `neutral` otherwise.
+ * Her face on the figure: singing and working first (what she does shows), then `thinking` while
+ * she works out her reply, then her last line's face, then her mood's face, then the word of her
+ * mood; `neutral` otherwise.
  */
-export function faceFor(state: RoomState | null, face: string | null): RoomFigureFace {
+export function faceFor(state: RoomState | null, face: string | null, thinking = false): RoomFigureFace {
   if (!state?.open || state.doing === "offline") return "neutral";
   if (state.doing === "singing") return "singing";
   if (state.doing === "working" || state.doing === "browsing") return "working";
+  if (thinking) return "thinking";
   for (const f of [face, state.mood?.face ?? null]) {
     const known = f === null ? undefined : BY_NAME.get(f.toLowerCase());
     if (known) return known;
@@ -85,6 +87,8 @@ export interface FigureManifestHead {
 export interface FigureHandle {
   setMood(face: string): void;
   setState(doing: string): void;
+  /** Missing from a bundle built before her reactions (the Core may serve one for a minute). */
+  react?(kind: FigureReaction): void;
   speak(level: number): void;
   lookAt(x: number | null, y?: number): void;
   resize(): void;
@@ -140,6 +144,56 @@ export interface Live2dOptions {
   afterPaint?: (fn: () => void) => () => void;
 }
 
+/**
+ * What the figure is told she is doing: `thinking` while she works out her reply, unless what she
+ * does shows on its own (singing, her work, nothing at all).
+ */
+export function stateFor(doing: RoomDoing | "still", thinking: boolean): string {
+  if (!thinking) return doing;
+  return doing === "singing" || doing === "working" || doing === "browsing" || doing === "offline" || doing === "still"
+    ? doing
+    : "thinking";
+}
+
+// ---- her mouth with the text, when no voice plays ----------------------------------------------
+
+/** A number in 0..1 from `n`, the same every time (an integer hash). */
+function noise(n: number): number {
+  let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+  x ^= x >>> 13;
+  x = Math.imul(x, 0xc2b2ae35);
+  x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+
+/** Syllable `n`'s beat, s: 130–190 ms, so about 5–8 a second. */
+function beat(n: number): number {
+  return 0.13 + 0.06 * noise(n);
+}
+
+/**
+ * How long syllable `n` of the text mouth lasts, s: its beat, now and then (about one in eight) a
+ * little longer, the way speech has small breaths in it.
+ */
+export function syllableLength(n: number): number {
+  return beat(n) + (noise(n * 7 + 3) < 0.12 ? 0.08 : 0);
+}
+
+/**
+ * The text mouth's level `t` s into syllable `n`: it opens to 0.35–0.75 and closes over the first
+ * 62% of the beat, smoothly, and stays closed for the rest.
+ */
+export function textMouth(n: number, t: number): number {
+  const open = 0.62 * beat(n);
+  if (t <= 0 || t >= open) return 0;
+  return (0.35 + 0.4 * noise(n + 101)) * Math.sin((Math.PI * t) / open);
+}
+
+/** Punctuation in newly shown text closes her mouth for a moment. */
+const PAUSE_AT = /[，。、！？；：…,.!?;:~～—\n]/;
+/** How long the mouth stays closed at punctuation, ms. */
+export const TEXT_PAUSE_MS = 220;
+
 /** How long she takes to fade in over the backdrop, ms (`room.css`, `.hr-live`); if she cannot be drawn the stage stays without her. */
 export const CROSSFADE_MS = 600;
 
@@ -184,15 +238,53 @@ export function live2dFigure(options: Live2dOptions): HerFigure {
   let face: RoomFigureFace = "neutral";
   let doing: RoomDoing | "still" = "idle";
   let talking = false;
+  let thinkingNow = false;
+  /** Her line as far as it is shown while it comes in; `null`: no text mouth. */
+  let shownText: string | null = null;
+  // The text mouth: the syllable it is on, when that began and until when the mouth stays shut
+  // after punctuation (`performance.now()` ms).
+  let syllable = 0;
+  let syllableAt = 0;
+  let quietUntil = 0;
 
   const onPointer = (e: PointerEvent) => handle?.lookAt(e.clientX, e.clientY);
   const onLeave = () => handle?.lookAt(null);
 
+  const textLevel = (now: number): number => {
+    if (now < quietUntil) {
+      // The syllable starts again from closed once the pause is over.
+      syllableAt = quietUntil;
+      return 0;
+    }
+    // After a long gap (a hidden tab) it starts afresh instead of catching up.
+    if (now - syllableAt > 1000) syllableAt = now;
+    let length = syllableLength(syllable) * 1000;
+    while (now - syllableAt >= length) {
+      syllableAt += length;
+      syllable += 1;
+      length = syllableLength(syllable) * 1000;
+    }
+    return textMouth(syllable, (now - syllableAt) / 1000);
+  };
+
+  /** Her mouth moves: with her voice when it plays (it wins), with the text otherwise. */
+  const mouthMoves = () => talking || shownText !== null;
+
   const pump = () => {
     speakFrame = 0;
     if (!handle) return;
-    handle.speak(talking ? options.level() : 0);
-    if (talking) speakFrame = requestAnimationFrame(pump);
+    handle.speak(talking ? options.level() : shownText !== null ? textLevel(performance.now()) : 0);
+    if (mouthMoves()) speakFrame = requestAnimationFrame(pump);
+  };
+
+  const mouthChanged = () => {
+    if (mouthMoves()) {
+      if (speakFrame === 0) pump();
+      return;
+    }
+    if (speakFrame !== 0) cancelAnimationFrame(speakFrame);
+    speakFrame = 0;
+    handle?.speak(0);
   };
 
   const fail = () => {
@@ -234,8 +326,8 @@ export function live2dFigure(options: Live2dOptions): HerFigure {
     }
     handle = h;
     h.setMood(face);
-    h.setState(doing);
-    if (talking) pump();
+    h.setState(stateFor(doing, thinkingNow));
+    if (mouthMoves()) pump();
     window.addEventListener("pointermove", onPointer, { passive: true });
     window.addEventListener("pointerdown", onPointer, { passive: true });
     document.documentElement.addEventListener("pointerleave", onLeave);
@@ -266,12 +358,36 @@ export function live2dFigure(options: Live2dOptions): HerFigure {
       face = next;
       doing = now;
       handle?.setMood(next);
-      handle?.setState(now);
+      handle?.setState(stateFor(now, thinkingNow));
     },
     speaking(on) {
       talking = on;
-      if (on && speakFrame === 0) pump();
-      if (!on) handle?.speak(0);
+      mouthChanged();
+    },
+    thinking(on) {
+      if (thinkingNow === on) return;
+      thinkingNow = on;
+      handle?.setState(stateFor(doing, on));
+    },
+    mouthing(next) {
+      const before = shownText;
+      shownText = next;
+      if (next !== null) {
+        const now = performance.now();
+        if (before === null) {
+          // A new run of text: a fresh syllable, from closed.
+          syllable += 1;
+          syllableAt = now;
+          quietUntil = 0;
+        } else if (PAUSE_AT.test(next.startsWith(before) ? next.slice(before.length) : next)) {
+          quietUntil = now + TEXT_PAUSE_MS;
+        }
+      }
+      mouthChanged();
+    },
+    react(kind) {
+      // Only once she is drawn (a nod played late means nothing), and an older bundle has none.
+      handle?.react?.(kind);
     },
     dispose() {
       abort.abort();
