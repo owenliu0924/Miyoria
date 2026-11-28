@@ -14,6 +14,7 @@ import {
   ArbiterKey,
   type Attitude,
   type ContextKey,
+  contextKeyString,
   Events,
   HeartKey,
   type HeartPeople,
@@ -22,6 +23,7 @@ import {
   type PersonId,
   type Principal,
   Principals,
+  roomContext,
   SocialSignalsKey,
   toTimestamp,
 } from "@miyoria/types";
@@ -478,6 +480,84 @@ describe("longing", () => {
     expect(rig.model.requests).toHaveLength(1);
     const stopped = decisions(rig).find((d) => d.impulse.startsWith("longing:"));
     expect(stopped).toMatchObject({ verdict: "rejected", reason: "consent" });
+  });
+
+  // Her room (docs/design/her-room.md §5): the member's own account in a `web` DM. It is never
+  // where she goes to say she misses them.
+  const ROOM = roomContext(owen);
+
+  async function roomRig(withDm: boolean): Promise<Rig> {
+    const rig = await Rig.create({
+      provide: (sup, tools) => {
+        const registry = new ActuatorRegistry({
+          services: sup.services,
+          tools,
+          publish: sup.bus.publisher("actions"),
+          builtins: false,
+        });
+        void registry.privacy.set(owen, { dm: true });
+        sup.services.provide("app", ActuatorRegistryKey, registry);
+        sup.services.provide("app", SocialSignalsKey, {
+          attitude: (a: AccountRef) =>
+            a.id === "owen" ? ({ person: "p-owen", blocked: false } as Attitude) : null,
+        } as never);
+        withHeart({ person: "p-owen", cares: 0.8 }, 0.9)(sup);
+      },
+    });
+    if (withDm) {
+      rig.model.push(says("晚安"));
+      rig.say(line(DM, "owen", "晚安"));
+      await until(() => rig.sink.texts().length === 1, 3_000, "the DM answer");
+      await sleep(50);
+    }
+    // The room last: the latest transcript, the first one looked at.
+    const before = rig.sink.texts().length;
+    rig.model.push(says("歡迎~"));
+    rig.say(line(ROOM, "owen", "我來了"));
+    await until(() => rig.sink.texts().length === before + 1, 3_000, "the room's answer");
+    expect(rig.sink.sent().at(-1)).toEqual([ROOM.channel, "歡迎~"]);
+    await sleep(50);
+    return rig;
+  }
+
+  it("goes to their Discord DM, not their room, though the room is the latest", async () => {
+    const rig = await roomRig(true);
+    rig.model.push(says("在幹嘛~"));
+    rig.shift = toNoon();
+    await tick(rig);
+    await until(() => rig.sink.texts().length === 3, 3_000, "her DM");
+    expect(rig.sink.sent().at(-1)).toEqual(["dm-owen", "在幹嘛~"]);
+  });
+
+  it("with only their room, finds no DM: she does not knock", async () => {
+    const rig = await roomRig(false);
+    const asked = rig.model.requests.length;
+    rig.shift = toNoon();
+    await tick(rig);
+    await sleep(100);
+    expect(rig.model.requests).toHaveLength(asked);
+    expect(rig.sink.sent().filter(([c]) => c === ROOM.channel)).toHaveLength(1);
+    const stopped = decisions(rig).find((d) => d.impulse.startsWith("longing:"));
+    expect(stopped).toMatchObject({ verdict: "rejected", reason: "nobody" });
+  });
+
+  it("never takes a room for her home, named as it may be", async () => {
+    for (const home of [ROOM.channel, contextKeyString(ROOM)]) {
+      const rig = await Rig.create({
+        host: { initiative: { settings: initiativeSettings({ home }) } },
+      });
+      rig.model.push(says("歡迎~"));
+      rig.say(line(ROOM, "owen", "我來了"));
+      await until(() => rig.sink.texts().length === 1, 3_000, "the room's answer");
+      expect(host(rig).initiative.atHome(ROOM)).toBe(false);
+      rig.shift = toNoon();
+      await tick(rig);
+      await sleep(100);
+      expect(rig.model.requests).toHaveLength(1);
+      const morning = decisions(rig).find((d) => d.impulse.startsWith("morning:"));
+      expect(morning).toMatchObject({ verdict: "rejected", reason: "nobody" });
+      await rig.stop();
+    }
   });
 
   /** The heart (docs/design/v5-heart.md H5): the one she cares about most, and their longing. */
