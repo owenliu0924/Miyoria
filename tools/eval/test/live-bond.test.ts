@@ -196,7 +196,9 @@ describe("the suite", () => {
     const items = (result?.items ?? []) as BondItem[];
     expect(items.find((i) => i.id === "g-small-talk")?.fault).toContain("bond plus");
     expect(result?.headline.plus_where_flat).toBe(1);
-    expect(result?.report.find((l) => l.startsWith("g-small-talk"))).toMatch(/flat\s+0\/1\s+0\/1/);
+    expect((result?.report ?? []).find((l) => l.startsWith("g-small-talk"))).toMatch(
+      /flat\s+0\/1\s+0\/1/,
+    );
   });
 
   it("runs the repeat given instead", async () => {
