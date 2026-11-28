@@ -422,6 +422,9 @@ token form stays at `#/login`, with no link to it from the page.
   come as they are said, with a cursor until a line is final. All motion is CSS and stops under
   `prefers-reduced-motion` (the hands and hearts just stay a moment).
 - 請她忘記我 confirms with what goes and what stays, in the words `/me memory forget` uses.
+- 她的房間 in the header (`room/link.tsx`, beside 唱歌) links to `/her`, shown only while
+  `GET /api/member/room` answers `open: true`; a Core without the room (404) or a room closed to
+  them shows nothing. See "Her room" below.
 
 ## Landing
 
@@ -456,6 +459,39 @@ does. Strategy and the direction contract live in `.impeccable/surfaces/src-page
   with scroll. All of it stops under `prefers-reduced-motion`, and the shaders draw one frame.
 - Without WebGL the cover and sea are plain black.
 - The token form stays at `/login` with no link from the landing.
+
+## Her room
+
+A logged-in member alone with her at `/her` (`pages/public/room/`, loaded on demand; a Discord-
+logged-in admin too, as `/karaoke`). Design: `docs/design/her-room.md`; the owner approved the mock
+(`docs/design/mock/her-room.html`). Like the landing it is its own world, and some panel rules give
+way to the mock's:
+
+- `room.css`, scoped under `.her-room`, every class `hr-*`. The panel's tokens plus the mock's
+  `--soft #dedce4` and `--faint #8f8d99`, the capsule's glass `rgba(17,18,26,.74)` with
+  `blur(16px) saturate(1.25)`, and a 0.9 overlay behind the relation panel.
+- She fills the stage: her recorded loops (`landing/her/*.webm`), chosen by her face, behind a
+  `HerFigure` seam where Live2D goes once its licence allows the member's browser to run it.
+- Her line is 18 px (16 px under 700 px), weight 500: over the panel's 15 px cap, the landing's
+  exception, approved with the mock. The member's own line above it is 13 px, faint.
+- One step of her reply at a time; a small arrow while more follow; a tap on her line or Enter in
+  the empty capsule shows the next. A status line top left (her mood word, what she is doing in
+  `publicStatus`'s words, never which channel), the bond ring top right with + / − and her quote
+  under it for a moment, never a number.
+- The relation panel floats anchored to the ring (the mock's; the panel otherwise rejects floating
+  overlays); the backlog is a full-stage sheet. Both are dialogs that hold focus and give it back
+  (紀錄, the capsule on a phone, the ring). The backlog opens by 紀錄, PageUp, wheel up or a swipe up;
+  closes by 關閉, Escape or a swipe down.
+- 不要記住這句 shows on hover or focus where there is hover, always on touch, and confirms once.
+- Refusals and moderation notices take the member's-line slot: the Core's fixed zh-TW words,
+  `role="alert"` for errors, `role="status"` for held / ignored.
+- No microphone key, no asleep state, no 留話, no promise she will answer briefly: nothing the Core
+  cannot do. The voice key is greyed with the server's reason while voice is off.
+- Motion: her line types in at 2 characters / 55 ms, the cue bobs, the heart beats or dims, pulse,
+  a 0.32 s cross-fade between poses. All off under `prefers-reduced-motion`: the line shows whole,
+  posters only, no fades.
+- Phone: her face stays clear of the dock; the swipe up / down opens and closes the backlog.
+- Dev server only: `/her?room-demo` runs the page on a fake Core (`room/demo.ts`).
 
 ## Charts
 
