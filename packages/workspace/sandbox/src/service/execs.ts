@@ -1,6 +1,6 @@
 // One exec in a job (docs/design/v6-sandbox.md §3.6): what `DockerSandbox#execInSession` does,
 // on a job's container. The program file goes to /code, input files to /work, then
-// `docker exec -i` as the program's uid. Its output goes to the result (the first `keep_bytes`),
+// `docker exec -i` as the program's uid. Its output goes to the result (`keep_bytes` of its head and tail),
 // to the events (the first `stream_bytes`) and to the log (up to `kill_bytes`, where it is
 // stopped). Whatever ends it (exit, timeout, abort, quota, output, disk), every process of the
 // program's uid is killed after, so nothing it started outlives it and nothing changes /work while
