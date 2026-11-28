@@ -52,13 +52,13 @@ const present = (handle: string, person: PersonId | null, speaker = false): Pres
 });
 
 describe("block 4 from the heart", () => {
-  it("is the tier, the level, the slow values in words and her words, no other number", () => {
+  it("is the tier, the slow values in words and her words, no number: the level is block 7's", () => {
     const body = peopleBody([present("ming", "p1", true), present("guest", null)], {
       heart: heart([view("p1")]),
     });
     expect(body.split("\n")).toEqual([
       expect.stringMatching(/^<scale>/),
-      '<person name="ming" relation="好朋友" level="60/1000" trust="信任" familiar="熟" respect="欣賞" ease="自在" rapport="有點默契" call_as="阿明" impression="很會煮飯的人" stance="嘴上嫌他,其實很照顧"/>',
+      '<person name="ming" relation="好朋友" trust="信任" familiar="熟" respect="欣賞" ease="自在" rapport="有點默契" call_as="阿明" impression="很會煮飯的人" stance="嘴上嫌他,其實很照顧"/>',
       '<person name="guest"/>',
     ]);
   });
@@ -73,7 +73,7 @@ describe("block 4 from the heart", () => {
 });
 
 describe("block 7 from the heart", () => {
-  it("names how warm she is, a grudge and longing, with a sentence when they are high", () => {
+  it("names her level, how warm she is, a grudge and longing, with a sentence when they are high", () => {
     const body = heartNowBody(
       [
         { handle: "ming", person: "p1" },
@@ -90,9 +90,9 @@ describe("block 7 from the heart", () => {
     expect(body).toBe(
       [
         HEART_NOW_TITLE,
-        "- ming:很有好感",
-        "- kai:有點冷淡、有心結(你對他還有心結,還沒說開)",
-        "- amy:有好感、很想念(你很想他)",
+        '- ming(level="60/1000"):很有好感',
+        '- kai(level="60/1000"):有點冷淡、有心結(你對他還有心結,還沒說開)',
+        '- amy(level="60/1000"):有好感、很想念(你很想他)',
       ].join("\n"),
     );
   });

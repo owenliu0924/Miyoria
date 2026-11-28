@@ -158,7 +158,7 @@ describe("a feel block in production", () => {
     await until(() => outcomes(rig).length === 1, 3_000, "the outcome");
     const now = String(rig.model.requests[0]?.messages.at(-1)?.content ?? "");
     expect(now).toContain(
-      "你現在對在場的人的感覺:\n- owen:很有好感、有心結(你對他還有心結,還沒說開)",
+      '你現在對在場的人的感覺:\n- owen(level="60/1000"):很有好感、有心結(你對他還有心結,還沒說開)',
     );
   });
 

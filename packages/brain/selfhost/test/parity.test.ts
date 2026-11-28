@@ -21,6 +21,9 @@ import {
   type FloorHold,
   FloorKey,
   type GateDecisionPayload,
+  HeartKey,
+  type HeartPeople,
+  type HeartView,
   type IncomingMessage,
   type InterruptLevel,
   type JsonValue,
@@ -29,6 +32,7 @@ import {
   MessageActionsKey,
   type PartyStatus,
   PartyStatusKey,
+  PersonProfilesKey,
   PlatformHistories,
   PlatformHistoriesKey,
   PlatformSinks,
@@ -203,26 +207,66 @@ function contextEntry(text: string, untrusted: boolean): ContextEntry {
 }
 
 describe("the prompt's sections", () => {
-  async function rigWithSections() {
+  /** What the sources say; a test changes it between runs. */
+  interface Moving {
+    notebook: string;
+    life: string[];
+    bond: number;
+    /** The person cards (`PersonProfiles.render`); unset: none, the `<person/>` lines. */
+    cards?: () => string;
+  }
+
+  async function rigWithSections(
+    moving: Moving = { notebook: "- 料理筆記", life: ["早上去散步"], bond: 0 },
+  ) {
     let justNow = 0;
     const contributors = new PromptContributors();
     contributors.register(section("server_emoji", "伺服器表情", () => ":wave: :cat:"));
-    contributors.register(section("notebook", "你的筆記本", () => "- 料理筆記"));
+    contributors.register(section("notebook", "你的筆記本", () => moving.notebook));
     contributors.register(section("just_now", "剛剛", () => `剛剛的事 ${++justNow}`));
     const skills: SkillIndex = { index: async () => "- 煮咖哩:照步驟煮" };
     const life: LifeLog = {
       entries: () => [],
-      today: () => [
-        {
-          id: "l1",
-          at: toTimestamp(Date.now()),
-          kind: "activity",
-          text: "早上去散步",
-          minutes: 30,
-          capability: null,
-        } as never,
-      ],
-      summary: () => "- 早上去散步",
+      today: () =>
+        moving.life.map(
+          (text, i) =>
+            ({
+              id: `l${i + 1}`,
+              at: toTimestamp(Date.now()),
+              kind: "activity",
+              text,
+              minutes: 30,
+              capability: null,
+            }) as never,
+        ),
+      summary: () => moving.life.map((t) => `- ${t}`).join("\n"),
+    };
+    const amy: Attitude = { ...known("amy", 10), person: "p-amy" as Attitude["person"] };
+    const heart: Pick<HeartPeople, "view" | "feel"> = {
+      feel: () => 0,
+      view: (p) =>
+        p === amy.person
+          ? ({
+              person: p,
+              bond: moving.bond,
+              trust: 40,
+              familiarity: 30,
+              warmth: 0.3,
+              respect: 0,
+              ease: 0.2,
+              grudge: 0,
+              longing: 0,
+              rapport: 0,
+              stance: "",
+              impression: "",
+              call_name: null,
+              tags: [],
+              owner: false,
+              blocked: false,
+              last_seen: null,
+              last_together: null,
+            } as HeartView)
+          : null,
     };
     const working: WorkingContext = {
       buckets: () => [
@@ -244,6 +288,17 @@ describe("the prompt's sections", () => {
         sup.services.provide("app", LifeLogKey, life);
         sup.services.provide("app", WorkingContextKey, working);
         sup.services.provide("app", PartyStatusKey, party);
+        sup.services.provide("app", HeartKey, heart as HeartPeople);
+        sup.services.provide("app", SocialSignalsKey, {
+          attitude: (a) => (a.id === "amy" ? amy : null),
+        });
+        const cards = moving.cards;
+        if (cards !== undefined) {
+          sup.services.provide("app", PersonProfilesKey, {
+            profiles: async () => [],
+            render: async () => cards(),
+          });
+        }
       },
     });
     return rig;
@@ -270,13 +325,20 @@ describe("the prompt's sections", () => {
     const texts = (first?.messages ?? []).map((m) => contentText(m.content));
     const history = texts.indexOf("amy: 在嗎");
     const at = (needle: string) => texts.findIndex((t) => t.includes(needle));
-    // Block 4, before the transcript: skills, emoji, notebook, 「今天的你」.
-    for (const slow of ["煮咖哩", ":wave: :cat:", "料理筆記", "早上去散步"]) {
+    // Block 4, before the transcript: skills, emoji, the people by their tier.
+    for (const slow of ["煮咖哩", ":wave: :cat:", '<person name="amy"']) {
       expect(at(slow)).toBeGreaterThan(-1);
       expect(at(slow)).toBeLessThan(history);
     }
-    // Block 6 after it: just now, the working context's data, the notice.
-    for (const recalled of ["剛剛的事 1", "有人說明天停電", "幫 amy 訂好位子了"]) {
+    // Block 6 after it: her notebook, 「今天的你」, just now, the working context's data, the
+    // notice.
+    for (const recalled of [
+      "料理筆記",
+      "早上去散步",
+      "剛剛的事 1",
+      "有人說明天停電",
+      "幫 amy 訂好位子了",
+    ]) {
       expect(at(recalled)).toBeGreaterThan(history);
     }
     // Block 7: what she trusts, the party game, the style note.
@@ -297,6 +359,61 @@ describe("the prompt's sections", () => {
     expect(contentText(second?.messages.at(-2)?.content ?? "")).toContain("剛剛的事 2");
     // A notice is told once.
     expect(textOf(second)).not.toContain("幫 amy 訂好位子了");
+  });
+
+  it("a bond point, a new life-log line and a notebook edit keep blocks 1 to 5 byte for byte", async () => {
+    const moving: Moving = { notebook: "- 料理筆記", life: ["早上去散步"], bond: 20.4 };
+    const rig = await rigWithSections(moving);
+    rig.model.push(says("嗨"), says("又見面了"));
+    rig.say(line(DM_AMY, "amy", "在嗎"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the first run");
+    const first = rig.model.requests[0]?.messages ?? [];
+    const end = first.findIndex((m) => contentText(m.content) === "amy: 在嗎") + 1;
+    expect(contentText(first.at(-1)?.content ?? "")).toContain('- amy(level="20/1000")');
+
+    moving.bond = 21.2;
+    moving.life.push("下午看了一部電影");
+    moving.notebook = "- 料理筆記\n- 新的筆記:咖哩要放蘋果";
+    rig.say(line(DM_AMY, "amy", "我回來了"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the second run");
+    const second = rig.model.requests[1]?.messages ?? [];
+    expect(serialiseMessages(second).slice(0, end)).toEqual(serialiseMessages(first).slice(0, end));
+    // She still reads every change, after the transcript.
+    const after = second
+      .slice(end)
+      .map((m) => contentText(m.content))
+      .join("\n");
+    expect(after).toContain('- amy(level="21/1000")');
+    expect(after).toContain("下午看了一部電影");
+    expect(after).toContain("咖哩要放蘋果");
+    expect(JSON.stringify(second.slice(0, end))).not.toContain("level=");
+  });
+
+  it("a person card keeps its tier in block 4 and leaves the level to block 7", async () => {
+    const moving: Moving = {
+      notebook: "- 料理筆記",
+      life: [],
+      bond: 20.4,
+      cards: () =>
+        `<scale>等級</scale>\n<person name="amy" relation="朋友" level="${Math.trunc(moving.bond)}/1000" call_as="阿咪"/>`,
+    };
+    const rig = await rigWithSections(moving);
+    rig.model.push(says("嗨"), says("又見面了"));
+    rig.say(line(DM_AMY, "amy", "在嗎"));
+    await until(() => outcomes(rig).length === 1, 3_000, "the first run");
+    const first = rig.model.requests[0]?.messages ?? [];
+    const end = first.findIndex((m) => contentText(m.content) === "amy: 在嗎") + 1;
+    const head = first
+      .slice(0, end)
+      .map((m) => contentText(m.content))
+      .join("\n");
+    expect(head).toContain('<person name="amy" relation="朋友" call_as="阿咪"/>');
+    moving.bond = 22.9;
+    rig.say(line(DM_AMY, "amy", "我回來了"));
+    await until(() => outcomes(rig).length === 2, 3_000, "the second run");
+    const second = rig.model.requests[1]?.messages ?? [];
+    expect(serialiseMessages(second).slice(0, end)).toEqual(serialiseMessages(first).slice(0, end));
+    expect(contentText(second.at(-1)?.content ?? "")).toContain('- amy(level="22/1000")');
   });
 });
 

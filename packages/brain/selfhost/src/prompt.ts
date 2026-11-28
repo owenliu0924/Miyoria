@@ -4,20 +4,22 @@
 //   1 fixed     the persona core (`PersonaHandle.corePrompt`); the runner adds its rules
 //   3 pinned    the owner's rules (`MainLine.ownerRules`: his directives only; what is on hold
 //               and what did not work lately are her state, block 7)
-//   4 place     her skills (`SkillIndex`), the server's emoji and her notebook's index (the
-//               contributors' slow sections), 「今天的你」 (`LifeLog`), the recap of this place
-//               (`ConversationStates`), the people here as person cards (`PersonProfiles.render`,
-//               else today's `<person/>` lines, `peopleBody`) and the persona's example
-//               dialogues, rotated per session. Rendered again only when the people here change,
-//               the transcript was compacted or one of the slow parts reads differently
-//   6 recalled  what memory retrieval finds for this run (`MemoryRetrieval`), the contributors'
+//   4 place     her skills (`SkillIndex`), the server's emoji (the contributors' slow sections),
+//               the recap of this place (`ConversationStates`), the people here as person cards
+//               (`PersonProfiles.render`, else today's `<person/>` lines, `peopleBody`) by tier,
+//               without the exact level, and the persona's example dialogues, rotated per
+//               session. Rendered again only when the people here change (or move to another
+//               tier), the transcript was compacted or one of the slow parts reads differently
+//   6 recalled  her notebook's index and 「今天的你」 (`LifeLog`: both change within a day), what
+//               memory retrieval finds for this run (`MemoryRetrieval`), the contributors'
 //               sections (just now, elsewhere, her working notes, a game's chat, ...: everything
 //               but the memory contributor, the recap and the slow ones), the cause of her mood,
 //               the commitments memory pins, what people wrote in her working context, the
 //               viewers' wishes, the notices that came back, and the flagged messages the
 //               transcript points to
 //   7 now       time and place, her state (`selfBlocks`), how she feels toward the people here
-//               now (the heart's warmth, grudge, longing: `heartNowBody`), what the outside told her, the party
+//               now (the exact 羈絆 level, the heart's warmth, grudge, longing: `heartNowBody`),
+//               what the outside told her, the party
 //               game running here, the tasks in flight, what she promised and by when, the lines
 //               around a replied-to message she cannot see (`parent.ts`); then the
 //               `<style_note>` (`styleNote`: lorebook entries, a few kaomoji)
@@ -135,8 +137,18 @@ const RECAP_CONTRIBUTOR = "conversation";
  * Contributor sections of block 4, the most stable first: the server's emoji and stickers
  * (Discord's `server_emoji`, `server_stickers`) change when someone adds or renames one.
  */
-const SLOW_ORDER: readonly string[] = ["server_emoji", "server_stickers", "notebook"];
+const SLOW_ORDER: readonly string[] = ["server_emoji", "server_stickers"];
 const SLOW_SECTIONS: ReadonlySet<string> = new Set(SLOW_ORDER);
+/**
+ * Her notebook's index: hers, with its own budget, but it changes whenever she writes in it, so
+ * it is block 6's (with 「今天的你」), never the cached block 4's.
+ */
+const NOTEBOOK_SECTION = "notebook";
+/**
+ * ` level="…"` of a `<person/>` tag (values are escaped: none holds a `"` or `>`): her exact 羈絆
+ * level is block 7's, not block 4's.
+ */
+const LEVEL_ATTR = /(<person\b[^>]*?) level="[^"]*"/g;
 /** No budget but the blocks' own. */
 const UNLIMITED = Number.MAX_SAFE_INTEGER;
 const DAY_MS = 86_400_000;
@@ -467,7 +479,8 @@ export class HostPrompt implements PromptSource {
       .join(",");
     const slow = await this.#slow(input);
     // What block 4 shows of the people from the heart (tier, the slow words, call name,
-    // impression, stance): a change there is a new block. A line someone says changes none of it.
+    // impression, stance): a change there is a new block. A line someone says changes none of it,
+    // nor does a bond move within a tier (the exact level is block 7's).
     const hearts = this.#heartKey(this.#present(speakers));
     const key = `${roster}|${tail.summary?.id ?? 0}|${stableHash(slow.join("\n"))}|${hearts}`;
     const cached = this.#places.get(session);
@@ -526,7 +539,8 @@ export class HostPrompt implements PromptSource {
 
   /**
    * The slow parts of block 4 (the old turn's `#mainSlow`), each within its own budget: her
-   * skills, the server's emoji, her notebook's index, 「今天的你」.
+   * skills and the server's emoji. What changes within a day (her notebook, 「今天的你」) is
+   * block 6's (`#own`).
    */
   async #slow(input: PromptInput): Promise<string[]> {
     const m = this.#agent.config.mainline;
@@ -541,23 +555,37 @@ export class HostPrompt implements PromptSource {
       .filter((s) => SLOW_SECTIONS.has(s.key))
       .sort((a, b) => SLOW_ORDER.indexOf(a.key) - SLOW_ORDER.indexOf(b.key))
       .map((s, i) => ({ ...s, order: i }));
+    const { data } = contributedData(sections);
+    const budgeted = budgetBlocks(data, {
+      total: UNLIMITED,
+      budgets: { server_emoji: m.emoji_chars, server_stickers: m.emoji_chars },
+      defaultBudget: m.emoji_chars,
+    });
+    out.push(...budgeted.blocks);
+    return out;
+  }
+
+  /**
+   * Her notebook's index and 「今天的你」, each within its own budget as in block 4 before: block
+   * 6's, outside the retrieved data's budget, because either changes within a day and block 4 is
+   * the cached prefix.
+   */
+  #own(input: PromptInput, gathered: Gathered | null): string[] {
+    const m = this.#agent.config.mainline;
+    const sections: PromptSection[] = (gathered?.sections ?? [])
+      .filter((s) => s.key === NOTEBOOK_SECTION)
+      .map((s, i) => ({ ...s, order: i }));
     const life = this.#lifeText(input.now);
     if (life !== null) {
       sections.push({ key: "life", title: LIFE_TITLE, body: life, order: sections.length });
     }
+    if (sections.length === 0) return [];
     const { data } = contributedData(sections);
-    const budgeted = budgetBlocks(data, {
+    return budgetBlocks(data, {
       total: UNLIMITED,
-      budgets: {
-        server_emoji: m.emoji_chars,
-        server_stickers: m.emoji_chars,
-        notebook: m.notebook_chars,
-        life: m.life_chars,
-      },
+      budgets: { notebook: m.notebook_chars, life: m.life_chars },
       defaultBudget: m.notebook_chars,
-    });
-    out.push(...budgeted.blocks);
-    return out;
+    }).blocks;
   }
 
   /** Her skills, a name and a line each (`SkillIndex`); `null` when none or too slow. */
@@ -636,7 +664,10 @@ export class HostPrompt implements PromptSource {
         const body = await timeout(limit, agent.ctx.signal, (s) =>
           profiles.render(where, chars, { shown }, s),
         );
-        return body.trim() === "" ? null : body.trim();
+        // The cards' tier stays; the exact level would make every whole point a new block 4
+        // (block 7 has it, `heartNowBody`).
+        const cards = body.replace(LEVEL_ATTR, "$1").trim();
+        return cards === "" ? null : cards;
       };
       const reads = this.#run(input).reads;
       try {
@@ -674,9 +705,13 @@ export class HostPrompt implements PromptSource {
       this.#memory(input, request, read.reads),
       this.#pinnedMemory(input, request, read.reads),
     ]);
-    if (memory !== null) blocks.push(memory);
     const gathered = await read.gathered;
-    const sections = (gathered?.sections ?? []).filter((s) => !SLOW_SECTIONS.has(s.key));
+    // Hers first: what she wrote down and what she did today.
+    blocks.push(...this.#own(input, gathered));
+    if (memory !== null) blocks.push(memory);
+    const sections = (gathered?.sections ?? []).filter(
+      (s) => !SLOW_SECTIONS.has(s.key) && s.key !== NOTEBOOK_SECTION,
+    );
     const { data } = contributedData(sections);
     const contributed = budgetBlocks(data, {
       total: m.data_chars,
