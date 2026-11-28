@@ -20873,6 +20873,24 @@
             "max_image_bytes",
             "max_file_bytes"
           ]
+        },
+        "figure": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "manifest": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "manifest"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
