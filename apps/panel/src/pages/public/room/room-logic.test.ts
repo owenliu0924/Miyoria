@@ -125,6 +125,27 @@ describe("the room's reducer", () => {
     expect(m.turn).toMatchObject({ id: "t2", phase: "speaking" });
   });
 
+  it("after a reset, shows her newest reply the stream missed instead of the old one", () => {
+    // Her reply came while the stream was down (a Core restart): only the reset's backlog has it.
+    let m = run([ev({ kind: "thinking", turn: "t1" }), ev(line("old", "t1", "舊的")), ev({ kind: "done", turn: "t1" })]);
+    m = reduce(m, ev({ kind: "hello", state: roomState(), turn: null }));
+    const page = {
+      entries: [
+        { type: "line" as const, id: "old", at: "x", who: "her" as const, text: "舊的", files: [] },
+        { type: "line" as const, id: "y", at: "x", who: "you" as const, text: "我回來了", files: [] },
+        { type: "line" as const, id: "new", at: "x", who: "her" as const, text: "新的", files: [] },
+      ],
+      older: null,
+    };
+    m = reduce(m, { type: "backlog", mode: "reset", page });
+    expect(m.turn).toBeNull();
+    expect(lastHerLine(m.entries)?.text).toBe("新的");
+    // A turn still going on keeps the stage.
+    let going = run([ev({ kind: "thinking", turn: "t2" }), ev(line("a", "t2"))]);
+    going = reduce(going, { type: "backlog", mode: "reset", page });
+    expect(going.turn?.id).toBe("t2");
+  });
+
   it("rests on her newest line when nothing goes on, unless the member spoke last", () => {
     expect(lastHerLine([{ type: "line", id: "h", at: "x", who: "her", text: "嗯", files: [] }])?.text).toBe("嗯");
     expect(

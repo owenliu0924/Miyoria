@@ -235,7 +235,13 @@ export function reduce(m: RoomModel, a: RoomAction): RoomModel {
       return { ...m, state: a.state };
     case "backlog": {
       if (a.mode === "older") return { ...m, entries: merge(m.entries, a.page.entries, "before"), older: a.page.older };
-      if (a.mode === "reset") return { ...m, entries: a.page.entries, older: a.page.older, loaded: true };
+      if (a.mode === "reset") {
+        // What the stream missed may hold a newer reply of hers than the one on the stage: a
+        // finished turn whose lines are not her newest gives the stage back to the backlog.
+        const newest = lastHerLine(a.page.entries);
+        const stale = m.turn !== null && m.turn.phase === "done" && newest !== null && !m.turn.lines.some((l) => l.id === newest.id);
+        return { ...m, entries: a.page.entries, older: a.page.older, loaded: true, turn: stale ? null : m.turn };
+      }
       // The first page: lines the stream brought meanwhile stay after it.
       const page = a.page.entries;
       const inPage = new Set(page.map((e) => e.id));
