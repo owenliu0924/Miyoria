@@ -14,6 +14,8 @@
   position: relative;
   z-index: 1;
   height: 100dvh;
+  /* A phone's keyboard may slide the page up under it; the room slides back (`RoomPage.tsx`). */
+  translate: 0 var(--vv-top, 0px);
   display: grid;
   grid-template-rows: var(--top-h) minmax(0, 1fr);
   overflow: hidden;
@@ -436,9 +438,9 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  transition:
-    translate 0.2s var(--ease-out),
-    bottom 0.22s var(--ease-out);
+  /* `bottom` follows the keyboard frame by frame and has no transition of its own: one would
+     trail the keyboard and overshoot. */
+  transition: translate 0.2s var(--ease-out);
 }
 @supports (left: round(down, 1.5px, 1px)) {
   .hr-dock {
