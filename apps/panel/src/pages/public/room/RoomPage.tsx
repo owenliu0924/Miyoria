@@ -20,7 +20,7 @@ import { BondMark } from "./BondMark";
 import { Capsule } from "./Capsule";
 import type { RoomFile, RoomMemory } from "@miyoria/contracts/api";
 import { Figure } from "./FigureView";
-import { type HerFigure, poseFor } from "./figure";
+import { type CueSeen, type HerFigure, nextCue, poseFor } from "./figure";
 import { faceFor } from "./live2d";
 import { SwipeTracker, WheelUp } from "./gestures";
 import { type HerContent, HerAnnouncer, HerLine, useReveal } from "./HerLine";
@@ -190,6 +190,10 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
     const timer = setTimeout(() => setYouShown(false), ms);
     return () => clearTimeout(timer);
   }, [youShown, answering, reduced, youKey]);
+  // Her figure reacts to a new line of the member's (a nod) and to her bond moving.
+  const [cueSeen, setCueSeen] = useState<CueSeen>(() => ({ heard: youKey, bond: model.bond?.id ?? null, cue: null }));
+  const cueNow = nextCue(cueSeen, youKey, model.bond);
+  if (cueNow !== cueSeen) setCueSeen(cueNow);
   const reaction = you?.id ? model.reactions[you.id] : undefined;
   const youFiles = you ? you.files.map((f) => f.name).join("、") : "";
   const youText = !you ? "" : you.text === "" ? `你:附加了 ${youFiles}` : `你:${you.text}${youFiles ? ` · ${youFiles}` : ""}`;
@@ -521,7 +525,8 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
   const notice = model.notice;
   const overlay = backlogOpen;
   const pose = poseFor(open ? state : null, model.face);
-  const face = faceFor(open ? state : null, model.face);
+  const thinking = open && content?.kind === "thinking";
+  const face = faceFor(open ? state : null, model.face, thinking);
   const doing = open && state ? state.doing : "still";
   const figureManifest = open ? (state?.figure?.manifest ?? null) : null;
 
@@ -536,6 +541,9 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
           face={face}
           doing={doing}
           speaking={voiceSnap.speaking !== null}
+          thinking={thinking}
+          revealing={content?.kind === "line" && !reveal.done ? reveal.shown : null}
+          cue={cueNow.cue}
           manifest={figureManifest}
           level={voiceLevel}
           make={figure}

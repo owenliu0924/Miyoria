@@ -18,7 +18,51 @@ export interface HerFigure {
   feel?(face: RoomFigureFace, doing: RoomDoing | "still"): void;
   /** Her line is being read out (a mouth for Live2D). */
   speaking(on: boolean): void;
+  /** She is working out her reply (the thinking pose for Live2D). */
+  thinking?(on: boolean): void;
+  /**
+   * Her line as much of it as is shown while it comes in, `null` once it is whole: with no voice
+   * playing her mouth moves with the text.
+   */
+  mouthing?(shown: string | null): void;
+  /** A gesture: `heard` the member's line, her bond went `up` or `down`. */
+  react?(kind: FigureReaction): void;
   dispose(): void;
+}
+
+/** What she reacts to on the stage. */
+export type FigureReaction = "heard" | "up" | "down";
+
+/** One reaction for the figure; `n` is new on every one, so the same kind twice is two. */
+export interface FigureCue {
+  kind: FigureReaction;
+  n: number;
+}
+
+/** What the page last saw of the member's line and her bond, and the cue it made of them. */
+export interface CueSeen {
+  heard: string | null;
+  bond: string | null;
+  cue: FigureCue | null;
+}
+
+/**
+ * The cue after `seen`, given the member's line on the stage now (its key) and her bond's last
+ * change: a new line of theirs is `heard`, a new bond change is `up` or `down` (it wins when both
+ * are new). `seen` itself when nothing is new, so the page can tell.
+ */
+export function nextCue(
+  seen: CueSeen,
+  heard: string | null,
+  bond: { id: string; sign: "plus" | "minus" } | null,
+): CueSeen {
+  const bondId = bond?.id ?? null;
+  if (seen.heard === heard && seen.bond === bondId) return seen;
+  const n = (seen.cue?.n ?? 0) + 1;
+  let cue = seen.cue;
+  if (bond !== null && bondId !== seen.bond) cue = { kind: bond.sign === "plus" ? "up" : "down", n };
+  else if (heard !== null && heard !== seen.heard) cue = { kind: "heard", n };
+  return { heard, bond: bondId, cue };
 }
 
 /** Her avatar's emotion names (`[emotion]` keys, and the mood words' English) by the pose for them. */

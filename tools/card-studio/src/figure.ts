@@ -14,10 +14,11 @@ import {
   type EngineStats,
   type FigureManifest,
   type Frame,
+  type GestureKind,
 } from "./figure-engine";
 import type { FromWorker, ToWorker } from "./figure-worker";
 
-export type { FaceParam, FigureManifest, Frame } from "./figure-engine";
+export type { FaceParam, FigureManifest, Frame, GestureKind } from "./figure-engine";
 export { divisorFor, refreshFrom } from "./figure-engine";
 
 export interface MountOptions {
@@ -39,8 +40,16 @@ export interface MountOptions {
 export interface Figure {
   /** Her face: a key of `manifest.faces`; anything else is `neutral`. */
   setMood(face: string): void;
-  /** What she is doing (the room's `doing`): singing sways more, working looks down at her work. */
+  /**
+   * What she is doing (the room's `doing`, or `thinking` while she works out a reply): singing
+   * sways more, working and browsing look down at her work, thinking takes the thinking pose.
+   */
   setState(doing: string): void;
+  /**
+   * A gesture: `heard` (a nod and a look at the member), her bond went `up` (a small bounce) or
+   * `down` (a look away). A later one replaces an earlier one smoothly; nothing under reduced motion.
+   */
+  react(kind: GestureKind): void;
   /** Her voice's level now, 0..1 (0: the mouth closes). */
   speak(level: number): void;
   /** A point on the page (client pixels) to look toward; `null`: look ahead again. */
@@ -156,6 +165,7 @@ function remoteEngine(
         resolve({
           setMood: (v) => send({ t: "mood", v }),
           setState: (v) => send({ t: "state", v }),
+          react: (v) => send({ t: "react", v }),
           speak: (v) => send({ t: "speak", v }),
           look: (x, y) => send({ t: "look", x, y }),
           setView: (width, height, frame) => send({ t: "view", width, height, frame }),
@@ -252,6 +262,7 @@ export async function mount(canvas: HTMLCanvasElement, options: MountOptions): P
   return {
     setMood: (face) => engine.setMood(face),
     setState: (doing) => engine.setState(doing),
+    react: (kind) => engine.react(kind),
     speak: (level) => engine.speak(level),
     lookAt(x, y) {
       lookTo = { x, y };

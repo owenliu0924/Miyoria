@@ -10,6 +10,7 @@ import {
   type EngineInit,
   type EngineStats,
   type Frame,
+  type GestureKind,
 } from "./figure-engine";
 
 /** What the page tells the worker. */
@@ -17,6 +18,7 @@ export type ToWorker =
   | { t: "init"; canvas: OffscreenCanvas; init: EngineInit }
   | { t: "mood"; v: string }
   | { t: "state"; v: string }
+  | { t: "react"; v: GestureKind }
   | { t: "speak"; v: number }
   | { t: "look"; x: number | null; y?: number }
   | { t: "view"; width: number; height: number; frame: Frame }
@@ -61,6 +63,7 @@ const waiting: ToWorker[] = [];
 function apply(e: Engine, m: ToWorker): void {
   if (m.t === "mood") e.setMood(m.v);
   else if (m.t === "state") e.setState(m.v);
+  else if (m.t === "react") e.react(m.v);
   else if (m.t === "speak") e.speak(m.v);
   else if (m.t === "look") e.look(m.x, m.y);
   else if (m.t === "view") e.setView(m.width, m.height, m.frame);
@@ -72,7 +75,8 @@ scope.onmessage = (event) => {
   const m = event.data;
   if (m.t !== "init") {
     if (engine) apply(engine, m);
-    else waiting.push(m);
+    // A gesture is of its moment: one that came while she was loading is not played late.
+    else if (m.t !== "react") waiting.push(m);
     return;
   }
   createEngine(m.canvas, m.init, async (url) => scope.importScripts(url)).then(

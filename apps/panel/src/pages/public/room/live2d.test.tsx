@@ -1,7 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Figure } from "./FigureView";
-import type { HerFigure } from "./figure";
+import { type CueSeen, type HerFigure, nextCue } from "./figure";
 import {
   CROSSFADE_MS,
   FIGURE_FACES,
@@ -11,6 +11,10 @@ import {
   frameFor,
   live2dFigure,
   pickSize,
+  stateFor,
+  syllableLength,
+  TEXT_PAUSE_MS,
+  textMouth,
 } from "./live2d";
 import { roomState } from "./room-fixtures";
 import { type AudioLike, RoomVoice } from "./voice";
@@ -20,6 +24,7 @@ function fakeHandle() {
   const handle: FigureHandle = {
     setMood: (f) => calls.push(`mood:${f}`),
     setState: (d) => calls.push(`state:${d}`),
+    react: (k) => calls.push(`react:${k}`),
     speak: (n) => calls.push(`speak:${n}`),
     lookAt: (x) => calls.push(`look:${x}`),
     resize: () => calls.push("resize"),
@@ -55,6 +60,21 @@ describe("her Live2D face", () => {
     expect(faceFor(roomState({ mood: { word: "得意", face: null } }), "nonsense")).toBe("smug");
     expect(faceFor(roomState({ mood: { word: "平靜", face: null } }), null)).toBe("neutral");
     expect(faceFor(roomState({ mood: null }), null)).toBe("neutral");
+  });
+
+  it("thinks with the thinking face, unless what she does shows first", () => {
+    expect(faceFor(roomState(), "happy", true)).toBe("thinking");
+    expect(faceFor(roomState({ doing: "singing" }), null, true)).toBe("singing");
+    expect(faceFor(roomState({ doing: "working" }), null, true)).toBe("working");
+    expect(faceFor(roomState({ open: false }), null, true)).toBe("neutral");
+    expect(stateFor("idle", true)).toBe("thinking");
+    expect(stateFor("in_voice", true)).toBe("thinking");
+    expect(stateFor("idle", false)).toBe("idle");
+    // Her work's look down wins over the thinking pose.
+    expect(stateFor("working", true)).toBe("working");
+    expect(stateFor("browsing", true)).toBe("browsing");
+    expect(stateFor("singing", true)).toBe("singing");
+    expect(stateFor("still", true)).toBe("still");
   });
 
   it("only ever names a face the Core describes", () => {
@@ -229,6 +249,167 @@ describe("her Live2D figure on the stage", () => {
     );
     expect(made.slice(0, 3)).toEqual(["mount", "show:sing", "feel:singing:singing"]);
     expect(container.querySelector(".hr-figure")?.getAttribute("data-face")).toBe("singing");
+  });
+});
+
+describe("her reactions", () => {
+  it("cues a nod for a new line of the member's and a bounce or a look away for her bond", () => {
+    let seen: CueSeen = { heard: null, bond: null, cue: null };
+    expect(nextCue(seen, null, null)).toBe(seen);
+    seen = nextCue(seen, "c1", null);
+    expect(seen.cue).toEqual({ kind: "heard", n: 1 });
+    // The same line (the Core's echo of it) is not heard twice.
+    expect(nextCue(seen, "c1", null)).toBe(seen);
+    seen = nextCue(seen, "c2", null);
+    expect(seen.cue).toEqual({ kind: "heard", n: 2 });
+    seen = nextCue(seen, "c2", { id: "B1", sign: "plus" });
+    expect(seen.cue).toEqual({ kind: "up", n: 3 });
+    seen = nextCue(seen, "c2", { id: "B2", sign: "minus" });
+    expect(seen.cue).toEqual({ kind: "down", n: 4 });
+    // Their line going away (a send that failed) is no cue: the last one stays.
+    seen = nextCue(seen, null, { id: "B2", sign: "minus" });
+    expect(seen.cue).toEqual({ kind: "down", n: 4 });
+  });
+
+  it("moves the text mouth about six times a second, modestly, closing between syllables", () => {
+    let total = 0;
+    for (let n = 0; n < 600; n++) {
+      const length = syllableLength(n);
+      expect(length).toBeGreaterThanOrEqual(0.13);
+      expect(length).toBeLessThanOrEqual(0.27);
+      total += length;
+      expect(textMouth(n, 0)).toBe(0);
+      expect(textMouth(n, length - 0.001)).toBe(0);
+      const peak = textMouth(n, 0.62 * 0.065);
+      expect(peak).toBeGreaterThan(0);
+      expect(peak).toBeLessThanOrEqual(0.75);
+    }
+    const perSecond = 600 / total;
+    expect(perSecond).toBeGreaterThan(5);
+    expect(perSecond).toBeLessThan(7.5);
+  });
+
+  async function drawn(handle: FigureHandle, level: () => number = () => 0) {
+    const fig = live2dFigure({
+      manifest: "/m",
+      reduced: () => false,
+      level,
+      afterPaint: (fn) => {
+        fn();
+        return () => {};
+      },
+      fetchManifest: async () => MANIFEST,
+      importBundle: async () => ({ mount: async () => handle }),
+    });
+    fig.mount(document.createElement("div"));
+    await flush();
+    return fig;
+  }
+
+  const speaks = (calls: readonly string[]) =>
+    calls.filter((c) => c.startsWith("speak:")).map((c) => Number(c.slice("speak:".length)));
+
+  it("passes her reactions and her thinking to the figure", async () => {
+    const { handle, calls } = fakeHandle();
+    const fig = await drawn(handle);
+    fig.feel?.("happy", "idle");
+    fig.react?.("heard");
+    fig.thinking?.(true);
+    expect(calls).toContain("react:heard");
+    expect(calls[calls.length - 1]).toBe("state:thinking");
+    // Her work's look down wins while she thinks.
+    fig.feel?.("working", "working");
+    expect(calls[calls.length - 1]).toBe("state:working");
+    fig.feel?.("neutral", "idle");
+    expect(calls[calls.length - 1]).toBe("state:thinking");
+    fig.thinking?.(false);
+    expect(calls[calls.length - 1]).toBe("state:idle");
+    fig.react?.("up");
+    fig.react?.("down");
+    expect(calls.filter((c) => c.startsWith("react:"))).toEqual(["react:heard", "react:up", "react:down"]);
+    fig.dispose();
+  });
+
+  it("does not trip over a bundle from before her reactions", async () => {
+    const { handle, calls } = fakeHandle();
+    const { react: _gone, ...old } = handle;
+    const fig = await drawn(old);
+    expect(() => fig.react?.("heard")).not.toThrow();
+    expect(() => fig.thinking?.(true)).not.toThrow();
+    expect(calls).toContain("state:thinking");
+    fig.dispose();
+  });
+
+  it("moves her mouth with the text while it comes in, and lets her voice win", async () => {
+    vi.useFakeTimers({
+      toFake: ["setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", "performance"],
+    });
+    const { handle, calls } = fakeHandle();
+    let level = 0.9;
+    const fig = await drawn(handle, () => level);
+    fig.mouthing?.("你");
+    vi.advanceTimersByTime(600);
+    fig.mouthing?.("你好");
+    vi.advanceTimersByTime(600);
+    const moving = speaks(calls);
+    expect(moving.length).toBeGreaterThan(30);
+    expect(Math.max(...moving)).toBeGreaterThan(0.3);
+    expect(Math.max(...moving)).toBeLessThanOrEqual(0.75);
+    // It closes between syllables too.
+    expect(moving.filter((v) => v === 0).length).toBeGreaterThan(5);
+
+    // Punctuation closes it for a moment.
+    calls.length = 0;
+    fig.mouthing?.("你好,");
+    vi.advanceTimersByTime(TEXT_PAUSE_MS - 40);
+    expect(speaks(calls).every((v) => v === 0)).toBe(true);
+    vi.advanceTimersByTime(400);
+    expect(Math.max(...speaks(calls))).toBeGreaterThan(0);
+
+    // Her voice playing wins over the text.
+    calls.length = 0;
+    fig.speaking(true);
+    vi.advanceTimersByTime(300);
+    expect(speaks(calls).every((v) => v === 0.9)).toBe(true);
+    level = 0;
+    fig.speaking(false);
+    calls.length = 0;
+    vi.advanceTimersByTime(600);
+    expect(Math.max(...speaks(calls))).toBeGreaterThan(0);
+
+    // The line is whole: the mouth closes and stays closed.
+    fig.mouthing?.(null);
+    expect(calls[calls.length - 1]).toBe("speak:0");
+    calls.length = 0;
+    vi.advanceTimersByTime(500);
+    expect(speaks(calls)).toEqual([]);
+    fig.dispose();
+  });
+
+  it("plays a new cue once, never the one it started with, and passes thinking and the text on", () => {
+    const made: string[] = [];
+    const make = (): HerFigure => ({
+      mount: () => {},
+      show: () => {},
+      speaking: () => {},
+      thinking: (on) => made.push(`thinking:${on}`),
+      mouthing: (t) => made.push(`mouthing:${t}`),
+      react: (k) => made.push(`react:${k}`),
+      dispose: () => {},
+    });
+    const props = { pose: "heart", face: "neutral", doing: "idle", speaking: false, manifest: "/m", level: () => 0, make } as const;
+    const { rerender } = render(<Figure {...props} cue={{ kind: "up", n: 3 }} />);
+    expect(made).not.toContain("react:up");
+    rerender(<Figure {...props} cue={{ kind: "heard", n: 4 }} thinking />);
+    expect(made.filter((m) => m.startsWith("react:"))).toEqual(["react:heard"]);
+    expect(made).toContain("thinking:true");
+    rerender(<Figure {...props} cue={{ kind: "heard", n: 4 }} revealing="你好" />);
+    expect(made.filter((m) => m.startsWith("react:"))).toEqual(["react:heard"]);
+    expect(made).toContain("thinking:false");
+    expect(made).toContain("mouthing:你好");
+    rerender(<Figure {...props} cue={{ kind: "heard", n: 5 }} revealing={null} />);
+    expect(made.filter((m) => m.startsWith("react:"))).toEqual(["react:heard", "react:heard"]);
+    expect(made[made.length - 2]).toBe("mouthing:null");
   });
 });
 

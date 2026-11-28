@@ -7,8 +7,10 @@
 // What she does: the model's idle motion, breathing and a slow sway, blinking, physics (hair,
 // skirt, tail), the eyes and head following the pointer gently, one face per mood made of the
 // model's own expression files and a few parameters (faded into each other), and her mouth moving
-// with her voice's level. Reduced motion: a still pose that only blinks. The loop stops while the
-// tab is hidden, and a lost WebGL context is rebuilt when the browser gives it back.
+// with her voice's level. In a conversation (`figure-gestures.ts`): a nod and a look at the member
+// when they say something, a thinking pose while she works out her reply, a bounce or a look away
+// when her bond with them moves. Reduced motion: a still pose that only blinks. The loop stops
+// while the tab is hidden, and a lost WebGL context is rebuilt when the browser gives it back.
 
 import { BreathParameterData, CubismBreath } from "../vendor/framework/src/effect/cubismbreath";
 import { CubismEyeBlink } from "../vendor/framework/src/effect/cubismeyeblink";
@@ -21,6 +23,21 @@ import { CubismMotion } from "../vendor/framework/src/motion/cubismmotion";
 import type { CubismMotionManager } from "../vendor/framework/src/motion/cubismmotionmanager";
 import { CubismShaderManager_WebGL } from "../vendor/framework/src/rendering/cubismshader_webgl";
 import { csmVector } from "../vendor/framework/src/type/csmvector";
+import {
+  addGesture,
+  addThinking,
+  ease,
+  GESTURE_CROSSFADE_S,
+  type GestureKind,
+  gestureLength,
+  HEARD_FOCUS_S,
+  type Offsets,
+  POSE_FADE_S,
+  stepWeight,
+  zeroOffsets,
+} from "./figure-gestures";
+
+export type { GestureKind } from "./figure-gestures";
 
 // ---- what the Core hands over (`packages/api/src/room/figure.ts`, `FigureManifest`) ------------
 
@@ -98,8 +115,13 @@ export interface EngineStats {
 export interface Engine {
   /** Her face: a key of `manifest.faces`; anything else is `neutral`. */
   setMood(face: string): void;
-  /** What she is doing (the room's `doing`): singing sways more, working looks down at her work. */
+  /**
+   * What she is doing (the room's `doing`, or `thinking` while she works out a reply): singing
+   * sways more, working and browsing look down at her work, thinking takes the thinking pose.
+   */
   setState(doing: string): void;
+  /** A gesture: `heard` the member's line, her bond went `up` or `down`. Replaces the one before. */
+  react(kind: GestureKind): void;
   /** Her voice's level now, 0..1 (0: the mouth closes). */
   speak(level: number): void;
   /** Where to look, -1..1 each way from her face (y up); `null`: look ahead again. */
@@ -213,7 +235,6 @@ export function refreshFrom(gaps: readonly number[]): number {
   return Math.min(40, Math.max(4, Math.min(...gaps)));
 }
 
-const ease = (t: number) => t * t * (3 - 2 * t);
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 /** How long one face takes to fade into the next, seconds. */
@@ -336,8 +357,38 @@ export async function createEngine(
   await upload();
 
   // ---- what moves her ----
+  // The rig's ids once: they are looked up by name otherwise, and these are used on every frame.
+  const rig = {
+    angleX: id(r.angleX),
+    angleY: id(r.angleY),
+    angleZ: id(r.angleZ),
+    bodyX: id(r.bodyX),
+    eyeX: id(r.eyeX),
+    eyeY: id(r.eyeY),
+    mouth: r.mouth.map(id),
+  };
   const look = new CubismTargetPoint();
   let lookedAt = 0;
+  /** Where the pointer asks her to look, kept while she looks at the member instead. */
+  let wantX = 0;
+  let wantY = 0;
+  /** Her own time, s: it only runs while she is drawn, so a gesture never plays out unseen. */
+  let clock = 0;
+  /** She looks at the member (after their line) until this time on `clock`; 0: not. */
+  let focusUntil = 0;
+  // The gesture now and the one it replaced, which fades out under it.
+  let gesture: GestureKind | null = null;
+  let gestureAt = 0;
+  let gestureSide = 1;
+  let fading: GestureKind | null = null;
+  let fadingAt = 0;
+  let fadingSide = 1;
+  let fadeFrom = 0;
+  // The poses' weights (0..1, eased where they are used) and the side she thinks to.
+  let thinkW = 0;
+  let workW = 0;
+  let thinkSide = 1;
+  const offsets: Offsets = { angleX: 0, angleY: 0, angleZ: 0, bodyX: 0, eyeX: 0, eyeY: 0 };
   let mood = "neutral";
   let doing = "idle";
   const weights = new Map<string, number>([["neutral", 1]]);
@@ -394,26 +445,55 @@ export async function createEngine(
     blink.updateParameters(model, dt);
     applyFaces(dt, reduced);
     if (!reduced) {
+      clock += dt;
       if (lookedAt > 0 && performance.now() - lookedAt > LOOK_IDLE_MS) {
-        look.set(0, 0);
+        wantX = 0;
+        wantY = 0;
         lookedAt = 0;
+        if (focusUntil === 0) look.set(0, 0);
+      }
+      if (focusUntil !== 0 && clock >= focusUntil) {
+        // Back to the pointer; the target point eases there on its own.
+        focusUntil = 0;
+        look.set(wantX, wantY);
       }
       look.update(dt);
-      const lx = look.getX();
-      const ly = look.getY() + (doing === "working" || doing === "browsing" ? -0.35 : 0);
-      model.addParameterValueById(id(r.angleX), lx * 18);
-      model.addParameterValueById(id(r.angleY), ly * 14);
-      model.addParameterValueById(id(r.angleZ), lx * ly * -8);
-      model.addParameterValueById(id(r.bodyX), lx * 6);
-      model.addParameterValueById(id(r.eyeX), lx * 0.8);
-      model.addParameterValueById(id(r.eyeY), ly * 0.8);
+      const working = doing === "working" || doing === "browsing";
+      workW = stepWeight(workW, working, dt, POSE_FADE_S);
+      // A new spell of thinking looks to the other side from the last one, once the pose is gone.
+      const thinking = doing === "thinking" && !working;
+      if (thinking && thinkW === 0) thinkSide = -thinkSide;
+      thinkW = stepWeight(thinkW, thinking, dt, POSE_FADE_S);
+      const think = ease(thinkW);
+      // While she thinks the pointer pulls on her less: her eyes are on the thought.
+      const pull = 1 - 0.6 * think;
+      const lx = look.getX() * pull;
+      const ly = look.getY() * pull - 0.35 * ease(workW);
+      zeroOffsets(offsets);
+      addThinking(offsets, clock, thinkSide, think);
+      if (gesture !== null) {
+        const t = clock - gestureAt;
+        if (t >= gestureLength(gesture)) gesture = null;
+        else addGesture(offsets, gesture, t, gestureSide, 1);
+      }
+      if (fading !== null) {
+        const f = (clock - fadeFrom) / GESTURE_CROSSFADE_S;
+        const t = clock - fadingAt;
+        if (f >= 1 || t >= gestureLength(fading)) fading = null;
+        else addGesture(offsets, fading, t, fadingSide, 1 - ease(f));
+      }
+      model.addParameterValueById(rig.angleX, lx * 18 + offsets.angleX);
+      model.addParameterValueById(rig.angleY, ly * 14 + offsets.angleY);
+      model.addParameterValueById(rig.angleZ, lx * ly * -8 + offsets.angleZ);
+      model.addParameterValueById(rig.bodyX, lx * 6 + offsets.bodyX);
+      model.addParameterValueById(rig.eyeX, lx * 0.8 + offsets.eyeX);
+      model.addParameterValueById(rig.eyeY, ly * 0.8 + offsets.eyeY);
       breath.updateParameters(model, doing === "singing" ? dt * 1.6 : dt);
       // The mouth follows the voice's level, opening fast and closing a little slower.
       const target = clamp(level, 0, 1);
       mouth += (target - mouth) * Math.min(1, dt * (target > mouth ? 30 : 14));
       if (mouth > 0.01) {
-        for (const mid of r.mouth) {
-          const pid = id(mid);
+        for (const pid of rig.mouth) {
           model.setParameterValueById(pid, Math.max(model.getParameterValueById(pid), mouth));
         }
       }
@@ -512,6 +592,16 @@ export async function createEngine(
   canvas.addEventListener("webglcontextlost", onLost);
   canvas.addEventListener("webglcontextrestored", onRestored);
 
+  /** Ends any gesture at once (she is not being drawn) and gives the pointer back. */
+  function dropGestures(): void {
+    gesture = null;
+    fading = null;
+    if (focusUntil !== 0) {
+      focusUntil = 0;
+      look.set(wantX, wantY);
+    }
+  }
+
   // Physics settles before the first frame is shown: hair and skirt at rest, not falling into place.
   resize(init.width, init.height);
   for (let i = 0; i < 30; i++) update(1 / 30);
@@ -526,17 +616,41 @@ export async function createEngine(
     setState(next) {
       doing = next;
     },
+    react(kind) {
+      // Nothing under reduced motion, and nothing saved up while she is not drawn.
+      if (reducedNow || hidden || destroyed) return;
+      if (kind !== "heard" && kind !== "up" && kind !== "down") return;
+      // The gesture going on fades out under the new one instead of stopping dead.
+      if (gesture !== null) {
+        fading = gesture;
+        fadingAt = gestureAt;
+        fadingSide = gestureSide;
+        fadeFrom = clock;
+      }
+      gesture = kind;
+      gestureAt = clock;
+      // Looking away: away from where she is looking now.
+      gestureSide = look.getX() > 0 ? -1 : 1;
+      if (kind === "heard") {
+        focusUntil = clock + HEARD_FOCUS_S;
+        look.set(0, 0);
+      }
+    },
     speak(n) {
       level = Number.isFinite(n) ? n : 0;
     },
     look(x, y) {
       if (x === null || y === undefined) {
-        look.set(0, 0);
+        wantX = 0;
+        wantY = 0;
         lookedAt = 0;
-        return;
+      } else {
+        wantX = clamp(x, -1, 1);
+        wantY = clamp(y, -1, 1);
+        lookedAt = performance.now();
       }
-      look.set(clamp(x, -1, 1), clamp(y, -1, 1));
-      lookedAt = performance.now();
+      // While she looks at the member the pointer waits its turn.
+      if (focusUntil === 0) look.set(wantX, wantY);
     },
     setView(width, height, next) {
       const moved = next.height !== view.height || next.top !== view.top;
@@ -547,6 +661,10 @@ export async function createEngine(
     },
     setReduced(next) {
       reducedNow = next;
+      if (next) {
+        // Her clock stands still under reduced motion: nothing is left half done for later.
+        dropGestures();
+      }
     },
     setHidden(next) {
       if (hidden === next) return;
@@ -554,6 +672,8 @@ export async function createEngine(
       if (hidden) {
         if (frame !== 0) cancelAnimationFrame(frame);
         frame = 0;
+        // A gesture is of its moment: none is left to finish when she is shown again.
+        dropGestures();
       } else {
         last = 0;
         lastTick = 0;

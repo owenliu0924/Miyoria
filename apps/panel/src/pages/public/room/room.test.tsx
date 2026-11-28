@@ -79,11 +79,11 @@ function fake(opts: { state?: RoomState; backlog?: RoomBacklog | ((older: string
   };
 }
 
-function show(f: Fake) {
+function show(f: Fake, her: () => HerFigure = figure) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <Room api={f.api} member={{ name: "小澄", avatar_url: null }} home="/" figure={figure} tab="test-tab" />
+      <Room api={f.api} member={{ name: "小澄", avatar_url: null }} home="/" figure={her} tab="test-tab" />
     </QueryClientProvider>,
   );
 }
@@ -256,6 +256,40 @@ describe("her room", () => {
     f.emit({ kind: "reset" });
     await waitFor(() => expect(vi.mocked(f.api.backlog).mock.calls.length).toBe(before + 1));
     expect(screen.queryByText("連線中斷,正在重新連上")).toBeNull();
+  });
+
+  it("has her figure nod at their line, think, mouth her line as it comes in and react to the bond", async () => {
+    reducedMotion(false);
+    const seen: string[] = [];
+    const her = (): HerFigure => ({
+      mount() {},
+      show() {},
+      feel: (face) => seen.push(`face:${face}`),
+      speaking() {},
+      thinking: (on) => seen.push(`thinking:${on}`),
+      mouthing: (t) => seen.push(t === null ? "mouth:off" : "mouth:on"),
+      react: (k) => seen.push(`react:${k}`),
+      dispose() {},
+    });
+    const f = fake();
+    show(f, her);
+    const say = await screen.findByRole("textbox", { name: "跟她說的話" });
+    f.emit({ kind: "hello", state: roomState(), turn: null });
+    expect(seen.filter((s) => s.startsWith("react:"))).toEqual([]);
+    await userEvent.type(say, "晚安{Enter}");
+    expect(seen.filter((s) => s.startsWith("react:"))).toEqual(["react:heard"]);
+    f.emit({ kind: "thinking", turn: "t1" });
+    expect(seen).toContain("thinking:true");
+    expect(seen.filter((s) => s.startsWith("face:")).pop()).toBe("face:thinking");
+    seen.length = 0;
+    f.emit(herLine("a", "一二三四五六七八九十"));
+    expect(seen).toContain("thinking:false");
+    expect(seen).toContain("mouth:on");
+    await waitFor(() => expect(seen[seen.length - 1]).toBe("mouth:off"));
+    f.emit({ kind: "done", turn: "t1" });
+    f.emit({ kind: "bond", id: "B1", at, turn: "t1", sign: "plus", quote: null });
+    f.emit({ kind: "bond", id: "B2", at, turn: "t1", sign: "minus", quote: null });
+    expect(seen.filter((s) => s.startsWith("react:"))).toEqual(["react:up", "react:down"]);
   });
 
   it("shows a bond change as a direction and her quote", async () => {
