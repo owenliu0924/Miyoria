@@ -403,6 +403,10 @@ describe("config and helpers", () => {
         voice_max_chars: 300,
         voice_cache: 64,
         backlog_page: 50,
+        figure: "live2d",
+        figure_model: "",
+        figure_textures: [1024, 2048],
+        figure_cache: "data/room/figure",
       },
     });
   });

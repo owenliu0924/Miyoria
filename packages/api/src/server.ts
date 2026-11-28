@@ -212,8 +212,12 @@ export function toResponse(error: unknown, hide = false): Response {
 /** What anyone out there is told of a failure on this side. */
 const SOMETHING_WENT_WRONG = "something went wrong";
 
-/** A member route's answer: never kept by a cache, and no internal error text in it. */
-async function memberResponse(run: () => Promise<Response>): Promise<Response> {
+/**
+ * A member route's answer: never kept by a cache, and no internal error text in it. A successful
+ * answer that says `private` itself keeps what it says: only the member's own browser may keep it
+ * (her room's figure files, named by their content's hash).
+ */
+export async function memberResponse(run: () => Promise<Response>): Promise<Response> {
   let response: Response;
   try {
     response = await run();
@@ -227,7 +231,9 @@ async function memberResponse(run: () => Promise<Response>): Promise<Response> {
   const headers = new Headers(response.headers);
   // A member's event stream is not kept either, and says `no-cache` like every stream.
   const stream = headers.get("content-type")?.startsWith("text/event-stream") === true;
-  headers.set("cache-control", stream ? "no-cache, no-store" : "no-store");
+  const own = headers.get("cache-control") ?? "";
+  const keepOwn = (response.status === 200 || response.status === 304) && /^private(,|$)/.test(own);
+  if (!keepOwn) headers.set("cache-control", stream ? "no-cache, no-store" : "no-store");
   headers.set("x-content-type-options", "nosniff");
   return new Response(response.body, { status: response.status, headers });
 }

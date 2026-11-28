@@ -162,6 +162,8 @@ export function roomStateOf(state: ApiState, room: Room, who: RoomWho): RoomStat
       max_image_bytes: bytes.image,
       max_file_bytes: bytes.file,
     },
+    // The model's files only for someone the room is open to (a stranger sees the loops).
+    figure: who.open && !who.blocked ? (room.figure?.state() ?? null) : null,
   };
 }
 

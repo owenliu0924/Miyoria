@@ -42,7 +42,7 @@ import { FactsConfigSchema, FactsModule } from "@miyoria/memory/facts";
 import { ConversationModule, KnowledgeModule, ReflectModule } from "@miyoria/memory/learning";
 import { EmbeddingConfigSchema, MemoryModule } from "@miyoria/memory/memory";
 import { WorldModule } from "@miyoria/memory/world";
-import { CardsModule } from "@miyoria/play/cards";
+import { CardsConfigSchema, CardsModule } from "@miyoria/play/cards";
 import { ExchangeModule } from "@miyoria/play/exchange";
 import { GameChatModule, GameHandleKey, GameModule } from "@miyoria/play/game";
 import { KaraokeModule } from "@miyoria/play/karaoke";
@@ -278,6 +278,16 @@ function factsFoldDays(config: Config): number {
   return parsed.success ? parsed.data.fold_after_days : FactsConfigSchema.parse({}).fold_after_days;
 }
 
+/**
+ * `[modules.cards] portrait_model` and `portrait_studio` as written: her model and the card studio,
+ * which her room's Live2D figure uses too (`[modules.api.room] figure`).
+ */
+function portraitPaths(config: Config): { model: string; studio: string } {
+  const parsed = CardsConfigSchema.safeParse(config.module(CardsModule.ID).config ?? {});
+  const cards = parsed.success ? parsed.data : CardsConfigSchema.parse({});
+  return { model: cards.portrait_model, studio: cards.portrait_studio };
+}
+
 async function discoverExtensions(config: Config, baseDir: string): Promise<ExtensionDiscovery> {
   const found = extHost.discover(config, baseDir);
   return { skipped: found.skipped, modules: found.modules };
@@ -287,7 +297,11 @@ export const defaultCatalog: ModuleCatalog = {
   openStore,
   coreModules,
   discord: () => new DiscordBotModule(),
-  api: (deps) => new ApiModule({ emotions: avatarEmotions(deps.profile.avatar) }),
+  api: (deps) =>
+    new ApiModule({
+      emotions: avatarEmotions(deps.profile.avatar),
+      portrait: portraitPaths(deps.config),
+    }),
   discoverExtensions,
 };
 

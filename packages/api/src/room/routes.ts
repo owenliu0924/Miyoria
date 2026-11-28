@@ -1,9 +1,10 @@
 // The room's routes (docs/design/her-room.md §3): `roomRpc` on the route table (state, stream,
-// send, backlog, relation, forget one memory, leave a line out) and three member routes that are
-// not JSON (an upload's raw bytes, her voice as a WAV, her file as a download). Every one of them
-// takes the session's account as the only "who", and ids only of that account's own things.
+// send, backlog, relation, forget one memory, leave a line out) and the member routes that are
+// not JSON (an upload's raw bytes, her voice as a WAV, her file as a download, her Live2D
+// figure). Every one of them takes the session's account as the only "who", and ids only of
+// that account's own things.
 
-import { ROOM_LINE_ID, type RoomEvent } from "@miyoria/contracts/api";
+import { ROOM_FIGURE_PATH, ROOM_LINE_ID, type RoomEvent } from "@miyoria/contracts/api";
 import { type AccountRef, accountRefString, sniffImage } from "@miyoria/types";
 import { withEventMeta } from "@orpc/server";
 import { os } from "../contract.js";
@@ -17,6 +18,7 @@ import type { ApiContext, ApiState } from "../state.js";
 import { backlog } from "./backlog.js";
 import { hello, type Outgoing } from "./channel.js";
 import { roomBytes } from "./config.js";
+import type { RoomFigure } from "./figure.js";
 import { excludeLine, herFile } from "./files.js";
 import { forgetMemory, relation } from "./relation.js";
 import type { Room } from "./room.js";
@@ -254,6 +256,39 @@ async function file(state: ApiState, c: ApiContext): Promise<Response> {
   return herFile(state, room, hub, line, Number(n), c.req.raw.signal);
 }
 
+/**
+ * Her figure, for someone the room is open to: the model's files go only to a browser that may
+ * see her room at all (a stranger's and a blocked person's room shows the loops).
+ */
+async function figureFor(state: ApiState, room: Room, c: ApiContext): Promise<RoomFigure> {
+  const figure = room.figure;
+  if (figure === null) throw ApiError.notFound(ROOM_TEXT.notFound);
+  const who = await roomWho(state, accountOf(c));
+  if (!who.open || who.blocked) throw ApiError.notFound(ROOM_TEXT.notFound);
+  return figure;
+}
+
+/** `GET /api/member/room/figure`: her Live2D figure's manifest; a 404 while there is none. */
+async function figureManifest(state: ApiState, c: ApiContext): Promise<Response> {
+  const room = roomOf(state);
+  limitMember(state, c);
+  const figure = await figureFor(state, room, c);
+  return figure.manifest(c.req.header("if-none-match"));
+}
+
+/**
+ * `GET /api/member/room/figure/{name}`: one file the manifest names, by its content's hash. Not
+ * counted with the member's other requests (a load is a dozen of them, and the browser keeps them
+ * a year), but on a window of its own.
+ */
+async function figureFile(state: ApiState, c: ApiContext): Promise<Response> {
+  const room = roomOf(state);
+  const wait = room.figureFiles.hit(accountRefString(accountOf(c)), state.now());
+  if (wait !== null) throw roomTooMany(wait);
+  const figure = await figureFor(state, room, c);
+  return figure.file(param(c, "name"), c.req.header("accept-encoding"));
+}
+
 /** The room's member routes that are not on the route table; none while the room is off. */
 export function roomRoutes(state: ApiState): Route[] {
   if (!state.publicSide.config.enabled || state.room === null || state.room === undefined) {
@@ -263,6 +298,8 @@ export function roomRoutes(state: ApiState): Route[] {
     { method: "POST", path: "/api/member/room/uploads", handler: (c) => upload(state, c) },
     { method: "GET", path: "/api/member/room/voice/:id", handler: (c) => voice(state, c) },
     { method: "GET", path: "/api/member/room/files/:id/:n", handler: (c) => file(state, c) },
+    { method: "GET", path: ROOM_FIGURE_PATH, handler: (c) => figureManifest(state, c) },
+    { method: "GET", path: `${ROOM_FIGURE_PATH}/:name`, handler: (c) => figureFile(state, c) },
   ];
   return routes.map((r) => ({ ...r, member: true }));
 }
