@@ -17,7 +17,7 @@
 - **記憶的「在哪裡說的」**(示意圖的「語音 · 深夜雜談」):同上,頻道名是新的對外資訊;只給日期和種類。
 - **她主動來敲門**(「她想你了」推播):不做,而且要把她的主動開口擋在房間外面(§5)。
 
-第一版之後加了:**在會員瀏覽器跑她的 Live2D**(2026-11-28 owner:「不管了 直接跑 l2d」),見 §7.5。缺什麼(build、Core、模型、WebGL)就照舊是登陸頁的錄影循環(`apps/panel/src/pages/public/landing/her/*.webm`)。
+第一版之後加了:**在會員瀏覽器跑她的 Live2D**(2026-11-28 owner:「不管了 直接跑 l2d」),見 §7.5。缺什麼(build、Core、模型、WebGL)就沒有身影,舞台只有背景(2026-11-28:owner 說房間裡不要出現影片立繪,登陸頁的錄影循環只留在登陸頁,房間不再用)。
 
 ## 2. 對話的通道
 
@@ -546,7 +546,8 @@ oRPC 的 `eventIterator`(和 `push.member` 同樣的殼:`HEAD` 不開訂閱、`n
 # voice_cache = 64                 # 念過的行留幾行在記憶體
 # backlog_page = 50                # 紀錄一頁幾行
 # 她的身影:live2d = 在會員的瀏覽器跑她的 Live2D 模型(要 [modules.cards] portrait_model、卡片工作室
-# 的 build:figure 和 Live2D 的 Core 都在這台電腦,缺一樣就退回錄影循環,log 說一次為什麼);loops = 一律錄影循環。
+# 的 build:figure 和 Live2D 的 Core 都在這台電腦,缺一樣就不顯示身影,log 說一次為什麼);none = 不顯示身影(舊值 loops 一樣可用)。
+# 房間裡不放錄影的立繪:沒有 Live2D 的時候舞台只有背景。
 # 開著時,房間對他開放的會員的瀏覽器會下載模型的 moc、貼圖、物理和待機動作(tools/card-studio/vendor.md)。
 # figure = "live2d"
 # figure_model = ""                # 空 = 用 [modules.cards] portrait_model
@@ -599,7 +600,7 @@ B 的測試至少要有:作者是 Discord 帳號、context 是 `web` 時記憶�
 - `room-api.ts`(下面的 `RoomApi`:真的實作用 `api.rpc.room.*` 和 `ApiClient.send`)
 - `room-stream.ts`(跟串流:退避重連、`Last-Event-ID`、看門狗;`reset` 時重讀紀錄)
 - `room-store.ts`(reducer:她現在這一輪的行、第幾段、思考中、標記、兩個分頁的 `client_id` 去重)
-- `figure.ts`、`Figure.tsx`(`HerFigure` 和錄影版)
+- `figure.ts`、`FigureView.tsx`(`HerFigure`、`poseFor`、沒有身影時的 `noFigure`)
 - `StatusLine.tsx`、`HerLine.tsx`、`Capsule.tsx`、`Attachments.tsx`、`Backlog.tsx`、`Relation.tsx`、`BondMark.tsx`
 - `voice.ts`(照順序播、只在被選中的分頁播、聲音鍵的狀態和原因)
 - `demo.ts`(`?room-demo` 的假 Core,照 `member-demo/demo.ts` 和 `karaoke/demo.ts` 的做法:只在 `import.meta.env.DEV`)
@@ -673,14 +674,14 @@ export const HerVoiceKey = serviceKey<HerVoice>("HerVoice");
 ```
 
 ```ts
-// apps/panel/src/pages/public/room/figure.ts (F) — the loops, and the seam Live2D fills (§7.5).
+// apps/panel/src/pages/public/room/figure.ts (F) — the figure seam Live2D fills (§7.5); the recorded loops are gone (2026-11-28).
 export type Pose = "heart" | "finger" | "sing" | "chest" | "glasses" | "basin" | "grass" | "still";
 export interface HerFigure {
   mount(into: HTMLElement): void;
   show(pose: Pose): void;
-  /** Her face and what she does (Live2D; the loops go by `show`). */
+  /** Her face and what she does (Live2D). */
   feel?(face: RoomFigureFace, doing: RoomDoing | "still"): void;
-  /** Her line is being read out (a mouth for Live2D; nothing for the loops). */
+  /** Her line is being read out (a mouth for Live2D). */
   speaking(on: boolean): void;
   dispose(): void;
 }
@@ -710,13 +711,13 @@ F 的細節(示意圖沒寫死、這裡定下來的):
 
 ### 7.5 她的 Live2D(2026-11-28 加)
 
-owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,VTube Studio 的「大肥鱼」)。錄影循環留著:Live2D 準備好之前和缺任何東西時,頁面就是原本的樣子,不對會員說任何話。
+owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,VTube Studio 的「大肥鱼」)。**2026-11-28:owner 說房間裡不要出現影片立繪,錄影循環不再用**:Live2D 準備好之前、缺任何東西時、沒有 Core 時,舞台都只有背景、沒有身影,也不對會員說任何話。
 
 **三塊:**
 
 - **身影的 bundle**:`tools/card-studio/src/figure.ts`,`vite.figure.config.ts` 建成 `dist/figure/figure.js`(一個 ES module,Live2D 的 Web Framework 打包在裡面,Cubism Core 不在)。`mount(canvas, { manifest, size, reduced, frame }) → { setMood, setState, speak, lookAt, resize, stats, destroy }`。做的事:模型自己的待機動作(`IDLE.motion3.json`,VTube Studio 的 `IdleAnimation`)循環、呼吸和輕微擺動、眨眼、物理(頭髮、裙子、尾巴)、眼睛和頭輕輕跟著游標或觸控(四秒沒動就回正)、每個表情之間 0.45 秒淡入淡出、嘴巴跟著她聲音的音量;裝置像素比最多 2、長邊最多 2560 px;分頁藏起來就停;`prefers-reduced-motion` 時不動只眨眼;WebGL context 掉了會在瀏覽器還回來時重建。這個模型很重(桌機一格約 10 ms:Core 自己的 `csmUpdateModel` 約 6 ms、畫約 3 ms、物理約 1.4 ms)。**所以她在 worker 裡畫**(2026-11-28 改;第一版在主執行緒上自己限制成 30 或 20 格,owner 說不順):`figure-engine.ts` 是不碰頁面的引擎,`figure-worker.ts` 建成另一支傳統 worker 腳本 `dist/figure/figure-worker.js`(manifest 的 `worker`),頁面把 canvas 交給它(`transferControlToOffscreen`);Cubism Core 在 worker 裡用 `importScripts` 載(頁面的 CSP 沒有 `eval`),它的 WebAssembly 要等一下才好。worker 先回答自己能不能畫(有 `requestAnimationFrame`、`OffscreenCanvas` 的 WebGL),不能或沒有 worker 檔就照舊在主執行緒畫。格數:她每隔幾個螢幕的更新畫一次,取放得進她那一格工作的最小間隔(worker 可以用到九成、主執行緒七成),最多約每秒 75 格、最少 20 格;在 75 Hz 的螢幕上實測 worker 是 75 格、頁面自己的 75 格不受影響,主執行緒是 38 格。
 - **Core 端**:`packages/api/src/room/figure.ts`(`RoomFigure`)、`figure-faces.ts`(表情表)。啟動時在背景準備一次:讀 `.model3.json` 和它指到的檔(moc、貼圖、物理、display info),待機動作從旁邊同名的 `.vtube.json` 讀,表情檔照 VTube Studio 的找法在資料夾裡按檔名找;只收資料夾裡面、副檔名對的檔(路徑往外爬、符號連結指出去、種類不對都拒絕)。要給頁面的檔複製到 `figure_cache`,用內容的 hash 命名:moc、物理、待機動作、bundle、Core(各另存 Brotli 和 gzip),貼圖按 `figure_textures` 縮成 WebP(q90,alpha 100;同一組裡每張貼圖用同一個比例縮,細節一致)。表情檔不給頁面,參數在 Core 讀好直接寫進 manifest。大約一分鐘看一次 bundle、Core、模型有沒有換,換了就重新準備(不用重開)。
-- **頁面**:`live2d.ts`、`FigureView.tsx`。房間狀態多了選填的 `figure: { manifest } | null`(`RoomStateSchema`),有才用 Live2D。第一次畫完之後(rAF + idle)才去拿 manifest、`import()` bundle,canvas 疊在錄影上,畫好 0.6 秒交叉淡入,然後把錄影收掉;中間任何一步失敗就移掉 canvas,錄影照舊(只在 console 的 debug 層留一句)。`?room-demo` 沒有 `figure`,照舊是錄影。
+- **頁面**:`live2d.ts`、`FigureView.tsx`。房間狀態多了選填的 `figure: { manifest } | null`(`RoomStateSchema`),有才用 Live2D。第一次畫完之後(rAF + idle)才去拿 manifest、`import()` bundle,canvas 從透明在背景上淡入 0.6 秒;中間任何一步失敗就移掉 canvas,舞台維持沒有身影(只在 console 的 debug 層留一句)。`?room-demo` 沒有 `figure`,所以只有背景。
 
 **路由**(會員路由,和房間一樣要 session;只給房間對他開放、而且她沒有不理他的人,其他人 404,狀態裡也是 `null`):
 
@@ -747,7 +748,7 @@ owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,
 
 **嘴型**:`RoomVoice.level()` 從那一行的 WAV 自己算音量包絡(`OfflineAudioContext` 解碼,每 1/60 秒的 RMS,以那一行的第 95 百分位為滿,太小的切掉),播的時候照 `audio.currentTime` 讀;播放本身不經過 Web Audio。沒有聲音時嘴巴不動(串流的字不帶嘴型,假的嘴型不好看)。
 
-**取景**:和錄影一樣:她從頭頂(呆毛)到腳底占舞台高度的 136%(手機 108%),頂端在舞台 1% 的地方,所以臉在上面,手機上不會落在膠囊底下。模型座標的範圍是 `FIGURE_FRAMING`(0.83 到 -0.98),在 1440 × 900 對著錄影量過。
+**取景**:(原本和錄影一樣,錄影已不用;)她從頭頂(呆毛)到腳底占舞台高度的 136%(手機 108%),頂端在舞台 1% 的地方,所以臉在上面,手機上不會落在膠囊底下。模型座標的範圍是 `FIGURE_FRAMING`(0.83 到 -0.98),在 1440 × 900 對著錄影量過。
 
 **貼圖大小**:她的貼圖原本是 4096×8192 兩張、8192×8192、4096×4096、2048×2048,全部 621 MB 顯示記憶體(加 mipmap 828 MB),不可能給瀏覽器。`figure_textures` 的數字是那一組裡最大一張的邊長:
 
@@ -775,9 +776,9 @@ owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,
 pnpm --filter @miyoria/card-studio build:figure
 ```
 
-(`pnpm --filter @miyoria/card-studio build` 也會做。)沒有 vendor 的地方(CI)它說一句就跳過,`pnpm -r build`、typecheck、測試都不需要它;頁面本身不 import 它。Core 讀 `[modules.cards] portrait_studio`(預設 `tools/card-studio`)底下的 `dist/figure/figure.js` 和 `vendor/live2dcubismcore.min.js`;不在就是錄影,log 一句警告;沒設模型是一句 info。
+(`pnpm --filter @miyoria/card-studio build` 也會做。)沒有 vendor 的地方(CI)它說一句就跳過,`pnpm -r build`、typecheck、測試都不需要它;頁面本身不 import 它。Core 讀 `[modules.cards] portrait_studio`(預設 `tools/card-studio`)底下的 `dist/figure/figure.js` 和 `vendor/live2dcubismcore.min.js`;不在就沒有身影,log 一句警告;沒設模型是一句 info。
 
-**要知道的**:房間對他開放的任何會員,瀏覽器都會下載她的 moc、貼圖(縮小過)、物理和待機動作,以及 Live2D 的 Core 和 framework;懂的人可以從瀏覽器把這些存下來拼回一個可用的模型。模型的授權(`avatar.toml` 的註解:不可原樣再散佈)和 Live2D 的授權(Core 是可再散佈的程式碼,商用另有出版授權)都是 owner 接受的風險;不想要時 `figure = "loops"`。
+**要知道的**:房間對他開放的任何會員,瀏覽器都會下載她的 moc、貼圖(縮小過)、物理和待機動作,以及 Live2D 的 Core 和 framework;懂的人可以從瀏覽器把這些存下來拼回一個可用的模型。模型的授權(`avatar.toml` 的註解:不可原樣再散佈)和 Live2D 的授權(Core 是可再散佈的程式碼,商用另有出版授權)都是 owner 接受的風險;不想要時 `figure = "none"`(舊值 `"loops"` 一樣可用)。
 
 **沒驗的**:真的 TTS 下的嘴型(開發用的 Core 關著語音;包絡用合成的 WAV 和 `speak()` 直接驗過);真的手機(只有 Edge 的觸控模擬);較弱的 GPU 和行動裝置的 WebGL;Safari / iOS。
 
@@ -827,7 +828,7 @@ panel:`.claude/launch.json` 加
 - **紀錄**:重新整理後往上滑,兩邊的話、時間、標記在對的位置;「不要記住這句」之後那句消失。
 - **附件**:附一張圖 → 她說「我看到你的圖了」,`GET http://127.0.0.1:<stub>/requests` 裡那個請求有 `image_url`;附一個 PDF → 紀錄裡你那句下面寫著附加了它(讀檔和 `workspace_attach` 要沙箱,這份設定關著,所以她只看得到檔名;沙箱的部分由 B 的單元測試涵蓋)。
 - **忘記一件**:面板裡請她忘掉一件 → 重讀後不見。
-- **Live2D**(§7.5):`init` 加 `--model <.model3.json>`(只讀;寫進 `[modules.cards] portrait_model`,身影的快取在 `.dev/room/figure`),先 `pnpm --filter @miyoria/card-studio build:figure`。她畫出來、會動會眨眼、跟著游標;stub 每行帶 `<emo:…>`(一般 happy → thinking,「鬧」angry → smug),表情跟著換。把 `dist/figure/figure.js` 移走,一分鐘內 Core 說一次退回錄影,頁面就是錄影。
+- **Live2D**(§7.5):`init` 加 `--model <.model3.json>`(只讀;寫進 `[modules.cards] portrait_model`,身影的快取在 `.dev/room/figure`),先 `pnpm --filter @miyoria/card-studio build:figure`。她畫出來、會動會眨眼、跟著游標;stub 每行帶 `<emo:…>`(一般 happy → thinking,「鬧」angry → smug),表情跟著換。把 `dist/figure/figure.js` 移走,一分鐘內 Core 說一次 `the room shows no figure`,頁面只有背景。
 - 前端先不接 Core 也能看:`http://127.0.0.1:51879/her?room-demo`。
 
 收掉:停掉三個行程,刪 `.dev/room/`。整段沒有開線上的 `miyoria.toml`、`.env`、`host.toml`、`data/`,沒有連 Discord,也沒有用付費的模型。

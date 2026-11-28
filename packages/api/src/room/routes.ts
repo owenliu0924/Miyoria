@@ -263,7 +263,7 @@ async function file(state: ApiState, c: ApiContext): Promise<Response> {
 
 /**
  * Her figure, for someone the room is open to: the model's files go only to a browser that may
- * see her room at all (a stranger's and a blocked person's room shows the loops).
+ * see her room at all (a stranger's and a blocked person's room shows no figure).
  */
 async function figureFor(state: ApiState, room: Room, c: ApiContext): Promise<RoomFigure> {
   const figure = room.figure;

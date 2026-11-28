@@ -1,12 +1,13 @@
 // Her Live2D figure on the stage (docs/design/her-room.md §7.3, "Live2D"): when the Core says it can
 // (`state.figure`), the page loads her figure's bundle from the Core after its first paint and
-// draws her into a canvas over the recorded loops, then fades the loops out. The bundle is not part
-// of this app (Live2D's framework is not in git): it is fetched and imported at run time. Anything
-// that goes wrong on the way (no WebGL, a file missing, the bundle refusing) leaves the loops where
-// they are, without a word to the member.
+// draws her into a canvas, which fades in over the backdrop. Until then the stage shows the room
+// without her. The bundle is not part of this app (Live2D's framework is not in git): it is fetched
+// and imported at run time. If something goes wrong on the way (no WebGL, a file missing, the bundle
+// refusing) the stage stays without her, without a word to the member: the room never shows recorded
+// video of her (the owner's word, 2026-11-28).
 
 import type { RoomDoing, RoomFigureFace, RoomState } from "@miyoria/contracts/api";
-import { type HerFigure, loopFigure, type Pose } from "./figure";
+import type { HerFigure } from "./figure";
 
 /** The faces the Core describes (`ROOM_FIGURE_FACES`, written out: no zod in the page). */
 export const FIGURE_FACES = [
@@ -23,7 +24,7 @@ export const FIGURE_FACES = [
   "singing",
 ] as const satisfies readonly RoomFigureFace[];
 
-/** Her avatar's emotion names and their kin (`[emotion]` keys, the loops' names) by face. */
+/** Her avatar's emotion names and their kin (`[emotion]` keys) by face. */
 const NAMES: Record<Exclude<RoomFigureFace, "working" | "singing" | "neutral">, readonly string[]> = {
   happy: ["happy", "joy", "smile", "gratitude", "grateful", "love", "excited", "cheerful", "touched"],
   smug: ["smug", "pride", "proud", "teasing", "playful"],
@@ -102,7 +103,7 @@ export interface FigureModule {
   ): Promise<FigureHandle>;
 }
 
-/** How much of the stage her whole figure fills, as the loops do (`room.css`, `.hr-figure video`). */
+/** How much of the stage her whole figure fills, (`room.css`, `.hr-l2d`). */
 export function frameFor(narrow: boolean): { height: number; top: number } {
   return narrow ? { height: 1.08, top: 0.01 } : { height: 1.36, top: 0.01 };
 }
@@ -135,13 +136,11 @@ export interface Live2dOptions {
   /** Tests: the manifest and the bundle without the network. */
   fetchManifest?: (url: string, signal: AbortSignal) => Promise<FigureManifestHead>;
   importBundle?: (url: string) => Promise<FigureModule>;
-  /** Tests: the loops underneath. */
-  loops?: () => HerFigure;
   /** Runs `fn` once the page has painted; returns a cancel. */
   afterPaint?: (fn: () => void) => () => void;
 }
 
-/** How long the loops take to fade out under her, ms (`room.css`, `.hr-live`). */
+/** How long she takes to fade in over the backdrop, ms (`room.css`, `.hr-live`); if she cannot be drawn the stage stays without her. */
 export const CROSSFADE_MS = 600;
 
 const narrow = () => typeof window !== "undefined" && window.matchMedia?.("(max-width: 700px)").matches === true;
@@ -173,15 +172,12 @@ async function defaultManifest(url: string, signal: AbortSignal): Promise<Figure
 /** The bundle, from the Core at run time (never bundled into this app). */
 const defaultImport = (url: string) => import(/* @vite-ignore */ url) as Promise<FigureModule>;
 
-/** Her figure as Live2D over the loops, which stay until she is drawn (and for good if she is not). */
+/** Her figure as Live2D; if she cannot be drawn the stage stays without her. */
 export function live2dFigure(options: Live2dOptions): HerFigure {
-  const loops = (options.loops ?? (() => loopFigure({ reduced: options.reduced })))();
-  let loopsGone = false;
   let box: HTMLElement | null = null;
   let canvas: HTMLCanvasElement | null = null;
   let handle: FigureHandle | null = null;
   let cancelPaint: (() => void) | null = null;
-  let fadeTimer: ReturnType<typeof setTimeout> | undefined;
   let speakFrame = 0;
   let observer: ResizeObserver | null = null;
   const abort = new AbortController();
@@ -248,28 +244,23 @@ export function live2dFigure(options: Live2dOptions): HerFigure {
       observer.observe(c);
     }
     into.classList.add("hr-live");
-    fadeTimer = setTimeout(() => {
-      loopsGone = true;
-      loops.dispose();
-    }, CROSSFADE_MS + 100);
   }
 
   return {
     mount(into) {
       box = into;
-      loops.mount(into);
       cancelPaint = (options.afterPaint ?? defaultAfterPaint)(() => {
         cancelPaint = null;
         load().catch((error: unknown) => {
           if (abort.signal.aborted) return;
-          // Quietly: the loops stay. Only a developer's console at the debug level hears why.
-          console.debug("her Live2D figure did not load; the loops stay", error);
+          // Quietly: she is not shown. Only a developer's console at the debug level hears why.
+          console.debug("her Live2D figure did not load; she is not shown", error);
           fail();
         });
       });
     },
-    show(pose: Pose) {
-      if (!loopsGone) loops.show(pose);
+    show() {
+      // Live2D goes by `feel`; the pose belonged to the recorded loops.
     },
     feel(next, now) {
       face = next;
@@ -285,7 +276,6 @@ export function live2dFigure(options: Live2dOptions): HerFigure {
     dispose() {
       abort.abort();
       cancelPaint?.();
-      clearTimeout(fadeTimer);
       if (speakFrame !== 0) cancelAnimationFrame(speakFrame);
       observer?.disconnect();
       window.removeEventListener("pointermove", onPointer);
@@ -296,8 +286,6 @@ export function live2dFigure(options: Live2dOptions): HerFigure {
       canvas?.remove();
       canvas = null;
       box?.classList.remove("hr-live");
-      if (!loopsGone) loops.dispose();
-      loopsGone = true;
       box = null;
     },
   };

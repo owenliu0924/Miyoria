@@ -52,9 +52,10 @@ export const RoomConfigSchema = z.object({
   /**
    * Her figure on the page: `live2d` runs her Live2D model in the member's browser when everything
    * it needs is on this machine (the model, the card studio's figure build, Live2D's Core), and
-   * the recorded loops otherwise; `loops` always the loops.
+   * no figure otherwise (the room never shows recorded video of her); `none` never shows one.
+   * `loops` is the old name of `none` and still loads.
    */
-  figure: z.enum(["live2d", "loops"]).default("live2d"),
+  figure: z.enum(["live2d", "none", "loops"]).default("live2d"),
   /** Her model's `.model3.json`; empty: `[modules.cards] portrait_model`. */
   figure_model: z.string().default(""),
   /**

@@ -95,7 +95,7 @@ export interface RoomProps {
   api: RoomApi;
   member: MemberSession | null;
   home: string;
-  /** Her figure (Live2D when the Core serves it, else the loops; a stand-in in tests). */
+  /** Her figure (Live2D when the Core serves it, none otherwise; a stand-in in tests). */
   figure?: () => HerFigure;
   /** This tab's id for the voice's choice of tab. */
   tab?: string;
@@ -254,7 +254,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
       if (gone?.preview) URL.revokeObjectURL(gone.preview);
       return all.filter((a) => a.key !== key);
     });
-    input.current?.focus();
+    focusCapsule(input.current, stage.current);
   }, []);
 
   useEffect(
@@ -299,7 +299,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
   const ask = (memory: RoomMemory) => {
     closePanel(false);
     setText(askAbout(memory.text));
-    focusAfter.current = () => input.current?.focus();
+    focusAfter.current = () => focusCapsule(input.current, stage.current);
   };
 
   // ---- overlays -------------------------------------------------------------------------------
@@ -324,7 +324,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
     focusAfter.current = () => {
       const log = logButton.current;
       if (log && getComputedStyle(log).display !== "none") log.focus({ preventScroll: true });
-      else input.current?.focus({ preventScroll: true });
+      else focusCapsule(input.current, stage.current);
     };
   }, []);
   const closePanel = useCallback((refocus = true) => {
@@ -446,7 +446,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
       depth = 0;
       setDragging(false);
       addFiles([...(e.dataTransfer?.files ?? [])]);
-      input.current?.focus();
+      focusCapsule(input.current, stage.current);
     };
     window.addEventListener("dragenter", enter);
     window.addEventListener("dragleave", leave);
@@ -462,6 +462,31 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
 
   // The dock's height, so the panel on a phone stays clear of it.
   const root = useRef<HTMLDivElement>(null);
+  // A phone's keyboard: it is laid over the page instead of resizing it (she and the backdrop would
+  // be drawn again at another size, and jump), and the dock alone rides above it by `--kb`.
+  useEffect(() => {
+    const el = root.current;
+    const vv = window.visualViewport;
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]');
+    const before = meta?.getAttribute("content") ?? null;
+    if (meta && before !== null && !before.includes("interactive-widget")) {
+      meta.setAttribute("content", `${before}, interactive-widget=resizes-visual`);
+    }
+    const update = () => {
+      if (!el || !vv) return;
+      const covered = document.documentElement.clientHeight - vv.height - vv.offsetTop;
+      // Small differences are the browser's own bars coming and going, not a keyboard.
+      el.style.setProperty("--kb", `${covered > 80 ? Math.round(covered) : 0}px`);
+    };
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
+    update();
+    return () => {
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
+      if (meta && before !== null) meta.setAttribute("content", before);
+    };
+  }, []);
   const dock = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = dock.current;
@@ -493,7 +518,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
   return (
     <div ref={root} className="her-room">
       <Top member={member} home={home} />
-      <main ref={stage} className="hr-stage">
+      <main ref={stage} className="hr-stage" tabIndex={-1}>
         <h1 className="hr-sr">和她在一起</h1>
         <Backdrop image={open ? (state?.backdrop?.image ?? null) : null} />
         <Figure
@@ -585,7 +610,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
                 onChange={(e) => {
                   addFiles([...(e.target.files ?? [])]);
                   e.target.value = "";
-                  input.current?.focus();
+                  focusCapsule(input.current, stage.current);
                 }}
               />
             </>
@@ -621,6 +646,20 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
 }
 
 /** The page, on this connection's Core (or the dev demo's stand-in). */
+/** A phone or tablet: focusing the capsule there brings the keyboard up over the stage. */
+const touchFirst = () =>
+  typeof window !== "undefined" && window.matchMedia?.("(hover: none) and (pointer: coarse)").matches === true;
+
+/**
+ * Focus for the capsule after something the member did elsewhere (a file picked, an overlay
+ * closed). Not on a touch screen: the keyboard would come up unasked; there the focus only leaves
+ * what is gone, for the stage.
+ */
+function focusCapsule(input: HTMLTextAreaElement | null, stage: HTMLElement | null): void {
+  if (!touchFirst()) input?.focus({ preventScroll: true });
+  else stage?.focus({ preventScroll: true });
+}
+
 export function RoomPage({ member, home }: { member?: MemberSession | null; home: string }) {
   const { api: core, client } = useConnection();
   const api = useMemo(() => roomApiFor(core, client), [core, client]);

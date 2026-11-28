@@ -15,20 +15,6 @@ import {
 import { roomState } from "./room-fixtures";
 import { type AudioLike, RoomVoice } from "./voice";
 
-function fakeLoops() {
-  const calls: string[] = [];
-  const loops: HerFigure = {
-    mount: (into) => {
-      calls.push("mount");
-      into.appendChild(document.createElement("video"));
-    },
-    show: (pose) => calls.push(`show:${pose}`),
-    speaking: () => {},
-    dispose: () => calls.push("dispose"),
-  };
-  return { loops, calls };
-}
-
 function fakeHandle() {
   const calls: string[] = [];
   const handle: FigureHandle = {
@@ -78,7 +64,7 @@ describe("her Live2D face", () => {
     }
   });
 
-  it("frames her as the loops do and picks a texture size for the screen", () => {
+  it("frames her and picks a texture size for the screen", () => {
     expect(frameFor(false)).toEqual({ height: 1.36, top: 0.01 });
     expect(frameFor(true)).toEqual({ height: 1.08, top: 0.01 });
     expect(pickSize([1024, 2048], { figurePx: 1150, memoryGb: null })).toBe(2048);
@@ -94,15 +80,13 @@ describe("her Live2D face", () => {
 });
 
 describe("her Live2D figure on the stage", () => {
-  it("keeps the loops, quietly, when the manifest cannot be read", async () => {
-    const { loops, calls } = fakeLoops();
+  it("stays without her, quietly, when the manifest cannot be read", async () => {
     const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     const box = document.createElement("div");
     const fig = live2dFigure({
       manifest: "/api/member/room/figure?v=1",
       reduced: () => false,
       level: () => 0,
-      loops: () => loops,
       afterPaint: (fn) => {
         fn();
         return () => {};
@@ -112,19 +96,22 @@ describe("her Live2D figure on the stage", () => {
       },
     });
     fig.mount(box);
+    fig.show("heart");
+    // Nothing on the stage while she loads, and nothing once she has failed to.
+    expect(box.children.length).toBe(0);
     await flush();
     expect(box.querySelector("canvas")).toBeNull();
-    expect(box.querySelector("video")).not.toBeNull();
+    expect(box.querySelector("video")).toBeNull();
+    expect(box.children.length).toBe(0);
     expect(box.classList.contains("hr-live")).toBe(false);
     fig.show("sing");
-    expect(calls).toEqual(["mount", "show:sing"]);
+    fig.speaking(true);
+    expect(box.children.length).toBe(0);
     fig.dispose();
-    expect(calls).toContain("dispose");
     debug.mockRestore();
   });
 
-  it("keeps the loops when the bundle refuses to draw her (no WebGL)", async () => {
-    const { loops, calls } = fakeLoops();
+  it("stays without her when the bundle refuses to draw her (no WebGL)", async () => {
     const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
     const box = document.createElement("div");
     const mod: FigureModule = {
@@ -136,7 +123,6 @@ describe("her Live2D figure on the stage", () => {
       manifest: "/m",
       reduced: () => false,
       level: () => 0,
-      loops: () => loops,
       afterPaint: (fn) => {
         fn();
         return () => {};
@@ -147,14 +133,14 @@ describe("her Live2D figure on the stage", () => {
     fig.mount(box);
     await flush();
     expect(box.querySelector("canvas")).toBeNull();
-    expect(calls).not.toContain("dispose");
+    expect(box.querySelector("video")).toBeNull();
+    expect(box.classList.contains("hr-live")).toBe(false);
     fig.dispose();
     debug.mockRestore();
   });
 
-  it("waits for the first paint, draws her over the loops, then lets the loops go", async () => {
+  it("waits for the first paint and draws her, with no video ever on the stage", async () => {
     vi.useFakeTimers();
-    const { loops, calls: loopCalls } = fakeLoops();
     const { handle, calls } = fakeHandle();
     const imported: string[] = [];
     let mounted: { size: number } | null = null;
@@ -165,7 +151,6 @@ describe("her Live2D figure on the stage", () => {
       manifest: "/m",
       reduced: () => false,
       level: () => level,
-      loops: () => loops,
       afterPaint: (fn) => {
         paint = fn;
         return () => {};
@@ -194,9 +179,8 @@ describe("her Live2D figure on the stage", () => {
     expect(calls.slice(0, 2)).toEqual(["mood:happy", "state:idle"]);
     fig.feel?.("singing", "singing");
     expect(calls).toContain("mood:singing");
-    expect(loopCalls).not.toContain("dispose");
     vi.advanceTimersByTime(CROSSFADE_MS + 200);
-    expect(loopCalls).toContain("dispose");
+    expect(box.querySelector("video")).toBeNull();
     // Her voice's level reaches the mouth while she speaks, and the mouth closes after.
     fig.speaking(true);
     expect(calls).toContain("speak:0.5");
@@ -206,18 +190,16 @@ describe("her Live2D figure on the stage", () => {
     fig.dispose();
     expect(calls).toContain("destroy");
     expect(box.querySelector("canvas")).toBeNull();
-    expect(loopCalls.filter((c) => c === "dispose")).toHaveLength(1);
+    expect(box.querySelector("video")).toBeNull();
   });
 
   it("never loads the bundle once it is taken away before the paint", async () => {
-    const { loops } = fakeLoops();
     const cancel = vi.fn();
     const fetchManifest = vi.fn(async () => MANIFEST);
     const fig = live2dFigure({
       manifest: "/m",
       reduced: () => false,
       level: () => 0,
-      loops: () => loops,
       afterPaint: () => cancel,
       fetchManifest,
     });
@@ -227,11 +209,13 @@ describe("her Live2D figure on the stage", () => {
     expect(fetchManifest).not.toHaveBeenCalled();
   });
 
-  it("uses the loops when the Core serves no figure, and a figure of the caller's own in tests", () => {
+  it("shows no figure when the Core serves none, and a figure of the caller's own in tests", () => {
     const { container, rerender } = render(
       <Figure pose="heart" face="neutral" doing="idle" speaking={false} manifest={null} level={() => 0} />,
     );
-    expect(container.querySelector(".hr-figure video")).not.toBeNull();
+    expect(container.querySelector(".hr-figure")).not.toBeNull();
+    expect(container.querySelector(".hr-figure video")).toBeNull();
+    expect(container.querySelector(".hr-figure canvas")).toBeNull();
     const made: string[] = [];
     const make = (): HerFigure => ({
       mount: () => made.push("mount"),

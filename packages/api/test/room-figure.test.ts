@@ -280,14 +280,14 @@ describe("her figure's files", () => {
     expect(f.manifest('"other"').status).toBe(200);
   });
 
-  it("stays on the loops, said once, when the build, Core or the model is missing", async () => {
+  it("shows no figure, said once, when the build, Core or the model is missing", async () => {
     logs.length = 0;
     const noBuild = figure({ studio: join(root, "nowhere"), cache: join(root, "c4") });
     await noBuild.prepare();
     await noBuild.prepare();
     expect(noBuild.state()).toBeNull();
     expect(logs).toEqual([
-      expect.stringMatching(/^warn: the room shows her recorded loops: the figure is not built/),
+      expect.stringMatching(/^warn: the room shows no figure: the figure is not built/),
     ]);
     expect(() => noBuild.manifest(undefined)).toThrow();
     logs.length = 0;
@@ -302,16 +302,24 @@ describe("her figure's files", () => {
     expect(logs[0]).toMatch(/^warn: .*does not exist/);
   });
 
-  it('is never made ready with `figure = "loops"`', async () => {
-    const f = new RoomFigure({
-      config: { figure: "loops", figure_textures: [32] },
-      model,
-      studio,
-      cache: join(root, "c7"),
-      log,
-    });
-    await f.prepare();
-    expect(f.state()).toBeNull();
+  it.each(["none", "loops"] as const)(
+    'is never made ready with `figure = "%s"`',
+    async (figureName) => {
+      const f = new RoomFigure({
+        config: { figure: figureName, figure_textures: [32] },
+        model,
+        studio,
+        cache: join(root, `c7-${figureName}`),
+        log,
+      });
+      await f.prepare();
+      expect(f.state()).toBeNull();
+    },
+  );
+
+  it('accepts `figure = "none"` and the old `"loops"` in the config', () => {
+    expect(RoomConfigSchema.parse({ figure: "none" }).figure).toBe("none");
+    expect(RoomConfigSchema.parse({ figure: "loops" }).figure).toBe("loops");
   });
 
   it("takes the cards' model unless the room names its own, and its folders from the working one", () => {
@@ -380,7 +388,7 @@ describe("her figure's routes", () => {
     expect((await r.app.request(m.moc)).status).toBe(404);
   });
 
-  it("are a 404 while the room shows the loops", async () => {
+  it("are a 404 while the room shows no figure", async () => {
     const r = makeRig();
     const app = appOf(roomRoutes(r.state as never), { account: ALICE });
     expect((await app.request("/api/member/room/figure")).status).toBe(404);

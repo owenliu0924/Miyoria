@@ -394,7 +394,7 @@ export class ApiModule implements Module {
     if (config.public.enabled && config.room.enabled) {
       const room = new Room(config.room, () => ctx.clock.now());
       if (config.room.figure === "live2d") {
-        // Made ready in the background: the loops until then (the page swaps when it is).
+        // Made ready in the background: no figure until then (she fades in when it is).
         room.figure = new RoomFigure(figureOptions(config.room, this.#portrait, ctx.log));
         void room.figure.prepare();
       }

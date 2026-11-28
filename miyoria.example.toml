@@ -306,7 +306,8 @@ token = "${MIYORIA_API_TOKEN:-}"
 # voice_cache = 64                 # 念過的行留幾行在記憶體
 # backlog_page = 50                # 紀錄一頁幾行
 # 她的身影:live2d = 在會員的瀏覽器跑她的 Live2D 模型(要 [modules.cards] portrait_model、卡片工作室
-# 的 build:figure 和 Live2D 的 Core 都在這台電腦,缺一樣就退回錄影循環,log 說一次為什麼);loops = 一律錄影循環。
+# 的 build:figure 和 Live2D 的 Core 都在這台電腦,缺一樣就不顯示身影,log 說一次為什麼);none = 不顯示身影(舊值 loops 一樣可用)。
+# 房間裡不放錄影的立繪:沒有 Live2D 的時候舞台只有背景。
 # 開著時,房間對他開放的會員的瀏覽器會下載模型的 moc、貼圖、物理和待機動作(tools/card-studio/vendor.md)。
 # figure = "live2d"
 # figure_model = ""                # 空 = 用 [modules.cards] portrait_model
