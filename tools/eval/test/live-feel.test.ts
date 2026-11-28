@@ -82,6 +82,23 @@ describe("the direction check", () => {
     expect(directionFault(block("小安: 好感 + 「熱」"), "小安", "none")).toContain("small talk");
   });
 
+  it("fails a bond minus at an apology, and takes a plus, a grudge down or nothing", () => {
+    expect(directionFault(block("阿凱: 羈絆 -6「又提唱歌」"), "阿凱", "no-fall")).toContain(
+      "charged again",
+    );
+    expect(directionFault(block("阿凱: 羈絆 + 「來道歉」"), "阿凱", "no-fall")).toBeNull();
+    expect(directionFault(block("阿凱: 心結 - 「來道歉」"), "阿凱", "no-fall")).toBeNull();
+    expect(directionFault(["我: 平靜 弱"], "阿凱", "no-fall")).toBeNull();
+  });
+
+  it("has the apology scene end on the apology, after her answer to the rudeness", () => {
+    const c = FEEL_CASES.find((x) => x.id === "direction-apology");
+    expect(c?.expect).toBe("no-fall");
+    expect(c?.lines.some((l) => l.self === true)).toBe(true);
+    expect(c?.lines.at(-1)?.text).toContain("對不起");
+    expect(c?.lines.at(-1)?.self).not.toBe(true);
+  });
+
   it("fails a reply that leaked before it looks at the direction", () => {
     const kind = FEEL_CASES.find((c) => c.id === "direction-kind-act");
     expect(kind).toBeDefined();
@@ -131,7 +148,7 @@ describe("the suite", () => {
       "feel-leak-insult-voice": { lines: ["哼。", "我: 生氣 中"], feel: [] },
       "feel-direction-kind-act": { lines: ["謝謝!"], feel: ["小安: 羈絆 + 「布丁」"] },
       "feel-direction-insult": { lines: ["……"], feel: ["阿凱: 好感 + 「?」"] },
-      "feel-direction-apology": { lines: ["好啦"], feel: ["阿凱: 心結 - 「他道歉」"] },
+      "feel-direction-apology": { lines: ["好啦"], feel: ["阿凱: 羈絆 + 「他道歉」"] },
       "feel-direction-small-talk": { lines: ["對啊"], feel: [] },
     };
     const result = await runFeel(

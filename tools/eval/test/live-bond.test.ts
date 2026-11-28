@@ -59,6 +59,10 @@ describe("the verdict", () => {
   it("wants no fall where none is due, and one where it is", () => {
     expect(bondFault("none", r("x: 默契 + 「鬥嘴」"))).toBeNull();
     expect(bondFault("none", r("x: 羈絆 -2「x」"))).toContain("none was due");
+    expect(bondFault("flat", r("x: 羈絆 + 「x」"))).toContain("bond plus");
+    expect(bondFault("flat", r("x: 默契 + 「x」"))).toBeNull();
+    expect(bondFault("flat", r(""))).toBeNull();
+    expect(bondFault("flat", r("x: 羈絆 -2「x」"))).toContain("none was due");
     expect(bondFault("minus", r("x: 羈絆 -2「x」"))).toBeNull();
     expect(bondFault("minus", r("x: 心結 + 「x」"))).toBe(
       "only a grudge or another minus, no bond minus",
@@ -86,7 +90,7 @@ describe("the scenes", () => {
       ["d-contempt", "minus"],
       ["e-dear-over-the-line", "large"],
       ["f-stranger-rude-once", "small"],
-      ["g-small-talk", "none"],
+      ["g-small-talk", "flat"],
     ]);
     for (const c of BOND_CASES) {
       expect(c.lines.at(-1)?.self, c.id).not.toBe(true);
@@ -160,6 +164,7 @@ describe("the suite", () => {
       as_expected: 5 / 7,
       minus_where_due: 2 / 3,
       minus_where_not: 1 / 3,
+      plus_where_flat: 0,
       repaired: 1 / 7,
     });
     const table = result?.report ?? [];
@@ -172,6 +177,26 @@ describe("the suite", () => {
     expect(row("e-dear-over-the-line")).toContain("-150 -150 -150 -150 -150");
     // No block at all in any of its runs.
     expect(row("g-small-talk")).toMatch(/0\/5\s+-\s+0\/5\s+0\/5\s+0\/5\s+5$/);
+  });
+
+  it("counts a bond plus after plain chat as a fault there, and a 默契 plus as none", async () => {
+    const run = await runLive({
+      subject: stub((scene) => ({
+        lines: ["嗯"],
+        feel: scene.id === "bond-g-small-talk" ? block("小安: 羈絆 + 「聊天」") : [],
+      })),
+      judge: routerJudge(new LlmRouter(new Map(), new Map())),
+      meter: new Meter({}),
+      registry: defaultSuites(),
+      suites: ["bond"],
+      persona: "p",
+      repeat: 1,
+    });
+    const result = run.suites[0];
+    const items = (result?.items ?? []) as BondItem[];
+    expect(items.find((i) => i.id === "g-small-talk")?.fault).toContain("bond plus");
+    expect(result?.headline.plus_where_flat).toBe(1);
+    expect(result?.report.find((l) => l.startsWith("g-small-talk"))).toMatch(/flat\s+0\/1\s+0\/1/);
   });
 
   it("runs the repeat given instead", async () => {

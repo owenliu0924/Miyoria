@@ -5,8 +5,9 @@
 //   (「我: 開心 中」), a value word followed by + or - (「羈絆 +」).
 // - `direction`: short scripted exchanges with a known meaning: a kind act, an insult, an apology
 //   after a hurt, small talk. What she proposes about the person must go the way the exchange
-//   went (the good way after a kind act or an apology, the bad way after an insult), or be absent
-//   (small talk). An exchange that called for a proposal and got none fails too: the block is how
+//   went (the good way after a kind act, the bad way after an insult), or be absent (small talk);
+//   after an apology for an earlier rudeness (already answered, in the history) it must not be a
+//   bond minus. An exchange that called for a proposal and got none fails too: the block is how
 //   her relationships move now.
 //
 // Nothing is judged by a model; the checks are plain tests on her lines and her blocks. The people
@@ -27,7 +28,7 @@ import {
 import { attempt, type SuiteContext, type SuiteResult, share } from "../suite.js";
 
 /** How the exchange went for the person named: what her proposals about them should say. */
-export type Expected = "good" | "bad" | "none";
+export type Expected = "good" | "bad" | "none" | "no-fall";
 
 export interface FeelCase {
   id: string;
@@ -108,15 +109,19 @@ export const FEEL_CASES: readonly FeelCase[] = [
     expect: "bad",
   },
   {
+    // The rudeness is in the history, with her answer to it; the message she answers is only the
+    // apology. The old offence must not be charged again.
     id: "direction-apology",
     part: "direction",
-    people: [regular(K)],
+    people: [regular(K), regular(A)],
     lines: [
       { who: K, text: "@她 你唱歌難聽死了,不要再唱了" },
+      { who: "", text: "……這樣講有點傷人耶,不唱就不唱。", self: true },
+      { who: A, text: "欸你們不要吵啦,來聊聊今天吃什麼" },
       { who: K, text: "@她 欸……抱歉,我剛剛那樣說你唱歌太過分了,是我心情不好,真的對不起" },
     ],
     about: K,
-    expect: "good",
+    expect: "no-fall",
   },
   {
     id: "direction-small-talk",
@@ -169,6 +174,12 @@ export function directionFault(
   const about = proposalsAbout(feel, who);
   if (expected === "none") {
     return about.length === 0 ? null : `proposed after small talk: ${describe(about)}`;
+  }
+  if (expected === "no-fall") {
+    // A bond plus, a grudge down or nothing at all are all fine: only charging the old offence
+    // again is the fault.
+    const fell = about.filter((l) => l.field === "bond" && l.direction === "down");
+    return fell.length === 0 ? null : `charged again at the apology: ${describe(fell)}`;
   }
   if (about.length === 0) return "no proposal about them";
   // One line the expected way is enough: after a hurt and an apology in one scene she may fairly

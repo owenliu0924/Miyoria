@@ -41,7 +41,10 @@ const DEFAULT_MAX_USD = 0.5;
 const USAGE =
   "usage: pnpm eval --live --config <miyoria.toml> [--suite persona,tools,relationship,memory,corrections,feel,play,bond,screens] " +
   "[--subject self] [--repeat k] [--max-usd 0.5] [--out <dir>] [--profile <dir>] [--seed <text>] [--memory-set <set.json>] [--memory-target records|notes]\n" +
-  "       pnpm eval --live --rebuild-history [--out <dir>]\n";
+  "       pnpm eval --live --rebuild-history [--out <dir>]\n" +
+  "judge: the cases that ask a judge use the `chat` chain unless the config (or the profile) declares an LLM purpose\n" +
+  '       `judge`: in `[llm.purposes]` add `judge = ["other:model"]`, with `other` a `[llm.providers.other]`, to judge on\n' +
+  "       another provider than the one judged (the run header lists only the subject's chain).\n";
 
 export interface SubjectDeps {
   router: LlmRouter;
