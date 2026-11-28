@@ -14,6 +14,7 @@ import {
   resolveUser,
   SandboxConfigSchema,
 } from "../src/index.js";
+import { Capped } from "../src/runner.js";
 
 function spec(over: Partial<ContainerSpec> = {}): ContainerSpec {
   return {
@@ -181,6 +182,32 @@ describe("dockerCliEnv", () => {
   });
 });
 
+describe("Capped", () => {
+  it("keeps all of a stream that fits, in any pieces", () => {
+    const kept = new Capped(300);
+    for (let i = 0; i < 30; i++) kept.push(Buffer.from("0123456789"));
+    expect(kept.buffer.toString()).toBe("0123456789".repeat(30));
+  });
+
+  it("keeps the head and the tail of one that does not, within the same total", () => {
+    const kept = new Capped(300);
+    for (let i = 0; i < 1000; i++) kept.push(Buffer.from(`${String(i).padStart(4, "0")}\n`));
+    const text = kept.buffer.toString();
+    expect(kept.buffer.length).toBeLessThanOrEqual(300);
+    expect(text.startsWith("0000\n0001\n")).toBe(true);
+    expect(text.endsWith("0998\n0999\n")).toBe(true);
+    // What is shown and what the mark says was left out add up to all of it.
+    const [head = "", skipped = "", tail = ""] = text.split(/\n\[… (\d+) bytes left out …\]\n/);
+    expect(Buffer.byteLength(head) + Number(skipped) + Buffer.byteLength(tail)).toBe(5000);
+  });
+
+  it("does not start the tail in the middle of a character", () => {
+    const kept = new Capped(300);
+    kept.push(Buffer.from("頭".repeat(200)));
+    expect(kept.buffer.toString()).not.toContain("�");
+  });
+});
+
 describe("ProcessDockerRunner", () => {
   // `node` stands in for the Docker CLI: same spawn path, no Docker needed.
   const node = (env: Record<string, string> = {}) =>
@@ -216,6 +243,22 @@ describe("ProcessDockerRunner", () => {
     expect(result.stdout_bytes).toBe(4000);
     expect(result.stderr.toString()).toBe("e");
     expect(exceeded).toBe(1);
+  });
+
+  it("keeps_the_head_and_the_tail_of_long_output_where_the_error_is", async () => {
+    const result = await node().exec(
+      [
+        "-e",
+        "process.stdout.write('compiling\\n' + 'x'.repeat(50000) + '\\nerror: line 9 is wrong\\n')",
+      ],
+      { maxOutputBytes: 1024 },
+    );
+    const out = result.stdout.toString();
+    expect(out.startsWith("compiling\n")).toBe(true);
+    expect(out.endsWith("error: line 9 is wrong\n")).toBe(true);
+    expect(out).toMatch(/\[… \d+ bytes left out …\]/);
+    expect(result.stdout.length).toBeLessThanOrEqual(1024);
+    expect(result.stdout_bytes).toBe(50034);
   });
 
   it("reports_spawn_failures_and_aborts", async () => {

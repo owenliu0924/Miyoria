@@ -455,13 +455,14 @@ function personAttrs(p: PresentPerson, src: PeopleSources): PersonAttrs | null {
   const attrs: PersonAttrs = { name: p.handle, shown_as: shownAs(p) };
   const view = p.person === null ? null : (src.heart?.view(p.person) ?? null);
   if (view !== null) {
-    // The heart's row (docs/design/v5-heart.md §2.9): the tier, the level and the slow values as
-    // words; the fast ones are block 7's. Her words (call name, impression, stance) are the
-    // heart's too: the nightly reflection, `set_call_name` and the panel write them there.
+    // The heart's row (docs/design/v5-heart.md §2.9): the tier and the slow values as words; the
+    // exact level and the fast values are block 7's (`heartNowBody`): block 4 is the cached
+    // prefix, and the level moves with every whole point. Her words (call name, impression,
+    // stance) are the heart's too: the nightly reflection, `set_call_name` and the panel write
+    // them there.
     if (view.blocked) return null;
     const words = heartWords(view);
     attrs.relation = relationshipLabel({ affinity: view.bond });
-    attrs.level = `${affinityLevel(view.bond)}/${AFFINITY_LEVEL_MAX}`;
     if (view.owner) attrs.owner = "主人";
     attrs.trust = words.trust;
     attrs.familiar = words.familiarity;
@@ -485,15 +486,15 @@ function personAttrs(p: PresentPerson, src: PeopleSources): PersonAttrs | null {
 export const HEART_NOW_TITLE = "你現在對在場的人的感覺:";
 
 /**
- * Block 7's lines about the people here (docs/design/v5-heart.md §2.5): the values that move by
- * the day (warmth, grudge, longing) as words, and a sentence when a grudge or longing is high.
- * Block 4 is cached until the people, the summary or her slow words about them change, so these
- * are not there. Someone
- * without a row, blocked, or with nothing to say is left out; empty when nobody is left.
+ * Block 7's lines about the people here (docs/design/v5-heart.md §2.5): her exact 羈絆 level
+ * (`level="N/1000"`, what her feel rules weigh a fall against), the values that move by the day
+ * (warmth, grudge, longing) as words, and a sentence when a grudge or longing is high. Block 4 is
+ * cached until the people, the summary or her slow words about them change, so these are not
+ * there. Someone without a row or blocked is left out; empty when nobody is left.
  */
 export function heartNowBody(
   people: readonly { handle: string; person: PersonId | null }[],
-  heart: HeartPeople | null,
+  heart: Pick<HeartPeople, "view"> | null,
 ): string {
   if (heart === null) return "";
   const lines: string[] = [];
@@ -508,8 +509,9 @@ export function heartNowBody(
     if (view.grudge >= 0.1) parts.push(words.grudge);
     if (view.longing >= 0.15) parts.push(words.longing);
     const cues = heartCues(view);
+    const level = `level="${affinityLevel(view.bond)}/${AFFINITY_LEVEL_MAX}"`;
     lines.push(
-      `- ${safeName(p.handle)}:${parts.join("、")}${cues.length > 0 ? `(${cues.join(";")})` : ""}`,
+      `- ${safeName(p.handle)}(${level}):${parts.join("、")}${cues.length > 0 ? `(${cues.join(";")})` : ""}`,
     );
   }
   return lines.length === 0 ? "" : `${HEART_NOW_TITLE}\n${lines.join("\n")}`;

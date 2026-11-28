@@ -1,5 +1,6 @@
-// The judge of the live suites: the same router as the subject, purpose `chat`, thinking at
-// `high`, and a JSON answer checked against a zod schema (`completeJson`: one repair retry, then
+// The judge of the live suites: the same router as the subject, purpose `judge` when the config
+// declares an LLM purpose of that name (`[llm.purposes] judge = [...]`, so a different model can
+// judge than the one judged) and `chat` otherwise, thinking at `high`, and a JSON answer checked against a zod schema (`completeJson`: one repair retry, then
 // `StructuredOutputError`). A judge only ever sees a scene and what she replied.
 
 import {
@@ -12,7 +13,18 @@ import {
 import type { z } from "zod";
 import { type Reply, replyText, type Scene } from "./subject.js";
 
+/** The optional purpose of its own; without a chain of its own the judge uses `chat`. */
+export const JUDGE_OWN_PURPOSE = "judge";
 export const JUDGE_PURPOSE = "chat";
+
+/** A completer that can say which purposes have a chain of their own (`LlmRouter`). */
+type MaybeRouter = Completer & { configures?(purpose: string): boolean };
+
+/** The purpose the judge asks on `router`: `judge` if it has a chain of its own, else `chat`. */
+export function judgePurpose(router: MaybeRouter): string {
+  return router.configures?.(JUDGE_OWN_PURPOSE) === true ? JUDGE_OWN_PURPOSE : JUDGE_PURPOSE;
+}
+
 /** Room for the thinking and a short JSON answer. */
 const JUDGE_MAX_TOKENS = 4000;
 
@@ -24,13 +36,14 @@ export interface Judge {
 }
 
 /** A judge on `router`. Provider errors (and the budget stop) are thrown as they are. */
-export function routerJudge(router: Completer): Judge {
+export function routerJudge(router: MaybeRouter): Judge {
+  const purpose = judgePurpose(router);
   return {
     async ask(system, user, schema) {
       try {
         const result = await completeJson(
           router,
-          JUDGE_PURPOSE,
+          purpose,
           {
             messages: [systemMessage(system), userMessage(user)],
             reasoning: "high",

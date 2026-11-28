@@ -92,10 +92,13 @@ export const HTTP_TOOLS_DIR = "http-tools";
 export class ExtensionCatalog {
   constructor(readonly entries: CatalogEntry[] = []) {}
 
-  /** Bundled MCP servers of enabled extensions. */
+  /**
+   * Bundled MCP servers of enabled extensions granted `tools`: their tools are her tools as much
+   * as the ones it registers itself, so `permissions.tools = false` keeps them out too.
+   */
   mcpServers(): CatalogMcpServer[] {
     return this.entries
-      .filter((e) => e.enabled)
+      .filter((e) => e.enabled && e.spec.granted.tools)
       .flatMap((e) =>
         e.spec.manifest.mcp_servers.map((spec) => ({
           extension: e.spec.manifest.id,
@@ -106,10 +109,13 @@ export class ExtensionCatalog {
       );
   }
 
-  /** `http-tools/` folders of enabled extensions that have one (for the `http_tools` module). */
+  /**
+   * `http-tools/` folders of enabled extensions granted `tools` that have one (for the
+   * `http_tools` module).
+   */
   httpToolDirs(): CatalogHttpToolDir[] {
     return this.entries
-      .filter((e) => e.enabled && isDir(join(e.spec.dir, HTTP_TOOLS_DIR)))
+      .filter((e) => e.enabled && e.spec.granted.tools && isDir(join(e.spec.dir, HTTP_TOOLS_DIR)))
       .map((e) => ({
         extension: e.spec.manifest.id,
         dir: join(e.spec.dir, HTTP_TOOLS_DIR),

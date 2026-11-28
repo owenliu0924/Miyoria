@@ -248,6 +248,7 @@ export class ExtensionModule implements Module {
         cwd: this.spec.dir,
         env: report.env,
         network: [...this.spec.granted.network],
+        networkDeclared: m.permissions.network.length > 0,
         secrets,
         runIn: this.spec.runIn ?? defaultRunIn(m.kind, this.spec.granted),
         runInChosen: this.spec.runIn !== undefined && this.spec.runIn !== null,
@@ -843,6 +844,13 @@ class Session implements RpcHandler {
   registerPrompt(key: string): JsonValue {
     if (key.length === 0 || key.length > 64) {
       throw RpcError.invalidParams("prompt key must be 1-64 chars");
+    }
+    // A prompt fragment speaks to her every turn, as a tool's answer does: one the owner kept from
+    // giving her tools does not talk to her this way either. A game adapter's prompt for its own
+    // game is part of the game namespace it owns, as its game events are, so it needs no grant.
+    const game = this.spec.manifest.gameId();
+    if (!this.spec.granted.tools && !(game !== null && key === `game.${game}`)) {
+      throw RpcError.denied("the `tools` permission is not granted");
     }
     const registry = this.ctx.services.get(PromptContributorsKey);
     if (!registry) throw new RpcError(UNAVAILABLE, "prompt contributors are not available");

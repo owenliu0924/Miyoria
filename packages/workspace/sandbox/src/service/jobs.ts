@@ -252,11 +252,13 @@ export class Job {
     this.touchedAt = this.ctx.clock.now();
   }
 
-  /** Something ran or moved: the idle clock starts again. */
+  /**
+   * Something ran or moved: the idle clock starts again. Never the lease: what the program in the
+   * container prints would otherwise keep a job alive whose Core is gone (§3.5: only Core's own
+   * requests renew it, through `touch`, which every request naming the job makes).
+   */
   used(): void {
-    const now = this.ctx.clock.now();
-    this.lastUsedAt = now;
-    this.touchedAt = now;
+    this.lastUsedAt = this.ctx.clock.now();
   }
 
   expiresAt(): number {
@@ -369,7 +371,9 @@ export class Job {
     this.diskBytes = reading.bytes;
     return {
       bytes: reading.bytes,
-      over: reading.truncated || reading.bytes > this.limits.disk_mb * MIB,
+      // What could not be read is not known to be small: over, never under-counted.
+      over:
+        reading.truncated || reading.unreadable > 0 || reading.bytes > this.limits.disk_mb * MIB,
     };
   }
 

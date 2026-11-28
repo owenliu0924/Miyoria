@@ -15,7 +15,11 @@
 //   on this machine's game and keyboard.
 // When no computer takes the job, the extension runs here (`fallback = "host"`, the default) or
 // does not start (`"fail"`), and the log says why. One the owner wrote `run_in = "sandbox"` for
-// never runs here instead: its start fails with the reason.
+// never runs here instead: its start fails with the reason. Neither does one whose own folder or
+// program is what failed (a link in the folder, a request every computer refuses, a program that
+// would not start in the job): that fails with the reason too, since running it here would only
+// hide the fault. An extension the image cannot run at all (a deno one), or whose credentials no
+// computer may hold, is one no computer offers to take, and runs here as by its kind's default.
 
 import { isAbsolute, relative, sep } from "node:path";
 import { errorMessage, getLogger, sleep } from "@miyoria/runtime/kernel";
@@ -204,13 +208,22 @@ export function sandboxArgv(spec: LaunchSpec): string[] | string {
   }
 }
 
-/** The job's network: the hosts it declared (and was granted), or open when it declared none. */
-export function sandboxNetwork(granted: readonly string[]): {
+/**
+ * The job's network: the hosts it declared (and was granted), or open when it declared none or
+ * `*`. `declared`: its manifest listed hosts (default: `granted` is not empty); one that did and
+ * was granted none of them (`permissions.network = []`) gets no network, never an open one.
+ */
+export function sandboxNetwork(
+  granted: readonly string[],
+  declared = granted.length > 0,
+): {
   network: NonNullable<SandboxJobSpec["network"]>;
   dropped: string[];
 } {
-  if (granted.length === 0 || granted.includes("*"))
-    return { network: { mode: "open" }, dropped: [] };
+  if (granted.includes("*")) return { network: { mode: "open" }, dropped: [] };
+  if (granted.length === 0) {
+    return { network: declared ? { mode: "none" } : { mode: "open" }, dropped: [] };
+  }
   const allow: string[] = [];
   const dropped: string[] = [];
   for (const entry of granted) {
@@ -246,6 +259,9 @@ export function sandboxEnv(
     else if (!ENV_NAME.test(name)) dropped.push({ name, why: "not a name the sandbox takes" });
     else if (value.length > MAX_ENV_VALUE || value.includes("\0"))
       dropped.push({ name, why: "value too long" });
+    // `docker exec --env` takes no line break, so the service would refuse the whole program for
+    // it. Left out and named in the log (the value never), the rest of the extension still starts.
+    else if (/[\r\n]/u.test(value)) dropped.push({ name, why: "value holds a line break" });
     else candidates.push([name, value]);
   }
   const out: Record<string, string> = {};
@@ -278,7 +294,7 @@ export function sandboxPlan(
       ...Object.keys(env).filter(looksLikeSecret),
     ]),
   ].sort();
-  const { network, dropped: hosts } = sandboxNetwork(spec.network);
+  const { network, dropped: hosts } = sandboxNetwork(spec.network, spec.networkDeclared);
   for (const host of hosts) dropped.push({ name: host, why: "not a host name the proxy allows" });
   if (credentials.length === 0) return { ok: true, argv, env, dropped, network, credentials };
   const allowed = [
@@ -310,6 +326,19 @@ function procChild(proc: SandboxProc, job: SandboxJob, onGone: () => void): Chil
     },
     where: { kind: "sandbox", host: job.host, job: job.id },
   };
+}
+
+/** The refusals of `SandboxClient.open` that mean no computer takes the job now. */
+const NO_COMPUTER: ReadonlySet<string> = new Set(["no_machine", "not_accepting", "busy"]);
+
+/**
+ * The extension cannot start in a sandbox for a reason of its own (its folder, its program, its
+ * request): it fails with that reason, and never runs on Core's machine instead, where the same
+ * fault would only be hidden.
+ */
+function broken(spec: LaunchSpec, why: string): LaunchError {
+  log.warn({ ext: spec.extension, reason: why }, "the extension did not start in its sandbox");
+  return new LaunchError(`\`${spec.extension}\` did not start in its sandbox: ${why}`);
 }
 
 /** A `SandboxClientError`'s code, without depending on the package that defines it. */
@@ -460,8 +489,10 @@ class SandboxLauncherImpl implements SandboxLauncher {
       );
     } catch (error) {
       if (signal.aborted) throw new LaunchError(`starting \`${spec.extension}\`: aborted`);
-      const code = refusalCode(error);
-      return this.#here(spec, signal, errorMessage(error), code !== "unavailable");
+      // No computer takes it now: here, or later there. Anything else (the request refused by
+      // every computer, `unavailable`) is about the extension itself and would be the same here.
+      if (!NO_COMPUTER.has(refusalCode(error) ?? "")) throw broken(spec, errorMessage(error));
+      return this.#here(spec, signal, errorMessage(error), true);
     }
 
     try {
@@ -478,11 +509,9 @@ class SandboxLauncherImpl implements SandboxLauncher {
           .map((s) => `${s.path} (${s.why})`)
           .join(", ");
         await job.close().catch(() => undefined);
-        return this.#here(
+        throw broken(
           spec,
-          signal,
           `parts of its folder do not go into a sandbox: ${shown}${sent.skipped.length > 5 ? ", ..." : ""}`,
-          false,
         );
       }
       if (plan.dropped.length > 0) {
@@ -521,7 +550,10 @@ class SandboxLauncherImpl implements SandboxLauncher {
     } catch (error) {
       await job.close().catch(() => undefined);
       if (signal.aborted) throw new LaunchError(`starting \`${spec.extension}\`: aborted`);
-      return this.#here(spec, signal, errorMessage(error), true);
+      if (error instanceof LaunchError) throw error;
+      // A computer took the job: what failed after is the folder or the program, not the want of
+      // a computer, and this machine is no answer to it. The supervisor starts it again.
+      throw broken(spec, errorMessage(error));
     }
   }
 

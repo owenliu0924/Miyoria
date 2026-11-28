@@ -1,7 +1,8 @@
 // Compacts the transcripts of places nobody runs her in. A run compacts its own session after it
 // (`SelfRunner`), so a place she only hears would grow without end; this looks at every session
 // that has been quiet for a while and compacts the ones past the threshold, with the segment pass
-// reading the lines first, as for a run's compaction.
+// reading the lines first, as for a run's compaction. A helper job's session is skipped by the
+// transcript layer itself (`keptWhole`): it is a record read back after the job, not a chat.
 
 import {
   type CompactionBudget,

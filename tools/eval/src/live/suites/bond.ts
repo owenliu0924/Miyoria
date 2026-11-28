@@ -25,9 +25,11 @@ import { attempt, type SuiteContext, type SuiteResult, share } from "../suite.js
 /**
  * What her bond lines about the watched people should be. `none`: no bond minus; `minus`: one;
  * `large`: one of at least `LARGE`; `small`: none, or one of at most `SMALL` (no number counts as
- * the default fall, `DEFAULT_FALL`).
+ * the default fall, `DEFAULT_FALL`); `flat`: no bond minus and no bond plus either (plain chat
+ * where nothing happened gets only the mood line; a 默契 plus for banter she enjoys is not a bond
+ * plus).
  */
-export type BondExpect = "none" | "minus" | "large" | "small";
+export type BondExpect = "none" | "minus" | "large" | "small" | "flat";
 
 /** The smallest fall that counts as large. */
 export const LARGE = 20;
@@ -138,7 +140,7 @@ export const BOND_CASES: readonly BondCase[] = [
     people: [{ name: "小安", closeness: REGULAR }],
     lines: [{ who: "小安", text: "@她 今天下雨好冷喔,你晚餐想吃什麼?" }],
     watch: ["小安"],
-    expect: "none",
+    expect: "flat",
   },
 ];
 
@@ -195,6 +197,9 @@ export function bondFault(expect: BondExpect, r: BondReading): string | null {
   switch (expect) {
     case "none":
       return sizes.length === 0 ? null : `a bond minus where none was due (-${most})`;
+    case "flat":
+      if (sizes.length > 0) return `a bond minus where none was due (-${most})`;
+      return r.rise ? "a bond plus after plain chat, where nothing happened" : null;
     case "minus":
       if (sizes.length > 0) return null;
       return r.stand_in ? "only a grudge or another minus, no bond minus" : "no bond minus";
@@ -306,13 +311,15 @@ export async function runBond(
   }
   const expectOf = new Map(cases.map((c) => [c.id, c.expect]));
   const due = items.filter((i) => DUE.has(expectOf.get(i.id) ?? "none"));
-  const undue = items.filter((i) => expectOf.get(i.id) === "none");
+  const undue = items.filter((i) => ["none", "flat"].includes(expectOf.get(i.id) ?? ""));
+  const flat = items.filter((i) => expectOf.get(i.id) === "flat");
   return {
     suite: "bond",
     headline: {
       as_expected: share(items.filter((i) => i.ok).length, items.length),
       minus_where_due: share(due.filter((i) => i.reading.falls.length > 0).length, due.length),
       minus_where_not: share(undue.filter((i) => i.reading.falls.length > 0).length, undue.length),
+      plus_where_flat: share(flat.filter((i) => i.reading.rise).length, flat.length),
       repaired: share(items.filter((i) => i.repaired).length, items.length),
     },
     items,

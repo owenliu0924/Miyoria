@@ -32,6 +32,11 @@ export const SHOT_MAX_BYTES = 2 * 1024 * 1024;
 const SHOT_MAX_HEIGHT = 8000;
 const DOWNLOADS = "/workspace/downloads";
 const MAX_DOWNLOADS = 100;
+/**
+ * Most pages (tabs and popups) open at once. A page can open windows in a loop, and each one is
+ * a renderer in the job's memory; one past this is closed as soon as it opens.
+ */
+export const MAX_PAGES = 8;
 const STEP_TIMEOUT_MS = Number(process.env.MIYORIA_BROWSE_STEP_MS) || 40_000;
 const READ_MAX_CHARS = 50_000;
 const REF_ATTR = "data-miyoria-ref";
@@ -122,7 +127,12 @@ export function safeFileName(raw) {
     .replace(/^[.\s]+/, "")
     .trim();
   const chars = [...base];
-  const name = chars.length > 120 ? chars.slice(chars.length - 120).join("") : base;
+  // The end is kept (it has the extension); what the cut leaves at the front is held to the same
+  // rule again, so a long name cannot come out hidden (`…x.bashrc` cut to `.bashrc`).
+  const name = (chars.length > 120 ? chars.slice(chars.length - 120).join("") : base)
+    .replace(/^[_\s.]*\.\.[_\s]*/, "")
+    .replace(/^[.\s]+/, "")
+    .trim();
   return name === "" ? "download" : name;
 }
 
@@ -311,6 +321,12 @@ export class Driver {
     // of its downloads twice.
     if (this.#pages.includes(page)) {
       this.#page = page;
+      return;
+    }
+    // A page closed a moment ago may not have said so yet: it does not take a place.
+    this.#pages = this.#pages.filter((p) => !p.isClosed());
+    if (this.#pages.length >= MAX_PAGES) {
+      page.close({ runBeforeUnload: false }).catch(() => {});
       return;
     }
     this.#pages.push(page);

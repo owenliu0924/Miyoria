@@ -17,9 +17,24 @@ export interface DiskReading {
   entries: number;
   /** The walk stopped at `MAX_ENTRIES`. */
   truncated: boolean;
+  /**
+   * Folders or files that could not be read even after their folder was opened up: what they
+   * hold is not known, so the reading is no upper bound and counts as over any limit.
+   */
+  unreadable: number;
 }
 
-/** Bytes under `dirs` together. A folder that is not there counts nothing. */
+function gone(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+
+/**
+ * Bytes under `dirs` together. A folder that is not there counts nothing. The program owns these
+ * folders and can take the permissions off one (`chmod 000`) to hide what is in it: such a folder
+ * is opened up for this user (as `removeTree` does) and read again, and one that still cannot be
+ * read is counted in `unreadable`, never as empty.
+ */
 export async function measure(
   dirs: readonly string[],
   maxEntries = MAX_ENTRIES,
@@ -27,13 +42,25 @@ export async function measure(
   let bytes = 0;
   let entries = 0;
   let truncated = false;
-  const walk = async (dir: string): Promise<void> => {
-    let handle: Awaited<ReturnType<typeof opendir>>;
+  let unreadable = 0;
+  /** `fn`, again after `dir` was given back its permissions; `null`: not there, or not readable. */
+  const opened = async <T>(dir: string, fn: () => Promise<T>): Promise<T | null> => {
     try {
-      handle = await opendir(dir);
-    } catch {
-      return;
+      return await fn();
+    } catch (error) {
+      if (gone(error)) return null;
     }
+    await chmod(dir, 0o700).catch(() => undefined);
+    try {
+      return await fn();
+    } catch (error) {
+      if (!gone(error)) unreadable += 1;
+      return null;
+    }
+  };
+  const walk = async (dir: string): Promise<void> => {
+    const handle = await opened(dir, () => opendir(dir));
+    if (handle === null) return;
     const subdirs: string[] = [];
     try {
       for await (const entry of handle as AsyncIterable<Dirent>) {
@@ -46,12 +73,10 @@ export async function measure(
           bytes += ENTRY_BYTES;
           subdirs.push(full);
         } else if (entry.isFile()) {
-          try {
-            const info = await lstat(full);
-            bytes += info.isFile() ? info.size : ENTRY_BYTES;
-          } catch {
-            // Gone since the listing.
-          }
+          // A folder that can be listed but not searched (`chmod 444`) lists its files and does
+          // not let them be measured: opened up the same way.
+          const info = await opened(dir, () => lstat(full));
+          if (info !== null) bytes += info.isFile() ? info.size : ENTRY_BYTES;
         } else bytes += ENTRY_BYTES;
       }
     } catch {
@@ -66,7 +91,7 @@ export async function measure(
     if (truncated) break;
     await walk(dir);
   }
-  return { bytes, entries, truncated };
+  return { bytes, entries, truncated, unreadable };
 }
 
 /**

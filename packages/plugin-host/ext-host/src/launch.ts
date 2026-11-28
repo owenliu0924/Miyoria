@@ -34,6 +34,11 @@ export interface LaunchSpec {
   env: Record<string, string>;
   /** Hosts its manifest declared and the owner granted. */
   network: readonly string[];
+  /**
+   * Its manifest declared a list of hosts: then an empty `network` means the owner granted none
+   * of them, not that it asked for nothing. Missing: as `network.length > 0`.
+   */
+  networkDeclared?: boolean;
   /** Variables the owner named in `[extensions."<id>"] secrets`, with their values. */
   secrets: Readonly<Record<string, string>>;
   runIn: "host" | "sandbox";

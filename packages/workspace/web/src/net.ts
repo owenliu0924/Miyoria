@@ -115,6 +115,9 @@ export function isBlockedAddress(address: string): boolean {
   if (w[0] === 0x64 && w[1] === 0xff9b && w[2] === 0 && w[3] === 0 && w[4] === 0 && w[5] === 0) {
     return embedded(w[6], w[7]); // 64:ff9b::/96 NAT64
   }
+  // 64:ff9b:1::/48, NAT64 for local use (RFC 8215): a translator inside some network, which can
+  // reach that network's private addresses, and never a public address of its own.
+  if (w[0] === 0x64 && w[1] === 0xff9b && w[2] === 1) return true;
   if (w[0] === 0x2002) return embedded(w[1], w[2]); // 6to4
   if (w[0] === 0x2001 && w[1] === 0) return true; // Teredo
   if (w[0] === 0x2001 && w[1] === 0xdb8) return true; // documentation

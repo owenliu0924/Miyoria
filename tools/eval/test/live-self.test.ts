@@ -2,6 +2,7 @@
 // rules, on an in-memory transcript. Only the provider is scripted; nothing reaches a network.
 
 import { fileURLToPath } from "node:url";
+import { HEART_NOW_TITLE } from "@miyoria/brain/agent";
 import { rules } from "@miyoria/brain/self";
 import {
   type ChatProvider,
@@ -99,7 +100,12 @@ describe("subject self", () => {
     const sent = prompt(request);
     expect(sent).toContain("# 你是 DeepSeek-chan");
     expect(contentText(request?.messages[0]?.content ?? "")).toContain(rules.RULES);
-    expect(sent).toContain('<person name="阿哲" relation="心有靈犀" level="300/1000"');
+    // The card has the tier; the exact level sits after the transcript, beside the person's name
+    // (block 7, as the host puts it), so the card stays cacheable.
+    expect(sent).toContain('<person name="阿哲" relation="心有靈犀"');
+    expect(sent.match(/level="/g)).toHaveLength(1);
+    const now = contentText(request?.messages.at(-1)?.content ?? "");
+    expect(now).toContain(`${HEART_NOW_TITLE}\n- 阿哲(level="300/1000"):`);
     expect(sent).toContain("你現在:下午練了一首新歌,還沒練完");
     expect(sent).toContain("阿哲: DS醬你剛剛幫我改的那段寫得超乾淨");
     expect(sent).toContain("<turn>阿哲 在叫你");

@@ -645,3 +645,37 @@ describe("the live model", () => {
     }
   });
 });
+
+describe("the judge's purpose", () => {
+  const reply = () => '{"n":1}';
+  const schema = z.object({ n: z.number() });
+  const routerOf = (purposes: [string, string][]) => {
+    const chat = new Scripted(reply);
+    const other = new Scripted(reply);
+    const router = new LlmRouter(
+      new Map([
+        ["scripted", chat],
+        ["other", other],
+      ]),
+      new Map(purposes.map(([p, ref]) => [p, [parseModelRef(ref)]])),
+    );
+    return { chat, other, router };
+  };
+
+  it("asks the purpose `judge` when the config declares one, so another model can judge", async () => {
+    const { chat, other, router } = routerOf([
+      ["chat", "scripted:m"],
+      ["judge", "other:j"],
+    ]);
+    expect(await routerJudge(router).ask("s", "u", schema)).toMatchObject({ ok: true });
+    expect(other.requests).toHaveLength(1);
+    expect(chat.requests).toHaveLength(0);
+  });
+
+  it("keeps asking `chat` when there is no `judge` purpose", async () => {
+    const { chat, other, router } = routerOf([["chat", "scripted:m"]]);
+    expect(await routerJudge(router).ask("s", "u", schema)).toMatchObject({ ok: true });
+    expect(chat.requests).toHaveLength(1);
+    expect(other.requests).toHaveLength(0);
+  });
+});

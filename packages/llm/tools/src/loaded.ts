@@ -1,6 +1,8 @@
 // The tools a session has found so far. A turn offers the always-on tools and then these, in
-// this order: a name is only ever added at the end and never removed or moved, so the tool list
-// of a session keeps its prefix (and the provider's prefix cache keeps hitting).
+// this order: a name is only ever added at the end and never moved, so the tool list of a session
+// keeps its prefix (and the provider's prefix cache keeps hitting). The one exception is
+// `retain`, right after the session's transcript was compacted: the cache starts over then
+// anyway, and without it a long-lived place would carry every tool it ever found.
 
 import { z } from "zod";
 
@@ -29,7 +31,22 @@ export class LoadedTools {
     return added;
   }
 
-  /** Forgets a session that ended; its list is never changed while it lives. */
+  /**
+   * Keeps of `session`'s list only the names in `names`, in the order they were loaded; returns
+   * the ones dropped. Only for right after a compaction (see above).
+   */
+  retain(session: string, names: Iterable<string>): string[] {
+    const list = this.#sessions.get(session);
+    if (list === undefined) return [];
+    const keep = new Set(names);
+    const kept = list.filter((n) => keep.has(n));
+    const dropped = list.filter((n) => !keep.has(n));
+    if (kept.length === 0) this.#sessions.delete(session);
+    else this.#sessions.set(session, kept);
+    return dropped;
+  }
+
+  /** Forgets a session that ended; while it lives, only `retain` takes names off its list. */
   end(session: string): void {
     this.#sessions.delete(session);
   }

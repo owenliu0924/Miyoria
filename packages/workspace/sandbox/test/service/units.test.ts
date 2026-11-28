@@ -2,7 +2,7 @@
 // the owner's rules, the proc output kept for refetching, the token check, the image tag, and
 // the container arguments the service adds to `buildRunArgs`.
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,6 +16,7 @@ import { imageHash, imageSource, imageTag } from "../../src/service/images.js";
 import { accepts, policyOf } from "../../src/service/policy.js";
 import { Retained } from "../../src/service/procs.js";
 import { requestHash, stableJson } from "../../src/service/util.js";
+import { applyLimits, checkEnv } from "../../src/service/validate.js";
 import { tempDir } from "./helpers.js";
 
 describe("event ring", () => {
@@ -174,9 +175,61 @@ describe("disk measure", () => {
       expect(reading.truncated).toBe(false);
       expect((await measure([dir], 1)).truncated).toBe(true);
       expect((await measure([join(dir, "missing")])).bytes).toBe(0);
+      expect((await measure([join(dir, "missing")])).unreadable).toBe(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  // Permissions do not keep a Windows user or root out, so only there is a folder hidden.
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "counts what a job hid under a folder it took the permissions off",
+    async () => {
+      const dir = tempDir("sbx-disk-");
+      try {
+        for (const [name, mode] of [
+          ["closed", 0o000],
+          ["listed", 0o444],
+        ] as const) {
+          mkdirSync(join(dir, name));
+          writeFileSync(join(dir, name, "big.bin"), Buffer.alloc(200_000));
+          chmodSync(join(dir, name), mode);
+        }
+        const reading = await measure([dir]);
+        expect(reading.bytes).toBeGreaterThanOrEqual(400_000);
+        expect(reading.unreadable).toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
+});
+
+describe("environment of a program", () => {
+  it("refuses a value with a line break as a bad request", () => {
+    expect(checkEnv({ MADE_A: "one line" })).toEqual({ MADE_A: "one line" });
+    for (const value of ["two\nlines", "carriage\rreturn"]) {
+      expect(() => checkEnv({ MADE_A: value })).toThrow(/line break/);
+    }
+  });
+});
+
+describe("job limits", () => {
+  it("never lets one file grow past what the whole job may hold", () => {
+    const policy = policyOf({ disk_mb: 512 }, undefined, { cpus: 8, memoryMb: 16_384 });
+    const limits = {
+      cpus: 1,
+      memory_mb: 1024,
+      pids: 256,
+      tmp_mb: 64,
+      file_mb: 4096,
+      nofile: 1024,
+      disk_mb: 1024,
+    };
+    const applied = applyLimits(limits, policy);
+    expect(applied.disk_mb).toBe(512);
+    expect(applied.file_mb).toBe(512);
+    expect(applyLimits({ ...limits, file_mb: 64 }, policy).file_mb).toBe(64);
   });
 });
 

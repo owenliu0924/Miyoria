@@ -5,7 +5,13 @@
 import type { Endpoint, EndpointSource } from "@miyoria/runtime/kernel";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { callBytes, callJson, JSON_MAX_BYTES, SandboxHttpError } from "../../src/remote/wire.js";
+import {
+  callBytes,
+  callJson,
+  callStream,
+  JSON_MAX_BYTES,
+  SandboxHttpError,
+} from "../../src/remote/wire.js";
 
 const ENDPOINT: Endpoint = {
   capability: "sandbox",
@@ -170,6 +176,81 @@ describe("a reply's time", () => {
     finish();
     const got = await read;
     expect([...got.bytes]).toEqual([1, 2, 3]);
+  });
+
+  it("stops a streamed tar that drips past its body time and cancels its reader", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(10));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const source = sourceOf(() => new Response(stream, { status: 200 }));
+    const started = Date.now();
+    const body = await callStream(source, ENDPOINT, "/tar", 1024, {
+      method: "GET",
+      timeoutMs: 50,
+      bodyTimeoutMs: 150,
+    });
+    const error = await (async () => {
+      for await (const _ of body) {
+        // Read on: the first piece comes, the rest never does.
+      }
+    })().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(cancelled).toBe(true);
+  });
+
+  it("stops a streamed tar as soon as it is over its bytes and cancels its reader", async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled++;
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const source = sourceOf(() => new Response(stream, { status: 200 }));
+    const body = await callStream(source, ENDPOINT, "/tar", 4096, {
+      method: "GET",
+      timeoutMs: 5_000,
+      bodyTimeoutMs: 5_000,
+    });
+    let got = 0;
+    const error = await (async () => {
+      for await (const chunk of body) got += chunk.byteLength;
+    })().catch((e: unknown) => e);
+    expect((error as SandboxHttpError).code).toBe("bad_reply");
+    expect(got).toBe(4096);
+    expect(pulled).toBeLessThan(10);
+    expect(cancelled).toBe(true);
+  });
+
+  it("cancels a streamed tar's reader when the caller stops reading", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(16));
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const source = sourceOf(() => new Response(stream, { status: 200 }));
+    const body = await callStream(source, ENDPOINT, "/tar", 1 << 20, {
+      method: "GET",
+      timeoutMs: 5_000,
+      bodyTimeoutMs: 5_000,
+    });
+    for await (const _ of body) break;
+    expect(cancelled).toBe(true);
   });
 
   it("stops a byte reply that drips past its body time", async () => {

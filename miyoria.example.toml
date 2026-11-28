@@ -1607,7 +1607,7 @@ max_per_day = 12                 # 她自己開話題:一天最多幾次(0 = 不
 # max_stdin_bytes = 1048576      # stdin 最長
 # max_files_in = 32              # 一次執行放進去幾個檔案
 # max_files_in_bytes = 4194304   # 放進去的檔案合計
-# max_output_bytes = 65536       # stdout 和 stderr 各留多少,其餘丟掉並標成截斷
+# max_output_bytes = 65536       # stdout 和 stderr 各留多少;太長時留開頭和結尾,中間標出省略
 # kill_output_bytes = 8388608    # stdout 加 stderr 超過這麼多就把容器殺掉(output_limit),免得印不停的迴圈吃滿 CPU
 # max_files_out = 32             # 一次執行拿回幾個輸出檔
 # max_files_out_bytes = 1048576  # 拿回的輸出檔合計

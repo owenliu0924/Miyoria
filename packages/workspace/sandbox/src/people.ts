@@ -18,6 +18,7 @@ import { AuthorizerKey, type Principal, SocialSignalsKey } from "@miyoria/types"
 import { normalizeRelativePath } from "./paths.js";
 import { SandboxError } from "./types.js";
 import type {
+  ReadOptions,
   WorkspaceApi,
   WorkspaceEntry,
   WorkspaceLimits,
@@ -150,10 +151,7 @@ export class OwnWorkspace implements WorkspaceApi {
     return { entries: entries.filter((e) => !inPeople(e.path)), truncated };
   }
 
-  async read(
-    path: string,
-    options?: { offset?: number; maxChars?: number },
-  ): Promise<WorkspaceRead> {
+  async read(path: string, options?: ReadOptions): Promise<WorkspaceRead> {
     return this.root.read(this.#mine(path), options);
   }
 
@@ -252,10 +250,7 @@ export class PersonWorkspace implements WorkspaceApi {
     return { entries: entries.map((e) => ({ path: this.#own(e.path), size: e.size })), truncated };
   }
 
-  async read(
-    path: string,
-    options?: { offset?: number; maxChars?: number },
-  ): Promise<WorkspaceRead> {
+  async read(path: string, options?: ReadOptions): Promise<WorkspaceRead> {
     const full = this.#inRoot(path);
     const r = await this.#in(() => this.root.read(full, options));
     return { ...r, path: this.#own(r.path) };

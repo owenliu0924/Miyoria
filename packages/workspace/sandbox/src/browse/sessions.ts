@@ -178,6 +178,15 @@ export interface BrowseSessionsOptions {
 /** Her words when no computer Core lets have members' work is there. */
 export const BROWSE_MEMBERS_NOT_LISTED = "能跑程式的電腦現在都不接成員的工作;這次沒有開瀏覽器。";
 
+/**
+ * What a browser job may hand back: what its driver saves, `downloads/` (driver.mjs). The job
+ * runs on a computer that is someone else's, so a reply naming any other path of the folder is
+ * that computer writing into it, not a download.
+ */
+export function isBrowserDownload(path: string): boolean {
+  return path.startsWith("downloads/") && path.length > "downloads/".length;
+}
+
 /** Whether the job can hand its `/workspace` back (`RemoteJob` can). */
 function canSync(job: SandboxJob): job is TransferJob {
   return typeof (job as Partial<TransferJob>).sync === "function";
@@ -462,6 +471,7 @@ export class BrowseSessions {
       ws,
       session.manifest,
       signal === undefined ? bounded : AbortSignal.any([signal, bounded]),
+      { accept: isBrowserDownload },
     );
     session.manifest = back.manifest;
     return { collected: true, removed: back.removed, conflicts: back.conflicts };

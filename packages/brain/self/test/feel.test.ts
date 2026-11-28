@@ -199,6 +199,11 @@ describe("the rules of a feel block", () => {
     expect(FEEL_REMINDER).toContain("就為他寫「羈絆 -數字」,小事就寫小數字");
     expect(FEEL_REMINDER).toContain("心結只能加在旁邊,不能代替它");
     expect(FEEL_REMINDER).toContain("好的鬧、群友之間互罵,不扣");
+    // Live eval 2026-11-28: a bond plus after plain small talk, a bond minus at an apology.
+    expect(FEEL_REMINDER).toContain("只是閒聊、沒發生什麼,就只寫第一行,不要為了寫而加「羈絆 +」");
+    expect(FEEL_REMINDER).toContain(
+      "有人來為之前的事道歉,不要再扣一次,真心的算「羈絆 +」或「心結 -」",
+    );
   });
 
   it("let her write how much bond goes, weighed against the bond they had, and only that", () => {

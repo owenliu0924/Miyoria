@@ -14,7 +14,7 @@ import {
   type JobRow,
   MemoryJobStore,
 } from "../src/delegate.js";
-import { JOBS_TITLE, WORKER_CODE, WORKER_NO_CODE } from "../src/delegate-texts.js";
+import { JOBS_TITLE, PLAN_TEXTS, WORKER_CODE, WORKER_NO_CODE } from "../src/delegate-texts.js";
 import { DELEGATE, DELEGATE_LIST, DELEGATE_READ, delegateTools } from "../src/delegate-tools.js";
 import { permissiveGuard } from "../src/guard.js";
 import { JobsPrompt, jobsBody } from "../src/jobs-prompt.js";
@@ -406,6 +406,87 @@ describe("the plan", () => {
     expect(progress.map((e) => (e.type === "progress" ? e.detail : ""))).toContain(
       "計畫 1/3:查 B 的價格",
     );
+  });
+
+  it("a helper that stops with steps open gets one more step that lists them, once", async () => {
+    const steps = [
+      { text: "查 A 的價格", state: "done" },
+      { text: "查 B 的價格", state: "in_progress" },
+      { text: "寫成表格", state: "pending" },
+    ];
+    const s = await setup(
+      [
+        calls([{ name: "plan", args: { steps } }]),
+        say("A 便宜。"),
+        say("A 便宜;B 的價格查不到,網站關了,所以沒有表格。"),
+        say("不該有這一步"),
+      ],
+      [fakeTool("web_search")],
+    );
+    await s.call(DELEGATE, { kind: "research", goal: "比 A 和 B 的價格" });
+    await s.delegator.idle();
+    const job = s.woke[0] as JobRow;
+    expect(s.r.model.requests).toHaveLength(3);
+    const note = s.r.model.requests[2]?.messages.at(-1);
+    expect(note?.role).toBe("system");
+    expect(note?.content).toBe(PLAN_TEXTS.open(["查 B 的價格", "寫成表格"]));
+    expect(String(note?.content)).toContain("1. 查 B 的價格\n2. 寫成表格");
+    expect(job.state).toBe("done");
+    expect(job.summary).toContain("B 的價格查不到");
+  });
+
+  it("marking the steps done after the note, the result is written; an empty step keeps the one before", async () => {
+    const open = [{ text: "寫成表格", state: "pending" }];
+    const s = await setup(
+      [
+        calls([{ name: "plan", args: { steps: open } }]),
+        say("表格在下面。"),
+        calls([{ name: "plan", args: { steps: [{ text: "寫成表格", state: "done" }] } }]),
+        say("| A | B |"),
+      ],
+      [fakeTool("web_search")],
+    );
+    await s.call(DELEGATE, { kind: "research", goal: "做表格" });
+    await s.delegator.idle();
+    const done = s.woke[0] as JobRow;
+    expect(s.r.model.requests).toHaveLength(4);
+    expect(done.plan).toEqual([{ text: "寫成表格", state: "done" }]);
+    expect(done.summary).toContain("| A | B |");
+
+    const quiet = await setup(
+      [calls([{ name: "plan", args: { steps: open } }]), say("表格在下面。"), say("")],
+      [fakeTool("web_search")],
+    );
+    await quiet.call(DELEGATE, { kind: "research", goal: "做表格" });
+    await quiet.delegator.idle();
+    const kept = quiet.woke[0] as JobRow;
+    expect(quiet.r.model.requests).toHaveLength(3);
+    expect(kept.state).toBe("done");
+    expect(kept.summary).toContain("表格在下面。");
+  });
+
+  it("no note when the plan is done, nor when a limit ended the job", async () => {
+    const s = await setup(
+      [calls([{ name: "plan", args: { steps: [{ text: "查", state: "done" }] } }]), say("查好了")],
+      [fakeTool("web_search")],
+    );
+    await s.call(DELEGATE, { kind: "research", goal: "查" });
+    await s.delegator.idle();
+    expect(s.r.model.requests).toHaveLength(2);
+
+    const capped = await setup(
+      [
+        calls([{ name: "plan", args: { steps: [{ text: "查", state: "pending" }] } }]),
+        say("只做到這裡"),
+        say("不該有這一步"),
+      ],
+      [fakeTool("web_search")],
+      { limits: { kinds: { research: { rounds: 2 } } } },
+    );
+    await capped.call(DELEGATE, { kind: "research", goal: "查" });
+    await capped.delegator.idle();
+    expect(capped.r.model.requests).toHaveLength(2);
+    expect((capped.woke[0] as JobRow).summary).toContain("只做到這裡");
   });
 
   it("refuses a plan that is not one, and the job goes on", async () => {

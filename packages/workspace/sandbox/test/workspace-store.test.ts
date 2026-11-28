@@ -83,6 +83,29 @@ describe("PersistentWorkspace files", () => {
     expect(rest.next_offset).toBeNull();
   });
 
+  it("reads_a_range_of_lines_numbered_as_grep_counts_them", async () => {
+    const w = ws();
+    await w.write("l.txt", "一\n二\n三\n四\n");
+    const mid = await w.read("l.txt", { line: 2, lines: 2 });
+    expect([mid.text, mid.line, mid.next_line, mid.total_lines]).toEqual(["二\n三", 2, 4, 4]);
+    // The character offset of the range, so `offset` can carry on from it as well.
+    expect([mid.offset, mid.next_offset]).toEqual([2, 6]);
+    const end = await w.read("l.txt", { line: 4 });
+    expect([end.text, end.next_line, end.next_offset]).toEqual(["四", null, null]);
+    const past = await w.read("l.txt", { line: 9 });
+    expect([past.text, past.next_line, past.total_lines]).toEqual(["", null, 4]);
+  });
+
+  it("stops_a_line_range_at_the_character_cap_on_a_line_boundary", async () => {
+    const w = ws();
+    await w.write("l.txt", "aaaa\nbbbb\ncccc\n");
+    const r = await w.read("l.txt", { line: 1, maxChars: 8 });
+    expect([r.text, r.next_line, r.cut]).toEqual(["aaaa", 2, false]);
+    // One line longer than the cap: its head, and the offset that goes on inside it.
+    const long = await w.read("l.txt", { line: 2, maxChars: 3 });
+    expect([long.text, long.cut, long.next_offset, long.next_line]).toEqual(["bbb", true, 8, 3]);
+  });
+
   it("refuses_binary_and_missing_files", async () => {
     const w = ws();
     await w.ensure();

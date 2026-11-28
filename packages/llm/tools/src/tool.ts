@@ -36,6 +36,12 @@ export interface ToolContext {
   signal: AbortSignal;
   /** Takes what a capability answered besides its text (`{task}`: it only got accepted). */
   report?: (data: JsonValue) => void;
+  /**
+   * The caller is a helper's run: nobody to answer meanwhile and no chat of its own, so a tool
+   * that would answer "still going" and tell the outcome later in her chat waits for it instead,
+   * as long as `signal` allows (the run's tool time limit, its cancellation). Unset: a chat run.
+   */
+  waitsInFull?: boolean;
 }
 
 /**

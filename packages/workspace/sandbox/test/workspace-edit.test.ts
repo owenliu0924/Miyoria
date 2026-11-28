@@ -4,7 +4,12 @@ import { join } from "node:path";
 import { type Capability, WORKSPACE_ALL } from "@miyoria/gate/actions";
 import { DATA_CLOSE, Principals } from "@miyoria/types";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { NODE_WORKSPACE, PersistentWorkspace, type WorkspaceGateOptions } from "../src/index.js";
+import {
+  NODE_WORKSPACE,
+  PersistentWorkspace,
+  type WorkspaceGateOptions,
+  workspaceFileCapabilities,
+} from "../src/index.js";
 import {
   compileGlob,
   GREP_MAX_RESULTS,
@@ -172,6 +177,45 @@ describe("a member's folder", () => {
     const found = await call(h, "workspace_grep", { pattern: "needle" }, own);
     expect(found).toContain("diary.md:1");
     expect(found).not.toContain("secret");
+  });
+});
+
+describe("grep, read by line, edit", () => {
+  it("a grep hit is read in context by its line number and then edited", async () => {
+    const h = setup();
+    for (const capability of workspaceFileCapabilities({
+      sandbox: h.sandbox,
+      workspace,
+      resultChars: 900,
+      readChars: 3900,
+      keepOutputs: 5,
+    })) {
+      h.registry.register(capability as Capability);
+    }
+    const body = Array.from({ length: 30 }, (_, i) => `row ${i + 1}`);
+    body[19] = "row 20 needle";
+    await workspace.write("src/app.txt", `${body.join("\n")}\n`);
+    const found = await call(h, "workspace_grep", { pattern: "needle" });
+    const hit = /src\/app\.txt:(\d+):/.exec(found);
+    expect(hit?.[1]).toBe("20");
+    const around = await call(h, "workspace_read", { path: "src/app.txt", line: 18, lines: 5 });
+    expect(around).toContain("18\trow 18");
+    expect(around).toContain("20\trow 20 needle");
+    expect(around).toContain("22\trow 22");
+    expect(around).not.toContain("row 23");
+    expect(around).toContain("line=23");
+    expect(around).toContain("共 30 行");
+    // The text after the tab is the file's own, so it is what `old` takes.
+    expect(
+      await call(h, "workspace_edit", { path: "src/app.txt", old: "row 20 needle", new: "row 20" }),
+    ).toContain("換了 1 處");
+    // The character offset keeps working beside the lines.
+    expect(await call(h, "workspace_read", { path: "src/app.txt", offset: 4 })).toContain(
+      "1\nrow 2",
+    );
+    expect(await call(h, "workspace_read", { path: "src/app.txt", line: 31 })).toContain(
+      "只有 30 行",
+    );
   });
 });
 

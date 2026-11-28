@@ -105,6 +105,10 @@ export const PLAN_TEXTS = {
   tooLong: (max: number) => `每一步最多 ${max} 字:寫短一點。`,
   saved: (count: string) => `計畫存好了(完成 ${count}):`,
   state: { pending: "待做", in_progress: "進行中", done: "完成" },
+  /** The one more step a helper gets when it stopped with steps not marked done. */
+  open: (steps: readonly string[]) =>
+    `你停下來了,但計畫裡還有沒標成完成的步驟:\n${steps.map((s, i) => `${i + 1}. ${oneLine(s, 80)}`).join("\n")}\n` +
+    "如果其實已經做完了,先用 plan 把它們標成 done,再把結果寫出來;還沒做完就接著做;做不到的,在結果裡說為什麼做不到。",
 } as const;
 
 // ---- her tools ---------------------------------------------------------------------------------

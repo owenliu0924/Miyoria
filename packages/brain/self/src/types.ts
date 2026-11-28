@@ -439,6 +439,11 @@ export interface RunInput {
    * repair call needs (`SelfRunner.takeFeelRepair`). Unset: nothing is kept.
    */
   feelRepair?: boolean;
+  /**
+   * A helper's plan steps not marked done, read when it stops (`plan`). A run that does not speak
+   * and ends with steps open, by no limit, gets one more step that lists them. Unset: no plan.
+   */
+  openSteps?: () => readonly string[];
 }
 
 /** One tool call of a run and how it ended. */

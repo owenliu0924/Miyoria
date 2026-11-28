@@ -62,7 +62,10 @@ export const SandboxCapsSchema = z.object({
     .int()
     .min(0)
     .default(4 * 1024 * 1024),
-  /** stdout and stderr kept, each, in bytes; the rest is dropped and marked truncated. */
+  /**
+   * stdout and stderr kept, each, in bytes: a longer one keeps its head and its tail (where a
+   * build or a test says what failed) with a marked gap, and is marked truncated.
+   */
   max_output_bytes: z
     .number()
     .int()

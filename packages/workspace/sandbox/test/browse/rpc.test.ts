@@ -102,6 +102,7 @@ const driver = (await import(
 )) as {
   checkUrl(url: string): string;
   safeFileName(name: string): string;
+  MAX_PAGES: number;
   encodeFrame(message: unknown): Buffer;
   FrameDecoder: new () => { push(chunk: Buffer): Buffer[] };
   ParamsError: new (message: string) => Error;
@@ -136,6 +137,37 @@ describe("the driver's own checks", () => {
     expect(driver.safeFileName("__init__.py")).toBe("__init__.py");
     expect(driver.safeFileName("a..b.txt")).toBe("a..b.txt");
     expect([...driver.safeFileName(`${"長".repeat(300)}.pdf`)]).toHaveLength(120);
+    // Cut to its last 120 characters, a long name must not start with a dot then.
+    const long = driver.safeFileName(`${"a".repeat(130)}.${"b".repeat(119)}`);
+    expect(long).toBe("b".repeat(119));
+    expect(driver.safeFileName(`${"a".repeat(130)}_.._${"b".repeat(116)}`)).toBe("b".repeat(116));
+  });
+
+  it("closes popups past the cap of open pages as soon as they open", async () => {
+    let announce: (page: unknown) => void = () => {};
+    let closed = 0;
+    const makePage = () => ({
+      on: () => {},
+      isClosed: () => false,
+      close: async () => {
+        closed++;
+      },
+    });
+    const context = {
+      setDefaultTimeout: () => {},
+      setDefaultNavigationTimeout: () => {},
+      on: (event: string, fn: (p: unknown) => void) => {
+        if (event === "page") announce = fn;
+      },
+      newPage: async () => makePage(),
+    };
+    const playwright = {
+      chromium: { launch: async () => ({ newContext: async () => context, version: () => "1" }) },
+    };
+    await new driver.Driver(playwright).start();
+    // A page that opens windows in a loop.
+    for (let i = 0; i < 20; i++) announce(makePage());
+    expect(closed).toBe(20 - (driver.MAX_PAGES - 1));
   });
 
   it("speaks the same frames as Core, both ways", () => {

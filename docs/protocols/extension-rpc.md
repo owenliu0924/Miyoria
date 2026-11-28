@@ -317,7 +317,7 @@ input = ["keyboard"]                # 高風險:只有這裡也列出才會授�
 | `network` | 只做標示並傳給擴充;`deno` runtime 會轉成 `--allow-net`。跨行程不是沙箱(`run_in = "sandbox"` 的擴充在沙箱的工作裡跑時,它是那個工作的網路白名單) |
 | `input` | 預設**不授予**,要在設定檔的 `permissions.input` 明確列出 |
 
-prompt 片段、storage 和 schedule 不需要額外權限(都在擴充自己的命名空間)。
+storage 和 schedule 不需要額外權限(都在擴充自己的命名空間)。prompt 片段、擴充附的 HTTP 工具和 MCP 伺服器跟著 `tools` 權限走;遊戲轉接器自己的 `game.<id>` prompt 不用。
 
 **環境變數**:擴充只拿到白名單(`PATH`、`TEMP`、`HOME`…)加上 manifest `[env] pass`(或 owner 的 `env_pass`)列的。萬用字元(`MIYORIA_MC_*`)不給名字像密鑰的變數(`_` 分開的字有 `KEY`、`TOKEN`、`SECRET`、`PASSWORD`、`AUTH`、`COOKIE`、`SESSION`…),要寫完整名字;Core 自己的金鑰(`LLM_*`、`DISCORD_*`、`OPENAI_*`、`MIYORIA_API_*`…)只有 owner 的 `env_pass` 或 `[extensions."<id>"] secrets` 給得到,manifest 寫了也不給。沒給的名字(不含值)寫進啟動的警告。manifest 的 `[env] secrets` 是擴充想要、要 owner 同意的密鑰,只顯示不給。
 

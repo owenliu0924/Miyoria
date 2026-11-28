@@ -80,6 +80,10 @@ export const WorkspaceListArgsSchema = z.object({ path: WorkspacePath.optional()
 export const WorkspaceReadArgsSchema = z.object({
   path: WorkspacePath,
   offset: z.number().int().min(0).optional(),
+  // A start line and a count rather than start and end: a `workspace.grep` hit gives the line
+  // as is, and a count bounds the reply without her doing arithmetic on an end she might get wrong.
+  line: z.number().int().min(1).optional(),
+  lines: z.number().int().min(1).optional(),
 });
 export const WorkspaceWriteArgsSchema = z.object({
   path: WorkspacePath,
