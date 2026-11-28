@@ -92,7 +92,12 @@ function setup(
   h.grants.grant(AMY, NODE_CODE_RUN);
   h.grants.grant(OWNER, NODE_CODE_RUN);
   const client = new FakeClient(PAGES);
-  const received: { job: TransferJob; ws: CallWorkspace; last: Manifest }[] = [];
+  const received: {
+    job: TransferJob;
+    ws: CallWorkspace;
+    last: Manifest;
+    accept: ((path: string) => boolean) | undefined;
+  }[] = [];
   browse = browseCapabilities({
     client,
     quota,
@@ -100,8 +105,8 @@ function setup(
     people: DEFAULT_PERSON_LIMITS,
     config: BrowseConfigSchema.parse(config),
     resultChars: 3900,
-    receive: async (job, ws, last) => {
-      received.push({ job, ws, last });
+    receive: async (job, ws, last, _signal, options) => {
+      received.push({ job, ws, last, accept: options?.accept });
       return { manifest: [...last], removed: [], conflicts: [] };
     },
     ...(memberHosts === undefined ? {} : { memberHosts }),
@@ -154,6 +159,13 @@ describe("browse_open", () => {
     expect(out.text).toContain("網址:https://shop.example.test/");
     // The driver keeps to the owner's step time, so Core's wait outlasts its answer.
     expect(client.jobs[0]?.starts[0]?.env).toEqual({ MIYORIA_BROWSE_STEP_MS: "45000" });
+  });
+
+  it("points a plain read at the web tool that exists", () => {
+    const { h } = setup();
+    const text = h.tools.get("browse_open")?.spec.description ?? "";
+    expect(text).toContain("web_read");
+    expect(text).not.toContain("web_fetch");
   });
 
   it("opens a member's browser only on the computers Core lets have members' work", async () => {
@@ -405,13 +417,17 @@ describe("browse_act", () => {
     expect((await call("browse_read", {})).text).toContain("關掉了");
   });
 
-  it("an owner's downloads go to the whole workspace", async () => {
+  it("an owner's downloads go to her own part, and only downloads/ comes back", async () => {
     const { h, call, received } = setup();
     h.grants.grant(OWNER, WORKSPACE_ALL);
     const owner = toolContext(Principals.user(OWNER, CTX));
     await call("browse_open", { url: "https://shop.example.test/" }, owner);
     await call("browse_act", { action: "click", ref: "e2" }, owner);
-    expect(received[0]?.ws.scope).toEqual({ kind: "all" });
+    // A computer that lends its browser is someone else's: its reply never reaches people/.
+    expect(received[0]?.ws.scope).toEqual({ kind: "own" });
+    expect(received[0]?.accept?.("downloads/menu.pdf")).toBe(true);
+    expect(received[0]?.accept?.("people/discord-200/notes.md")).toBe(false);
+    expect(received[0]?.accept?.("scripts/run.py")).toBe(false);
   });
 });
 

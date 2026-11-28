@@ -365,7 +365,15 @@ export async function receiveWorkspace(
   ws: CallWorkspace,
   last: Manifest,
   signal?: AbortSignal,
+  options: {
+    /**
+     * The paths this job may change at all (a browser's: its downloads); the rest of what it
+     * sends or deletes is dropped. Default: anything in the call's folder.
+     */
+    accept?: (path: string) => boolean;
+  } = {},
 ): Promise<{ manifest: Manifest; removed: Removed[]; conflicts: string[] }> {
+  const accept = options.accept ?? (() => true);
   const place = await placeOf(ws);
   const sync = await job.sync(signal);
   const known = new Map(last.map((e) => [e.path, e]));
@@ -407,8 +415,13 @@ export async function receiveWorkspace(
           "the files that came back from the sandbox were damaged on the way",
         );
       }
+      let dropped = 0;
       for (const entry of written) {
         if (place.skip?.(entry.path)) continue;
+        if (!accept(entry.path)) {
+          dropped += 1;
+          continue;
+        }
         const target = await destination(place.dir, entry.path);
         if (target === null) continue;
         const existing = await lstat(target).catch(() => null);
@@ -434,6 +447,9 @@ export async function receiveWorkspace(
         await rename(safeJoin(staging, entry.path), target);
         known.set(entry.path, entry);
       }
+      if (dropped > 0) {
+        log.warn({ job: job.id, dropped }, "a job sent back files outside what it may change");
+      }
     }
     // No more deletions than the folder can hold files: a longer list names files that cannot
     // be there, and each name costs a walk of Core's disk.
@@ -451,7 +467,7 @@ export async function receiveWorkspace(
       } catch {
         continue;
       }
-      if (place.skip?.(path)) continue;
+      if (place.skip?.(path) || !accept(path)) continue;
       const target = await existing(place.dir, path).catch(() => null);
       if (target === null) continue;
       const stat = await lstat(target).catch(() => null);
