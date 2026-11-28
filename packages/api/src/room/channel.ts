@@ -88,6 +88,8 @@ export class RoomHub {
   /** The state last sent (`state` goes out only when it changed). */
   sentState: string | null = null;
   lastTypingAt = 0;
+  /** Streams of this account open or still starting (the per-account limit counts these). */
+  tabs = 0;
   readonly lines = new Bounded<string, HerLine>(KNOWN_LINES);
   readonly own = new Bounded<string, true>(KNOWN_OWN);
 

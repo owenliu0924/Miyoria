@@ -57,13 +57,15 @@ async function* events(
   const wait = side.admit(side.client(c));
   if (wait !== null) throw roomTooMany(wait);
   const hub = room.channel.hub(account);
+  // Counted at once, not when it starts listening: tabs opened together are each counted.
   if (
-    hub.streams >= room.config.streams_per_account ||
+    hub.tabs >= room.config.streams_per_account ||
     room.channel.streams >= room.config.streams_total
   ) {
     throw roomTooMany(5_000);
   }
   const release = room.channel.opened();
+  hub.tabs += 1;
   const queue: Outgoing[] = [];
   let wake: (() => void) | null = null;
   const poke = () => {
@@ -121,6 +123,7 @@ async function* events(
   } finally {
     signal.removeEventListener("abort", onAbort);
     unlisten?.();
+    hub.tabs -= 1;
     release();
   }
 }
