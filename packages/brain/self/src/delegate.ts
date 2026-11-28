@@ -1,11 +1,12 @@
 // The sub-agent jobs: what `delegate` starts, what runs them, what they cost and how they end.
 //
 // Each job is one run of `SelfRunner` on the `subagent` profile, with a transcript session of its
-// own (`delegate:<id>`: it can be read afterwards and is never mixed with a conversation), the
-// tools of its kind (`subagents.ts`), the real guard behind the helper's own, and no outlet. At
-// most `maxRunning` run at once and `maxQueued` wait, and of one person's (who asked; not hers, not
-// an owner's) `perPersonRunning` and `perPersonQueued`, so one person cannot hold every slot; a
-// start past that is refused with a text she can read.
+// own (`delegate:<id>`, `WHOLE_SESSION_PREFIX`: it can be read afterwards, so no compaction ever
+// summarises it away, and is never mixed with a conversation), the tools of its kind
+// (`subagents.ts`), the real guard behind the helper's own, and no outlet. At most `maxRunning`
+// run at once and `maxQueued` wait, and of one person's (who asked; not hers, not an owner's)
+// `perPersonRunning` and `perPersonQueued`, so one person cannot hold every slot; a start past
+// that is refused with a text she can read.
 //
 // Money. Every call a job makes is charged in USD (a model with no price at the quota's fallback
 // rate) to the job's own budget (the size of the task, hers to pick within the kind's maximum), to
@@ -23,7 +24,7 @@
 // failed with the reason.
 
 import { withLlmTag } from "@miyoria/llm/llm";
-import type { TranscriptStore } from "@miyoria/memory/transcript";
+import { type TranscriptStore, WHOLE_SESSION_PREFIX } from "@miyoria/memory/transcript";
 import { errorMessage, type Logger } from "@miyoria/runtime/kernel";
 import {
   type AccountRef,
@@ -578,7 +579,7 @@ export class Delegator {
       ended_at: null,
       summary: null,
       note: null,
-      session: `delegate:${id}`,
+      session: `${WHOLE_SESSION_PREFIX}${id}`,
       told: true,
       plan: [],
       last_step: null,
@@ -1158,7 +1159,7 @@ export class Delegator {
       ended_at: null,
       summary: null,
       note: null,
-      session: `delegate:${id}`,
+      session: `${WHOLE_SESSION_PREFIX}${id}`,
       told: false,
       plan: [],
       last_step: null,

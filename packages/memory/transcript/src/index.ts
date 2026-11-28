@@ -8,8 +8,10 @@ export {
   compactIdle,
   compactIfNeeded,
   type IdleCompactOptions,
+  keptWhole,
   pickCut,
   type Summarise,
+  WHOLE_SESSION_PREFIX,
 } from "./compact.js";
 export {
   BOT_TAG,

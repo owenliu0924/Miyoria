@@ -9,6 +9,7 @@ import {
   type Summarise,
   type TranscriptEntry,
   type TranscriptTail,
+  WHOLE_SESSION_PREFIX,
 } from "../src/index.js";
 import { called, entries, MINUTE, own, type Rig, ROOM, rig, said } from "./helpers.js";
 
@@ -285,5 +286,30 @@ describe("compactIdle", () => {
     });
     expect(failed).toHaveLength(1);
     expect(done).toHaveLength(1);
+  });
+
+  it("never touches a helper job's session, however long it is", async () => {
+    const r = await rig();
+    rigs.push(r);
+    // A job's shape: the goal without a turn, then every step under the job's one turn.
+    const job = `${WHOLE_SESSION_PREFIX}x1`;
+    r.t.append(
+      job,
+      [
+        said("工作", "目標", { tokens: 10 }),
+        ...Array.from({ length: 12 }, (_, i) => own(`${i}`, { tokens: 10, turn: "delegate-x1" })),
+      ],
+      { context: null },
+    );
+    grow(r.t, "quiet", 10);
+    r.clock.tick(2 * 60 * MINUTE);
+    const summarise = vi.fn<Summarise>(async () => "摘要");
+    const idle = { ...budget, summarise, idleMs: 30 * MINUTE, now: r.clock.now() };
+    expect(await compactIdle(r.t, idle)).toEqual(["quiet"]);
+    expect(await compactIdle(r.t, idle)).toEqual([]);
+    expect(await compactIfNeeded(r.t, job, { ...budget, summarise })).toBeNull();
+    expect(summarise).toHaveBeenCalledTimes(1);
+    expect(r.t.tail(job).summary).toBeNull();
+    expect(r.t.tail(job).entries).toHaveLength(13);
   });
 });

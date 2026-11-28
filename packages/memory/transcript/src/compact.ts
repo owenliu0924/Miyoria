@@ -12,6 +12,19 @@ import { splitsPair } from "./pairing.js";
 import type { TranscriptStore } from "./store.js";
 import type { TranscriptEntry, TranscriptSummary, TranscriptTail } from "./types.js";
 
+/**
+ * Sessions whose names start with this are records, not conversations: a helper job's whole run
+ * (`delegate:<id>`), read back entry by entry once it ended. They are never compacted, by any
+ * caller: a job is one turn, so the only cut is after everything, and a summary would leave the
+ * record empty.
+ */
+export const WHOLE_SESSION_PREFIX = "delegate:";
+
+/** Whether `session` is kept whole (`WHOLE_SESSION_PREFIX`). */
+export function keptWhole(session: string): boolean {
+  return session.startsWith(WHOLE_SESSION_PREFIX);
+}
+
 export interface CompactionBudget {
   /** Compaction starts once the entries after the summary are estimated above this. */
   thresholdTokens: number;
@@ -112,6 +125,7 @@ export async function compactIdle(
   for (const head of store.heads()) {
     if (options.signal?.aborted) break;
     if (head.last_seq <= 0 || timestampMs(head.last_at) > idleBefore) continue;
+    if (keptWhole(head.session)) continue;
     const stale = store.tail(head.session).summary?.stale === true;
     if (!stale && store.tokens(head.session) <= options.thresholdTokens) continue;
     try {
@@ -136,7 +150,8 @@ export async function compactIdle(
 }
 
 /**
- * Compacts `session` when it needs it, and returns the summary made (`null`: nothing to do).
+ * Compacts `session` when it needs it, and returns the summary made (`null`: nothing to do, or a
+ * session kept whole, `keptWhole`).
  *
  * - The summary in use is stale (an entry it covers was redacted): it is made again from the
  *   covered entries still on disk, at the same sequence.
@@ -151,6 +166,7 @@ export async function compactIfNeeded(
   session: string,
   options: CompactOptions,
 ): Promise<TranscriptSummary | null> {
+  if (keptWhole(session)) return null;
   const tail = store.tail(session);
   // Read with `tail` (no await between): what was forgotten when the entries were read.
   const redactedAtRead = store.redactedSeqs(session, Number.MAX_SAFE_INTEGER);
