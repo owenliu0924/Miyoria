@@ -74,4 +74,33 @@ describe("medium-risk followup tools", () => {
     expect(n?.text).toContain("took 60");
     expect(g.router.requests).toHaveLength(0);
   });
+
+  it("wait_in_full_for_a_helper_and_never_tell_her_chat", async () => {
+    const g = await gate();
+    g.registry.configure({ ...g.registry.config, inline_wait_ms: 5 });
+    const runs: string[] = [];
+    g.registry.register(longRun(runs));
+    const tool = g.tools.get("t_long") as CapabilityTool;
+    const helper = { ...context(), waitsInFull: true };
+    expect(await tool.call(helper, { ms: 60, on_own: true })).toBe("took 60");
+    expect(runs).toEqual(["ran 60 (aborted: false)"]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(notices(g.events)).toEqual([]);
+  });
+
+  it("stop_the_run_when_the_helper_is_cancelled", async () => {
+    const g = await gate();
+    g.registry.configure({ ...g.registry.config, inline_wait_ms: 5 });
+    const runs: string[] = [];
+    g.registry.register(longRun(runs));
+    const tool = g.tools.get("t_long") as CapabilityTool;
+    const run = new AbortController();
+    const call = tool.call({ ...context(run.signal), waitsInFull: true }, { ms: 60, on_own: true });
+    setTimeout(() => run.abort(new Error("cancelled")), 20);
+    // The runner stops waiting on its own (its timeout races the call); what matters here is
+    // that the capability saw the abort.
+    await call.catch(() => undefined);
+    expect(runs).toEqual(["ran 60 (aborted: true)"]);
+    expect(notices(g.events)).toEqual([]);
+  });
 });

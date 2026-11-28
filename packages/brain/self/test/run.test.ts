@@ -372,6 +372,24 @@ describe("tools in the loop", () => {
     expect(asked).toEqual({ account: OWEN.account, principal: "user", priority: "direct" });
   });
 
+  it("a helper's run tells its tools to wait for their outcome; a chat run does not", async () => {
+    const seen: (boolean | undefined)[] = [];
+    const look = fakeTool("look", "", {
+      call: (_args, ctx) => {
+        seen.push(ctx.waitsInFull);
+        return "ok";
+      },
+    });
+    const chat = await rig([calls([{ name: "look" }]), say("好")]);
+    chat.tools.register(look);
+    chat.line("Owen", "@她 看");
+    await chat.run();
+    const helper = await rig([calls([{ name: "look" }]), say("好了")]);
+    helper.tools.register(look);
+    await helper.run({ kind: "self", note: null }, { profile: PROFILES.subagent });
+    expect(seen).toEqual([undefined, true]);
+  });
+
   it("sends her reasoning back with each of her steps", async () => {
     const r = await rig([calls([{ name: "look" }], "", "先查一下比較好"), say("查到了")]);
     r.tools.register(fakeTool("look"));

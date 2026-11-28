@@ -85,6 +85,21 @@ describe("followup tools", () => {
     expect(n?.text).toContain("沒有做成");
   });
 
+  it("wait_out_the_review_for_a_helper_and_never_tell_her_chat", async () => {
+    const g = await gate();
+    g.registry.configure({ ...g.registry.config, inline_wait_ms: 0, review_timeout_ms: 30 });
+    g.registry.register(highWithResult([]));
+    g.router.hang = true;
+    const tool = g.tools.get("t_result") as CapabilityTool;
+    const helper = { ...context(), waitsInFull: true };
+    // The review times out (deny): the helper reads the refusal itself.
+    await expect(tool.call(helper, { code: "2+2", why: "test" })).rejects.toBeInstanceOf(
+      ActionDeniedError,
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    expect(notices(g.events)).toEqual([]);
+  });
+
   it("owners_see_the_capability_view_with_attachments", () => {
     const capability = highWithResult([]);
     const card = approvalCard(

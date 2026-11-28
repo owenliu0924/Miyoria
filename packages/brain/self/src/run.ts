@@ -1516,6 +1516,9 @@ class Run {
       caller?.message ?? (wake.kind === "addressed" ? wake.message : { context, id: this.turn });
     const priority: Priority =
       wake.kind === "addressed" ? "direct" : wake.kind === "result" ? "request" : "initiative";
+    // A run that does not speak is a helper's: a followup tool waits for its outcome inside the
+    // call (bounded by `signal`, the tool time limit) instead of telling her chat later.
+    const helper = this.#profile.speaks ? {} : { waitsInFull: true };
     if (author !== null) {
       const askers =
         wake.kind === "addressed" && wake.callers !== undefined && wake.callers.length > 0
@@ -1531,6 +1534,7 @@ class Run {
         priority,
         signal,
         report,
+        ...helper,
       };
     }
     const self: AccountRef = this.#p.selfAccount?.(context.platform) ?? {
@@ -1546,6 +1550,7 @@ class Run {
       priority,
       signal,
       report,
+      ...helper,
     };
   }
 

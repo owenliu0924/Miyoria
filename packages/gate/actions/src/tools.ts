@@ -145,6 +145,18 @@ export class CapabilityTool implements Tool {
       turn: ctx.turn,
       message: ctx.message,
     };
+    if (this.capability.tool?.followup && ctx.waitsInFull === true) {
+      // A helper's run has nobody to answer meanwhile and no chat to be told in later: it waits
+      // for the review and the run, as long as its signal allows (its tool time limit, its
+      // cancellation), and the signal reaches the capability, so a cancelled helper stops it.
+      const outcome = await this.registry.invoke(request, {
+        signal: ctx.signal,
+        ...(this.capability.risk === "high" ? {} : { priority: ctx.priority }),
+        activity: "detach",
+      });
+      if (outcome.status === "done") ctx.report?.(outcome.result.data);
+      return outcome;
+    }
     if (this.capability.risk === "high") {
       // The review (and maybe the owners) take longer than a tool call may; it goes on alone.
       const running = this.registry.invoke(request, { activity: "detach" });
