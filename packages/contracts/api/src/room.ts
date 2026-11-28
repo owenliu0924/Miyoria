@@ -221,8 +221,16 @@ export const RoomEventSchema = z
   .meta({ id: "ApiRoomEvent" });
 export type RoomEvent = z.output<typeof RoomEventSchema>;
 
+/** The most a JSON body of the room may be (§3.1): a line of 2000 characters fits many times. */
+export const ROOM_BODY_BYTES = 16 * 1024;
+
 const member = (limited: boolean) =>
-  route.meta({ audience: "member", permission: null, ...(limited ? { limited: true } : {}) });
+  route.meta({
+    audience: "member",
+    permission: null,
+    maxBody: { bytes: ROOM_BODY_BYTES, refusal: "這段太長了,分幾次說" },
+    ...(limited ? { limited: true } : {}),
+  });
 
 export const room = {
   state: member(true).route({ method: "GET", path: "/api/member/room" }).output(RoomStateSchema),

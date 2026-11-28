@@ -33,6 +33,11 @@ export interface RouteMeta {
    * server's shell applies it before the body is read, so a request with a bad body counts too.
    */
   limited?: boolean;
+  /**
+   * The most a request body may be, in bytes: a larger one is refused with `413` and these words
+   * before it is read on (a declared length over it is not read at all). Default: no cap here.
+   */
+  maxBody?: { bytes: number; refusal: string };
 }
 
 /**

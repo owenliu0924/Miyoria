@@ -3,7 +3,7 @@
 // `streams_per_account` tabs; an upload is refused as soon as it passes its cap while it is read,
 // an image's cap is the image's, and `uploads_per_hour` holds.
 
-import type { RoomEvent } from "@miyoria/contracts/api";
+import { ROOM_BODY_BYTES, type RoomEvent } from "@miyoria/contracts/api";
 import { PlacesKey } from "@miyoria/types";
 import type { AnyRouter } from "@orpc/server";
 import { afterEach, describe, expect, it } from "vitest";
@@ -290,5 +290,39 @@ describe("the room's uploads route", () => {
     const res = await upload(r, bytes(10));
     expect(res.status).toBe(403);
     expect(r.room.uploads.total).toBe(0);
+  });
+});
+
+// ---- JSON bodies ----------------------------------------------------------------------------
+
+describe("the room's JSON bodies", () => {
+  const send = (
+    r: ReturnType<typeof routeRig>,
+    body: string | ReadableStream<Uint8Array>,
+    headers: Record<string, string> = {},
+  ) =>
+    r.app.request("/api/member/room/messages", {
+      method: "POST",
+      body,
+      headers: { "content-type": "application/json", ...headers },
+      ...(body instanceof ReadableStream ? { duplex: "half" } : {}),
+    } as RequestInit);
+
+  it("refuses a body over ROOM_BODY_BYTES in the room's words, without reading it all", async () => {
+    const r = routeRig();
+    const padded = JSON.stringify({ text: "嗨", client_id: "c-12345678", pad: "a".repeat(20_000) });
+    const big = await send(r, padded);
+    expect(big.status).toBe(413);
+    expect(await big.json()).toEqual({ error: ROOM_TEXT.tooLong });
+    // A body with no declared length that never ends: stopped a little past the cap.
+    const { body, read } = endless(4 * 1024);
+    const endlessRes = await send(r, body);
+    expect(endlessRes.status).toBe(413);
+    expect(read.bytes).toBeLessThanOrEqual(ROOM_BODY_BYTES + 3 * 4 * 1024);
+    expect(read.cancelled).toBe(true);
+    // A line as long as the room allows still fits.
+    const longest = JSON.stringify({ text: "字".repeat(2_000), client_id: "c-12345678" });
+    const ok = await send(r, longest);
+    expect(ok.status).not.toBe(413);
   });
 });

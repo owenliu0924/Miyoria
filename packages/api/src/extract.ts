@@ -127,3 +127,66 @@ export function countOf(raw: string | undefined): number | undefined {
 export function clampLimit(limit: number | undefined, fallback: number, max: number): number {
   return Math.min(Math.max(limit ?? fallback, 1), max);
 }
+
+// ---- capped bodies ----------------------------------------------------------------------
+
+/**
+ * The body, read as it comes: `null` as soon as it passes `max` (a declared length over it is not
+ * read at all). The cap may tighten once the first bytes say what it is (`capFor`).
+ */
+export async function bodyCapped(
+  c: ApiContext,
+  max: number,
+  capFor: (head: Uint8Array) => number = () => max,
+): Promise<Uint8Array | null> {
+  const declared = Number(c.req.header("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > max) return null;
+  const stream = c.req.raw.body;
+  if (stream === null) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  let cap = max;
+  let sniffed = false;
+  const reader = stream.getReader();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    total += value.byteLength;
+    if (!sniffed && total >= 16) {
+      sniffed = true;
+      cap = Math.min(max, capFor(concat(chunks, total)));
+    }
+    if (total > cap) {
+      await reader.cancel();
+      return null;
+    }
+  }
+  const out = concat(chunks, total);
+  if (!sniffed && out.byteLength > Math.min(max, capFor(out))) return null;
+  return out;
+}
+
+function concat(chunks: readonly Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.byteLength;
+  }
+  return out;
+}
+
+/**
+ * The request with its body read under a cap (a route's `maxBody`): `413` in the route's words when
+ * it passes, before the rest is read.
+ */
+export async function cappedRequest(
+  c: ApiContext,
+  max: { bytes: number; refusal: string },
+): Promise<Request> {
+  const body = await bodyCapped(c, max.bytes);
+  if (body === null) throw new ApiError(413, max.refusal);
+  const raw = c.req.raw;
+  return new Request(raw.url, { method: raw.method, headers: raw.headers, body });
+}

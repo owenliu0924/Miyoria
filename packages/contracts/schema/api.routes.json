@@ -3941,6 +3941,10 @@
           "meta": {
             "audience": "member",
             "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            },
             "limited": true
           },
           "route": {
@@ -3955,7 +3959,11 @@
           "errorMap": {},
           "meta": {
             "audience": "member",
-            "permission": null
+            "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            }
           },
           "route": {
             "inputStructure": "detailed",
@@ -3970,6 +3978,10 @@
           "meta": {
             "audience": "member",
             "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            },
             "limited": true
           },
           "route": {
@@ -3985,6 +3997,10 @@
           "meta": {
             "audience": "member",
             "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            },
             "limited": true
           },
           "route": {
@@ -4000,6 +4016,10 @@
           "meta": {
             "audience": "member",
             "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            },
             "limited": true
           },
           "route": {
@@ -4015,6 +4035,10 @@
           "meta": {
             "audience": "member",
             "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            },
             "limited": true
           },
           "route": {
@@ -4030,6 +4054,10 @@
           "meta": {
             "audience": "member",
             "permission": null,
+            "maxBody": {
+              "bytes": 16384,
+              "refusal": "這段太長了,分幾次說"
+            },
             "limited": true
           },
           "route": {
