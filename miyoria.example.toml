@@ -286,6 +286,26 @@ token = "${MIYORIA_API_TOKEN:-}"
 # utc_offset_minutes = 480         # 「今天」從哪個時區的午夜開始算
 # client_ip_header = "cf-connecting-ip"  # 這台電腦上的反向代理用哪個標頭帶訪客的位址(只信從本機來的連線)。nginx / Caddy 用 "x-real-ip" 或 "x-forwarded-for"(取最後一個),而且代理要自己設這個標頭、不要照轉訪客送的;空字串 = 不讀任何標頭
 
+# 她的房間(/her):登入的會員一個人和她說話,和他的 Discord 私訊是同一種地方(同一套記憶範圍、
+# 額度、羈絆)。要 [modules.api.public] enabled。預設關;下面是預設值(docs/design/her-room.md)。
+# [modules.api.room]
+# enabled = false
+# messages_per_minute = 12         # 每個人每分鐘最多幾句
+# messages_per_day = 400           # 每個人每天最多幾句
+# max_text_chars = 2000            # 一句最多幾個字
+# max_files = 4                    # 一句最多附幾個檔案
+# max_image_mb = 5                 # 一張圖最大(和看圖的上限一樣)
+# max_file_mb = 8                  # 其他檔案最大
+# uploads_per_hour = 20            # 每個人每小時最多上傳幾個
+# upload_pool_mb = 128             # 還沒用完的上傳全部加起來最多放多少(只在記憶體)
+# streams_per_account = 3          # 一個人最多開幾個分頁
+# streams_total = 64               # 所有人加起來最多幾條連線
+# voice = true                     # 有 TTS 時可以聽她念(語音 worker 關著時自動不能用)
+# voice_lines_per_hour = 60        # 每個人每小時最多聽幾行
+# voice_max_chars = 300            # 太長的行不念
+# voice_cache = 64                 # 念過的行留幾行在記憶體
+# backlog_page = 50                # 紀錄一頁幾行
+
 # 她做的檔案的下載連結(https://<檔案網域>/f/<token>)。檔案網域要是自己的主機名(例如 files.example.com,
 # 不能和網站同一個),在 Cloudflare tunnel 指到下面的 bind。origin 留空 = 不發連結,附件照常能傳。
 # [modules.api.files]
