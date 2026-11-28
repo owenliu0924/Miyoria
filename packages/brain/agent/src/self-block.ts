@@ -494,7 +494,7 @@ export const HEART_NOW_TITLE = "你現在對在場的人的感覺:";
  */
 export function heartNowBody(
   people: readonly { handle: string; person: PersonId | null }[],
-  heart: HeartPeople | null,
+  heart: Pick<HeartPeople, "view"> | null,
 ): string {
   if (heart === null) return "";
   const lines: string[] = [];

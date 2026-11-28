@@ -4,8 +4,10 @@
 // What it is given:
 // - block 1: her real persona (`Profile.personaPrompt`), then the runner's own rules (`rules.ts`);
 // - block 4: the scene's people as person cards, rendered by today's people block (`peopleBody`)
-//   from a heart row made of the closeness the scene sets;
-// - block 7: the time (the scene's clock when it sets one), the place and her state line;
+//   from a heart row made of the closeness the scene sets: the tier, not the exact level;
+// - block 7: the time (the scene's clock when it sets one), the place, her state line, then the
+//   host's lines of how she feels toward the people now with each one's exact level
+//   (`heartNowBody`);
 // - the transcript: the scene's lines in a fresh in-memory transcript store (a line of hers as one
 //   she said);
 // - tools: a fresh registry with `find_tools` and `say`, and the scene's fake-world tools, all
@@ -21,7 +23,12 @@
 //
 // Nothing carries over from one scene to the next.
 
-import { PRESENT_TITLE, type PresentPerson, peopleBody } from "@miyoria/brain/agent";
+import {
+  heartNowBody,
+  PRESENT_TITLE,
+  type PresentPerson,
+  peopleBody,
+} from "@miyoria/brain/agent";
 import {
   type Outlet,
   PROFILES,
@@ -318,14 +325,12 @@ export class SelfSubject implements Subject {
 
     // The blocks around the transcript.
     const attitude = (account: AccountRef) => attitudes.get(account.id) ?? null;
+    const heart = { view: (person: PersonId) => views.get(person) ?? null };
     const prompt: PromptSource = {
       fixed: async () => o.profile.personaPrompt(),
       pinned: async () => null,
       place: async () => {
-        const body = peopleBody(present, {
-          attitude,
-          heart: { view: (person) => views.get(person) ?? null },
-        });
+        const body = peopleBody(present, { attitude, heart });
         return body === "" ? null : dataBlock("people", PRESENT_TITLE, body);
       },
       recalled: async () => null,
@@ -333,6 +338,10 @@ export class SelfSubject implements Subject {
         const lines = [`時間:${localText(clock.now())}`];
         lines.push(scene.place === "dm" ? `地點:${last?.who ?? ""} 的私訊` : "地點:文字頻道 #閒聊");
         if (scene.state !== undefined) lines.push(`你現在:${scene.state}`);
+        // As the host does: her exact level with each person and how she feels toward them now,
+        // after the transcript (block 4's card has only the tier).
+        const feeling = heartNowBody(present, heart);
+        if (feeling !== "") lines.push(feeling);
         return lines.join("\n");
       },
     };
