@@ -21,6 +21,7 @@ import { Transfer } from "./Extras";
 import { GiftsCard, GiftsReceived } from "./Gifts";
 import { GitHubLinkCard } from "./GitHubLink";
 import { KaraokeLink } from "./karaoke/link";
+import { RoomLink } from "./room/link";
 import { LiveStage } from "./live/LiveStage";
 import { MadeForMe } from "./MadeForMe";
 import { Market } from "./Market";
@@ -231,6 +232,7 @@ function Header({ member, onLogout, onBack }: { member: MemberSession; onLogout:
         </p>
       )}
       <div className="ml-auto flex shrink-0 items-center gap-2">
+        <RoomLink />
         <KaraokeLink />
         {onBack && (
           <Button variant="outline" size="sm" onClick={onBack}>
