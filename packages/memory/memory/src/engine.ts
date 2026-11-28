@@ -1865,6 +1865,18 @@ export class MemoryEngine implements FollowupSource {
     return report;
   }
 
+  /**
+   * Forgets one memory (a member's "forget this one", her room's relation panel): deletes the
+   * record with `id` of this profile. `false` when there is none. Whoever asks has checked that
+   * the record is one they may see; this does not.
+   */
+  async forgetRecord(id: string): Promise<boolean> {
+    const record = await this.records.get(id);
+    if (record === null || record.profile !== this.profile) return false;
+    this.#version += 1;
+    return await this.records.delete(id);
+  }
+
   // ---- messages she was asked not to remember, and people who asked to be forgotten --------
 
   /** Which of `refs` (EventLog events and `msg:<line id>` chat lines) were redacted. */
