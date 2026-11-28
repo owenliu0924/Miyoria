@@ -187,6 +187,14 @@ export function Backlog({
     first.current = false;
   }, [entries]);
 
+  // A line left out leaves with the button that had focus: focus stays in the dialog (on 關閉), so
+  // Escape and Tab still work.
+  const exclude = async (id: string) => {
+    const done = await onExclude(id);
+    if (done) close.current?.focus({ preventScroll: true });
+    return done;
+  };
+
   const readOlder = async () => {
     const el = list.current;
     if (older === null || loadingOlder) return;
@@ -273,7 +281,7 @@ export function Backlog({
                   key={e.id}
                   entry={e}
                   reaction={reactions[e.id]}
-                  onExclude={onExclude}
+                  onExclude={exclude}
                   onDownload={onDownload}
                 />
               ))}

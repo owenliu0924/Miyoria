@@ -335,6 +335,10 @@ describe("the backlog", () => {
     await userEvent.click(within(dialog).getByRole("button", { name: "不要記住" }));
     await waitFor(() => expect(within(dialog).queryByText("第 0 句")).toBeNull());
     expect(f.api.excludeLine).toHaveBeenCalledWith("E0");
+    // The button that had focus left with the line: focus stays in the dialog, so Escape closes it.
+    await waitFor(() => expect(within(dialog).getByRole("button", { name: "關閉" })).toHaveFocus());
+    await userEvent.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "紀錄" })).toBeNull());
   });
 });
 
