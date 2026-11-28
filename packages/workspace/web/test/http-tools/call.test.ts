@@ -106,6 +106,17 @@ describe("arguments", () => {
     });
     expect((await failure(run)).message).toMatch(/「\.\.」/);
   });
+
+  it("refuses a path value that a server could decode into more than one segment", async () => {
+    const open = parseHttpTool(WEATHER.replace('enum = ["Taipei", "Tokyo"]', ""), config);
+    const t = transport();
+    const run = (city: string) =>
+      callHttpTool(open, { city }, signal(), { config, env, resolver: resolver(), transport: t });
+    for (const city of ["../admin", "a/b", "a\\b", "..", ".", "", "x..y", "..%2Fadmin", "%2e%2e"]) {
+      expect((await failure(run(city))).message, city).toMatch(/一段路徑/);
+    }
+    expect(t.calls).toEqual([]);
+  });
 });
 
 describe("the request", () => {
@@ -141,13 +152,13 @@ describe("the request", () => {
   it("encodes path values", async () => {
     const t = transport();
     const def = parseHttpTool(WEATHER.replace('enum = ["Taipei", "Tokyo"]', ""), config);
-    await callHttpTool(def, { city: "新北/板橋?x=1" }, signal(), {
+    await callHttpTool(def, { city: "新北 板橋?x=1#y" }, signal(), {
       config,
       env,
       resolver: resolver(),
       transport: t,
     });
-    expect(t.calls[0]?.url.pathname).toBe(`/v1/weather/${encodeURIComponent("新北/板橋?x=1")}`);
+    expect(t.calls[0]?.url.pathname).toBe(`/v1/weather/${encodeURIComponent("新北 板橋?x=1#y")}`);
     expect(t.calls[0]?.url.search).toBe("?units=metric");
   });
 

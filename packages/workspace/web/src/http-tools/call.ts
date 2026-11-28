@@ -96,6 +96,17 @@ function typeName(type: HttpParamDef["type"]): string {
 }
 
 /**
+ * Whether `value` stays one path segment wherever it is decoded. The URL parser resolves `.` and
+ * `..` (even encoded); `/` and `\` are sent as `%2F` / `%5C`, which many servers and proxies decode
+ * back into separators, so `../admin` would reach another endpoint as `..%2Fadmin`. A `%2F` or
+ * `%2E` she wrote herself is refused as well, for the servers that decode twice.
+ */
+export function isPathSegment(value: string): boolean {
+  if (value === "" || value === ".") return false;
+  return !/[/\\]|\.\.|%(2e|2f|5c)/iu.test(value);
+}
+
+/**
  * `args` checked against the tool's parameters, or a message for her (Traditional Chinese).
  * Unknown arguments are refused: a typo must not quietly drop a value she meant to send.
  */
@@ -128,9 +139,8 @@ export function checkHttpArgs(def: HttpToolDef, args: unknown): JsonObject | str
     if (param.enum !== undefined && !param.enum.includes(value as string | number | boolean)) {
       return `參數 ${name} 只能是:${param.enum.map((v) => String(v)).join("、")}`;
     }
-    if (param.in === "path" && (value === "" || value === "." || value === "..")) {
-      // `..` (even encoded) is resolved by the URL parser and would reach another endpoint.
-      return `參數 ${name} 不能是空的、「.」或「..」`;
+    if (param.in === "path" && !isPathSegment(String(value))) {
+      return `參數 ${name} 是網址的一段路徑:不能是空的或「.」,也不能有「/」、「\\」或「..」`;
     }
     out[name] = value as JsonValue;
   }
