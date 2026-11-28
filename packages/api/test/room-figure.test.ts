@@ -2,7 +2,7 @@
 // served (only what the manifest names, by hash), how, to whom, and the faces read against a
 // fixture model. Live2D's own files are not needed: the model here is made up.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ROOM_FIGURE_FACES } from "@miyoria/contracts/api";
@@ -195,9 +195,9 @@ describe("her figure's files", () => {
   it("copies only what the page loads, the textures made smaller, and names them by hash", async () => {
     const ready = await prepareFigure({ model, studio, cache: join(root, "c1"), sizes: [32, 64] });
     const names = [...ready.files.keys()];
-    expect(names.every((n) => /^(figure|core|moc|physics|idle|tex)-[0-9a-f]{20}/.test(n))).toBe(
-      true,
-    );
+    expect(
+      names.every((n) => /^(figure|worker|core|moc|physics|idle|tex)-[0-9a-f]{20}/.test(n)),
+    ).toBe(true);
     expect(names.some((n) => /vtube|secret|cdi|exp3|backup/.test(n))).toBe(false);
     const m = ready.manifest;
     expect(m.sizes).toEqual([32, 64]);
@@ -209,6 +209,26 @@ describe("her figure's files", () => {
     expect(dims.map((d) => d.width).sort()).toEqual([16, 32]);
     expect(JSON.stringify(m)).not.toContain(modelDir.replaceAll("\\", "\\\\"));
     expect(m.framing.top).toBeGreaterThan(m.framing.bottom);
+  });
+
+  it("names the worker's script when the build has one, and draws without it otherwise", async () => {
+    const without = await prepareFigure({ model, studio, cache: join(root, "w0"), sizes: [32] });
+    expect(without.manifest.worker).toBeNull();
+    const built = join(root, "studio-worker");
+    cpSync(studio, built, { recursive: true });
+    writeFileSync(
+      join(built, "dist", "figure", "figure-worker.js"),
+      "postMessage({t:'hello',ok:false});",
+    );
+    const ready = await prepareFigure({
+      model,
+      studio: built,
+      cache: join(root, "w1"),
+      sizes: [32],
+    });
+    expect(ready.manifest.worker).toMatch(/\/figure\/worker-[0-9a-f]{20}\.js$/);
+    const name = (ready.manifest.worker as string).split("/").pop() as string;
+    expect(ready.files.get(name)?.type).toBe("text/javascript; charset=utf-8");
   });
 
   it("serves a named file a year with its compressed copy, and nothing else at all", async () => {

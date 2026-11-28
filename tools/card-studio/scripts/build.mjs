@@ -38,5 +38,8 @@ if (only !== "figure") {
   ]);
   if (node.status !== 0) process.exit(node.status ?? 1);
 }
+// The bundle empties `dist/figure/` first; the worker's script goes beside it.
 const figure = vite(["build", "--config", "vite.figure.config.ts"]);
-process.exit(figure.status ?? 1);
+if (figure.status !== 0) process.exit(figure.status ?? 1);
+const worker = vite(["build", "--config", "vite.figure-worker.config.ts"]);
+process.exit(worker.status ?? 1);

@@ -18,7 +18,9 @@ other machines pass), and `pnpm --filter @miyoria/card-studio sample
 ## Her figure in her room
 
 `build` also makes `dist/figure/figure.js` (`src/figure.ts`, `vite.figure.config.ts`): her Live2D figure for the
-room's page, the framework bundled in. `pnpm --filter @miyoria/card-studio build:figure` makes only that one. The
+room's page, the framework bundled in, and `dist/figure/figure-worker.js` (`src/figure-worker.ts`,
+`vite.figure-worker.config.ts`): the same engine as a worker script, which draws her off the page's thread where
+the browser can. `pnpm --filter @miyoria/card-studio build:figure` makes only that one. The
 Core serves it, with `vendor/live2dcubismcore.min.js` and her model's files, to the browsers of members the room
 is open to (`[modules.api.room] figure`, docs/design/her-room.md §7.3); without the build, Core or model it shows
 the recorded loops and says why once in its log. It looks at the build again about once a minute, so a rebuild
