@@ -38,7 +38,22 @@ describe("the example dialogues", () => {
     // Good banter: a plus of rapport, no minus. Pushing on after a no: a small bond minus.
     expect(lines).toContainEqual(expect.objectContaining({ field: "rapport", direction: "up" }));
     const minus = lines.filter((l) => l.direction === "down");
-    expect(minus).toEqual([expect.objectContaining({ field: "bond", amount: 5 })]);
+    expect(minus).toEqual([
+      expect.objectContaining({ field: "bond", amount: 5 }),
+      expect.objectContaining({ field: "bond", amount: 6 }),
+    ]);
+  });
+
+  it("show plain small talk with only the mood line, and an apology with no fall", () => {
+    const talk = dialogues.find((d) => d.startsWith("## 普通閒聊"));
+    expect(talk).toBeDefined();
+    const [inside] = blocks(talk ?? "");
+    expect(parseFeel(inside ?? "").lines).toEqual([]);
+    const sorry = dialogues.find((d) => d.startsWith("## 之前很凶的人來道歉")) ?? "";
+    const [, apology] = blocks(sorry);
+    expect(parseFeel(apology ?? "").lines).toEqual([
+      expect.objectContaining({ field: "bond", direction: "up" }),
+    ]);
   });
 
   it("whatever else reads them sees no feel block", () => {
