@@ -62,6 +62,78 @@ export interface WorkspaceRead {
   offset: number;
   /** Where the next read continues, or `null` when `text` reaches the end. */
   next_offset: number | null;
+  /** With a line range asked: the first line of `text` (1-based, as `workspace.grep` counts). */
+  line?: number;
+  /** With a line range: the first line after the ones in `text`, or `null` at the end. */
+  next_line?: number | null;
+  /** With a line range: how many lines the file has. */
+  total_lines?: number;
+  /** With a line range: the last line in `text` was too long for one read and is cut. */
+  cut?: boolean;
+}
+
+/**
+ * Which part of a file one read returns: from `offset` characters, or with `line` from that line
+ * (1-based) for at most `lines` lines; either way no more than `maxChars` characters.
+ */
+export interface ReadOptions {
+  offset?: number;
+  maxChars?: number;
+  line?: number;
+  lines?: number;
+}
+
+/**
+ * The lines `line`.. of `text` (at most `count`, `maxChars` characters), as one read. The empty
+ * text after a final newline is not a line, so a file `a\nb\n` has two, as an editor shows it.
+ */
+export function sliceLines(
+  path: string,
+  size: number,
+  text: string,
+  line: number,
+  count: number,
+  maxChars: number,
+): WorkspaceRead {
+  const all = text.split("\n");
+  if (all.length > 1 && all.at(-1) === "") all.pop();
+  const total = text === "" ? 0 : all.length;
+  const start = Math.max(1, line);
+  // The character offset each line starts at, so the reply can also say where `offset` goes on.
+  let offset = 0;
+  for (let i = 0; i < Math.min(start - 1, all.length); i++)
+    offset += [...(all[i] ?? "")].length + 1;
+  const shown: string[] = [];
+  let used = 0;
+  let cut = false;
+  let end = offset;
+  for (let i = start - 1; i < total && shown.length < count; i++) {
+    const chars = [...(all[i] ?? "")];
+    if (shown.length > 0 && used + chars.length > maxChars) break;
+    if (chars.length > maxChars) {
+      // A line longer than one read: its head now, the rest through `offset`.
+      shown.push(chars.slice(0, maxChars).join(""));
+      end += maxChars;
+      cut = true;
+      break;
+    }
+    shown.push(chars.join(""));
+    used += chars.length + 1;
+    end += chars.length + 1;
+  }
+  const after = start + shown.length;
+  const length = [...text].length;
+  return {
+    path,
+    size,
+    text: shown.join("\n"),
+    offset: Math.min(offset, length),
+    next_offset: end < length ? end : null,
+    line: start,
+    next_line: after <= total ? after : null,
+    total_lines: total,
+    cut,
+  };
 }
 
 /** One thing `enforce` removed. */
@@ -75,7 +147,7 @@ export interface WorkspaceApi {
   readonly limits: WorkspaceLimits;
   usage(): Promise<WorkspaceUsage>;
   list(prefix?: string): Promise<{ entries: WorkspaceEntry[]; truncated: boolean }>;
-  read(path: string, options?: { offset?: number; maxChars?: number }): Promise<WorkspaceRead>;
+  read(path: string, options?: ReadOptions): Promise<WorkspaceRead>;
   write(path: string, text: string, options?: { append?: boolean }): Promise<WorkspaceEntry>;
   /**
    * The bytes of one file (never through a link), for taking a copy out of the workspace. Throws
@@ -260,10 +332,7 @@ export class PersistentWorkspace implements WorkspaceApi {
     }
   }
 
-  async read(
-    path: string,
-    options: { offset?: number; maxChars?: number } = {},
-  ): Promise<WorkspaceRead> {
+  async read(path: string, options: ReadOptions = {}): Promise<WorkspaceRead> {
     const full = await this.#resolve(path, false);
     const offset = Math.max(0, Math.floor(options.offset ?? 0));
     const maxChars = Math.max(1, Math.floor(options.maxChars ?? 3000));
@@ -287,6 +356,10 @@ export class PersistentWorkspace implements WorkspaceApi {
         text = new TextDecoder("utf-8", { fatal: true }).decode(data);
       } catch {
         throw new SandboxError("invalid_request", `\`${path}\` is not a text file`);
+      }
+      if (options.line !== undefined) {
+        const count = Math.max(1, Math.floor(options.lines ?? Number.MAX_SAFE_INTEGER));
+        return sliceLines(path, data.length, text, Math.floor(options.line), count, maxChars);
       }
       const chars = [...text];
       const slice = chars.slice(offset, offset + maxChars);
