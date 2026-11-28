@@ -102,6 +102,7 @@ export const FEEL_REMINDER =
  */
 export const FEEL_REPAIR_NOTE =
   "你剛才那則回覆最後漏了 <feel>。現在只補寫那一段:以 <feel> 開頭、</feel> 結尾,照「心裡的話」的規則寫這次你心裡的感覺(第一行一定要有)。" +
+  "只是普通閒聊、沒發生什麼,就只寫第一行,不要為了補這一段多寫誰的羈絆 +;真的有人對你做了什麼才加他那一行。" +
   "不要寫任何要給人看的話,也不要呼叫工具;這段不會被看到或聽到。";
 
 /** Block 1 of the text profile (and of voice, which opens like it). */
