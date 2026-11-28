@@ -4,9 +4,9 @@
 // the one place the server is chosen.
 
 import { createMemoryHistory } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "@/app/App";
 import { createAppRouter } from "@/app/router";
 import { WORLD } from "@/lib/world";
@@ -225,6 +225,73 @@ describe("each tab's address", () => {
     renderAt("/");
     expect(await screen.findByRole("tab", { name: "總覽" })).toHaveAttribute("aria-selected", "true");
     expect(await screen.findByRole("region", { name: "錢包" })).toBeInTheDocument();
+  });
+});
+
+describe("page transitions", () => {
+  let start: ReturnType<typeof vi.fn>;
+  const links: HTMLAnchorElement[] = [];
+  // What the browser would do with a link nobody kept in the page: jsdom cannot load pages.
+  const noLoad = (e: Event) => e.preventDefault();
+
+  beforeEach(() => {
+    start = vi.fn((options: { update: () => void }) => {
+      const done = Promise.resolve().then(() => options.update());
+      return { ready: done, finished: done, updateCallbackDone: done, skipTransition: () => {} };
+    });
+    Object.defineProperty(document, "startViewTransition", { value: start, configurable: true, writable: true });
+    vi.stubGlobal("CSS", { supports: () => true });
+    window.addEventListener("click", noLoad);
+  });
+
+  afterEach(() => {
+    delete (document as { startViewTransition?: unknown }).startViewTransition;
+    vi.unstubAllGlobals();
+    window.removeEventListener("click", noLoad);
+    for (const a of links.splice(0)) a.remove();
+  });
+
+  const link = (href: string) => {
+    const a = document.createElement("a");
+    a.href = href;
+    a.textContent = href;
+    document.body.append(a);
+    links.push(a);
+    return a;
+  };
+
+  it("fades a change of tab and the way back, not a change of query", async () => {
+    core();
+    const { history } = renderAt("/me");
+    await screen.findByRole("region", { name: "她眼中的你" });
+    await userEvent.click(tab("卡片"));
+    expect(await screen.findByRole("region", { name: "卡冊" })).toBeInTheDocument();
+    expect(start).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledWith(expect.objectContaining({ types: ["page"] }));
+
+    act(() => history.back());
+    await waitFor(() => expect(tab("總覽")).toHaveAttribute("aria-selected", "true"));
+    expect(start).toHaveBeenCalledTimes(2);
+
+    act(() => history.push("/me?github=linked"));
+    expect(await screen.findByText("已連結 GitHub 帳號")).toBeInTheDocument();
+    expect(start).toHaveBeenCalledTimes(2);
+  });
+
+  it("opens a card's page from a link in the page, and leaves singing and the Core's files to the browser", async () => {
+    core();
+    const { history } = renderAt("/me");
+    await screen.findByRole("region", { name: "她眼中的你" });
+
+    await userEvent.click(link("/karaoke"));
+    await userEvent.click(link("/api/member/session"));
+    expect(history.location.pathname).toBe("/me");
+    expect(start).not.toHaveBeenCalled();
+
+    await userEvent.click(link("/card/MYR-TEST01"));
+    await waitFor(() => expect(history.location.pathname).toBe("/card/MYR-TEST01"));
+    await waitFor(() => expect(screen.queryByRole("tab", { name: "總覽" })).toBeNull());
+    expect(start).toHaveBeenCalledOnce();
   });
 });
 

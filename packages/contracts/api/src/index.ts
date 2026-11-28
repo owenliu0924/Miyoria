@@ -1046,6 +1046,7 @@ export {
   UpsertRoleRequestSchema,
 } from "./roles.js";
 export {
+  ROOM_BACKDROP_PATH,
   ROOM_BODY_BYTES,
   ROOM_CLIENT_ID,
   ROOM_CURSOR,

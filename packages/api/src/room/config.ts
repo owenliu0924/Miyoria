@@ -9,6 +9,7 @@
 // messages_per_day = 400
 // figure = "live2d"
 // figure_textures = [1024, 2048]
+// backdrop = ""
 // ```
 
 import { z } from "zod";
@@ -64,6 +65,11 @@ export const RoomConfigSchema = z.object({
   figure_textures: z.array(z.number().int().min(256).max(8192)).min(1).max(4).default([1024, 2048]),
   /** Where the figure's files are kept for serving (the textures made smaller, compressed copies). */
   figure_cache: z.string().default("data/room/figure"),
+  /**
+   * A picture that stands behind her in the room: one image file (`.webp`, `.png`, `.jpg`, `.jpeg`
+   * or `.avif`, up to 12 MB), served as it is. Empty: none, and the page draws its own backdrop.
+   */
+  backdrop: z.string().default(""),
 });
 export type RoomConfig = z.output<typeof RoomConfigSchema>;
 

@@ -4,7 +4,12 @@
 // figure). Every one of them takes the session's account as the only "who", and ids only of
 // that account's own things.
 
-import { ROOM_FIGURE_PATH, ROOM_LINE_ID, type RoomEvent } from "@miyoria/contracts/api";
+import {
+  ROOM_BACKDROP_PATH,
+  ROOM_FIGURE_PATH,
+  ROOM_LINE_ID,
+  type RoomEvent,
+} from "@miyoria/contracts/api";
 import { type AccountRef, accountRefString, sniffImage } from "@miyoria/types";
 import { withEventMeta } from "@orpc/server";
 import { os } from "../contract.js";
@@ -289,6 +294,19 @@ async function figureFile(state: ApiState, c: ApiContext): Promise<Response> {
   return figure.file(param(c, "name"), c.req.header("accept-encoding"));
 }
 
+/**
+ * `GET /api/member/room/backdrop/{name}`: the backdrop picture under its current name, for someone
+ * the room is open to; on the figure's window (one picture, a year in the browser).
+ */
+async function backdropFile(state: ApiState, c: ApiContext): Promise<Response> {
+  const room = roomOf(state);
+  const wait = room.figureFiles.hit(accountRefString(accountOf(c)), state.now());
+  if (wait !== null) throw roomTooMany(wait);
+  const who = await roomWho(state, accountOf(c));
+  if (!room.backdrop || !who.open || who.blocked) throw ApiError.notFound(ROOM_TEXT.notFound);
+  return room.backdrop.file(param(c, "name"));
+}
+
 /** The room's member routes that are not on the route table; none while the room is off. */
 export function roomRoutes(state: ApiState): Route[] {
   if (!state.publicSide.config.enabled || state.room === null || state.room === undefined) {
@@ -300,6 +318,11 @@ export function roomRoutes(state: ApiState): Route[] {
     { method: "GET", path: "/api/member/room/files/:id/:n", handler: (c) => file(state, c) },
     { method: "GET", path: ROOM_FIGURE_PATH, handler: (c) => figureManifest(state, c) },
     { method: "GET", path: `${ROOM_FIGURE_PATH}/:name`, handler: (c) => figureFile(state, c) },
+    {
+      method: "GET",
+      path: `${ROOM_BACKDROP_PATH}/:name`,
+      handler: (c) => backdropFile(state, c),
+    },
   ];
   return routes.map((r) => ({ ...r, member: true }));
 }

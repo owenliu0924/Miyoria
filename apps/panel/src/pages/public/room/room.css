@@ -124,9 +124,118 @@
      focusing the capsule slid the whole stage up under the header. */
   overflow: clip;
   min-height: 0;
+  background: var(--background);
+}
+
+/* What stands behind her (`Backdrop.tsx`): a wall with a window's light on it, in the colour of the
+   member's hour, or the owner's picture over it. All of it stays dark: she is the bright thing. */
+.hr-backdrop {
+  --wall-top: #161b2a;
+  --wall-low: #0e111b;
+  --glow: rgba(120, 140, 210, 0.13);
+  --pane: rgba(150, 172, 255, 0.22);
+  --floor: #090b10;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.hr-backdrop[data-light="dawn"] {
+  --wall-top: #1a1820;
+  --wall-low: #100f16;
+  --glow: rgba(255, 190, 160, 0.1);
+  --pane: rgba(255, 204, 170, 0.24);
+}
+.hr-backdrop[data-light="day"] {
+  --wall-top: #181c29;
+  --wall-low: #0f121b;
+  --glow: rgba(170, 190, 240, 0.14);
+  --pane: rgba(214, 226, 255, 0.26);
+}
+.hr-backdrop[data-light="dusk"] {
+  --wall-top: #1b171d;
+  --wall-low: #100e14;
+  --glow: rgba(255, 160, 110, 0.1);
+  --pane: rgba(255, 170, 104, 0.28);
+}
+.hr-wall {
+  position: absolute;
+  inset: 0;
   background:
-    radial-gradient(60% 55% at 50% 36%, rgba(120, 140, 210, 0.08), transparent 72%),
-    linear-gradient(180deg, #10131c 0%, var(--background) 100%);
+    radial-gradient(58% 52% at 50% 34%, var(--glow), transparent 74%),
+    linear-gradient(180deg, var(--wall-top) 0%, var(--wall-low) 74%);
+  transition: opacity 0.6s var(--ease-out);
+}
+/* The window's light on the wall behind her left shoulder: four panes, slanted as light falls,
+   soft at the edges. It drifts a few pixels, slowly, as light through a curtain does. */
+.hr-window {
+  position: absolute;
+  left: 50%;
+  top: 9%;
+  width: min(42vh, 34%);
+  aspect-ratio: 0.82;
+  translate: 46% 0;
+  transform: skew(-13deg, 5deg);
+  transform-origin: 0 0;
+  background:
+    linear-gradient(90deg, transparent 47.5%, var(--wall-top) 47.5% 52.5%, transparent 52.5%),
+    linear-gradient(180deg, transparent 48%, var(--wall-top) 48% 52%, transparent 52%),
+    linear-gradient(200deg, var(--pane), transparent 92%);
+  filter: blur(14px);
+  -webkit-mask-image: linear-gradient(180deg, #000 30%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 30%, transparent 100%);
+  animation: hr-window-drift 46s ease-in-out infinite alternate;
+}
+@keyframes hr-window-drift {
+  from {
+    translate: 46% 0;
+    opacity: 0.86;
+  }
+  to {
+    translate: 49% 1.2%;
+    opacity: 1;
+  }
+}
+/* Where the wall meets the floor: a line of shade, and the floor falling away under it. */
+.hr-floor {
+  position: absolute;
+  inset: 74% 0 0 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.34), transparent 22px),
+    linear-gradient(180deg, color-mix(in srgb, var(--wall-low) 70%, var(--floor)), var(--floor) 70%);
+}
+.hr-picture {
+  position: absolute;
+  inset: -2%;
+  width: 104%;
+  max-width: none;
+  height: 104%;
+  object-fit: cover;
+  object-position: 50% 40%;
+  filter: blur(2px) brightness(0.58) saturate(0.9);
+  opacity: 0;
+  transition: opacity 0.6s var(--ease-out);
+  user-select: none;
+}
+.hr-picture[data-shown] {
+  opacity: 1;
+}
+/* The picture's edges fall off toward the page's own dark, so the top bar and the dock sit on it. */
+.hr-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(11, 13, 18, 0.5), transparent 20%),
+    radial-gradient(120% 90% at 50% 38%, transparent 46%, rgba(11, 13, 18, 0.62) 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .hr-window {
+    animation: none;
+  }
+  .hr-wall,
+  .hr-picture {
+    transition: none;
+  }
 }
 .hr-figure {
   position: absolute;

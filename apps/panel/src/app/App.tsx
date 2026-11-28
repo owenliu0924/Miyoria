@@ -1,6 +1,17 @@
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { createBrowserHistory, type RouterHistory } from "@tanstack/react-router";
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  type ComponentProps,
+  type ComponentType,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { describeError, isApiError } from "@/api/http";
 import type { AuthMethods } from "@miyoria/contracts/api";
 import { Button } from "@/components/ui/button";
@@ -9,14 +20,20 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { TokenGate } from "@/pages/login/TokenGate";
 import { CardVerify, cardSerialIn } from "@/pages/public/CardVerify";
 import { FrontPage } from "@/pages/public/landing/front";
-import { isOwnPath, OWN_PATH } from "@/pages/public/member-tabs";
+import { OWN_PATH } from "@/pages/public/member-tabs";
 import { PublicSite } from "@/pages/public/PublicSite";
-import { isKaraokePath } from "@/pages/public/karaoke/path";
-import { isLivePath, LivePage } from "@/pages/public/live/LivePage";
-import { isRoomPath } from "@/pages/public/room/path";
+import { LivePage } from "@/pages/public/live/LivePage";
 import { Backdrop } from "./Backdrop";
 import { ConnectionProvider, useConnection } from "./connection";
 import { PushProvider } from "./push";
+import {
+  type AppView,
+  appViewOf,
+  type HistoryAction,
+  isAppPageChange,
+  opensInApp,
+  startPageTransition,
+} from "./page-transition";
 import { createQueryClient } from "./query-client";
 import type { AppRouter } from "./router";
 import { type AuthState, checkVisitor, rememberVisitor, type Visitor } from "./visitor";
@@ -34,7 +51,38 @@ import {
 const KaraokePage = lazy(() => import("@/pages/public/karaoke/KaraokePage"));
 
 /** Her room (`/her`): a member alone with her, loaded when opened. */
-const RoomPage = lazy(() => import("@/pages/public/room/RoomPage"));
+const loadRoom = () => import("@/pages/public/room/RoomPage");
+const LazyRoom = lazy(loadRoom);
+type RoomProps = ComponentProps<typeof LazyRoom>;
+
+let roomReady: ComponentType<RoomProps> | undefined;
+let roomPending: Promise<void> | undefined;
+
+/**
+ * Fetches her room before a link opens it, so the page transition fades to the room itself rather
+ * than to the empty frame of `Suspense`.
+ */
+function preloadRoom(): Promise<void> {
+  roomPending ??= loadRoom().then(
+    (m) => {
+      roomReady = m.default;
+    },
+    (error: unknown) => {
+      roomPending = undefined;
+      throw error;
+    },
+  );
+  return roomPending;
+}
+
+/** The room, drawn at once when it was fetched. Read once per mount, so it never remounts. */
+function RoomPage(props: RoomProps) {
+  const [Ready] = useState(() => roomReady);
+  return Ready ? <Ready {...props} /> : <LazyRoom {...props} />;
+}
+
+/** The title `index.html` came with; a page that sets none of its own shows it. */
+const FIRST_TITLE = typeof document === "undefined" ? "" : document.title;
 
 /** The admin panel (shell, router, pages, event stream): only an admin downloads it. */
 const AdminApp = lazy(() => import("./AdminApp"));
@@ -46,6 +94,42 @@ export const OWN_PAGE = OWN_PATH;
 function pathOf(history: RouterHistory): string {
   const { pathname, search } = history.location;
   return `${pathname || "/"}${search}`;
+}
+
+/**
+ * The address the page shows. It follows the history; a change of page `App` draws itself
+ * (`isAppPageChange`) is shown inside a page transition, so the old page stays on screen until
+ * the browser has its picture. `onPage(action)` runs for each such change, before it is shown.
+ */
+function useShownPath(history: RouterHistory, viewOf: (path: string) => AppView, onPage: (action: HistoryAction) => void) {
+  const [path, setPath] = useState(() => pathOf(history));
+  const shown = useRef(path);
+  const latest = useRef({ viewOf, onPage });
+  latest.current = { viewOf, onPage };
+
+  useEffect(() => {
+    const show = (next: string) => {
+      shown.current = next;
+      setPath(next);
+    };
+    // Whatever moved between the first render and this subscription.
+    if (pathOf(history) !== shown.current) show(pathOf(history));
+    return history.subscribe(({ action }) => {
+      const from = shown.current;
+      const to = pathOf(history);
+      if (to === from) return;
+      const { viewOf: view, onPage: page } = latest.current;
+      if (!isAppPageChange(action.type, { path: from, view: view(from) }, { path: to, view: view(to) })) {
+        show(to);
+        return;
+      }
+      page(action.type);
+      // The newest address when the update runs: a quicker second click skips this one.
+      startPageTransition(() => show(pathOf(history)));
+    });
+  }, [history]);
+
+  return path;
 }
 
 function OwnPage({
@@ -84,12 +168,66 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   const [methods, setMethods] = useState<AuthMethods | null>(() => initial?.methods ?? null);
   // Already asked (by the landing page that handed over): the first check is not needed.
   const asked = useRef(initial !== undefined);
-  const path = useSyncExternalStore(history.subscribe, () => pathOf(history));
   const [tokenLogin, setTokenLogin] = useState(() => wantsTokenLogin(pathOf(history)));
   const [loginError, setLoginError] = useState<string | null>(() => loginErrorIn(pathOf(history)));
   const [recheck, setRecheck] = useState(0);
   const authRef = useRef(auth);
   authRef.current = auth;
+  const tokenLoginRef = useRef(tokenLogin);
+  tokenLoginRef.current = tokenLogin;
+  const viewOf = useCallback((p: string) => appViewOf(p, authRef.current, tokenLoginRef.current), []);
+
+  // A new page pushed starts at its top, as a loaded one does (the member area's tabs too).
+  const toTop = useRef(false);
+  const path = useShownPath(history, viewOf, (action) => {
+    if (action === "PUSH") toTop.current = true;
+  });
+  const view = appViewOf(path, auth, tokenLogin);
+
+  useLayoutEffect(() => {
+    if (!toTop.current) return;
+    toTop.current = false;
+    if (window.scrollY > 0) window.scrollTo({ top: 0 });
+  }, [path]);
+
+  // Only the member area and the panel name the tab after their page; the others keep the site's.
+  const firstView = useRef(true);
+  useLayoutEffect(() => {
+    if (firstView.current) {
+      firstView.current = false;
+      return;
+    }
+    if (FIRST_TITLE !== "") document.title = FIRST_TITLE;
+  }, [view]);
+
+  // A link between her pages that `App` can draw from what it knows opens in the page, so the
+  // page transition goes from one page to the other (`opensInApp`). Anything else loads as before.
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = e.target instanceof Element ? e.target.closest("a[href]") : null;
+      if (!(link instanceof HTMLAnchorElement) || link.hasAttribute("download")) return;
+      if (link.target !== "" && link.target !== "_self") return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      const from = pathOf(history);
+      const to = `${url.pathname}${url.search}${url.hash}`;
+      const toView = viewOf(to);
+      if (!opensInApp({ path: from, view: viewOf(from) }, { path: to, view: toView })) return;
+      e.preventDefault();
+      if (toView !== "her") {
+        history.push(to);
+        return;
+      }
+      // Her room is a chunk of its own: fetched first, or the page loads as before if it cannot be.
+      preloadRoom().then(
+        () => history.push(to),
+        () => window.location.assign(to),
+      );
+    };
+    document.addEventListener("click", onClick);
+    return () => document.removeEventListener("click", onClick);
+  }, [history, viewOf]);
 
   // Any 401 means the token changed or the session ended: back to the login screen.
   const [queryClient] = useState(() =>
@@ -170,9 +308,13 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     [auth, logout],
   );
 
+  // Which page: `appViewOf`, the one place that reads it from the address (page transitions too).
+  const discordAdmin = auth.status === "signed_in" && auth.session.method === "discord";
+  const member = auth.status === "public" ? auth.member : null;
+
   // A card's code leads here; anyone may check one, logged in or not.
   const serial = cardSerialIn(path);
-  if (serial !== null) {
+  if (view === "card" && serial !== null) {
     return (
       <QueryClientProvider client={queryClient}>
         <CardVerify serial={serial} />
@@ -181,7 +323,7 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   }
 
   // Her live page; anyone may watch, logged in or not.
-  if (isLivePath(path)) {
+  if (view === "watch") {
     return (
       <QueryClientProvider client={queryClient}>
         {/* Only a member's danmaku is pushed there (her state has its own live feed). */}
@@ -192,15 +334,13 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     );
   }
 
-  if (auth.status === "checking") {
+  if (view === "checking") {
     return <div className="min-h-svh" aria-busy="true" aria-label="確認登入狀態中" />;
   }
 
   // Singing, for someone logged in with Discord: a member, or an admin as a member. Anyone else
   // gets what `/` would show.
-  const discordAdmin = auth.status === "signed_in" && auth.session.method === "discord";
-  const member = auth.status === "public" ? auth.member : null;
-  if (isKaraokePath(path) && (member !== null || discordAdmin)) {
+  if (view === "karaoke") {
     return (
       <QueryClientProvider client={queryClient}>
         <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
@@ -213,7 +353,7 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   }
 
   // Her room, for the same people as singing; anyone else gets what `/` would show.
-  if (isRoomPath(path) && (member !== null || discordAdmin)) {
+  if (view === "her") {
     return (
       <QueryClientProvider client={queryClient}>
         <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
@@ -224,7 +364,7 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   }
 
   // An admin who logged in with Discord is a member too, with a page of their own.
-  if (auth.status === "signed_in" && auth.session.method === "discord" && isOwnPath(path)) {
+  if (view === "own") {
     return (
       <QueryClientProvider client={queryClient}>
         <PushProvider audience="member">
@@ -234,12 +374,12 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     );
   }
 
-  if (auth.status === "public" && auth.member !== null && !tokenLogin) {
+  if (view === "member" && member !== null) {
     return (
       <QueryClientProvider client={queryClient}>
         <PushProvider audience="member">
           <PublicSite
-            member={auth.member}
+            member={member}
             notice={loginError === null ? null : loginErrorMessage(loginError)}
             onLogout={logout}
             path={path}
@@ -251,7 +391,7 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
   }
 
   // Anyone else at the door sees her tank; the token form stays at `/login` for the owner.
-  if (auth.status === "public" && !tokenLogin) {
+  if (view === "front") {
     return (
       <QueryClientProvider client={queryClient}>
         <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
@@ -266,7 +406,7 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     );
   }
 
-  if (auth.status === "signed_out" || auth.status === "public" || !sessionValue) {
+  if (view === "token" || !sessionValue) {
     return (
       <TokenGate
         rejected={auth.status === "signed_out" && auth.reason === "rejected"}

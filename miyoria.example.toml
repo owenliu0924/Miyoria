@@ -312,6 +312,7 @@ token = "${MIYORIA_API_TOKEN:-}"
 # figure_model = ""                # 空 = 用 [modules.cards] portrait_model
 # figure_textures = [1024, 2048]   # 給瀏覽器的貼圖大小(最長邊 px),頁面依螢幕挑;和模型原本一樣大就給原檔
 # figure_cache = "data/room/figure"  # 縮小的貼圖和壓縮過的檔案放這裡
+# backdrop = ""                  # 站在她身後的一張圖(.webp、.png、.jpg、.jpeg、.avif,12 MB 內),路徑相對於 Core 的工作資料夾;空 = 沒有,頁面畫自己的背景
 
 # 她做的檔案的下載連結(https://<檔案網域>/f/<token>)。檔案網域要是自己的主機名(例如 files.example.com,
 # 不能和網站同一個),在 Cloudflare tunnel 指到下面的 bind。origin 留空 = 不發連結,附件照常能傳。

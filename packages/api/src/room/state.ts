@@ -164,6 +164,7 @@ export function roomStateOf(state: ApiState, room: Room, who: RoomWho): RoomStat
     },
     // The model's files only for someone the room is open to (a stranger sees the loops).
     figure: who.open && !who.blocked ? (room.figure?.state() ?? null) : null,
+    backdrop: who.open && !who.blocked ? (room.backdrop?.state() ?? null) : null,
   };
 }
 

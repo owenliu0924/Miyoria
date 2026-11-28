@@ -1,6 +1,7 @@
 // What a running `api` module keeps of her room (docs/design/her-room.md §6 "記憶體裡"): the hubs,
 // the uploads, the voice cache and the counters. All of it is memory only and may be lost.
 
+import type { RoomBackdrop } from "./backdrop.js";
 import { RoomChannel } from "./channel.js";
 import type { RoomConfig } from "./config.js";
 import { roomBytes } from "./config.js";
@@ -32,6 +33,8 @@ export class Room {
   readonly figureFiles = new Window(FIGURE_FILES_PER_HOUR, HOUR);
   /** Her Live2D figure (`figure.ts`); `null`: the page shows the recorded loops. */
   figure: RoomFigure | null = null;
+  /** The picture behind her (`backdrop.ts`); `null`: the page draws its own backdrop. */
+  backdrop: RoomBackdrop | null = null;
   /** Lines synthesized at once: one per account, two in all. */
   readonly speaking = new Slots(1, 2);
 

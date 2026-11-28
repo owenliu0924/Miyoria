@@ -31,6 +31,7 @@ import { AppearancePopover } from "./AppearancePopover";
 import { useConnection } from "./connection";
 import { useEvents } from "./events-store";
 import { groupFor, isActive, NAV, NAV_GROUPS, titleFor } from "./nav";
+import { startPageTransition } from "./page-transition";
 import { useHealth, useMind, useRunningProfile, useStage, useWorld } from "./queries";
 import { READ_ONLY_HINT, useSession } from "./session";
 import { useAdminSpace } from "./space";
@@ -130,7 +131,7 @@ function SessionFooter() {
               // Their own page is outside the admin routes; App switches to it on the new address.
               if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
               e.preventDefault();
-              router.history.push("/me");
+              startPageTransition(() => router.history.push("/me"));
             }}
           >
             <IdCard />

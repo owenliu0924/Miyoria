@@ -26,6 +26,7 @@ import {
   SYSTEM_TABS,
   type SystemTab,
 } from "./nav";
+import { routerPageTransition } from "./page-transition";
 import { Shell } from "./Shell";
 
 const rootRoute = createRootRoute({ component: Shell, notFoundComponent: NotFoundPage });
@@ -211,7 +212,14 @@ const routeTree = rootRoute.addChildren([
  * extension with `index.html` (`packages/api/src/panel.ts`).
  */
 export function createAppRouter(history: RouterHistory = createBrowserHistory()) {
-  return createRouter({ routeTree, history, defaultPreload: false, scrollRestoration: true });
+  return createRouter({
+    routeTree,
+    history,
+    defaultPreload: false,
+    scrollRestoration: true,
+    // A short cross-fade when the page changes; tabs and other search changes stay instant.
+    defaultViewTransition: routerPageTransition(),
+  });
 }
 
 export type AppRouter = ReturnType<typeof createAppRouter>;

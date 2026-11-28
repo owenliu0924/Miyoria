@@ -40,6 +40,8 @@ const gz = promisify(gzip);
 /** The card studio's figure build and Live2D's Core, relative to the studio's folder. */
 export const FIGURE_BUNDLE = "dist/figure/figure.js";
 export const FIGURE_CORE = "vendor/live2dcubismcore.min.js";
+/** The figure's engine as a worker script, built beside the bundle; a build without it still draws. */
+export const FIGURE_WORKER = "dist/figure/figure-worker.js";
 
 /** What the page loads to draw her (the card studio's `FigureManifest`, `src/figure.ts`). */
 export interface FigureManifest {
@@ -47,6 +49,8 @@ export interface FigureManifest {
   /** The bundle to `import()`; its `mount` draws her. */
   bundle: string;
   core: string;
+  /** The engine as a classic worker script, so her frames are drawn off the page's thread. */
+  worker: string | null;
   moc: string;
   physics: string | null;
   idle: string | null;
@@ -93,9 +97,9 @@ export interface FigureOptions {
 
 /** A file name the routes may serve: `<kind>-<hash>[-<size>].<ext>`, nothing else. */
 const SERVED_NAME =
-  /^(?:figure|core|moc|physics|idle|tex)-[0-9a-f]{20}(?:-\d{2,4})?\.(?:js|json|moc3|png|webp)$/;
+  /^(?:figure|worker|core|moc|physics|idle|tex)-[0-9a-f]{20}(?:-\d{2,4})?\.(?:js|json|moc3|png|webp)$/;
 /** A file of ours in the cache folder (anything else there is left alone). */
-const OURS = /^(?:figure|core|moc|physics|idle|tex)-[0-9a-f]{20}/;
+const OURS = /^(?:figure|worker|core|moc|physics|idle|tex)-[0-9a-f]{20}/;
 
 const TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
@@ -408,6 +412,8 @@ export async function prepareFigure(
   };
   const bundleUrl = await put("figure", bundle, ".js", true);
   const coreUrl = await put("core", core, ".js", true);
+  const worker = join(options.studio, FIGURE_WORKER);
+  const workerUrl = (await exists(worker)) ? await put("worker", worker, ".js", true) : null;
   const mocUrl = await put("moc", plan.moc, ".moc3", true);
   const physicsUrl =
     plan.physics === null ? null : await put("physics", plan.physics, ".json", true);
@@ -431,6 +437,7 @@ export async function prepareFigure(
     version: 1,
     bundle: bundleUrl,
     core: coreUrl,
+    worker: workerUrl,
     moc: mocUrl,
     physics: physicsUrl,
     idle: idleUrl,
@@ -605,6 +612,7 @@ export class RoomFigure {
     const paths = [
       join(this.#o.studio, FIGURE_BUNDLE),
       join(this.#o.studio, FIGURE_CORE),
+      join(this.#o.studio, FIGURE_WORKER),
       this.#o.model,
     ];
     const parts = await Promise.all(

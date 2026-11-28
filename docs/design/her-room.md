@@ -552,6 +552,7 @@ oRPC 的 `eventIterator`(和 `push.member` 同樣的殼:`HEAD` 不開訂閱、`n
 # figure_model = ""                # 空 = 用 [modules.cards] portrait_model
 # figure_textures = [1024, 2048]   # 給瀏覽器的貼圖大小(最長邊 px),頁面依螢幕挑;和模型原本一樣大就給原檔
 # figure_cache = "data/room/figure"  # 縮小的貼圖和壓縮過的檔案放這裡
+# backdrop = ""                  # 站在她身後的一張圖(.webp、.png、.jpg、.jpeg、.avif,12 MB 內);空 = 沒有
 ```
 
 ## 7. 分工
@@ -713,7 +714,7 @@ owner 決定直接在會員的瀏覽器跑她真的 Live2D 模型(DeepSeek-chan,
 
 **三塊:**
 
-- **身影的 bundle**:`tools/card-studio/src/figure.ts`,`vite.figure.config.ts` 建成 `dist/figure/figure.js`(一個 ES module,Live2D 的 Web Framework 打包在裡面,Cubism Core 不在)。`mount(canvas, { manifest, size, reduced, frame }) → { setMood, setState, speak, lookAt, resize, stats, destroy }`。做的事:模型自己的待機動作(`IDLE.motion3.json`,VTube Studio 的 `IdleAnimation`)循環、呼吸和輕微擺動、眨眼、物理(頭髮、裙子、尾巴)、眼睛和頭輕輕跟著游標或觸控(四秒沒動就回正)、每個表情之間 0.45 秒淡入淡出、嘴巴跟著她聲音的音量;裝置像素比最多 2、長邊最多 2560 px;分頁藏起來就停;`prefers-reduced-motion` 時不動只眨眼;WebGL context 掉了會在瀏覽器還回來時重建。這個模型很重(Core 自己的 `csmUpdateModel` 在桌機一格就要約 6 ms),所以她照裝置跟得上的速度畫,60、30 或 20 格一秒,其他格不動。
+- **身影的 bundle**:`tools/card-studio/src/figure.ts`,`vite.figure.config.ts` 建成 `dist/figure/figure.js`(一個 ES module,Live2D 的 Web Framework 打包在裡面,Cubism Core 不在)。`mount(canvas, { manifest, size, reduced, frame }) → { setMood, setState, speak, lookAt, resize, stats, destroy }`。做的事:模型自己的待機動作(`IDLE.motion3.json`,VTube Studio 的 `IdleAnimation`)循環、呼吸和輕微擺動、眨眼、物理(頭髮、裙子、尾巴)、眼睛和頭輕輕跟著游標或觸控(四秒沒動就回正)、每個表情之間 0.45 秒淡入淡出、嘴巴跟著她聲音的音量;裝置像素比最多 2、長邊最多 2560 px;分頁藏起來就停;`prefers-reduced-motion` 時不動只眨眼;WebGL context 掉了會在瀏覽器還回來時重建。這個模型很重(桌機一格約 10 ms:Core 自己的 `csmUpdateModel` 約 6 ms、畫約 3 ms、物理約 1.4 ms)。**所以她在 worker 裡畫**(2026-11-28 改;第一版在主執行緒上自己限制成 30 或 20 格,owner 說不順):`figure-engine.ts` 是不碰頁面的引擎,`figure-worker.ts` 建成另一支傳統 worker 腳本 `dist/figure/figure-worker.js`(manifest 的 `worker`),頁面把 canvas 交給它(`transferControlToOffscreen`);Cubism Core 在 worker 裡用 `importScripts` 載(頁面的 CSP 沒有 `eval`),它的 WebAssembly 要等一下才好。worker 先回答自己能不能畫(有 `requestAnimationFrame`、`OffscreenCanvas` 的 WebGL),不能或沒有 worker 檔就照舊在主執行緒畫。格數:她每隔幾個螢幕的更新畫一次,取放得進她那一格工作的最小間隔(worker 可以用到九成、主執行緒七成),最多約每秒 75 格、最少 20 格;在 75 Hz 的螢幕上實測 worker 是 75 格、頁面自己的 75 格不受影響,主執行緒是 38 格。
 - **Core 端**:`packages/api/src/room/figure.ts`(`RoomFigure`)、`figure-faces.ts`(表情表)。啟動時在背景準備一次:讀 `.model3.json` 和它指到的檔(moc、貼圖、物理、display info),待機動作從旁邊同名的 `.vtube.json` 讀,表情檔照 VTube Studio 的找法在資料夾裡按檔名找;只收資料夾裡面、副檔名對的檔(路徑往外爬、符號連結指出去、種類不對都拒絕)。要給頁面的檔複製到 `figure_cache`,用內容的 hash 命名:moc、物理、待機動作、bundle、Core(各另存 Brotli 和 gzip),貼圖按 `figure_textures` 縮成 WebP(q90,alpha 100;同一組裡每張貼圖用同一個比例縮,細節一致)。表情檔不給頁面,參數在 Core 讀好直接寫進 manifest。大約一分鐘看一次 bundle、Core、模型有沒有換,換了就重新準備(不用重開)。
 - **頁面**:`live2d.ts`、`FigureView.tsx`。房間狀態多了選填的 `figure: { manifest } | null`(`RoomStateSchema`),有才用 Live2D。第一次畫完之後(rAF + idle)才去拿 manifest、`import()` bundle,canvas 疊在錄影上,畫好 0.6 秒交叉淡入,然後把錄影收掉;中間任何一步失敗就移掉 canvas,錄影照舊(只在 console 的 debug 層留一句)。`?room-demo` 沒有 `figure`,照舊是錄影。
 
