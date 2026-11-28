@@ -460,7 +460,11 @@
   transition: none;
 }
 .hr-you {
-  margin: 0 0 6px;
+  /* The line is cut with an ellipsis, and what cuts it would cut its shadow to a box too: the
+     padding leaves the shadow room, and the margins take that room back. */
+  box-sizing: content-box;
+  padding: 16px 20px;
+  margin: -16px -20px -10px;
   text-align: center;
   font-size: 13px;
   white-space: nowrap;
@@ -472,9 +476,10 @@
   color: var(--soft);
   text-shadow:
     0 1px 2px rgba(0, 0, 0, 0.95),
-    0 0 5px rgba(0, 0, 0, 0.9),
-    0 0 10px rgba(0, 0, 0, 0.8),
-    0 0 18px rgba(0, 0, 0, 0.6);
+    0 0 4px rgba(0, 0, 0, 0.85),
+    0 0 8px rgba(0, 0, 0, 0.7),
+    0 0 14px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 .hr-you[data-show] {
   opacity: 1;
