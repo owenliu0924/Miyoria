@@ -463,7 +463,9 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
   // The dock's height, so the panel on a phone stays clear of it.
   const root = useRef<HTMLDivElement>(null);
   // A phone's keyboard: it is laid over the page instead of resizing it (she and the backdrop would
-  // be drawn again at another size, and jump), and the dock alone rides above it by `--kb`.
+  // be drawn again at another size, and jump), and the dock alone rides above it by `--kb`. The
+  // browser may also slide the page up to show the field it focused (`offsetTop`); the room slides
+  // back by the same amount (`--vv-top`), in the same frame, so the two never add up into a bounce.
   useEffect(() => {
     const el = root.current;
     const vv = window.visualViewport;
@@ -472,16 +474,24 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
     if (meta && before !== null && !before.includes("interactive-widget")) {
       meta.setAttribute("content", `${before}, interactive-widget=resizes-visual`);
     }
-    const update = () => {
+    let frame = 0;
+    const apply = () => {
+      frame = 0;
       if (!el || !vv) return;
-      const covered = document.documentElement.clientHeight - vv.height - vv.offsetTop;
+      const covered = document.documentElement.clientHeight - vv.height;
       // Small differences are the browser's own bars coming and going, not a keyboard.
-      el.style.setProperty("--kb", `${covered > 80 ? Math.round(covered) : 0}px`);
+      const kb = covered > 80 ? Math.round(covered) : 0;
+      el.style.setProperty("--kb", `${kb}px`);
+      el.style.setProperty("--vv-top", `${kb > 0 ? Math.max(0, Math.round(vv.offsetTop)) : 0}px`);
+    };
+    const update = () => {
+      if (frame === 0) frame = requestAnimationFrame(apply);
     };
     vv?.addEventListener("resize", update);
     vv?.addEventListener("scroll", update);
-    update();
+    apply();
     return () => {
+      if (frame !== 0) cancelAnimationFrame(frame);
       vv?.removeEventListener("resize", update);
       vv?.removeEventListener("scroll", update);
       if (meta && before !== null) meta.setAttribute("content", before);
