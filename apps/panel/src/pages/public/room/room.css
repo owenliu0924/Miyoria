@@ -211,7 +211,7 @@
   height: 104%;
   object-fit: cover;
   object-position: 50% 40%;
-  filter: blur(2px) brightness(0.58) saturate(0.9);
+  filter: blur(3px) brightness(0.8) saturate(0.96);
   opacity: 0;
   transition: opacity 0.6s var(--ease-out);
   user-select: none;
@@ -278,16 +278,6 @@
     transition: none;
   }
 }
-.hr-stage::after {
-  content: "";
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 40%;
-  pointer-events: none;
-  z-index: 1;
-  background: linear-gradient(180deg, transparent, rgba(11, 13, 18, 0.5) 45%, rgba(11, 13, 18, 0.8));
-}
-
 /* The one status line: top left. */
 .hr-status {
   position: absolute;
@@ -463,34 +453,33 @@
   user-select: text;
   -webkit-user-select: text;
 }
-/* The text band: full width, fading in over 64 px above the member's line (the mock measured
-   about 7:1 for that line and 14:1 for hers over the brightest part of her). */
-.hr-dock::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  pointer-events: none;
-  left: calc(50% - 50vw);
-  width: 100vw;
-  top: -64px;
-  bottom: -40px;
-  background: linear-gradient(180deg, rgba(11, 13, 18, 0), rgba(11, 13, 18, 0.86) 64px, rgba(11, 13, 18, 0.9));
-}
+/* Nothing is shaded behind the dock: what is behind her stays as it is to the bottom edge. Her
+   line and the member's are plain text with a dark, spread shadow of their own and nothing behind
+   them (the owner's choice: a band, a plate, a pool of shade and an outline were all tried). */
 .hr-dock[data-dragging] {
   transition: none;
 }
 .hr-you {
-  margin: 0 0 6px;
+  /* The line is cut with an ellipsis, and what cuts it would cut its shadow to a box too: the
+     padding leaves the shadow room, and the margins take that room back. */
+  box-sizing: content-box;
+  padding: 16px 20px;
+  margin: -16px -20px -10px;
   text-align: center;
   font-size: 13px;
-  color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-height: 20px;
   opacity: 0;
   transition: opacity 1.2s var(--ease-out);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  color: var(--soft);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 4px rgba(0, 0, 0, 0.85),
+    0 0 8px rgba(0, 0, 0, 0.7),
+    0 0 14px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
 }
 .hr-you[data-show] {
   opacity: 1;
@@ -513,7 +502,11 @@
   line-height: 1.65;
   font-weight: 500;
   text-wrap: balance;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 0 12px rgba(0, 0, 0, 0.8),
+    0 0 22px rgba(0, 0, 0, 0.6);
   overflow-wrap: anywhere;
 }
 .hr-her[data-more] {
