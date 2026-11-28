@@ -252,11 +252,13 @@ export class Job {
     this.touchedAt = this.ctx.clock.now();
   }
 
-  /** Something ran or moved: the idle clock starts again. */
+  /**
+   * Something ran or moved: the idle clock starts again. Never the lease: what the program in the
+   * container prints would otherwise keep a job alive whose Core is gone (§3.5: only Core's own
+   * requests renew it, through `touch`, which every request naming the job makes).
+   */
   used(): void {
-    const now = this.ctx.clock.now();
-    this.lastUsedAt = now;
-    this.touchedAt = now;
+    this.lastUsedAt = this.ctx.clock.now();
   }
 
   expiresAt(): number {

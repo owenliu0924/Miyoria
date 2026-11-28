@@ -743,6 +743,28 @@ describe("sandbox service: lifetimes, restarts and events", () => {
     expect(closed.json.ended.reason).toBe("closed");
   });
 
+  it("what a program prints does not renew the lease, only Core's requests do", async () => {
+    h = await harness();
+    const job = await open({
+      kind: "plugin",
+      for: "owner",
+      lifetime_s: 0,
+      lease_s: 60,
+      mounts: { tools: false, ext: true },
+    });
+    const proc = nextId();
+    await h.call("PUT", `/v1/jobs/${job}/procs/${proc}`, { argv: ["node", "/ext/index.mjs"] });
+    h.now.t += 50_000;
+    // Core is gone; the program keeps printing.
+    h.spawner.procs[0]?.stdout.write(Buffer.from("still here"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    h.now.t += 20_000;
+    await h.service.sweep();
+    const gone = await h.call("GET", `/v1/jobs/${job}`);
+    expect(gone.status).toBe(410);
+    expect(gone.json.error.ended.reason).toBe("lease");
+  });
+
   it("closes a member's job when the owner stops taking members", async () => {
     h = await harness({ hostToml: "members = true\n" });
     const job = await open({ for: "member", payer: "0123456789abcdef" });
