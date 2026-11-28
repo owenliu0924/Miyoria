@@ -87,7 +87,7 @@ export const RoomStateSchema = z
     }),
     /**
      * Her Live2D figure can be drawn here: its manifest's URL (`ROOM_FIGURE_PATH` with its
-     * version). Absent or `null`: the page shows the recorded loops.
+     * version). Absent or `null`: the page shows no figure.
      */
     figure: z.object({ manifest: z.string() }).nullable().optional(),
     /**

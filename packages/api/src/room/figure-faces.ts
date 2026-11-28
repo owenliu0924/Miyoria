@@ -199,8 +199,8 @@ export const BLINK_DEFAULT = ["ParamEyeLOpen", "ParamEyeROpen"] as const;
 
 /**
  * Her whole figure in model units (the model's canvas is 2 high, y up): from just above her
- * ahoge to just below her soles, as the loops' frames have her, so the page frames her as the
- * loops do (measured against them at 1440 × 900).
+ * ahoge to just below her soles, as the old recorded loops' frames had her (measured against them at
+ * 1440 × 900).
  */
 export const FIGURE_FRAMING = { top: 0.83, bottom: -0.98 } as const;
 

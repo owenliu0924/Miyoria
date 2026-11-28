@@ -31,7 +31,7 @@ export class Room {
   readonly excludes = new Window(FORGETS_PER_HOUR, HOUR);
   readonly voicePerHour: Window;
   readonly figureFiles = new Window(FIGURE_FILES_PER_HOUR, HOUR);
-  /** Her Live2D figure (`figure.ts`); `null`: the page shows the recorded loops. */
+  /** Her Live2D figure (`figure.ts`); `null`: the page shows no figure. */
   figure: RoomFigure | null = null;
   /** The picture behind her (`backdrop.ts`); `null`: the page draws its own backdrop. */
   backdrop: RoomBackdrop | null = null;

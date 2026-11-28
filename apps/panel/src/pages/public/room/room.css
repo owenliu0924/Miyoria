@@ -237,26 +237,19 @@
     transition: none;
   }
 }
+/* The stage takes the focus when an overlay closes on a touch screen (never the capsule: the
+   keyboard would come up unasked); it shows no ring for it. */
+.her-room .hr-stage:focus,
+.her-room .hr-stage:focus-visible {
+  outline: none;
+}
 .hr-figure {
   position: absolute;
   inset: 0;
   overflow: hidden;
 }
-.hr-figure video {
-  position: absolute;
-  left: 50%;
-  top: 1%;
-  height: 136%;
-  width: auto;
-  max-width: none;
-  transform: translateX(-50%);
-  transition: opacity 0.32s var(--ease-out);
-}
-.hr-figure video.hr-swap {
-  opacity: 0;
-}
-/* Her Live2D figure (`live2d.ts`): the whole stage, drawn over the loops, which fade out under her
-   once she is drawn (`.hr-live`). Its framing is the loops' own, worked out in the bundle. */
+/* Her Live2D figure (`live2d.ts`): the whole stage, fading in over the backdrop once she is drawn
+   (`.hr-live`). Its framing is worked out in the bundle. */
 .hr-figure canvas.hr-l2d {
   position: absolute;
   inset: 0;
@@ -268,13 +261,8 @@
 .hr-figure.hr-live canvas.hr-l2d {
   opacity: 1;
 }
-.hr-figure.hr-live video {
-  opacity: 0;
-  transition: opacity 0.6s var(--ease-out);
-}
 @media (prefers-reduced-motion: reduce) {
-  .hr-figure canvas.hr-l2d,
-  .hr-figure.hr-live video {
+  .hr-figure canvas.hr-l2d {
     transition: none;
   }
 }
@@ -440,14 +428,22 @@
 .hr-dock {
   position: absolute;
   z-index: 10;
-  left: 50%;
-  bottom: 28px;
-  transform: translateX(-50%);
+  /* Centred on a whole pixel: on half a pixel (an odd width left over, or a transform) the send
+     button's arrow draws off its centre on a scaled display. */
+  left: calc((100% - var(--cap-w)) / 2);
+  bottom: calc(28px + var(--kb, 0px));
   width: var(--cap-w);
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  transition: translate 0.2s var(--ease-out);
+  transition:
+    translate 0.2s var(--ease-out),
+    bottom 0.22s var(--ease-out);
+}
+@supports (left: round(down, 1.5px, 1px)) {
+  .hr-dock {
+    left: round(down, calc((100% - var(--cap-w)) / 2), 1px);
+  }
 }
 .hr-dock textarea {
   user-select: text;
@@ -711,7 +707,8 @@
   align-items: center;
   gap: 2px;
   height: 52px;
-  padding: 0 6px 0 8px;
+  /* 5 px at the send button's end: with the border, the same 6 px as above and below it. */
+  padding: 0 5px 0 8px;
   border-radius: 999px;
   background: var(--capsule);
   -webkit-backdrop-filter: var(--capsule-fx);
@@ -738,6 +735,12 @@
   overflow: hidden;
   white-space: nowrap;
   color: var(--foreground);
+}
+/* A touch screen: 16 px, the size below which iOS zooms the whole page into a focused field. */
+@media (hover: none) and (pointer: coarse) {
+  .hr-capsule textarea {
+    font-size: 16px;
+  }
 }
 .her-room .hr-capsule textarea:focus-visible {
   outline: none;
@@ -1075,10 +1078,6 @@
   .hr-me .hr-name {
     display: none;
   }
-  .hr-figure video {
-    top: 1%;
-    height: 108%;
-  }
   .hr-status {
     left: 16px;
     top: 14px;
@@ -1093,7 +1092,8 @@
     max-width: 52vw;
   }
   .hr-dock {
-    bottom: calc(12px + env(safe-area-inset-bottom));
+    /* Above the keyboard when it is up (`--kb`), above the home bar otherwise. */
+    bottom: calc(12px + max(env(safe-area-inset-bottom), var(--kb, 0px)));
   }
   .hr-her {
     font-size: 16px;

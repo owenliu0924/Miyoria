@@ -12,7 +12,7 @@
 // backups, the icon, the full-size textures), and never anything by a path a request names.
 //
 // The expressions are not files to the page: their parameters are read here and written into the
-// manifest's faces (`figure-faces.ts`). Anything missing leaves the page on the recorded loops; it
+// manifest's faces (`figure-faces.ts`). Anything missing leaves the stage without her; it
 // is said once in the log, as a warning when a model is set and something it needs is not there.
 
 import { createHash } from "node:crypto";
@@ -507,6 +507,7 @@ export class RoomFigure {
 
   /** Makes it ready now (again); resolves when done, never rejects. */
   prepare(): Promise<void> {
+    // `none` and its old name `loops` both mean no figure.
     if (this.#o.config.figure !== "live2d") return Promise.resolve();
     if (this.#working !== null) return this.#working;
     const work = (async () => {
@@ -534,7 +535,7 @@ export class RoomFigure {
         this.#stamp = await this.#stampNow().catch(() => "");
         const level = error instanceof FigureUnavailable ? error.level : "warn";
         const why = error instanceof Error ? error.message : String(error);
-        this.#say(level, `the room shows her recorded loops: ${why}`, {});
+        this.#say(level, `the room shows no figure: ${why}`, {});
       } finally {
         this.#checkedAt = Date.now();
         this.#working = null;
@@ -544,7 +545,7 @@ export class RoomFigure {
     return work;
   }
 
-  /** The room state's `figure`: the manifest's URL with its version, or `null` (the loops). */
+  /** The room state's `figure`: the manifest's URL with its version, or `null` (no figure). */
   state(): { manifest: string } | null {
     this.#recheck();
     const r = this.#ready;

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { RoomDoing, RoomFigureFace } from "@miyoria/contracts/api";
-import { type HerFigure, type Pose, loopFigure } from "./figure";
+import { type HerFigure, type Pose, noFigure } from "./figure";
 import { live2dFigure } from "./live2d";
 
 const reduced = () => typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches === true;
@@ -10,11 +10,11 @@ export interface FigureProps {
   face: RoomFigureFace;
   doing: RoomDoing | "still";
   speaking: boolean;
-  /** Her Live2D figure's manifest when the Core serves it (`state.figure`); `null`: the loops. */
+  /** Her Live2D figure's manifest when the Core serves it (`state.figure`); `null`: no figure. */
   manifest: string | null;
   /** Her voice's level now, 0..1 (read on every frame while she speaks). */
   level: () => number;
-  /** A figure of the caller's own (tests); it takes the place of both. */
+  /** A figure of the caller's own (tests); it takes the place of the Live2D one. */
   make?: () => HerFigure;
 }
 
@@ -32,7 +32,7 @@ export function Figure({ pose, face, doing, speaking, manifest, level, make }: F
       ? make()
       : manifest
         ? live2dFigure({ manifest, reduced, level: () => latest.current.level() })
-        : loopFigure({ reduced });
+        : noFigure();
     figure.current = f;
     f.mount(el);
     const now = latest.current;
