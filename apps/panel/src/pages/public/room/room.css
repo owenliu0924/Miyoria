@@ -463,7 +463,6 @@
   margin: 0 0 6px;
   text-align: center;
   font-size: 13px;
-  color: var(--muted-foreground);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
