@@ -71,13 +71,14 @@ describe("receiveWorkspace accept", () => {
     await root.write("notes/keep.md", "hers");
     await root.write("notes/old.md", "old");
     const sent = join(base, "sent");
-    for (const [path, text] of [
+    const files: [string, string][] = [
       ["downloads/menu.pdf", "pdf"],
       ["notes/keep.md", "overwritten"],
       ["scripts/run.py", "planted"],
-    ]) {
+    ];
+    for (const [path, text] of files) {
       mkdirSync(join(sent, path, ".."), { recursive: true });
-      writeFileSync(join(sent, path), text as string);
+      writeFileSync(join(sent, path), text);
     }
     const job = await jobSending(sent, ["notes/old.md"]);
     // What Core knows the job holds: her old note as it is, so a deletion of it would be taken.
