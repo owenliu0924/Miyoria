@@ -20,6 +20,7 @@ export const TaskFailureCodeSchema = z
     "disconnected",
     "crashed",
     "died",
+    "stuck",
     "denied",
     "internal",
   ])

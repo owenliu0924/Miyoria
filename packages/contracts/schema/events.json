@@ -3177,7 +3177,8 @@
             "director",
             "command",
             "queue",
-            "survival"
+            "survival",
+            "idle"
           ]
         },
         "status": {
@@ -7239,6 +7240,7 @@
         "disconnected",
         "crashed",
         "died",
+        "stuck",
         "denied",
         "internal"
       ]

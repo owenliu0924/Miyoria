@@ -53,6 +53,7 @@ describe("constants", () => {
       "disconnected",
       "crashed",
       "died",
+      "stuck",
       "denied",
       "internal",
     ]);

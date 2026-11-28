@@ -118,6 +118,7 @@ export const CODE_TEXT: Readonly<Record<TaskFailureCode, string>> = {
   disconnected: "連線斷了",
   crashed: "程式當掉了",
   died: "死掉了",
+  stuck: "卡住了",
   denied: "不被允許",
   internal: "出了點問題",
 };

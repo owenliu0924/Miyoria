@@ -363,7 +363,7 @@ SDK 的 `ctx.game.registerAdapter(adapter)` 負責這些對應;`describe().id` �
 
 **Steer 是選用的**:註冊內容的 `steer`(boolean,缺少就是 `false`),SDK 只在執行器有 `steer` 時才送。宿主只在宣告了 `steer` 時才給 `ProxyExecutor` 一個 `steer` 方法;沒宣告的看起來就和沒有 `steer` 的執行器一樣,核心回 `unsupported`(`fallback: cancel_then_start`),主線改走取消再開始,擴充也不會收到 `task.steer`。回應 steer 的 `steered` 事件即使任務已經結束(`too_late`)或宿主不認得它(`rejected`)也會送到匯流排,這是「已結束任務的事件一律丟掉」的唯一例外;沒有人問過的 `steered` 一律丟掉。
 
-失敗碼(`TASK_FAILURE_CODES`):`timeout`、`cancelled`、`superseded`、`busy`、`invalid`、`not_found`、`unreachable`、`precondition`、`disconnected`、`crashed`、`died`、`denied`、`internal`。
+失敗碼(`TASK_FAILURE_CODES`):`timeout`、`cancelled`、`superseded`、`busy`、`invalid`、`not_found`、`unreachable`、`precondition`、`disconnected`、`crashed`、`died`、`stuck`、`denied`、`internal`。
 
 宿主的保證:已結束任務的事件一律丟掉(過期的工作無害);接受後超過 `budget_s` + `task_grace_ms`(預設 5 秒)還沒結束,宿主自己發 `failed` / `timeout` 並送 `task.cancel`;行程中途結束,執行中的任務都發 `failed` / `crashed`(宿主停止擴充時是 `disconnected`)。
 

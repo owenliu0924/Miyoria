@@ -160,7 +160,7 @@ Core 的擴充套件主機從 `[modules.extensions] dirs`(預設 `["extensions"]
 
 | | miyoria-bridge |
 |---|---|
-| 目標(`describe().actions`) | 21 個:`goto`、`mine`、`follow`、`explore`、`farm`、`build`、`obtain`、`hunt`、`shelter`、`recover`、`place`、`chat`、`stop`、`look`、`attack`、`use`、`select`、`respawn`、`drop`、`launch`、`quit`,各有參數 schema 和建議的 `budget_s`;加上生存進度指南 `guide`(`adapter/src/guide.ts`,跟著執行器註冊,所以導演的 prompt 看得到)。`get`、`craft`、`smelt` 還認得(`HIDDEN_ACTIONS`),但不再給模型選 |
+| 目標(`describe().actions`) | 22 個:`goto`、`mine`、`follow`、`explore`、`idle`、`farm`、`build`、`obtain`、`hunt`、`shelter`、`recover`、`place`、`chat`、`stop`、`look`、`attack`、`use`、`select`、`respawn`、`drop`、`launch`、`quit`,各有參數 schema 和建議的 `budget_s`;加上生存進度指南 `guide`(`adapter/src/guide.ts`,跟著執行器註冊,所以導演的 prompt 看得到)。`get`、`craft`、`smelt` 還認得(`HIDDEN_ACTIONS`),但不再給模型選 |
 | `observe` | `observe` → 繁中摘要 + 精簡狀態(`busy`、`capabilities`、背包、最好的鎬能挖什麼(`pickaxe_tier`)、食物、離天黑 / 天亮幾分鐘、附近生物、看得到的方塊、合成中、正在跑的反射(`reflex`)、`obtain` 計畫的進度(`plan`)、上次死在哪裡和掉了什麼(`last_death`,6 分鐘內)…;背包是完整的,目標的成功條件從這裡讀),外加正在跑的任務 id;沒連上或在主選單時回 `connected:false` / `in_game:false`,導演就不會叫 LLM。沒連上時另有 `launch`:`{available, problem?, state: idle\|starting\|failed, error?}` |
 | 任務的開頭(`act`) | 對應到 `baritone` / `altoclef` / `craft` / `smelt` / `place` / `chat` / `look` / `use` / `attack` / `select_slot` / `respawn` / `stop`;工作請求帶 `task`(任務 id)。`hello_ack.capabilities` 說沒有的模組直接失敗(`precondition`)。`mine` 先 `observe` 看背包,鎬不夠挖不到東西的方塊直接拒絕並說要先做什麼(`adapter/src/harvest.ts`)。模組的拒絕轉成告訴她下一步的繁中句子,也轉成失敗碼(`not_visible` → `not_found`、`too_far` → `unreachable`、`missing_items` / `needs_station` → `precondition`、`busy` / `reflex_active` → `busy`…,`failureCode()`) |
 | `events()` | 推送事件 → `game.minecraft.<事件>`,`data.text` 是給實況用的一句話,`important` 標出值得馬上反應的(死亡、低血量、危險生物、稀有物品、別人講話、成就);另外有 `connected` / `disconnected`。工作本身的事件(`goal_reached`、`baritone_idle`、`craft_*`、`smelt_*`、`task_*`)不轉送:那是任務的事 |
@@ -172,6 +172,12 @@ Core 的擴充套件主機從 `[modules.extensions] dirs`(預設 `["extensions"]
 `plan` 策略(`adapter/src/planner.ts` + `obtain.ts`,參考 mc_aiplayer 的 GoalPlanner):程式依配方、熔爐、方塊掉落物與工具等級(`harvest.ts`)往回推,例如鐵鎬從空手:砍原木 ×4 → 做木材 ×16 → 工作台 → 放下 → 木棒 ×8 → 木鎬 → 挖鵝卵石 ×11 → 熔爐 → 放下 → 石鎬 → 挖粗鐵 ×3 → 燒鐵錠 ×3 → 鐵鎬。同一種材料一次做齊;燃料先用煤炭,不夠就把原木做成木材再燒。每一步都用一般的請求,等那一步的結束事件,再從實際背包重新規劃;看不到方塊就 `explore` 到看得到為止(最多 90 秒),太遠就先 `goto`,工作台 / 熔爐不在旁邊就走過去或放下背包裡的。同一步失敗兩次就結束並說卡在哪一步、為什麼(帶失敗碼);反射打斷的那一步會等反射結束再重做,不算失敗。每一步是任務的 `progress`,結束就是任務的 `done` / `failed`(不再有 `plan_finished` / `plan_failed` 事件)。
 
 **做完不等於有進展**(`docs/design/v4-plan.md` §11.2,`adapter/src/progress.ts`):用身體的任務前後各看一次背包(加上這段時間的 `item_picked`),`done` 的 `data.outcome` 是 `{progressed, gained, lost, inventory, note}`(核心的 `GameTaskOutcome`)。拿東西的目標(`mine`、`farm`、`obtain`、`hunt`、`recover`…)背包有多東西才算進展;`goto` / `follow` / `build` 做完就算;`explore` 看到開始時沒看到的方塊、生物或生態域才算(在同一片海上跑滿時間不算);`obtain` 已經有的東西、空的 `mine` 都是「做完但沒有進展」。導演把沒有進展的 `done` 當成一次失敗。
+
+**不會卡住**(設計文件 P1):
+- **看門狗**(`adapter/src/stall.ts`):用身體的任務每 5 秒看一次狀態,移動 2 格以上、背包有變化、在合成 / 燒東西、反射在動、計畫回報一步都算進展;`goto` / `explore` 45 秒、`mine` / `farm` / `obtain` / `hunt` / `recover` 60 秒、`get` / `build` 90 秒沒有進展就以 `stuck` 結束(會說多久沒動、上次的進展是什麼)。熔爐燒東西這種刻意等待會先說要安靜多久,不算卡住。`follow`、`shelter` 不看。adapter 選項 `stallSecs`(`false` 關掉)、`stallPollMs`。
+- **死路記憶**(`adapter/src/deadends.ts`):`explore` 什麼新的都沒看到,就把走過的地方(48 格一格)記成無聊的;給 `find` 卻沒找到,就記成「這裡沒有那個」。下一次沒有指定中心的 `explore` 會往八個方向裡無聊的地方最少的那邊 96 格出發(「這附近探索過了沒什麼,往東南走」)。每個維度分開記,1 小時後忘記。
+- **閒著先找點事做**(`adapter/src/idle.ts`,目標 `idle`):依狀態挑最有用的小事:餓了又沒吃的就找吃的、沒有鎬子就做木鎬、有石頭就換石鎬、木頭少又看得到樹就砍、不然就換個地方探索。剛剛沒結果的選項 10 分鐘內跳過。導演在她的身體閒了 `idle_fill_secs`(預設 8 秒)、決策又沒有開始任何事的時候自己開始 `idle`(`[modules.game] idle_action`,`null` 關掉);下一個有動作的決策會直接取代它。導演自己的目標連續 `empty_decisions_limit`(預設 2)次決策都沒有下一步,就以 `no_progress` 結束。
+- **附近生物的座標**:快照的 `entities[]` 帶 `position`(新版模組),打獵時可以瞄準。
 
 **食物**(`planner.ts`、`obtain.ts`):`obtain` 認得食物:生肉靠打獵(`hunt` 步驟:跟著動物、準心對到就打、夠了就停,附近沒有先探索)、熟食用熔爐烤、`bread` 收成小麥(Baritone `farm`)再做、`melon_slice` 挖西瓜;`{item:"food"}` 依附近有的動物、作物和熔爐挑最容易的。`hunt {entity, count}` 是單獨打獵(多拿 count 個肉)。打獵靠準心:模組的 `nearby_entities` 沒有座標,動物不在準心上時只會往下看一點;模組之後給座標就會直接瞄準牠。
 
@@ -202,7 +208,7 @@ Core 的擴充套件主機從 `[modules.extensions] dirs`(預設 `["extensions"]
 
 ## 9. 驗證狀態
 
-已驗證:Gradle 建置(Windows、Temurin JDK 21)、JUnit 62 項(協定、快照、事件偵測、反射決策、設定、WebSocket 驗證與請求回覆 round trip)、對真實 Baritone 1.11.3 API jar 的編譯、缺 jar 時的失敗訊息與 stub 測試路徑;adapter 的 Vitest(對假 mod 的連線、重連、token、動作對應、事件與目標完成判斷,以及透過 SDK runtime 的整個擴充)與擴充探索(`miyoria ext list` 找得到 `miyoria.minecraft`)。
+已驗證:Gradle 建置(Windows、Temurin JDK 21)、JUnit 68 項(協定、快照、事件偵測、反射決策、設定、WebSocket 驗證與請求回覆 round trip)、對真實 Baritone 1.11.3 API jar 的編譯、缺 jar 時的失敗訊息與 stub 測試路徑;adapter 的 Vitest(對假 mod 的連線、重連、token、動作對應、事件與目標完成判斷,以及透過 SDK runtime 的整個擴充)與擴充探索(`miyoria ext list` 找得到 `miyoria.minecraft`)。
 
 **尚未在真實遊戲裡驗證**(需要 Minecraft 帳號與圖形環境):所有與遊戲互動的行為,包含 `observe` 的實際內容、Baritone / AltoClef 動作、`use` / `attack` 按鍵模擬、`screenshot` 擷取、`advancement` / `chat` 事件解析,以及 AltoClef 的反射呼叫(已對照 `altoclef-1.21.1-0.19.jar` 的方法簽名撰寫,未實跑)。第一次實機測試請從 `observe` 與 `baritone goto` 開始。
 
