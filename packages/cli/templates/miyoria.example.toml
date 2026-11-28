@@ -305,6 +305,13 @@ token = "${MIYORIA_API_TOKEN:-}"
 # voice_max_chars = 300            # 太長的行不念
 # voice_cache = 64                 # 念過的行留幾行在記憶體
 # backlog_page = 50                # 紀錄一頁幾行
+# 她的身影:live2d = 在會員的瀏覽器跑她的 Live2D 模型(要 [modules.cards] portrait_model、卡片工作室
+# 的 build:figure 和 Live2D 的 Core 都在這台電腦,缺一樣就退回錄影循環,log 說一次為什麼);loops = 一律錄影循環。
+# 開著時,房間對他開放的會員的瀏覽器會下載模型的 moc、貼圖、物理和待機動作(tools/card-studio/vendor.md)。
+# figure = "live2d"
+# figure_model = ""                # 空 = 用 [modules.cards] portrait_model
+# figure_textures = [1024, 2048]   # 給瀏覽器的貼圖大小(最長邊 px),頁面依螢幕挑;和模型原本一樣大就給原檔
+# figure_cache = "data/room/figure"  # 縮小的貼圖和壓縮過的檔案放這裡
 
 # 她做的檔案的下載連結(https://<檔案網域>/f/<token>)。檔案網域要是自己的主機名(例如 files.example.com,
 # 不能和網站同一個),在 Cloudflare tunnel 指到下面的 bind。origin 留空 = 不發連結,附件照常能傳。

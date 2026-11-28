@@ -6,8 +6,9 @@
 // * any other request that wants JSON (`response_format`, or a system message asking for it): `{}`;
 // * a request with an image part: 「我看到你的圖了」;
 // * otherwise two lines after a `<feel>` block that moves the member's bond up, or down when their
-//   last line has 「鬧」 in it; 「長」 asks for a reply of five lines (「慢」: streamed two seconds a
-//   line), 「看看」 for what reached her (the end of the member's text as the model got it).
+//   last line has 「鬧」 in it, each line with her face (`<emo:happy>`, `<emo:angry>`, …);
+//   「長」 asks for a reply of five lines (「慢」: streamed two seconds a line), 「看看」 for what
+//   reached her (the end of the member's text as the model got it).
 //
 // Every request is kept; `GET /requests` lists them (to see that an image really reached the model).
 // Not part of any build; `pnpm exec tsx --conditions=@miyoria/source packages/api/dev/llm-stub.ts`.
@@ -148,7 +149,9 @@ export function devScript(name: string): StubScript {
         ...(said.includes("慢") ? { paceMs: 2_000 } : {}),
       };
     }
-    return { text: `${feel}\n好呀,我在這裡。\n你今天過得怎麼樣?` };
+    // Her face on each line (`<emo:…>`), so the room's figure changes with it.
+    if (teased) return { text: `${feel}\n<emo:angry>又在鬧我了。\n<emo:smug>不過我記住了喔。` };
+    return { text: `${feel}\n<emo:happy>好呀,我在這裡。\n<emo:thinking>你今天過得怎麼樣?` };
   };
 }
 

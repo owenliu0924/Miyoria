@@ -3,7 +3,9 @@
 // the script takes no path, works out that folder from where it is itself, and refuses any database
 // that is not in it or not marked, so the live `data/miyoria.db` can never be opened by it.
 //
-//   room-dev.ts init [--fresh]            the config, the ports, the panel's env (--fresh: a new database)
+//   room-dev.ts init [--fresh] [--model <.model3.json>]
+//                                          the config, the ports, the panel's env (--fresh: a new database;
+//                                          --model: her Live2D model for the room's figure, read only)
 //   room-dev.ts member [--name 測試小澄] [--id 900000000000000002]
 //                                          a member's session and server membership; prints the cookie
 //                                          (--id: another made-up account, to try one member against another)
@@ -54,7 +56,11 @@ export function assertDevPath(path: string): void {
 const tomlString = (s: string) => JSON.stringify(s.replaceAll("\\", "/"));
 
 /** The dev config: every module that could reach Discord, a GPU, a port of the live Core or the internet is off. */
-export function devConfig(ports: { api: number; stub: number }, token: string): string {
+export function devConfig(
+  ports: { api: number; stub: number },
+  token: string,
+  model: string | null = null,
+): string {
   const off = [
     "platform.discord.bot",
     "voice",
@@ -131,10 +137,20 @@ enabled = true
 
 [modules.api.room]
 enabled = true
-`;
+# The figure's copies (textures made smaller) stay in this folder, never in data/.
+figure_cache = ${tomlString(join(DEV_DIR, "figure"))}
+${
+  model === null
+    ? ""
+    : `
+# Her model for the room's Live2D figure (read only; cards stay as they are).
+[modules.cards]
+portrait_model = ${tomlString(resolve(model))}
+`
+}`;
 }
 
-async function init(fresh: boolean): Promise<void> {
+async function init(fresh: boolean, model: string | null): Promise<void> {
   if (existsSync(DEV_DIR) && !existsSync(join(DEV_DIR, MARKER))) {
     throw new Error(`${DEV_DIR} exists but is not a dev folder (no ${MARKER}); not touching it`);
   }
@@ -150,7 +166,7 @@ async function init(fresh: boolean): Promise<void> {
   const ports = { api: await freePort(), stub: await freePort() };
   const token = randomBytes(24).toString("base64url");
   writeFileSync(join(DEV_DIR, "ports.json"), `${JSON.stringify(ports, null, 2)}\n`);
-  writeFileSync(join(DEV_DIR, "miyoria.toml"), devConfig(ports, token));
+  writeFileSync(join(DEV_DIR, "miyoria.toml"), devConfig(ports, token, model));
   writeFileSync(join(DEV_DIR, "panel.env"), `MIYORIA_CORE_URL=http://127.0.0.1:${ports.api}\n`);
   process.stdout.write(
     `dev room in ${DEV_DIR}\n  core:  http://127.0.0.1:${ports.api}  (admin token in miyoria.toml)\n  stub:  http://127.0.0.1:${ports.stub}/v1\n`,
@@ -203,7 +219,7 @@ if (isMain()) {
     return i >= 0 ? rest[i + 1] : undefined;
   };
   try {
-    if (command === "init") await init(rest.includes("--fresh"));
+    if (command === "init") await init(rest.includes("--fresh"), flag("--model") ?? null);
     else if (command === "member") await member(flag("--name") ?? "測試小澄", flag("--id"));
     else {
       process.stderr.write("usage: room-dev.ts init [--fresh] | member [--name <name>]\n");

@@ -20,6 +20,7 @@ import { Capsule } from "./Capsule";
 import type { RoomFile, RoomMemory } from "@miyoria/contracts/api";
 import { Figure } from "./FigureView";
 import { type HerFigure, poseFor } from "./figure";
+import { faceFor } from "./live2d";
 import { SwipeTracker, WheelUp } from "./gestures";
 import { type HerContent, HerAnnouncer, HerLine, useReveal } from "./HerLine";
 import { Relation } from "./Relation";
@@ -93,7 +94,7 @@ export interface RoomProps {
   api: RoomApi;
   member: MemberSession | null;
   home: string;
-  /** Her figure (the loops by default; a Live2D canvas later, a stand-in in tests). */
+  /** Her figure (Live2D when the Core serves it, else the loops; a stand-in in tests). */
   figure?: () => HerFigure;
   /** This tab's id for the voice's choice of tab. */
   tab?: string;
@@ -125,6 +126,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
   useEffect(() => {
     voice.setAvailable(state?.voice.available === true);
   }, [voice, state?.voice.available]);
+  const voiceLevel = useCallback(() => voice.level(), [voice]);
 
   // ---- her line on the stage ------------------------------------------------------------------
   const turn = model.turn;
@@ -483,13 +485,24 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
   const notice = model.notice;
   const overlay = backlogOpen;
   const pose = poseFor(open ? state : null, model.face);
+  const face = faceFor(open ? state : null, model.face);
+  const doing = open && state ? state.doing : "still";
+  const figureManifest = open ? (state?.figure?.manifest ?? null) : null;
 
   return (
     <div ref={root} className="her-room">
       <Top member={member} home={home} />
       <main ref={stage} className="hr-stage">
         <h1 className="hr-sr">和她在一起</h1>
-        <Figure pose={pose} speaking={voiceSnap.speaking !== null} make={figure} />
+        <Figure
+          pose={pose}
+          face={face}
+          doing={doing}
+          speaking={voiceSnap.speaking !== null}
+          manifest={figureManifest}
+          level={voiceLevel}
+          make={figure}
+        />
         {open && <StatusLine state={state} step={turn?.step ?? null} link={model.link} watchHref={LIVE_PAGE} />}
         {open && (
           <div inert={overlay}>

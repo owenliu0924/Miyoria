@@ -24,6 +24,27 @@ export const ROOM_UPLOAD_PATH = "/api/member/room/uploads";
 export const roomVoicePath = (line: string) => `/api/member/room/voice/${encodeURIComponent(line)}`;
 export const roomFilePath = (line: string, n: number) =>
   `/api/member/room/files/${encodeURIComponent(line)}/${n}`;
+/** Her Live2D figure's manifest (`RoomState.figure`); its files are under it, by content hash. */
+export const ROOM_FIGURE_PATH = "/api/member/room/figure";
+
+/**
+ * Her faces on the room's Live2D figure: the avatar's emotions, and two for what she is doing.
+ * The page picks one from her face, her mood and her state; the Core says what each is on the model.
+ */
+export const ROOM_FIGURE_FACES = [
+  "neutral",
+  "happy",
+  "smug",
+  "annoyed",
+  "angry",
+  "embarrassed",
+  "sad",
+  "surprised",
+  "thinking",
+  "working",
+  "singing",
+] as const;
+export type RoomFigureFace = (typeof ROOM_FIGURE_FACES)[number];
 
 /** Her emotion name, as her avatar's `[emotion]` keys are written (`happy`, `shy`). */
 export const RoomFaceSchema = z
@@ -62,6 +83,11 @@ export const RoomStateSchema = z
       max_image_bytes: z.number().int(),
       max_file_bytes: z.number().int(),
     }),
+    /**
+     * Her Live2D figure can be drawn here: its manifest's URL (`ROOM_FIGURE_PATH` with its
+     * version). Absent or `null`: the page shows the recorded loops.
+     */
+    figure: z.object({ manifest: z.string() }).nullable().optional(),
   })
   .meta({ id: "ApiRoomState" });
 export type RoomState = z.output<typeof RoomStateSchema>;

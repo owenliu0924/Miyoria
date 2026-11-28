@@ -7,6 +7,8 @@
 // enabled = false
 // messages_per_minute = 12
 // messages_per_day = 400
+// figure = "live2d"
+// figure_textures = [1024, 2048]
 // ```
 
 import { z } from "zod";
@@ -46,6 +48,22 @@ export const RoomConfigSchema = z.object({
   voice_cache: z.number().int().min(0).default(64),
   /** Lines of one backlog page. */
   backlog_page: z.number().int().positive().max(200).default(50),
+  /**
+   * Her figure on the page: `live2d` runs her Live2D model in the member's browser when everything
+   * it needs is on this machine (the model, the card studio's figure build, Live2D's Core), and
+   * the recorded loops otherwise; `loops` always the loops.
+   */
+  figure: z.enum(["live2d", "loops"]).default("live2d"),
+  /** Her model's `.model3.json`; empty: `[modules.cards] portrait_model`. */
+  figure_model: z.string().default(""),
+  /**
+   * The texture sizes offered (the longest side, pixels), made once from the model's own and kept
+   * in `figure_cache`; the page picks one by its screen. A size as large as the model's own is
+   * served as it is.
+   */
+  figure_textures: z.array(z.number().int().min(256).max(8192)).min(1).max(4).default([1024, 2048]),
+  /** Where the figure's files are kept for serving (the textures made smaller, compressed copies). */
+  figure_cache: z.string().default("data/room/figure"),
 });
 export type RoomConfig = z.output<typeof RoomConfigSchema>;
 

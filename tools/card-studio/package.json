@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Draws her Live2D model to a PNG for a card, in a headless browser on the machine (the model never leaves it)",
+  "description": "Draws her Live2D model: to a PNG for a card, in a headless browser on the machine, and as her figure in her room (a bundle the Core serves to members' browsers)",
   "exports": {
     ".": "./src/render.ts"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:figure": "node scripts/build.mjs figure",
     "sample": "tsx scripts/sample.ts",
     "sheet": "tsx --conditions=@miyoria/source scripts/sheet.ts"
   },

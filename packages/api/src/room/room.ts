@@ -4,6 +4,7 @@
 import { RoomChannel } from "./channel.js";
 import type { RoomConfig } from "./config.js";
 import { roomBytes } from "./config.js";
+import type { RoomFigure } from "./figure.js";
 import { Slots, Window } from "./limits.js";
 import { RoomUploads } from "./uploads.js";
 import { VoiceCache } from "./voice.js";
@@ -15,6 +16,9 @@ const DAY = 24 * HOUR;
 /** Memories one person may ask her to forget, and lines to leave out, an hour. */
 export const FORGETS_PER_HOUR = 30;
 
+/** Files of her figure one person may fetch an hour (one load is about a dozen; the browser keeps them). */
+export const FIGURE_FILES_PER_HOUR = 240;
+
 export class Room {
   readonly channel: RoomChannel;
   readonly uploads: RoomUploads;
@@ -25,6 +29,9 @@ export class Room {
   readonly forgets = new Window(FORGETS_PER_HOUR, HOUR);
   readonly excludes = new Window(FORGETS_PER_HOUR, HOUR);
   readonly voicePerHour: Window;
+  readonly figureFiles = new Window(FIGURE_FILES_PER_HOUR, HOUR);
+  /** Her Live2D figure (`figure.ts`); `null`: the page shows the recorded loops. */
+  figure: RoomFigure | null = null;
   /** Lines synthesized at once: one per account, two in all. */
   readonly speaking = new Slots(1, 2);
 

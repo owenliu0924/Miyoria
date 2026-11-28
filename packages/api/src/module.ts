@@ -71,6 +71,7 @@ import { PublicConfigSchema, PublicSide, STATS_EVERY_MS } from "./public.js";
 import { QuestPickService } from "./quest-words.js";
 import { RingImages } from "./ring-image.js";
 import { RoomConfigSchema } from "./room/config.js";
+import { figureOptions, RoomFigure } from "./room/figure.js";
 import { Room } from "./room/room.js";
 import { startRoom } from "./room/start.js";
 import { createApp } from "./server.js";
@@ -138,6 +139,11 @@ export interface ApiModuleOptions {
   emotions?: readonly string[];
   /** Uniform in [0, 1) for choices that need no secrecy (a card's pose). Default `Math.random`. */
   random?: () => number;
+  /**
+   * Her model and the card studio as `[modules.cards]` sets them (`portrait_model`,
+   * `portrait_studio`, as written), for her room's Live2D figure.
+   */
+  portrait?: { model: string; studio: string };
 }
 
 /**
@@ -277,6 +283,7 @@ export class ApiModule implements Module {
   readonly #env: (name: string) => string | undefined;
   readonly #emotions: readonly string[];
   readonly #random: () => number;
+  readonly #portrait: { model: string; studio: string };
   #address: AddressInfo | null = null;
   #publicAddress: AddressInfo | null = null;
   #filesAddress: AddressInfo | null = null;
@@ -286,6 +293,7 @@ export class ApiModule implements Module {
     this.#env = options.env ?? ((name) => process.env[name]);
     this.#emotions = [...(options.emotions ?? [])];
     this.#random = options.random ?? Math.random;
+    this.#portrait = options.portrait ?? { model: "", studio: "" };
   }
 
   /** The address the server is bound to while running (useful with port 0). */
@@ -384,6 +392,11 @@ export class ApiModule implements Module {
     // Her room: the `web` platform, before the routes are built (they exist only while it runs).
     if (config.public.enabled && config.room.enabled) {
       const room = new Room(config.room, () => ctx.clock.now());
+      if (config.room.figure === "live2d") {
+        // Made ready in the background: the loops until then (the page swaps when it is).
+        room.figure = new RoomFigure(figureOptions(config.room, this.#portrait, ctx.log));
+        void room.figure.prepare();
+      }
       state.room = room;
       startRoom(ctx, state, room);
       ctx.log.info("her room is open on the member site");
