@@ -4,13 +4,15 @@
 //
 // What runs one:
 // - The admin router (`defaultViewTransition`), when the path changes to another admin page.
-// - `startPageTransition`, around the switch between the admin panel and an admin's own member
-//   page, which happens in `App` outside the router.
-// - Full page loads between the site's own pages (`/her`, `/watch`, …) opt in from CSS
-//   (`@view-transition`), since those links are plain anchors.
+// - `App`, for every page it picks itself from the path (`appViewOf`): the member area's tabs, and
+//   a switch between her room, her live page, a card's page and the member page, pushed or by
+//   back and forward (`isAppPageChange`). Links between those pages stay in the page
+//   (`opensInApp`) instead of loading it again, so the fade goes from one page to the other.
+// - `startPageTransition` directly, around the switch from the admin panel to an admin's own
+//   member page.
 //
 // Browsers without `document.startViewTransition` or without transition types, a reader who asks
-// for reduced motion and a hidden tab get none and behave as before.
+// for reduced motion and a hidden tab get none; without the API the links load pages as before.
 
 import type { AnyRouter, ParsedLocation } from "@tanstack/react-router";
 import { flushSync } from "react-dom";
@@ -19,6 +21,7 @@ import { isKaraokePath } from "@/pages/public/karaoke/path";
 import { isLivePath } from "@/pages/public/live/path";
 import { isOwnPath } from "@/pages/public/member-tabs";
 import { isRoomPath } from "@/pages/public/room/path";
+import type { AuthState } from "./visitor";
 
 /** The router's `{ types }` form of `defaultViewTransition` (router-core's `ViewTransitionOptions`). */
 type ViewTransitionOptions = Exclude<NonNullable<AnyRouter["options"]["defaultViewTransition"]>, boolean>;
@@ -26,12 +29,15 @@ type ViewTransitionOptions = Exclude<NonNullable<AnyRouter["options"]["defaultVi
 /** The transition type every page transition carries, for the CSS to select on. */
 export const PAGE_TRANSITION = "page";
 
-/** `/live/` and `/live` are the same page. */
-const bare = (pathname: string): string => (pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname) || "/";
+/** The path alone: no query or hash, and `/live/` is `/live`. */
+const bare = (path: string): string => {
+  const pathname = path.split(/[?#]/)[0] ?? "";
+  return (pathname.length > 1 ? pathname.replace(/\/+$/, "") : pathname) || "/";
+};
 
 /**
- * Whether going from `from` to `to` (paths, without the query) is a change of page. A change of
- * query or hash alone (a tab, a filter, `?call=`, `?space=`, `?room-demo`) is not.
+ * Whether going from `from` to `to` (paths, with or without the query) is a change of page. A
+ * change of query or hash alone (a filter, `?call=`, `?space=`, `?room-demo`) is not.
  */
 export function isPageChange(from: string | undefined, to: string): boolean {
   if (from === undefined) return false;
@@ -51,6 +57,68 @@ export function isOutsideAdmin(pathname: string): boolean {
     isRoomPath(pathname) ||
     isOwnPath(pathname)
   );
+}
+
+/** What `App` shows for an address, in the order it checks (`Authenticated`). */
+export type AppView = "card" | "watch" | "checking" | "karaoke" | "her" | "own" | "member" | "front" | "token" | "admin";
+
+export function appViewOf(path: string, auth: AuthState, tokenLogin: boolean): AppView {
+  if (cardSerialIn(path) !== null) return "card";
+  if (isLivePath(path)) return "watch";
+  if (auth.status === "checking") return "checking";
+  // Singing and her room are for someone logged in with Discord: a member, or an admin as one.
+  const discordAdmin = auth.status === "signed_in" && auth.session.method === "discord";
+  const member = auth.status === "public" ? auth.member : null;
+  if (isKaraokePath(path) && (member !== null || discordAdmin)) return "karaoke";
+  if (isRoomPath(path) && (member !== null || discordAdmin)) return "her";
+  if (discordAdmin && isOwnPath(path)) return "own";
+  if (auth.status === "public" && !tokenLogin) return member !== null ? "member" : "front";
+  if (auth.status === "signed_in") return "admin";
+  return "token";
+}
+
+/** The member area: each tab is its own address, and moving between them is a change of page. */
+const TABBED: readonly AppView[] = ["member", "own"];
+
+export type HistoryAction = "PUSH" | "REPLACE" | "BACK" | "FORWARD" | "GO";
+
+/**
+ * Whether `App` should fade this change of address itself. A replace (a redirect, a cleaned-up
+ * address) and a change of query alone do not. The admin panel's own pages are the router's; the
+ * one way out of it, to an admin's own page, is faded where it starts (`Shell`), since the router
+ * would draw its not-found page before `App` switches. Moving inside singing (its rooms) is the
+ * page's own business.
+ */
+export function isAppPageChange(
+  action: HistoryAction,
+  from: { path: string; view: AppView },
+  to: { path: string; view: AppView },
+): boolean {
+  if (action === "REPLACE" || !isPageChange(from.path, to.path)) return false;
+  if (from.view === "admin" || from.view === "checking" || to.view === "checking") return false;
+  return from.view !== to.view || TABBED.includes(from.view);
+}
+
+/** The pages a link may open without loading the page again; singing and the panel load anew. */
+const LINKED: readonly AppView[] = ["member", "own", "her", "watch", "card"];
+
+/** Her pages, as opposed to anything else on the origin (`/api/…`, a picture, a file). */
+function isSitePage(path: string): boolean {
+  const p = bare(path);
+  return p === "/" || isOwnPath(p) || isRoomPath(p) || isLivePath(p) || cardSerialIn(p) !== null;
+}
+
+/**
+ * Whether a click on a link to `to` (path and query) should stay in the page: both pages are ones
+ * `App` draws from what it already knows (who is logged in does not change), and a fade can show
+ * it. Singing stays a full load both ways: its song editor guards unsaved work with
+ * `beforeunload`, which a switch inside the page would pass by.
+ */
+export function opensInApp(from: { path: string; view: AppView }, to: { path: string; view: AppView }): boolean {
+  if (!LINKED.includes(from.view) || !LINKED.includes(to.view) || !isSitePage(to.path)) return false;
+  // The same address is the browser's (a reload, or a jump to a fragment).
+  if (from.path.split("#")[0] === to.path.split("#")[0]) return false;
+  return supportsPageTransitions();
 }
 
 /** The router's choice for one navigation: the type to run, or `false` for no transition. */
@@ -113,6 +181,8 @@ export function isSkippedTransition(reason: unknown): boolean {
 }
 
 let guarded = false;
+/** Inside a page transition's update. */
+let updating = false;
 
 function ignoreSkippedTransitions() {
   if (guarded || typeof window === "undefined") return;
@@ -135,13 +205,25 @@ export function routerPageTransition(): ViewTransitionOptions | false {
  * support, or with reduced motion, `update` just runs.
  */
 export function startPageTransition(update: () => void) {
-  const start = supportsPageTransitions() && motionAllowed() ? startFn() : null;
+  // Asked again from inside an update (the history push it makes is seen by `App`): one
+  // transition already covers it.
+  const start = !updating && supportsPageTransitions() && motionAllowed() ? startFn() : null;
   if (start === null) {
     update();
     return;
   }
   ignoreSkippedTransitions();
-  const transition = start({ update: () => flushSync(update), types: [PAGE_TRANSITION] });
+  const transition = start({
+    update: () => {
+      updating = true;
+      try {
+        flushSync(update);
+      } finally {
+        updating = false;
+      }
+    },
+    types: [PAGE_TRANSITION],
+  });
   // A skipped transition rejects `ready`; `finished` repeats the update's own error, which
   // `updateCallbackDone` reports once.
   transition.ready.catch(() => undefined);

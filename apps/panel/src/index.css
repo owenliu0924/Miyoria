@@ -341,21 +341,16 @@
 
 /*
  * Page transitions (`app/page-transition.ts`): a quiet cross-fade of the whole view when the page
- * changes, never for a tab or a search change. Only the root is captured, on purpose: a captured
+ * changes, never for a search change alone. Only the root is captured, on purpose: a captured
  * element is a backdrop root, so giving the content its own `view-transition-name` would drop the
  * glass's blur of the picture from its snapshot and snap it back at the end. With the root alone,
  * the old and new views blend with `plus-lighter`, so the sidebar, header and backdrop, which are
- * the same pixels before and after, stay perfectly still and only what changed fades.
+ * the same pixels before and after, stay perfectly still and only what changed fades. Her room's
+ * stage is part of the root too, so entering or leaving it is a plain fade and nothing stretches.
  *
- * Full page loads between the site's own pages (`/her`, `/watch`, a card's page) get the same
- * fade; her room's stage is part of the root, so nothing is stretched.
+ * There is no `@view-transition` for full page loads: the new page's first frame is the app before
+ * it has drawn anything, so it would only fade to the dark background.
  */
-@media (prefers-reduced-motion: no-preference) {
-  @view-transition {
-    navigation: auto;
-    types: page;
-  }
-}
 
 /* The live page underneath takes the clicks, so a fade never holds up input. */
 ::view-transition {

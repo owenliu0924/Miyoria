@@ -541,8 +541,11 @@ dimming on hover, 160 ms for the header gaining its surface. Pulsing dots only f
 transitioning states. `prefers-reduced-motion` collapses all durations.
 
 A change of page is a 180 ms cross-fade of the whole view (View Transitions, type `page`,
-`app/page-transition.ts`): the admin router's pages, the switch between the panel and an admin's own
-member page, and full loads between the site's own pages (`/her`, `/watch`, a card). A tab, a filter,
-a sheet or any other search change is instant. Only the root is captured, never the content alone (a
-captured element would lose the glass's blur in its snapshot); unchanged chrome stays still because
-the two views blend with `plus-lighter`. None without transition types or under reduced motion.
+`app/page-transition.ts`): the admin router's pages (its tabs are search changes and stay instant),
+the member area's tabs, the switch between the panel and an admin's own page, and the moves between
+the member page, her room, her live page and a card's page, pushed or by back and forward. Links
+between those pages open in the page instead of loading it again, so the fade goes from page to
+page; singing stays a full load, without a fade. A filter, a sheet or any other search change is instant. Only the root is captured, never the
+content alone (a captured element would lose the glass's blur in its snapshot); unchanged chrome
+stays still because the two views blend with `plus-lighter`. None without transition types or under
+reduced motion.

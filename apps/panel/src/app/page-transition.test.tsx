@@ -8,14 +8,27 @@ import {
 } from "@tanstack/react-router";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { MemberSession, SessionInfo } from "@miyoria/contracts/api";
 import {
+  type AppView,
   adminPageTransition,
+  appViewOf,
+  isAppPageChange,
   isOutsideAdmin,
   isPageChange,
   isSkippedTransition,
+  opensInApp,
   routerPageTransition,
   startPageTransition,
 } from "./page-transition";
+import type { AuthState } from "./visitor";
+
+const MEMBER: AuthState = { status: "public", member: {} as MemberSession };
+const VISITOR: AuthState = { status: "public", member: null };
+const DISCORD_ADMIN: AuthState = { status: "signed_in", session: { method: "discord" } as SessionInfo };
+const TOKEN_ADMIN: AuthState = { status: "signed_in", session: { method: "token" } as SessionInfo };
+
+const at = (path: string, view: AppView) => ({ path, view });
 
 /** A browser with view transitions and their types; `update` runs on the next microtask. */
 function supportTransitions({ reduced = false } = {}) {
@@ -68,6 +81,72 @@ describe("adminPageTransition", () => {
   });
 });
 
+describe("appViewOf", () => {
+  it("picks the page from the address the way App does", () => {
+    expect(appViewOf("/card/MYR-ABC", VISITOR, false)).toBe("card");
+    expect(appViewOf("/watch", { status: "checking" }, false)).toBe("watch");
+    expect(appViewOf("/me", { status: "checking" }, false)).toBe("checking");
+    expect(appViewOf("/her", MEMBER, false)).toBe("her");
+    expect(appViewOf("/her?room-demo", DISCORD_ADMIN, false)).toBe("her");
+    expect(appViewOf("/her", TOKEN_ADMIN, false)).toBe("admin");
+    expect(appViewOf("/her", VISITOR, false)).toBe("front");
+    expect(appViewOf("/karaoke/room/ABCDEF", MEMBER, false)).toBe("karaoke");
+    expect(appViewOf("/me/wallet", DISCORD_ADMIN, false)).toBe("own");
+    expect(appViewOf("/me/wallet", MEMBER, false)).toBe("member");
+    expect(appViewOf("/", MEMBER, false)).toBe("member");
+    expect(appViewOf("/login", MEMBER, true)).toBe("token");
+    expect(appViewOf("/", { status: "signed_out" }, false)).toBe("token");
+    expect(appViewOf("/live", DISCORD_ADMIN, false)).toBe("admin");
+  });
+});
+
+describe("isAppPageChange", () => {
+  it("fades the member area's tabs, pushed or by back and forward", () => {
+    expect(isAppPageChange("PUSH", at("/me", "member"), at("/me/gifts", "member"))).toBe(true);
+    expect(isAppPageChange("BACK", at("/me/gifts", "member"), at("/me", "member"))).toBe(true);
+    expect(isAppPageChange("FORWARD", at("/me/cards", "own"), at("/me/play", "own"))).toBe(true);
+  });
+
+  it("fades between her pages and between the panel and an admin's own page", () => {
+    expect(isAppPageChange("PUSH", at("/me", "member"), at("/her", "her"))).toBe(true);
+    expect(isAppPageChange("BACK", at("/her", "her"), at("/me", "member"))).toBe(true);
+    expect(isAppPageChange("PUSH", at("/me", "own"), at("/", "admin"))).toBe(true);
+  });
+
+  it("leaves a query change, a replace, the panel's own pages and singing's rooms instant", () => {
+    expect(isAppPageChange("PUSH", at("/me", "member"), at("/me?github=linked", "member"))).toBe(false);
+    expect(isAppPageChange("REPLACE", at("/me/nope", "member"), at("/me", "member"))).toBe(false);
+    expect(isAppPageChange("PUSH", at("/llm", "admin"), at("/system", "admin"))).toBe(false);
+    expect(isAppPageChange("BACK", at("/live", "admin"), at("/me", "own"))).toBe(false);
+    expect(isAppPageChange("PUSH", at("/karaoke", "karaoke"), at("/karaoke/room/ABCDEF", "karaoke"))).toBe(false);
+    expect(isAppPageChange("PUSH", at("/me", "checking"), at("/her", "checking"))).toBe(false);
+  });
+});
+
+describe("opensInApp", () => {
+  it("keeps links between her pages in the page where a fade can show it", () => {
+    supportTransitions();
+    expect(opensInApp(at("/me", "member"), at("/her", "her"))).toBe(true);
+    expect(opensInApp(at("/her", "her"), at("/", "member"))).toBe(true);
+    expect(opensInApp(at("/her", "her"), at("/watch", "watch"))).toBe(true);
+    expect(opensInApp(at("/me/cards", "own"), at("/card/MYR-ABC", "card"))).toBe(true);
+  });
+
+  it("leaves singing, the panel, other files and the same address to the browser", () => {
+    supportTransitions();
+    expect(opensInApp(at("/me", "member"), at("/karaoke", "karaoke"))).toBe(false);
+    expect(opensInApp(at("/karaoke", "karaoke"), at("/", "member"))).toBe(false);
+    expect(opensInApp(at("/card/MYR-ABC", "card"), at("/", "admin"))).toBe(false);
+    expect(opensInApp(at("/watch", "watch"), at("/", "front"))).toBe(false);
+    expect(opensInApp(at("/me", "member"), at("/api/member/session", "member"))).toBe(false);
+    expect(opensInApp(at("/me", "member"), at("/me#wallet", "member"))).toBe(false);
+  });
+
+  it("loads pages as before without view transitions", () => {
+    expect(opensInApp(at("/me", "member"), at("/her", "her"))).toBe(false);
+  });
+});
+
 describe("isSkippedTransition", () => {
   it("knows a skipped transition from other errors", () => {
     expect(isSkippedTransition(new DOMException("Transition was skipped", "AbortError"))).toBe(true);
@@ -91,6 +170,15 @@ describe("startPageTransition", () => {
     expect(start).toHaveBeenCalledWith(expect.objectContaining({ types: ["page"] }));
     await act(async () => {});
     expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("starts no second transition from inside an update", async () => {
+    const start = supportTransitions();
+    const inner = vi.fn();
+    startPageTransition(() => startPageTransition(inner));
+    await act(async () => {});
+    expect(inner).toHaveBeenCalledOnce();
+    expect(start).toHaveBeenCalledOnce();
   });
 });
 

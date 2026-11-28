@@ -405,9 +405,13 @@ export function PublicSite({
   const pick = (t: MemberTab) => {
     if (t === shown.current) return;
     shown.current = t;
-    if (navigate) navigate(memberTabPath(t));
-    else setLocal(t);
-    // A new tab starts at its top; the row itself stays under the header.
+    // A new tab starts at its top; the row itself stays under the header. With an address, `App`
+    // scrolls once the tab is drawn, so a page transition captures the old tab where it was.
+    if (navigate) {
+      navigate(memberTabPath(t));
+      return;
+    }
+    setLocal(t);
     if (window.scrollY > 0) window.scrollTo({ top: 0 });
   };
 
