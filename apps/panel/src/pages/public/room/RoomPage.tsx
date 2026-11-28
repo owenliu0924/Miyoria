@@ -14,6 +14,7 @@ import { SITE_NAME } from "@/lib/site-name";
 import { LIVE_PAGE } from "../live/path";
 import { type Attached, admit, kindOfFile, readyToSend, tooBig } from "./attach-limits";
 import { Attachments, DropHint } from "./Attachments";
+import { Backdrop } from "./Backdrop";
 import { Backlog } from "./Backlog";
 import { BondMark } from "./BondMark";
 import { Capsule } from "./Capsule";
@@ -494,6 +495,7 @@ export function Room({ api, member, home, figure, tab }: RoomProps) {
       <Top member={member} home={home} />
       <main ref={stage} className="hr-stage">
         <h1 className="hr-sr">和她在一起</h1>
+        <Backdrop image={open ? (state?.backdrop?.image ?? null) : null} />
         <Figure
           pose={pose}
           face={face}
