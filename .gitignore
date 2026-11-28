@@ -70,3 +70,6 @@ workers/mediamtx/mediamtx.log
 
 # yt-dlp login cookies for the song worker (account session, never commit)
 workers/sing/cookies.txt
+
+# Throwaway dev Cores (packages/api/dev/room-dev.ts)
+/.dev/
