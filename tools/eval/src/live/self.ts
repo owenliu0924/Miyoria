@@ -23,12 +23,7 @@
 //
 // Nothing carries over from one scene to the next.
 
-import {
-  heartNowBody,
-  PRESENT_TITLE,
-  type PresentPerson,
-  peopleBody,
-} from "@miyoria/brain/agent";
+import { heartNowBody, PRESENT_TITLE, type PresentPerson, peopleBody } from "@miyoria/brain/agent";
 import {
   type Outlet,
   PROFILES,
