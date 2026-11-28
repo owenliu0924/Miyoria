@@ -2,7 +2,9 @@
 // a WAV (`line.voice`) is fetched and played when it comes on the stage, one at a time, in order.
 // Only one tab plays: the one last used (a send or a press of the voice key), told to the others on
 // `BroadcastChannel("miyoria-room")`. Whether it may play at all is the Core's (`state.voice`); its
-// reason is what the greyed key says. The member's own on / off is kept per browser.
+// reason is what the greyed key says. The member's own on / off is kept per browser. While a line
+// plays, `level()` is its loudness at the playing moment (her Live2D figure's mouth), read from the
+// WAV itself: the playback is never routed through Web Audio.
 
 import { readStorage, writeStorage } from "@/lib/storage";
 
@@ -19,6 +21,8 @@ export interface ChannelLike {
 /** The part of `HTMLAudioElement` used here. */
 export interface AudioLike {
   src: string;
+  /** Seconds into the line (the level's clock). */
+  currentTime?: number;
   onended: (() => void) | null;
   onerror: (() => void) | null;
   play(): Promise<void>;
@@ -45,6 +49,49 @@ export interface VoiceOptions {
   objectUrl?: { create(blob: Blob): string; revoke(url: string): void };
   /** Words for a failed fetch. */
   problem?: (error: unknown) => string;
+  /** The line's loudness over time (`envelopeOf`); tests give their own. */
+  envelope?: (blob: Blob) => Promise<Envelope | null>;
+}
+
+/** A line's loudness, 0..1, `rate` values a second. */
+export interface Envelope {
+  rate: number;
+  values: Float32Array;
+}
+
+/** Values a second of an envelope. */
+const ENVELOPE_RATE = 60;
+
+/**
+ * The loudness of a voice line over time, 0..1: the RMS of each 1/60 s, against the line's own
+ * loud parts (its 95th percentile), quiet parts cut. `null` where audio cannot be decoded here.
+ */
+export async function envelopeOf(blob: Blob): Promise<Envelope | null> {
+  const Offline = (globalThis as { OfflineAudioContext?: typeof OfflineAudioContext }).OfflineAudioContext;
+  if (Offline === undefined) return null;
+  try {
+    const ctx = new Offline(1, 1, 22050);
+    const audio = await ctx.decodeAudioData(await blob.arrayBuffer());
+    const data = audio.getChannelData(0);
+    const hop = Math.max(1, Math.floor(audio.sampleRate / ENVELOPE_RATE));
+    const rms = new Float32Array(Math.ceil(data.length / hop));
+    for (let i = 0; i < rms.length; i++) {
+      let sum = 0;
+      const end = Math.min(data.length, (i + 1) * hop);
+      for (let j = i * hop; j < end; j++) sum += (data[j] as number) * (data[j] as number);
+      rms[i] = Math.sqrt(sum / Math.max(1, end - i * hop));
+    }
+    const sorted = Float32Array.from(rms).sort();
+    const loud = sorted[Math.floor(sorted.length * 0.95)] ?? 0;
+    if (loud <= 0) return { rate: ENVELOPE_RATE, values: new Float32Array(rms.length) };
+    const values = rms.map((v) => {
+      const n = Math.min(1, v / loud);
+      return n < 0.12 ? 0 : n ** 0.8;
+    });
+    return { rate: ENVELOPE_RATE, values };
+  } catch {
+    return null;
+  }
 }
 
 function defaultChannel(): ChannelLike | null {
@@ -64,6 +111,7 @@ export class RoomVoice {
   #audio: AudioLike | null = null;
   #url: string | null = null;
   #fetching: AbortController | null = null;
+  #envelope: Envelope | null = null;
 
   constructor(o: VoiceOptions) {
     this.#o = o;
@@ -156,12 +204,24 @@ export class RoomVoice {
     audio.onended = finish;
     audio.onerror = finish;
     audio.src = url;
+    this.#envelope = null;
+    void (this.#o.envelope ?? envelopeOf)(blob).then((e) => {
+      if (this.#audio === audio) this.#envelope = e;
+    });
     try {
       await audio.play();
     } catch {
       // The browser would not play without a gesture first: quietly nothing.
       finish();
     }
+  }
+
+  /** How loud the line being read out is now, 0..1; 0 when nothing plays. */
+  level(): number {
+    const audio = this.#audio;
+    const e = this.#envelope;
+    if (audio === null || e === null || typeof audio.currentTime !== "number") return 0;
+    return e.values[Math.floor(audio.currentTime * e.rate)] ?? 0;
   }
 
   /** Stops whatever is being read out. */
@@ -193,6 +253,7 @@ export class RoomVoice {
       this.#audio.onerror = null;
     }
     this.#audio = null;
+    this.#envelope = null;
   }
 
   #set(patch: Partial<VoiceSnapshot>): void {

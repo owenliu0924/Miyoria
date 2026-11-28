@@ -1,7 +1,7 @@
-// Her figure on the stage (docs/design/her-room.md §7.3): the seam where a Live2D canvas goes later.
-// For now the landing page's recorded loops (`landing/her/*.webm`, from the official free model by
-// 神宫凉子) stand in, one per pose, switched by her state and her face; under reduced motion only
-// their still posters.
+// Her figure on the stage (docs/design/her-room.md §7.3): her Live2D model when the Core can serve
+// it (`live2d.ts`), and under it until she is drawn, or alone, the landing page's recorded loops
+// (`landing/her/*.webm`, from the official free model by 神宫凉子), one per pose, switched by her
+// state and her face; under reduced motion only their still posters.
 
 import basinPoster from "../landing/her/basin.webp";
 import basinLoop from "../landing/her/basin.webm";
@@ -17,13 +17,15 @@ import heartPoster from "../landing/her/heart.webp";
 import heartLoop from "../landing/her/heart.webm";
 import singPoster from "../landing/her/sing.webp";
 import singLoop from "../landing/her/sing.webm";
-import type { RoomState } from "@miyoria/contracts/api";
+import type { RoomDoing, RoomFigureFace, RoomState } from "@miyoria/contracts/api";
 
 export type Pose = "heart" | "finger" | "sing" | "chest" | "glasses" | "basin" | "grass" | "still";
 
 export interface HerFigure {
   mount(into: HTMLElement): void;
   show(pose: Pose): void;
+  /** Her face and what she does (Live2D; the loops go by `show`). */
+  feel?(face: RoomFigureFace, doing: RoomDoing | "still"): void;
   /** Her line is being read out (a mouth for Live2D; nothing for the loops). */
   speaking(on: boolean): void;
   dispose(): void;
@@ -92,7 +94,8 @@ export function loopFigure(options: { reduced: () => boolean; loops?: typeof LOO
       v.load();
     } else {
       v.src = loop.src;
-      void v.play().catch(() => undefined);
+      // (Some players, and test DOMs, answer without a promise.)
+      v.play()?.catch(() => undefined);
     }
     v.classList.remove("hr-swap");
   };

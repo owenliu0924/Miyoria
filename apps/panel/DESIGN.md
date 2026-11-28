@@ -470,8 +470,10 @@ way to the mock's:
 - `room.css`, scoped under `.her-room`, every class `hr-*`. The panel's tokens plus the mock's
   `--soft #dedce4` and `--faint #8f8d99`, the capsule's glass `rgba(17,18,26,.74)` with
   `blur(16px) saturate(1.25)`, and a 0.9 overlay behind the relation panel.
-- She fills the stage: her recorded loops (`landing/her/*.webm`), chosen by her face, behind a
-  `HerFigure` seam where Live2D goes once its licence allows the member's browser to run it.
+- She fills the stage: her Live2D model (`room/live2d.ts`, the card studio's figure bundle served by
+  the Core, docs/design/her-room.md §7.5), its face by her state, line and mood, drawn over the
+  recorded loops (`landing/her/*.webm`) and cross-faded in once it is ready. Without it (no build,
+  no model, no WebGL, `?room-demo`) the loops stay, chosen by her face, and nothing is said.
 - Her line is 18 px (16 px under 700 px), weight 500: over the panel's 15 px cap, the landing's
   exception, approved with the mock. The member's own line above it is 13 px, faint.
 - One step of her reply at a time; a small arrow while more follow; a tap on her line or Enter in
