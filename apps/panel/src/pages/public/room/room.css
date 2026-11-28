@@ -120,7 +120,9 @@
 /* ---- the stage -------------------------------------------------------------------------------- */
 .hr-stage {
   position: relative;
-  overflow: hidden;
+  /* `clip`, not only `hidden`: a hidden box can still be scrolled by focus, and on a phone
+     focusing the capsule slid the whole stage up under the header. */
+  overflow: clip;
   min-height: 0;
   background:
     radial-gradient(60% 55% at 50% 36%, rgba(120, 140, 210, 0.08), transparent 72%),
