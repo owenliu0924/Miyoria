@@ -454,7 +454,7 @@
   -webkit-user-select: text;
 }
 /* Nothing is shaded behind the dock: what is behind her stays as it is to the bottom edge. Her
-   line and the member's are plain text with a little shadow of their own and nothing behind
+   line and the member's are plain text with a dark, spread shadow of their own and nothing behind
    them (the owner's choice: a band, a plate, a pool of shade and an outline were all tried). */
 .hr-dock[data-dragging] {
   transition: none;
@@ -471,8 +471,10 @@
   transition: opacity 1.2s var(--ease-out);
   color: var(--soft);
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.75),
-    0 0 5px rgba(0, 0, 0, 0.45);
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 5px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(0, 0, 0, 0.8),
+    0 0 18px rgba(0, 0, 0, 0.6);
 }
 .hr-you[data-show] {
   opacity: 1;
@@ -496,8 +498,10 @@
   font-weight: 500;
   text-wrap: balance;
   text-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.75),
-    0 0 6px rgba(0, 0, 0, 0.45);
+    0 1px 2px rgba(0, 0, 0, 0.95),
+    0 0 6px rgba(0, 0, 0, 0.9),
+    0 0 12px rgba(0, 0, 0, 0.8),
+    0 0 22px rgba(0, 0, 0, 0.6);
   overflow-wrap: anywhere;
 }
 .hr-her[data-more] {
