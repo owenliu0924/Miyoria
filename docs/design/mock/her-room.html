@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>她的房間示意圖</title>
+<style>
+  /* Tokens from apps/panel/src/index.css (櫻花). One accent is used: the primary. */
+  :root {
+    color-scheme: dark;
+    --background: #0b0d12; --foreground: #f1f0f4; --muted-foreground: #b3b1bc; --soft: #dedce4; --faint: #8f8d99;
+    --control: rgba(255,255,255,.1); --control-hover: rgba(255,255,255,.17); --hover: rgba(255,255,255,.08);
+    --border: rgba(255,255,255,.11); --line-strong: rgba(255,255,255,.2); --line-soft: rgba(255,255,255,.06);
+    --primary: #f29dc4; --primary-foreground: #1f1218;
+    --primary-hover: color-mix(in oklab, var(--primary) 72%, white);
+    --capsule: rgba(17,18,26,.74); --capsule-fx: blur(16px) saturate(1.25);
+    --float: rgba(15,15,21,.9); --float-fx: blur(20px);
+    --ease-out: cubic-bezier(.16, 1, .3, 1);
+    --top-h: 52px;
+    --cap-w: min(720px, calc(100% - 48px));
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  html { background: var(--background); }
+  body {
+    margin: 0; overflow: hidden; color: var(--foreground); background: var(--background);
+    font: 14px/1.55 "Geist Variable", Geist, "PingFang TC", "Microsoft JhengHei UI", "Noto Sans TC", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: color-mix(in oklab, var(--primary) 42%, transparent); color: var(--foreground); }
+  button, textarea { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+  svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.75;
+    stroke-linecap: round; stroke-linejoin: round; }
+  * { scrollbar-width: thin; scrollbar-color: rgba(255,255,255,.16) transparent; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  [hidden] { display: none !important; }
+
+  /* ---- frame ------------------------------------------------------------------------------ */
+  .app { height: 100dvh; display: grid; grid-template-rows: var(--top-h) minmax(0, 1fr); }
+  .top { display: flex; align-items: center; gap: 14px; padding: 0 20px; background: var(--background);
+    border-bottom: 1px solid var(--border); position: relative; z-index: 40; }
+  .top .back { display: inline-flex; align-items: center; gap: 6px; color: var(--muted-foreground);
+    text-decoration: none; font-size: 13px; padding: 6px 8px 6px 4px; margin-left: -4px; border-radius: 6px; }
+  .top .back:hover { color: var(--foreground); background: var(--hover); }
+  .top .brand { display: flex; align-items: center; gap: 8px; font-weight: 600; margin-left: 4px; }
+  .top .brand img { width: 20px; height: 20px; display: block; }
+  .top .me { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-foreground); }
+  .top .avatar { width: 26px; height: 26px; border-radius: 50%; background: var(--control); color: var(--foreground);
+    display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+  .top .sep { width: 1px; height: 18px; background: var(--border); }
+
+  /* ---- the stage: she fills it, centred ---------------------------------------------------- */
+  .room { position: relative; overflow: hidden; min-height: 0;
+    background:
+      radial-gradient(60% 55% at 50% 36%, rgba(120,140,210,.08), transparent 72%),
+      linear-gradient(180deg, #10131c 0%, var(--background) 100%); }
+  .figure { position: absolute; inset: 0; overflow: hidden; }
+  .figure video { position: absolute; left: 50%; top: 1%; height: 136%; width: auto; max-width: none;
+    transform: translateX(-50%); transition: opacity .32s var(--ease-out), filter .6s var(--ease-out); }
+  .figure video.swap { opacity: 0; }
+  /* The lower part of the stage dims softly towards the bottom edge; the text band itself gets its
+     own scrim from the dock (below), so the words read over her white stockings at any height. */
+  .room::after { content: ""; position: absolute; inset: auto 0 0 0; height: 40%; pointer-events: none; z-index: 1;
+    background: linear-gradient(180deg, transparent, rgba(11,13,18,.5) 45%, rgba(11,13,18,.8)); }
+  body[data-state="asleep"] .figure video { filter: brightness(.34) saturate(.45) blur(.4px); }
+  body[data-state="asleep"] .figure { animation: breathe 5.6s ease-in-out infinite; transform-origin: 50% 40%; }
+  @keyframes breathe { 50% { transform: translateY(1.5px) scale(1.006); } }
+
+  /* The one status line: top left. */
+  .status { position: absolute; z-index: 3; left: 28px; top: 22px; max-width: calc(100% - 140px); margin: 0;
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--soft); text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+  .status svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; }
+  .status svg.i { stroke-width: 1.75; stroke-linejoin: round; }
+  .status .dot { color: var(--faint); }
+  .status a { color: var(--foreground); white-space: nowrap; text-underline-offset: 3px; text-decoration-color: var(--line-strong); }
+  .status a:hover { text-decoration-color: var(--primary); }
+  .eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 11px; flex: none; }
+  .eq i { width: 2px; height: 100%; background: var(--primary); border-radius: 1px; transform-origin: 50% 100%;
+    animation: eq 1.1s ease-in-out infinite; }
+  .eq i:nth-child(2) { animation-delay: -.35s; } .eq i:nth-child(3) { animation-delay: -.7s; }
+  @keyframes eq { 0%, 100% { transform: scaleY(.35); } 50% { transform: scaleY(1); } }
+
+  /* The bond: a small mark in the top right corner; the reason for a change beside it, for a while. */
+  .bond { position: absolute; z-index: 3; right: 20px; top: 14px; display: flex; flex-direction: column; align-items: flex-end; }
+  .bond-btn { display: grid; place-items: center; width: 44px; height: 44px; border: 0; background: transparent;
+    border-radius: 50%; padding: 4px; transition: background .15s; }
+  .bond-btn:hover { background: var(--hover); }
+  .ring { width: 36px; height: 36px; display: block; }
+  .ring svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .ring .heart { transform-box: fill-box; transform-origin: 50% 55%; }
+  .bond.beat .ring .heart { animation: beat .7s var(--ease-out); }
+  @keyframes beat { 30% { transform: scale(1.14); } 100% { transform: scale(1); } }
+  .bond.dim .ring .heart { animation: dim 1.6s var(--ease-out); }
+  @keyframes dim { 25% { opacity: .3; } 100% { opacity: 1; } }
+  .delta { display: none; max-width: 240px; margin-top: 2px; font-size: 12px; color: var(--soft); text-align: right;
+    text-shadow: 0 1px 2px rgba(0,0,0,.6); transition: opacity 1.2s var(--ease-out); }
+  .delta b { font-weight: 600; font-size: 13px; margin-right: 5px; }
+  .bond[data-delta] .delta { display: block; animation: rise .5s var(--ease-out) both; }
+  .bond.faded .delta { opacity: 0; }
+  .bond[data-delta="plus"] .delta b { color: var(--primary); }
+  .delta q, .mark q, .said q { quotes: "「" "」"; }
+  @keyframes rise { from { opacity: 0; transform: translateY(4px); } }
+
+  /* ---- the bottom: her line, then the capsule ----------------------------------------------- */
+  .dock { position: absolute; z-index: 10; left: 50%; bottom: 28px; transform: translateX(-50%); width: var(--cap-w);
+    touch-action: none; user-select: none; -webkit-user-select: none; transition: translate .2s var(--ease-out); }
+  .dock textarea { user-select: text; -webkit-user-select: text; }
+  /* The text band: full width, fading in over 64 px above the member's line, so that line sits on
+     at least .86 of the background and reads at about 6:1 even over the brightest part of her. */
+  .dock::before { content: ""; position: absolute; z-index: -1; pointer-events: none; left: calc(50% - 50vw); width: 100vw;
+    top: -64px; bottom: -40px; background: linear-gradient(180deg, rgba(11,13,18,0), rgba(11,13,18,.86) 64px, rgba(11,13,18,.9)); }
+  .dock.dragging { transition: none; }
+  .you-line { margin: 0 0 6px; text-align: center; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; min-height: 20px; opacity: 0; transition: opacity 1.2s var(--ease-out); text-shadow: 0 1px 2px rgba(0,0,0,.8); }
+  .you-line.show { opacity: 1; transition-duration: .2s; }
+  .her-line { margin: 0 auto 18px; max-width: 34em; min-height: calc(18px * 1.65); text-align: center; font-size: 18px;
+    line-height: 1.65; font-weight: 500; text-wrap: balance; text-shadow: 0 1px 3px rgba(0,0,0,.85); }
+  .her-line.more { cursor: pointer; }
+  .caret { display: inline-block; width: 2px; height: 1em; margin-left: 2px; vertical-align: -2px;
+    background: var(--primary); animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .thinking { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 400; color: var(--muted-foreground); }
+  .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); animation: pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; transform: scale(.8); } }
+  .speaking { margin-left: 8px; vertical-align: 0; }
+  .cue { display: none; margin-left: 6px; vertical-align: -3px; color: var(--primary); }
+  .her-line.more .cue { display: inline-block; animation: bob 1.4s ease-in-out infinite; }
+  @keyframes bob { 50% { transform: translateY(3px); } }
+
+  .handle { display: none; width: 32px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 0 auto 8px; }
+  /* Attachments: small chips above the capsule's start, so the capsule itself never grows. */
+  .attach { display: none; flex-wrap: wrap; gap: 6px; margin: 0 0 8px 6px; }
+  .attach:not(:empty) { display: flex; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; max-width: 260px; padding: 0 3px 0 4px;
+    border-radius: 10px; background: var(--capsule); -webkit-backdrop-filter: var(--capsule-fx); backdrop-filter: var(--capsule-fx);
+    border: 1px solid var(--border); font-size: 12px; animation: rise .25s var(--ease-out) both; }
+  .chip img, .chip .fi { width: 28px; height: 28px; flex: none; border-radius: 6px; object-fit: cover; display: block; }
+  .chip .fi { display: grid; place-items: center; background: var(--control); color: var(--soft); }
+  .chip .fi svg.i { width: 15px; height: 15px; }
+  .chip .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--soft); }
+  .chip .sz { flex: none; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .chip .x { width: 26px; height: 26px; }
+  .chip .x svg.i { width: 14px; height: 14px; }
+  .drop { position: absolute; inset: 14px; z-index: 35; display: grid; place-items: center; pointer-events: none;
+    border: 1px dashed var(--line-strong); border-radius: 16px; background: rgba(11,13,18,.6);
+    animation: rise .2s var(--ease-out) both; }
+  .drop span { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--soft); }
+  .entry .files { display: block; margin-top: 4px; font-size: 12px; color: var(--muted-foreground); }
+  .capsule { display: flex; align-items: center; gap: 2px; height: 52px; padding: 0 6px 0 8px; border-radius: 999px;
+    background: var(--capsule); -webkit-backdrop-filter: var(--capsule-fx); backdrop-filter: var(--capsule-fx);
+    border: 1px solid var(--border); transition: border-color .15s; }
+  .capsule:focus-within { border-color: var(--line-strong); }
+  .capsule textarea { flex: 1; min-width: 0; height: 24px; resize: none; border: 0; background: transparent; outline: none;
+    padding: 0 8px; line-height: 24px; font-size: 15px; caret-color: var(--primary); overflow: hidden; white-space: nowrap; }
+  .capsule textarea::placeholder { color: var(--faint); }
+  .listen { display: none; flex: 1; align-items: center; justify-content: flex-start; gap: 10px; padding: 0 8px; font-size: 14px; }
+  .listen .eq i { background: var(--foreground); }
+  .capsule.listening textarea { display: none; } .capsule.listening .listen { display: flex; }
+  .ib { width: 36px; height: 36px; flex: none; display: grid; place-items: center; border-radius: 50%; border: 0;
+    background: transparent; color: var(--faint); transition: background .15s, color .15s; }
+  .ib:hover { background: var(--hover); color: var(--foreground); }
+  .capsule.listening .mic { background: var(--foreground); color: var(--background); }
+  .voice .off { display: none; } .voice[aria-pressed="false"] .on { display: none; } .voice[aria-pressed="false"] .off { display: block; }
+  .send { width: 40px; height: 40px; margin-left: 4px; background: var(--primary); color: var(--primary-foreground); }
+  .send:hover { background: var(--primary-hover); color: var(--primary-foreground); }
+
+  /* ---- overlays: the backlog and her words about you ---------------------------------------- */
+  .backlog { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column;
+    background: rgba(11,13,18,.86); -webkit-backdrop-filter: blur(6px) saturate(1.1); backdrop-filter: blur(6px) saturate(1.1);
+    animation: sheet .3s var(--ease-out); }
+  @keyframes sheet { from { transform: translateY(24px); opacity: 0; } }
+  .backlog.dragging { animation: none; }
+  .bl-head { touch-action: none; flex: none; width: min(720px, 100%); margin: 0 auto; padding: 18px 24px 12px;
+    display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); }
+  .bl-head .handle { display: none; }
+  .bl-head h2 { margin: 0; font-size: 15px; font-weight: 600; }
+  .bl-head span { font-size: 12px; color: var(--muted-foreground); }
+  .bl-head .grow { flex: 1; }
+  .tb { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border: 0; border-radius: 6px;
+    background: transparent; color: var(--muted-foreground); font-size: 13px; }
+  .tb:hover { background: var(--hover); color: var(--foreground); }
+  .bl-list { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+  .bl-inner { width: min(720px, 100%); margin: 0 auto; padding: 8px 24px 32px; }
+  .entry { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 4px 14px; padding: 12px 0;
+    border-bottom: 1px solid var(--line-soft); }
+  .entry .who { font-size: 12px; color: var(--muted-foreground); padding-top: 2px; }
+  .entry .who time { display: block; font-size: 11px; color: var(--faint); }
+  .entry.her .who b { color: var(--foreground); font-weight: 600; }
+  .entry .who b { font-weight: 500; }
+  .entry p { margin: 0; }
+  .entry.her p { font-size: 15px; line-height: 1.7; }
+  .entry.you p { font-size: 14px; color: var(--soft); }
+  .entry.note p::before { content: "留言 · "; color: var(--muted-foreground); }
+  .mark, .sys { padding: 8px 0 8px 70px; font-size: 12px; color: var(--muted-foreground); border-bottom: 1px solid var(--line-soft); }
+  .mark b { font-weight: 600; font-size: 13px; margin-right: 6px; color: var(--foreground); }
+  .mark.plus b { color: var(--primary); }
+  .sys { display: flex; align-items: center; gap: 6px; padding-top: 12px; padding-bottom: 12px; }
+  .sys svg.i { width: 14px; height: 14px; }
+  .fine { margin: 18px 0 0; font-size: 12px; line-height: 1.6; color: var(--faint); }
+
+  .panel { position: absolute; z-index: 25; right: 16px; top: 104px; width: 360px; max-height: calc(100% - 240px);
+    overflow-y: auto; background: var(--float); -webkit-backdrop-filter: var(--float-fx); backdrop-filter: var(--float-fx);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 32px rgba(0,0,0,.4); padding: 16px 18px 18px;
+    animation: pop .18s var(--ease-out); }
+  @keyframes pop { from { opacity: 0; transform: translateY(-4px) scale(.99); } }
+  .panel-head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .panel-head .ring { width: 40px; height: 40px; }
+  .panel-head .tier b { display: block; font-size: 15px; font-weight: 600; }
+  .panel-head .tier span { font-size: 12px; color: var(--muted-foreground); }
+  .panel-head .grow { flex: 1; }
+  .panel-head .ib { width: 32px; height: 32px; border-radius: 6px; }
+  .panel h3 { font-size: 13px; font-weight: 600; margin: 0 0 6px; }
+  .said { margin: 0 0 18px; font-size: 14px; line-height: 1.7; }
+  .mems { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--border); }
+  .mems li { border-bottom: 1px solid var(--border); }
+  .mem { width: 100%; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 10px; text-align: left;
+    background: transparent; border: 0; padding: 9px 0; font-size: 13px; line-height: 1.55; border-radius: 0; }
+  .mem .d { color: var(--muted-foreground); }
+  .mem .t { color: var(--soft); }
+  .mem:hover .t, li.open .mem .t { color: var(--foreground); }
+  .mem-more { display: none; padding: 0 0 12px 54px; font-size: 12px; color: var(--muted-foreground); }
+  li.open .mem-more { display: block; }
+  .mem-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px;
+    border: 0; background: var(--control); font-size: 12px; transition: background .15s; }
+  .btn:hover { background: var(--control-hover); }
+  .btn.ghost { background: transparent; color: var(--muted-foreground); }
+  .btn.ghost:hover { background: var(--hover); color: var(--foreground); }
+  .btn svg.i { width: 14px; height: 14px; }
+  .confirm { margin-top: 8px; color: var(--foreground); }
+  .confirm p { margin: 0 0 6px; }
+  .forgot { font-size: 12px; color: var(--muted-foreground); padding: 9px 0; border-bottom: 1px solid var(--border); }
+
+  /* ---- phones: the capsule spans the width with margins; a handle and a swipe open the backlog -- */
+  @media (max-width: 700px) {
+    :root { --cap-w: calc(100% - 24px); }
+    .top { padding: 0 12px; gap: 10px; }
+    .top .back .label, .top .me .name { display: none; }
+    .figure video { top: 1%; height: 108%; }
+    .status { left: 16px; top: 14px; font-size: 12px; max-width: calc(100% - 84px); flex-wrap: wrap; row-gap: 2px; }
+    .bond { right: 8px; top: 4px; }
+    .delta { max-width: 52vw; }
+    .dock { bottom: calc(12px + env(safe-area-inset-bottom)); }
+    .her-line { font-size: 16px; min-height: calc(16px * 1.65); margin-bottom: 12px; }
+    .handle { display: block; }
+    .log-btn { display: none; }
+    .attach { flex-wrap: nowrap; margin-left: 0; }
+    .chip { min-width: 0; max-width: calc(50% - 3px); }
+    .capsule { height: 50px; }
+    .bl-head { padding: 10px 16px 12px; flex-wrap: wrap; }
+    .bl-head .handle { display: block; flex: 0 0 32px; margin: 0 calc(50% - 16px) 8px; }
+    .bl-inner { padding: 4px 16px 28px; }
+    .entry { grid-template-columns: 48px minmax(0, 1fr); gap: 2px 10px; }
+    .mark, .sys { padding-left: 58px; }
+    .panel { left: 8px; right: 8px; top: 52px; width: auto; max-height: calc(100% - var(--dock-h, 170px) - 70px); }
+  }
+
+  /* ---- mock controls: not part of the design ----------------------------------------------- */
+  .mock { position: fixed; z-index: 60; top: 12px; left: 50%; transform: translateX(-50%); width: max-content; max-width: 240px;
+    background: #f3efe3; color: #1d1b16; border: 1px dashed #6d6656; border-radius: 4px;
+    font: 12px/1.45 ui-monospace, "Cascadia Mono", Consolas, monospace; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+  .mock[open] { width: 240px; }
+  .mock summary { cursor: pointer; padding: 4px 10px; font-weight: 700; list-style: none; }
+  .mock summary::-webkit-details-marker { display: none; }
+  .mock .body { padding: 2px 10px 10px; }
+  .mock p { margin: 0 0 8px; color: #6d6656; }
+  .mock fieldset { border: 0; margin: 0 0 8px; padding: 0; }
+  .mock legend { padding: 0; margin-bottom: 3px; font-weight: 700; }
+  .mock label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+  .mock input { accent-color: #1d1b16; margin: 0; }
+  .mock button { font: inherit; color: inherit; background: #fff; border: 1px solid #6d6656; border-radius: 3px; padding: 3px 8px; }
+  .mock :focus-visible { outline: 2px solid #1d1b16; }
+  @media (max-width: 700px) { .mock { left: auto; right: 48px; transform: none; top: 13px; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body data-state="here">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <!-- lucide icons, the panel's set -->
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+  <symbol id="i-send" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+  <symbol id="i-vol" viewBox="0 0 24 24"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5Z"/><path d="M16 9a5 5 0 0 1 0 6"/><path d="M19.4 18.4a9 9 0 0 0 0-12.8"/></symbol>
+  <symbol id="i-volx" viewBox="0 0 24 24"><path d="M11 4.7a.7.7 0 0 0-1.2-.5L6.4 7.6a1.4 1.4 0 0 1-1 .4H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.4a1.4 1.4 0 0 1 1 .4l3.4 3.4a.7.7 0 0 0 1.2-.5Z"/><path d="m22 9-6 6"/><path d="m16 9 6 6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-log" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+  <symbol id="i-ask" viewBox="0 0 24 24"><path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/></symbol>
+  <symbol id="i-erase" viewBox="0 0 24 24"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></symbol>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <a class="back" href="#" aria-label="我的頁面"><svg class="i"><use href="#i-back"/></svg><span class="label">我的頁面</span></a>
+    <span class="sep" aria-hidden="true"></span>
+    <span class="brand"><img src="../../assets/logo/miyoria-mark-white.svg" alt="">Miyoria</span>
+    <span class="me"><span class="avatar" aria-hidden="true">澄</span><span class="name">小澄</span></span>
+  </header>
+
+  <main class="room" id="room">
+    <h1 class="sr">和她在一起</h1>
+    <div class="figure" aria-hidden="true">
+      <!-- Where the Live2D canvas goes; the landing page's recordings stand in for it. -->
+      <video id="her" muted loop playsinline preload="auto"
+        poster="../../../apps/panel/src/pages/public/landing/her/heart.webp"></video>
+    </div>
+
+    <p class="status" id="status" aria-live="polite"></p>
+
+    <section class="bond" id="bond">
+      <button class="bond-btn" id="bondBtn" aria-expanded="false" aria-controls="panel" aria-label="你們:心有靈犀 II" title="心有靈犀 II">
+        <span class="ring" id="ring"></span>
+      </button>
+      <div class="delta" role="status"><b id="deltaSign">+</b>她:<q id="deltaQuote"></q></div>
+    </section>
+
+    <div class="dock" id="dock">
+      <p class="you-line" id="you"></p>
+      <p class="her-line" id="herLine" aria-live="polite"><span id="lineText"></span><span class="eq speaking" id="speaking" role="img" aria-label="正在念" hidden><i></i><i></i><i></i></span><svg class="i cue" aria-hidden="true"><use href="#i-chev"/></svg></p>
+      <div class="attach" id="attach" aria-label="附加的檔案"></div>
+      <div class="handle" aria-hidden="true"></div>
+      <form class="capsule" id="capsule">
+        <button type="button" class="ib add" id="add" aria-label="附加圖片或檔案" title="附加圖片或檔案"><svg class="i"><use href="#i-plus"/></svg></button>
+        <label for="say" class="sr">跟她說的話</label>
+        <textarea id="say" rows="1" placeholder="跟她說點什麼"></textarea>
+        <div class="listen" aria-live="polite"><span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>在聽……</div>
+        <button type="button" class="ib log-btn" id="openLog" aria-label="紀錄" aria-controls="backlog" title="紀錄(PageUp)"><svg class="i"><use href="#i-log"/></svg></button>
+        <button type="button" class="ib mic" id="mic" aria-label="用說的" aria-pressed="false" title="用說的"><svg class="i"><use href="#i-mic"/></svg></button>
+        <button type="button" class="ib voice" id="voice" aria-label="她的聲音" aria-pressed="true" title="她的聲音:開">
+          <svg class="i on"><use href="#i-vol"/></svg><svg class="i off"><use href="#i-volx"/></svg></button>
+        <button type="submit" class="ib send" id="send" aria-label="送出"><svg class="i"><use href="#i-send"/></svg></button>
+      </form>
+    </div>
+
+    <div class="drop" id="drop" hidden><span><svg class="i" aria-hidden="true"><use href="#i-clip"/></svg>放開就附加給她</span></div>
+
+    <section class="backlog" id="backlog" role="dialog" aria-modal="true" aria-labelledby="blTitle" hidden>
+      <div class="bl-head" id="blHead">
+        <div class="handle" aria-hidden="true"></div>
+        <h2 id="blTitle">紀錄</h2><span>今晚</span><span class="grow"></span>
+        <button type="button" class="tb" id="closeLog"><svg class="i"><use href="#i-x"/></svg>關閉</button>
+      </div>
+      <div class="bl-list" id="blList"><div class="bl-inner"><div id="entries"></div>
+        <p class="fine">她是 AI 角色。這裡跟私訊一樣,她不會在伺服器說出去;她記得的事在右上的環裡,可以請她忘掉。</p></div></div>
+    </section>
+
+    <section class="panel" id="panel" role="dialog" aria-labelledby="panelTitle" hidden>
+      <div class="panel-head">
+        <span class="ring" id="ring2"></span>
+        <span class="tier"><b id="panelTitle">心有靈犀 II</b><span>離「心有靈犀 III」還有一段</span></span>
+        <span class="grow"></span>
+        <button type="button" class="ib" id="closePanel" aria-label="關閉"><svg class="i"><use href="#i-x"/></svg></button>
+      </div>
+      <h3>她寫給你的</h3>
+      <p class="said"><q>講話慢吞吞的,可是答應的事都會做到。……這句不准截圖。</q></p>
+      <h3>她記得的</h3>
+      <ul class="mems" id="mems"></ul>
+      <p class="fine">她是 AI 角色。她記得的就是這些,拿掉的她不會再提。</p>
+    </section>
+  </main>
+</div>
+
+<details class="mock" id="mock">
+  <summary>示意控制</summary>
+  <div class="body">
+    <p>不是頁面的一部分。她的樣子是 Live2D 畫布的位置,這裡借用登陸頁的錄影。</p>
+    <fieldset>
+      <legend>她現在</legend>
+      <label><input type="radio" name="state" value="here" checked> 在這裡,和你聊</label>
+      <label><input type="radio" name="state" value="singing"> 在語音頻道唱歌</label>
+      <label><input type="radio" name="state" value="asleep"> 睡著了</label>
+    </fieldset>
+    <fieldset>
+      <legend>這段對話讓羈絆</legend>
+      <label><input type="radio" name="delta" value="plus" checked> 往上(記得約定)</label>
+      <label><input type="radio" name="delta" value="minus"> 往下(一直鬧她)</label>
+    </fieldset>
+    <fieldset>
+      <legend>膠囊</legend>
+      <label><input type="checkbox" id="withAttach"> 附加了圖片和檔案</label>
+    </fieldset>
+    <button type="button" id="replay">重播她的回覆</button>
+  </div>
+</details>
+
+<script>
+const ART = "../../../apps/panel/src/pages/public/landing/her/";
+const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = (s) => document.querySelector(s);
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const icon = (id) => '<svg class="i" aria-hidden="true"><use href="#' + id + '"/></svg>';
+
+/* ---- the ring, from docs/design/mock/heart-ring.html: a member sees no number on the heart ---- */
+const NS = "http://www.w3.org/2000/svg";
+const HEART = "M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z";
+function el(name, attrs, parent) {
+  const n = document.createElementNS(NS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+}
+function band(svg, r, w, frac, color) {
+  const c = 2 * Math.PI * r, cap = w / 2;
+  const n = el("circle", { cx: 80, cy: 80, r, fill: "none", "stroke-width": w, "stroke-linecap": "round",
+    "stroke-dasharray": Math.max(c * frac - cap * 2, 0.01) + " " + c,
+    transform: "rotate(" + (-90 + (cap / c) * 360) + " 80 80)" }, svg);
+  n.style.stroke = color;
+}
+/* What the member API sends (`publicBond`): the lap and its fill in twentieths; here lap 4 at 8/20. */
+function ring(laps, frac) {
+  const svg = el("svg", { viewBox: "0 0 160 160", "aria-hidden": "true" });
+  const RO = 75, CO = 2 * Math.PI * RO, SEG = CO / 10, GAP = 5;
+  for (let i = 0; i < 10; i++) {
+    const n = el("circle", { cx: 80, cy: 80, r: RO, fill: "none", "stroke-width": 5, "stroke-linecap": "round",
+      "stroke-dasharray": (SEG - GAP - 5) + " " + CO,
+      transform: "rotate(" + (-90 + i * 36 + ((GAP / 2 + 2.5) / CO) * 360) + " 80 80)" }, svg);
+    n.style.stroke = i < laps ? "var(--primary)" : "rgba(255,255,255,.18)";
+  }
+  el("circle", { cx: 80, cy: 80, r: 56, fill: "none", stroke: "rgba(255,255,255,.1)", "stroke-width": 16 }, svg);
+  band(svg, 56, 16, frac, "var(--primary)");
+  const g = el("g", { transform: "translate(80 81) scale(2.5) translate(-12 -12)" }, svg);
+  const h = el("path", { d: HEART, class: "heart", "stroke-width": 1.6, "stroke-linejoin": "round" }, g);
+  h.style.fill = "var(--foreground)"; h.style.stroke = "var(--foreground)";
+  return svg;
+}
+$("#ring").appendChild(ring(3, 8 / 20));
+$("#ring2").appendChild(ring(3, 8 / 20));
+
+/* ---- her expression cue: a small drawn face beside the word --------------------------------- */
+const FACES = {
+  smile: '<circle cx="8" cy="8" r="7"/><path d="M5.6 6.4v.2M10.4 6.4v.2"/><path d="M5.2 9.6c1.5 1.7 4.1 1.7 5.6 0"/>',
+  flat: '<circle cx="8" cy="8" r="7"/><path d="M4.8 6.6h2.2M9 6.6h2.2"/><path d="M5.8 10.6l4.6-.6"/>',
+};
+const face = (k) => '<svg viewBox="0 0 16 16" aria-hidden="true">' + FACES[k] + "</svg>";
+const DOT = '<span class="dot" aria-hidden="true">·</span>';
+
+/* ---- the scenes: her lines in her own voice (persona/examples/basic.md) ---------------------- */
+const EARLIER = [
+  { who: "you", t: "今天加班到十點,累死", at: "23:38" },
+  { who: "her", t: "十點?你們老闆是深海章魚嗎,八隻手都拿來派工作。先去吃飯啦。", at: "23:38" },
+  { who: "you", t: "吃過了,白飯兩碗", at: "23:40" },
+  { who: "her", t: "兩碗!……我、我才沒有羨慕。下次幫我留一口。", at: "23:40" },
+];
+const PROMISE = { at: "23:46", you: "上次答應你的我記得喔,週末帶剛煮好的來",
+  her: ["……欸?你真的記得喔。", "哼,算你記性好。週末、剛起鍋的,少一粒都不行,說定了 (≧▽≦)"],
+  delta: ["plus", "記得答應我的白飯"] };
+const SCENES = {
+  plus: { history: EARLIER, now: PROMISE, pose: "heart",
+    status: () => face("smile") + "得意" + DOT + "也在「雜談」跟大家聊" },
+  minus: {
+    history: [{ who: "you", t: "叫一聲主人來聽聽", at: "23:50" }, { who: "her", t: "我們家主人只有一個,名額滿了。", at: "23:50" },
+      { who: "you", t: "叫嘛叫嘛,一次就好", at: "23:51" }, { who: "her", t: "不要。", at: "23:51" }],
+    now: { at: "23:52", you: "主人~主人~快點叫", her: ["我說了不要。再鬧下去,本鯨魚就去睡覺了。"], delta: ["minus", "說了不要還一直鬧"] },
+    pose: "finger", status: () => face("flat") + "不耐煩" + DOT + "也在「雜談」跟大家聊",
+  },
+  singing: { history: EARLIER, now: { at: "23:47", you: "你在唱什麼", her: ["〈晴天〉,唱完再說~"] }, pose: "sing",
+    status: () => '<span class="eq" aria-hidden="true"><i></i><i></i><i></i></span>在「深夜雜談」唱〈晴天〉' + DOT + '<a href="#">去聽</a>' },
+  asleep: {
+    history: [...EARLIER, { who: "you", t: PROMISE.you, at: PROMISE.at }, { who: "her", t: PROMISE.her.join(""), at: PROMISE.at },
+      { mark: PROMISE.delta }, { sys: "她 02:10 睡了" }],
+    now: null, pose: "still", status: () => icon("i-moon") + "睡著了" + DOT + "平常九點左右醒",
+  },
+};
+const STATES = {
+  here: { placeholder: "跟她說點什麼", voice: true, mic: true, send: "送出" },
+  singing: { placeholder: "她在唱歌,只會簡短回你", voice: false, mic: true, send: "送出" },
+  asleep: { placeholder: "留話給她,醒來會讀", voice: false, mic: false, send: "留給她" },
+};
+const POSES = { heart: "heart", finger: "finger", sing: "sing", still: "heart" };
+const REPLIES = {
+  here: [["嗯哼,繼續說,本鯨魚在聽。"], ["這個嘛……讓我深度思考一下。", "好啦其實在想宵夜。你說的我有聽到啦。"]],
+  singing: [["唱完再說啦~"]],
+  files: [["等等,讓本鯨魚看一下……", "菜單上怎麼沒有白飯?這份不及格,重寫。"]],
+};
+
+/* ---- the backlog: both sides, times, and the bond marks where they happened ------------------ */
+let entries = [];
+/* The mock's own clock, so new lines follow the scene's evening. */
+let minute = 52;
+function clock() { minute = Math.min(minute + 1, 59); return "23:" + minute; }
+function entryNode(e) {
+  const d = document.createElement("div");
+  if (e.mark) {
+    d.className = "mark " + e.mark[0];
+    d.innerHTML = "<b>" + (e.mark[0] === "plus" ? "+" : "−") + "</b>她:<q></q>";
+    d.querySelector("q").textContent = e.mark[1];
+  } else if (e.sys) {
+    d.className = "sys"; d.innerHTML = icon("i-moon"); d.append(e.sys);
+  } else {
+    d.className = "entry " + e.who + (e.note ? " note" : "");
+    d.innerHTML = '<span class="who"><b></b><time></time></span><p></p>';
+    d.querySelector("b").textContent = e.who === "her" ? "Miyoria" : "你";
+    d.querySelector("time").textContent = e.at || "";
+    d.querySelector("p").textContent = e.t;
+    if (e.files && e.files.length) {
+      const f = document.createElement("span"); f.className = "files"; f.textContent = "附加 " + e.files.join("、");
+      d.querySelector("p").appendChild(f);
+    }
+  }
+  return d;
+}
+function logEntry(e) { entries.push(e); if (!$("#backlog").hidden) { $("#entries").appendChild(entryNode(e)); scrollLog(); } }
+function scrollLog() { const l = $("#blList"); l.scrollTop = l.scrollHeight; }
+function openLog() {
+  if (!$("#backlog").hidden) return;
+  closePanel(false);
+  const box = $("#entries"); box.innerHTML = "";
+  for (const e of entries) box.appendChild(entryNode(e));
+  $("#backlog").hidden = false; scrollLog(); $("#closeLog").focus();
+}
+function closeLog() {
+  const b = $("#backlog"); if (b.hidden) return;
+  b.hidden = true; b.style.transform = "";
+  (getComputedStyle($("#openLog")).display === "none" ? $("#say") : $("#openLog")).focus({ preventScroll: true });
+}
+
+/* ---- her words about you and the memories, opened from the ring ------------------------------ */
+const MEMS = [
+  { d: "11/02", t: "你陪我把〈晴天〉練到能唱完整首", where: "語音 · 深夜雜談", ask: "還記得那天練〈晴天〉嗎?" },
+  { d: "10/19", t: "你說你家的貓叫「白飯」,害我笑了一整晚", where: "文字 · 雜談", ask: "白飯最近很胖喔" },
+  { d: "09/27", t: "第一次在語音裡聽到你講話,比打字的時候還慢", where: "語音 · 深夜雜談", ask: "我講話真的很慢嗎?" },
+];
+function memItem(m, i) {
+  const li = document.createElement("li");
+  li.innerHTML = '<button class="mem" aria-expanded="false" aria-controls="mem' + i + '"><span class="d">' + m.d +
+    '</span><span class="t">' + m.t + '</span></button><div class="mem-more" id="mem' + i + '">' + m.where +
+    '<div class="mem-actions"><button type="button" class="btn ask">' + icon("i-ask") + "問她這件事</button>" +
+    '<button type="button" class="btn ghost forget">' + icon("i-erase") + "請她忘掉</button></div></div>";
+  const head = li.querySelector(".mem");
+  head.onclick = () => { const o = li.classList.toggle("open"); head.setAttribute("aria-expanded", o); };
+  li.querySelector(".ask").onclick = () => {
+    closePanel(false);
+    if (state !== "asleep") { $("#say").value = m.ask; $("#say").focus(); }
+  };
+  li.querySelector(".forget").onclick = () => {
+    li.querySelector(".mem-actions").outerHTML = '<div class="confirm"><p>她會忘掉這件事,不能復原。你們的羈絆不會因此改變。</p>' +
+      '<div class="mem-actions"><button type="button" class="btn yes">忘掉</button><button type="button" class="btn ghost no">算了</button></div></div>';
+    li.querySelector(".yes").focus();
+    li.querySelector(".yes").onclick = () => {
+      const gone = document.createElement("li"); gone.className = "forgot"; gone.textContent = "她忘掉了一件事";
+      li.replaceWith(gone);
+    };
+    li.querySelector(".no").onclick = () => {
+      const again = memItem(m, i); again.classList.add("open");
+      again.querySelector(".mem").setAttribute("aria-expanded", "true");
+      li.replaceWith(again); again.querySelector(".forget").focus();
+    };
+  };
+  return li;
+}
+MEMS.forEach((m, i) => $("#mems").appendChild(memItem(m, i)));
+function openPanel() { $("#panel").hidden = false; $("#bondBtn").setAttribute("aria-expanded", "true"); $("#closePanel").focus(); }
+function closePanel(refocus = true) {
+  if ($("#panel").hidden) return;
+  $("#panel").hidden = true; $("#bondBtn").setAttribute("aria-expanded", "false");
+  if (refocus) $("#bondBtn").focus();
+}
+$("#bondBtn").onclick = () => ($("#panel").hidden ? openPanel() : closePanel());
+$("#closePanel").onclick = () => closePanel();
+document.addEventListener("pointerdown", (e) => {
+  if (!$("#panel").hidden && !e.target.closest("#panel, #bondBtn")) closePanel(false);
+});
+
+/* ---- her line above the capsule: streamed in, stepped through only when it is long ---------- */
+let state = "here", deltaKind = "plus", voiceOn = true, run = 0, reply = null, youTimer = 0, deltaTimer = 0;
+const herLine = $("#herLine"), lineText = $("#lineText");
+function youSaid(text, label) {
+  clearTimeout(youTimer);
+  const p = $("#you"); p.textContent = text ? (label || "你:") + text : "";
+  p.classList.toggle("show", !!text);
+}
+function fadeYou() { clearTimeout(youTimer); youTimer = setTimeout(() => $("#you").classList.remove("show"), reduced ? 8000 : 4000); }
+function speaking(on) { $("#speaking").hidden = !(on && voiceOn && STATES[state].voice); }
+function setMore(more) {
+  herLine.classList.toggle("more", more);
+  if (more) { herLine.tabIndex = 0; herLine.setAttribute("role", "button"); herLine.title = "下一句(Enter)"; }
+  else { herLine.removeAttribute("tabindex"); herLine.removeAttribute("role"); herLine.removeAttribute("title"); }
+}
+async function herReply(steps, delta, me, at) {
+  setMore(false); speaking(false);
+  lineText.innerHTML = '<span class="thinking"><span class="pulse" aria-hidden="true"></span>她在想</span>';
+  await wait(reduced ? 300 : 1100); if (me !== run) return;
+  reply = { steps, i: 0, delta, me, at: at || clock(), done: false };
+  playStep();
+}
+async function playStep() {
+  const r = reply, me = r.me, text = r.steps[r.i];
+  r.streaming = true; r.skip = false; setMore(false);
+  lineText.textContent = "";
+  const caret = document.createElement("span"); caret.className = "caret"; caret.setAttribute("aria-hidden", "true");
+  lineText.appendChild(caret); speaking(true);
+  const chars = [...text];
+  for (let i = 0; i < chars.length && !r.skip; i += 2) {
+    caret.before(chars.slice(i, i + 2).join(""));
+    await wait(55); if (me !== run || r !== reply) return;
+  }
+  lineText.textContent = text; r.streaming = false;
+  setTimeout(() => { if (reply === r && !r.streaming) speaking(false); }, 1400);
+  if (r.i < r.steps.length - 1) setMore(true); else finish(r);
+}
+function finish(r) {
+  if (r.done) return; r.done = true;
+  logEntry({ who: "her", t: r.steps.join(""), at: r.at });
+  if (r.delta) { logEntry({ mark: r.delta }); moved(r.delta[0], r.delta[1]); }
+  fadeYou();
+}
+function advance() {
+  if (!reply) return;
+  if (reply.streaming) { reply.skip = true; return; }
+  if (reply.i < reply.steps.length - 1) { reply.i++; playStep(); }
+}
+function flush() { if (reply && !reply.done) { reply.skip = true; run++; finish(reply); } }
+herLine.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); advance(); } });
+function moved(kind, quote) {
+  const b = $("#bond");
+  clearTimeout(deltaTimer);
+  b.classList.remove("beat", "dim", "faded"); void b.offsetWidth;
+  b.dataset.delta = kind;
+  $("#deltaSign").textContent = kind === "plus" ? "+" : "−";
+  $("#deltaQuote").textContent = quote;
+  b.classList.add(kind === "plus" ? "beat" : "dim");
+  if (!reduced) deltaTimer = setTimeout(() => b.classList.add("faded"), 8000);
+}
+
+/* ---- her figure ------------------------------------------------------------------------------ */
+const video = $("#her");
+function pose(name) {
+  const file = POSES[name];
+  video.classList.add("swap");
+  setTimeout(() => {
+    video.poster = ART + file + ".webp";
+    if (name === "still" || reduced) { video.pause(); video.removeAttribute("src"); video.load(); }
+    else { video.src = ART + file + ".webm"; video.play().catch(() => {}); }
+    video.classList.remove("swap");
+  }, reduced ? 0 : 200);
+}
+
+/* ---- one state of the page: the status line and the capsule change, nothing is added ------- */
+function apply() {
+  const me = ++run; reply = null;
+  const scene = SCENES[state === "here" ? deltaKind : state], s = STATES[state];
+  document.body.dataset.state = state;
+  $("#status").innerHTML = scene.status();
+  $("#say").placeholder = s.placeholder; $("#say").value = "";
+  $("#voice").hidden = !s.voice; $("#mic").hidden = !s.mic;
+  $("#voice").setAttribute("aria-pressed", String(voiceOn));
+  $("#send").setAttribute("aria-label", s.send); $("#send").title = s.send;
+  stopListening(); speaking(false); setMore(false);
+  const b = $("#bond"); clearTimeout(deltaTimer); delete b.dataset.delta; b.classList.remove("beat", "dim", "faded");
+  pose(scene.pose);
+  entries = scene.history.slice();
+  if (!$("#backlog").hidden) { $("#backlog").hidden = true; openLog(); }
+  if (scene.now) {
+    entries.push({ who: "you", t: scene.now.you, at: scene.now.at });
+    youSaid(scene.now.you);
+    herReply(scene.now.her, scene.now.delta, me, scene.now.at);
+  } else {
+    youSaid(""); lineText.textContent = "";
+  }
+  measureDock();
+}
+
+/* ---- the capsule ----------------------------------------------------------------------------- */
+$("#voice").onclick = () => {
+  voiceOn = !voiceOn; $("#voice").setAttribute("aria-pressed", String(voiceOn));
+  $("#voice").title = "她的聲音:" + (voiceOn ? "開" : "關"); if (!voiceOn) speaking(false);
+};
+let listening = false;
+function stopListening() { listening = false; $("#capsule").classList.remove("listening"); $("#mic").setAttribute("aria-pressed", "false"); }
+$("#mic").onclick = () => {
+  if (!listening) { listening = true; $("#capsule").classList.add("listening"); $("#mic").setAttribute("aria-pressed", "true"); return; }
+  stopListening(); $("#say").value = "週末我會準時帶到,不用擔心"; $("#say").focus();
+};
+$("#say").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.isComposing) return;
+  e.preventDefault();
+  if ($("#say").value.trim() === "") advance(); else $("#capsule").requestSubmit();
+});
+$("#capsule").onsubmit = (e) => {
+  e.preventDefault();
+  const files = attached.map((a) => a.name);
+  const text = $("#say").value.trim() || (files.length ? "(附加了 " + files.length + " 個檔案)" : "");
+  if (!text) return;
+  $("#say").value = ""; setAttached([]);
+  const shown = files.length ? text + " · " + files.join("、") : text;
+  if (state === "asleep") {
+    logEntry({ who: "you", t: text, at: "02:31", note: true, files });
+    youSaid(shown, "留好了,她醒來會讀:"); fadeYou(); return;
+  }
+  flush();
+  const me = ++run;
+  logEntry({ who: "you", t: text, at: clock(), files }); youSaid(shown);
+  const pool = files.length && state === "here" ? REPLIES.files : REPLIES[state];
+  herReply(pool[Math.floor(Math.random() * pool.length)], null, me);
+};
+
+/* ---- attachments: "+" opens the file picker in the product; in the mock it attaches a sample
+   picture and file. Dropping real files on the page attaches them, with a quiet hint while dragging. */
+let attached = [];
+const SAMPLE = [
+  { name: "看這個.webp", size: 169010, src: "../../assets/hero.webp" },
+  { name: "週末菜單.pdf", size: 186368 },
+];
+function size(n) { return n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + " KB" : (n / 1048576).toFixed(1) + " MB"; }
+function setAttached(list) {
+  attached = list;
+  const box = $("#attach"); box.innerHTML = "";
+  attached.forEach((a, i) => {
+    const c = document.createElement("span"); c.className = "chip";
+    c.innerHTML = (a.src ? '<img alt="">' : '<span class="fi">' + icon("i-file") + "</span>") +
+      '<span class="nm"></span><span class="sz"></span>' +
+      '<button type="button" class="ib x" title="拿掉">' + icon("i-x") + "</button>";
+    if (a.src) c.querySelector("img").src = a.src;
+    c.querySelector(".nm").textContent = a.name;
+    c.querySelector(".sz").textContent = size(a.size);
+    c.querySelector(".x").setAttribute("aria-label", "拿掉 " + a.name);
+    c.querySelector(".x").onclick = () => { setAttached(attached.filter((_, j) => j !== i)); $("#say").focus(); };
+    box.appendChild(c);
+  });
+  $("#withAttach").checked = attached.length > 0;
+  measureDock();
+}
+$("#add").onclick = () => { setAttached(SAMPLE.slice()); $("#say").focus(); };
+$("#withAttach").onchange = (e) => setAttached(e.target.checked ? SAMPLE.slice() : []);
+function addFiles(list) {
+  const more = [...list].slice(0, 4).map((f) => ({ name: f.name, size: f.size,
+    src: f.type.startsWith("image/") ? URL.createObjectURL(f) : null }));
+  setAttached([...attached, ...more].slice(0, 4));
+}
+let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; dragDepth++; $("#drop").hidden = false; });
+addEventListener("dragleave", (e) => { if (!hasFiles(e)) return; if (--dragDepth <= 0) { dragDepth = 0; $("#drop").hidden = true; } });
+addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+addEventListener("drop", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $("#drop").hidden = true;
+  addFiles(e.dataTransfer.files); $("#say").focus();
+});
+
+/* ---- opening and closing the backlog: button, PageUp, wheel up, swipe up; Esc, swipe down ----- */
+$("#openLog").onclick = openLog;
+$("#closeLog").onclick = closeLog;
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { if (!$("#backlog").hidden) closeLog(); else if (!$("#panel").hidden) closePanel(); else $("#mock").open = false; }
+  if (e.key === "PageUp" && $("#backlog").hidden && !e.target.closest(".mock")) { e.preventDefault(); openLog(); }
+});
+let wheelUp = 0;
+$("#room").addEventListener("wheel", (e) => {
+  if (!$("#backlog").hidden || !$("#panel").hidden) return;
+  wheelUp = e.deltaY < 0 ? wheelUp - e.deltaY : 0;
+  if (wheelUp > 60) { wheelUp = 0; openLog(); }
+}, { passive: true });
+
+/* A swipe: pointer events, so a finger and a mouse drag both work. Up from the capsule (or her
+   line, or the handle) opens; down on the backlog's head closes. What is dragged follows a little. */
+let dragMoved = false;
+function swipe(target, dir, onDone, follow, onTap) {
+  let start = null;
+  target.addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || e.target.closest("button, a")) return;
+    start = { x: e.clientX, y: e.clientY, id: e.pointerId, on: e.target }; dragMoved = false;
+    // Outside the text field: no text selection or native drag, and the pointer stays ours even
+    // when a mouse leaves the element (a finger is held by the element it went down on anyway).
+    if (!e.target.closest("textarea")) {
+      e.preventDefault();
+      try { target.setPointerCapture(e.pointerId); } catch { /* a pointer the page cannot capture */ }
+    }
+  });
+  target.addEventListener("pointermove", (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = e.clientY - start.y, dx = e.clientX - start.x;
+    if (!dragMoved && Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) dragMoved = true;
+    if (dragMoved && follow) follow(dy);
+  });
+  const end = (e) => {
+    if (!start || e.pointerId !== start.id) return;
+    const dy = e.clientY - start.y, dx = e.clientX - start.x;
+    if (follow) follow(0);
+    if (e.type === "pointerup" && dragMoved && dy * dir > 56 && Math.abs(dy) > Math.abs(dx)) onDone();
+    else if (e.type === "pointerup" && !dragMoved && onTap) onTap(start.on);
+    start = null; setTimeout(() => { dragMoved = false; }, 0);
+  };
+  target.addEventListener("pointerup", end);
+  target.addEventListener("pointercancel", end);
+}
+swipe($("#dock"), -1, openLog, (dy) => {
+  const d = $("#dock"); d.classList.toggle("dragging", dy !== 0);
+  d.style.translate = dy < 0 ? "0 " + Math.max(dy * 0.35, -40) + "px" : "";
+}, (on) => { if (on.closest("#herLine")) advance(); });
+swipe($("#blHead"), 1, closeLog, (dy) => {
+  const b = $("#backlog"); b.classList.toggle("dragging", dy !== 0);
+  b.style.transform = dy > 0 ? "translateY(" + dy * 0.6 + "px)" : "";
+});
+
+/* The dock's height, so the panel on a phone stays clear of it. */
+function measureDock() { document.documentElement.style.setProperty("--dock-h", $("#dock").offsetHeight + "px"); }
+addEventListener("resize", measureDock);
+
+/* ---- mock controls ----------------------------------------------------------------------------- */
+for (const r of document.querySelectorAll('input[name="state"]')) r.onchange = () => { state = r.value; apply(); };
+for (const r of document.querySelectorAll('input[name="delta"]')) r.onchange = () => {
+  deltaKind = r.value; state = "here"; document.querySelector('input[name="state"][value="here"]').checked = true; apply();
+};
+$("#replay").onclick = apply;
+apply();
+</script>
+</body>
+</html>
