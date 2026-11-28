@@ -17,6 +17,7 @@ import { isRoomPath } from "@/pages/public/room/path";
 import { Backdrop } from "./Backdrop";
 import { ConnectionProvider, useConnection } from "./connection";
 import { PushProvider } from "./push";
+import { startPageTransition } from "./page-transition";
 import { createQueryClient } from "./query-client";
 import type { AppRouter } from "./router";
 import { type AuthState, checkVisitor, rememberVisitor, type Visitor } from "./visitor";
@@ -228,7 +229,12 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
     return (
       <QueryClientProvider client={queryClient}>
         <PushProvider audience="member">
-          <OwnPage onLogout={logout} onBack={() => history.push("/")} path={path} navigate={navigate} />
+          <OwnPage
+            onLogout={logout}
+            onBack={() => startPageTransition(() => history.push("/"))}
+            path={path}
+            navigate={navigate}
+          />
         </PushProvider>
       </QueryClientProvider>
     );

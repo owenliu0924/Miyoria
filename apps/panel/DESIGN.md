@@ -539,3 +539,10 @@ mute a channel), and so does 緊急停止.
 150 to 200 ms fades and zooms on overlays (tw-animate-css), sheet slide 300 ms, 120 ms column
 dimming on hover, 160 ms for the header gaining its surface. Pulsing dots only for live /
 transitioning states. `prefers-reduced-motion` collapses all durations.
+
+A change of page is a 180 ms cross-fade of the whole view (View Transitions, type `page`,
+`app/page-transition.ts`): the admin router's pages, the switch between the panel and an admin's own
+member page, and full loads between the site's own pages (`/her`, `/watch`, a card). A tab, a filter,
+a sheet or any other search change is instant. Only the root is captured, never the content alone (a
+captured element would lose the glass's blur in its snapshot); unchanged chrome stays still because
+the two views blend with `plus-lighter`. None without transition types or under reduced motion.
