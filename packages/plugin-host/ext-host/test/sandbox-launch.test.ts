@@ -30,6 +30,7 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import {
   discover,
+  type ExtensionLauncher,
   ExtensionLauncherKey,
   ExtensionManifest,
   ExtensionModule,
@@ -251,6 +252,18 @@ async function eventually(check: () => boolean | Promise<boolean>, ms = 10_000):
     await sleep(25);
   }
   throw new Error("condition not met in time");
+}
+
+/** A launcher for this machine that only notes what it was asked to start. */
+function recordingLocal(): ExtensionLauncher & { started: string[] } {
+  const started: string[] = [];
+  return {
+    started,
+    async launch(spec) {
+      started.push(spec.extension);
+      throw new Error("not on this machine in this test");
+    },
+  };
 }
 
 const launchers: { close(): void }[] = [];
@@ -496,14 +509,61 @@ describe("the sandbox launcher", { timeout: 30_000 }, () => {
     await child.exited;
   });
 
-  it("a folder that does not go in whole runs here, and its job is closed", async () => {
+  it("a folder that does not go in whole fails with the reason, never runs here", async () => {
     const client = new FakeClient();
     client.skipped = [{ path: "node_modules/@made/sdk", why: "link" }];
-    const l = launcher(client);
-    const child = await l.launch(echoSpec(), new AbortController().signal);
-    expect(child.where).toEqual({ kind: "host" });
-    expect(l.placement("made.up")).toMatchObject({ reason: /node_modules\/@made\/sdk \(link\)/u });
+    const local = recordingLocal();
+    const l = launcher(client, { local });
+    await expect(l.launch(echoSpec(), new AbortController().signal)).rejects.toThrow(
+      /did not start in its sandbox: .*node_modules\/@made\/sdk \(link\)/u,
+    );
+    expect(local.started).toEqual([]);
+    expect(l.placement("made.up")).toBeNull();
     expect(client.jobs[0]?.closed).toBe(true);
+  });
+
+  it("a request every computer refuses, or a program that does not start there, fails too", async () => {
+    const refused = new FakeClient();
+    refused.open = async () => {
+      throw Object.assign(new Error("environment variable `X` is not a valid name"), {
+        code: "unavailable",
+      });
+    };
+    const local = recordingLocal();
+    await expect(
+      launcher(refused, { local }).launch(echoSpec(), new AbortController().signal),
+    ).rejects.toThrow(/did not start in its sandbox: environment variable/u);
+    const failing = new FakeClient();
+    const l = launcher(failing, { local });
+    const opened = failing.open.bind(failing);
+    failing.open = async (spec) => {
+      const job = (await opened(spec)) as FakeJob;
+      job.proc = async () => {
+        throw new Error("the service refused the program");
+      };
+      return job;
+    };
+    await expect(l.launch(echoSpec(), new AbortController().signal)).rejects.toThrow(
+      /did not start in its sandbox: the service refused the program/u,
+    );
+    expect(failing.jobs[0]?.closed).toBe(true);
+    expect(local.started).toEqual([]);
+  });
+
+  it("leaves out a variable with a line break and still starts in the sandbox", async () => {
+    const { env, dropped } = sandboxEnv(
+      { MIYORIA_RPC: "stdio", MADE_PEM: "-----BEGIN-----\nabc\r\n-----END-----" },
+      {},
+    );
+    expect(env).toEqual({ MIYORIA_RPC: "stdio" });
+    expect(dropped).toEqual([{ name: "MADE_PEM", why: "value holds a line break" }]);
+    const client = new FakeClient();
+    const child = await launcher(client).launch(
+      echoSpec({ env: { ...echoSpec().env, MADE_NOTE: "two\nlines" } }),
+      new AbortController().signal,
+    );
+    expect(child.where).toMatchObject({ kind: "sandbox" });
+    expect(client.jobs[0]?.procs[0]?.start.env).not.toHaveProperty("MADE_NOTE");
     child.kill();
     await child.exited;
   });

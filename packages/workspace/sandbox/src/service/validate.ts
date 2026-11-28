@@ -51,6 +51,9 @@ export function checkEnv(
     if (value.length > MAX_ENV_VALUE || value.includes("\0")) {
       throw bad(`environment variable \`${name}\` is too long or holds NUL`);
     }
+    // `docker exec --env` cannot carry one (`execWithArgs` refuses it): said here, as a refusal
+    // of the request, not as a failure deep in starting the program.
+    if (/[\r\n]/.test(value)) throw bad(`environment variable \`${name}\` holds a line break`);
   }
   return Object.fromEntries(entries);
 }
