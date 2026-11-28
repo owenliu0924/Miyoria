@@ -386,6 +386,24 @@ describe("config and helpers", () => {
         page_days: 30,
         page_max_days: 90,
       },
+      room: {
+        enabled: false,
+        messages_per_minute: 12,
+        messages_per_day: 400,
+        max_text_chars: 2000,
+        max_files: 4,
+        max_image_mb: 5,
+        max_file_mb: 8,
+        uploads_per_hour: 20,
+        upload_pool_mb: 128,
+        streams_per_account: 3,
+        streams_total: 64,
+        voice: true,
+        voice_lines_per_hour: 60,
+        voice_max_chars: 300,
+        voice_cache: 64,
+        backlog_page: 50,
+      },
     });
   });
 

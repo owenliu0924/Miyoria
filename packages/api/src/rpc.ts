@@ -97,6 +97,7 @@ import { pushRpc } from "./push/routes.js";
 import { quotaRpc } from "./quota.js";
 import { reportsRpc } from "./reports.js";
 import { roleRpc } from "./roles.js";
+import { roomRpc } from "./room/routes.js";
 import type { Method, Route, RouteGroup } from "./route.js";
 import { sandboxRpc } from "./sandbox.js";
 import { placesRpc, settingsRpc } from "./settings.js";
@@ -147,6 +148,7 @@ export const router = os.router({
   karaoke: karaokeRpc,
   karaokeAdmin: karaokeAdminRpc,
   karaokeRooms: karaokeRoomsRpc,
+  room: roomRpc,
   reports: reportsRpc,
   githubLink: githubLinkRpc,
   memberFiles: memberFilesRpc,
@@ -202,6 +204,7 @@ const PUBLIC_SIDE = new Set([
   "giftsPublic",
   "karaoke",
   "karaokeRooms",
+  "room",
   "githubLink",
   "memberFiles",
 ]);
@@ -218,8 +221,12 @@ function tableGroup(path: readonly string[], meta: RouteMeta): RouteGroup {
   return meta.audience === "admin" ? "admin" : "public";
 }
 
-/** Whether a route is served at all: the public side's routes go away with its switch. */
+/**
+ * Whether a route is served at all: the public side's routes go away with its switch, her room's
+ * with its own (`[modules.api.room] enabled`) too.
+ */
 function served(state: ApiState, path: readonly string[]): boolean {
+  if (path[0] === "room" && (state.room === null || state.room === undefined)) return false;
   return !PUBLIC_SIDE.has(path[0] ?? "") || state.publicSide.config.enabled;
 }
 

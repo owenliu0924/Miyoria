@@ -70,6 +70,9 @@ import { backgroundPath, PictureRenderer, PictureService } from "./pictures.js";
 import { PublicConfigSchema, PublicSide, STATS_EVERY_MS } from "./public.js";
 import { QuestPickService } from "./quest-words.js";
 import { RingImages } from "./ring-image.js";
+import { RoomConfigSchema } from "./room/config.js";
+import { Room } from "./room/room.js";
+import { startRoom } from "./room/start.js";
 import { createApp } from "./server.js";
 import { Sessions } from "./session.js";
 import { ApiState, type PanelAuth, type Tokenizer } from "./state.js";
@@ -117,6 +120,8 @@ export const ApiConfigSchema = z.object({
   public_bind: z.string().default(""),
   /** The file origin of her share links (`files/config.ts`). Off until `origin` is set. */
   files: FilesConfigSchema.prefault({}),
+  /** Her room (`room/config.ts`): a member alone with her on the site. Off by default. */
+  room: RoomConfigSchema.prefault({}),
 });
 export type ApiConfig = z.output<typeof ApiConfigSchema>;
 
@@ -376,6 +381,13 @@ export class ApiModule implements Module {
     ctx.provide(ArtifactCleanerKey, files.cleaner);
     if (files.links !== null) ctx.provide(FileLinksKey, files.links);
     if (files.pages !== null) ctx.provide(FilePagesKey, files.pages);
+    // Her room: the `web` platform, before the routes are built (they exist only while it runs).
+    if (config.public.enabled && config.room.enabled) {
+      const room = new Room(config.room, () => ctx.clock.now());
+      state.room = room;
+      startRoom(ctx, state, room);
+      ctx.log.info("her room is open on the member site");
+    }
 
     const split = config.public_bind.trim() !== "";
     const servers: ServerType[] = [];

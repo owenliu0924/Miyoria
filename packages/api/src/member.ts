@@ -335,14 +335,17 @@ async function activity(state: ApiState, who: Member): Promise<MemberDay[]> {
   return days;
 }
 
-/** The memories the member page shows this person, newest first. */
-async function shownMemories(
+/**
+ * The memories the member page shows this person, newest first, with the records they come from
+ * (her room's relation panel gives their ids, and forgets one only if it is among these).
+ */
+async function shownMemoryRecords(
   state: ApiState,
   who: Member,
   names: NameSplit | null,
-): Promise<MemberMemory[]> {
+): Promise<{ record: MemoryRecord; text: string }[]> {
   const engine = state.optional(MemoryEngineKey);
-  const memories: MemberMemory[] = [];
+  const memories: { record: MemoryRecord; text: string }[] = [];
   if (!who.hidden && engine) {
     const { records, person } = await ownMemories(
       engine,
@@ -358,10 +361,20 @@ async function shownMemories(
         continue;
       }
       const text = memoryLine(state, r, who.account, names);
-      if (text !== null) memories.push(memoryView(text, r));
+      if (text !== null) memories.push({ record: r, text });
     }
   }
   return memories;
+}
+
+/** The memories the member page shows this person, newest first. */
+async function shownMemories(
+  state: ApiState,
+  who: Member,
+  names: NameSplit | null,
+): Promise<MemberMemory[]> {
+  const kept = await shownMemoryRecords(state, who, names);
+  return kept.map(({ record, text }) => memoryView(text, record));
 }
 
 async function memberView(state: ApiState, c: ApiContext): Promise<MemberView> {
@@ -660,4 +673,5 @@ export {
   ownSongs,
   shown,
   shownMemories,
+  shownMemoryRecords,
 };

@@ -19,6 +19,7 @@ import { ContextLabels } from "./labels.js";
 import type { Monitor } from "./monitor.js";
 import type { OAuth } from "./oauth.js";
 import { PublicConfigSchema, PublicSide } from "./public.js";
+import type { Room } from "./room/room.js";
 import { ActiveProfileKey } from "./services.js";
 import { type Principal, principalActor, type SessionRecord, type Sessions } from "./session.js";
 import { Telemetry } from "./telemetry.js";
@@ -54,6 +55,8 @@ export interface PanelAuth {
 export class ApiState {
   /** The file origin and share links (`[modules.api.files]`); `null` until the module sets it. */
   files: FilesSide | null = null;
+  /** Her room (`[modules.api.room]`); `null` while it is off. Set before the routes are built. */
+  room: Room | null = null;
 
   constructor(
     readonly ctx: ModuleContext,

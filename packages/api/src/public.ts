@@ -469,7 +469,7 @@ export class PublicSide {
 // ---- responses ------------------------------------------------------------------------------
 
 /** A song's title or artist, cleaned and screened; it comes from YouTube and is untrusted. */
-function songText(state: ApiState, text: string | null | undefined): string | null {
+export function songText(state: ApiState, text: string | null | undefined): string | null {
   const flat = [...(text ?? "").replace(/\s+/g, " ").trim()].slice(0, MAX_TITLE_CHARS).join("");
   if (flat === "") return null;
   return state.publicSide.passes(state, flat) ? flat : null;
@@ -484,11 +484,11 @@ function songLine(state: ApiState, e: SongEntry): PublicSong {
 }
 
 /** A game id from the config; anything else is not shown. */
-function gameName(target: string | null): string | null {
+export function gameName(target: string | null): string | null {
   return target !== null && /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(target) ? target : null;
 }
 
-function isPlaying(activity: ActivitySnapshot["activity"] | undefined): boolean {
+export function isPlaying(activity: ActivitySnapshot["activity"] | undefined): boolean {
   return (
     activity?.type === "game" && (activity.phase === "starting" || activity.phase === "running")
   );
