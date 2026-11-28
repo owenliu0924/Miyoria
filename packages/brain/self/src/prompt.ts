@@ -3,6 +3,7 @@
 //
 //     [system]     1  persona core, then the runner's rules            fixed
 //     (tools)      2  the always-on tools, then what the session loaded only grows at the end
+//                     (trimmed to the ones called lately right after a compaction)
 //     [system]     3  the owner's rules, her own document              about once a day
 //     [user]       4  this place and its regulars, as data             on compaction or a new face
 //     [history]    5  the transcript: lines, her calls, results,       only grows

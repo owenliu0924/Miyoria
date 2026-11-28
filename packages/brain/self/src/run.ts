@@ -141,6 +141,9 @@ export const DEFAULT_COMPACTION: CompactionBudget = { thresholdTokens: 32_000, k
  */
 export const STATE_VERSION = 1;
 
+/** Loaded tools a session keeps past a compaction, at most (the ones called last). */
+export const KEPT_LOADED_TOOLS = 12;
+
 export interface RunnerOptions {
   /** Each person's AI quota, shared by every run; `null` or unset: nobody is capped. */
   quota?: PersonQuota | null;
@@ -483,6 +486,7 @@ class Run {
     let compacted = false;
     if (compaction !== null && outcome !== "cancelled" && outcome !== "over_budget") {
       compacted = await this.#compact(compaction);
+      if (compacted && this.#trimTools()) this.#saveTools();
     }
     const result: RunResult = {
       turn: this.turn,
@@ -560,6 +564,27 @@ class Run {
         "cannot keep the runner state",
       );
     }
+  }
+
+  /**
+   * Right after a compaction (the request's cache starts over anyway): of the tools the session
+   * loaded, keep the ones called in the kept tail, the `KEPT_LOADED_TOOLS` called last, in the
+   * order they were loaded; `find_tools` brings back any other. Whether anything was dropped.
+   */
+  #trimTools(): boolean {
+    const loaded = this.#p.tools.loaded;
+    const list = loaded.loaded(this.#offerKey);
+    if (list.length === 0) return false;
+    const entries = this.#p.transcript.tail(this.#session.id).entries;
+    const called: string[] = [];
+    for (let i = entries.length - 1; i >= 0 && called.length < KEPT_LOADED_TOOLS; i--) {
+      const calls = (entries[i] as TranscriptEntry).tool_calls;
+      for (let j = calls.length - 1; j >= 0 && called.length < KEPT_LOADED_TOOLS; j--) {
+        const name = (calls[j] as (typeof calls)[number]).name;
+        if (list.includes(name) && !called.includes(name)) called.push(name);
+      }
+    }
+    return loaded.retain(this.#offerKey, called).length > 0;
   }
 
   /** The tools offered now: the registry's list for the session, as far as the profile goes. */

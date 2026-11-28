@@ -956,6 +956,39 @@ describe("the prompt across runs", () => {
     expect((await r.run()).compacted).toBe(true);
   });
 
+  it("after a compaction keeps only the loaded tools called since the cut, the newest twelve", async () => {
+    const names = Array.from({ length: 15 }, (_, i) => `t${String(i + 1).padStart(2, "0")}`);
+    const r = await rig(
+      [
+        calls(names.slice(1, 9).map((name) => ({ name }))),
+        calls(names.slice(9, 14).map((name) => ({ name }))),
+        say("都看完了"),
+      ],
+      { runner: { compaction: { thresholdTokens: 60, keepTokens: 10 } } },
+    );
+    for (const name of names) r.tools.register(fakeTool(name, "看到了", { core: false }));
+    r.tools.register(fakeTool("look", "看到了"));
+    const key = contextKeyString(CTX);
+    r.tools.loaded.load(key, names);
+    for (let i = 0; i < 12; i++) r.line("Owen", `第 ${i} 句,隨便聊聊今天發生的事情`);
+    expect((await r.run()).compacted).toBe(true);
+    // t01 and t15 were never called; t02 was called first of the thirteen.
+    const kept = names.slice(2, 14);
+    expect(r.tools.loaded.loaded(key)).toEqual(kept);
+    expect(r.transcript.state.get(SESSION.id)).toEqual({ version: 1, value: { tools: kept } });
+  });
+
+  it("leaves the loaded tools alone when nothing was compacted", async () => {
+    const r = await rig([say("好")], {
+      runner: { compaction: { thresholdTokens: 100_000, keepTokens: 10 } },
+    });
+    r.tools.register(fakeTool("sing_song", "唱了", { core: false }));
+    r.tools.loaded.load(contextKeyString(CTX), ["sing_song"]);
+    r.line("Owen", "@她 嗨");
+    expect((await r.run()).compacted).toBe(false);
+    expect(r.tools.loaded.loaded(contextKeyString(CTX))).toEqual(["sing_song"]);
+  });
+
   it("does not compact below the threshold", async () => {
     const r = await rig([say("好")], {
       runner: { compaction: { thresholdTokens: 100_000, keepTokens: 10 } },

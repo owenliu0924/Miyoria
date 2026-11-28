@@ -383,4 +383,18 @@ describe("the loaded tools of a session", () => {
     expect(back.loaded("discord:1:2").at(-1)).toBe("party_start");
     expect(() => LoadedTools.parse({ s: "sing_start" })).toThrow();
   });
+
+  it("retains only the names asked for, in load order, and says what it dropped", () => {
+    const loaded = new LoadedTools();
+    loaded.load("s", ["a", "b", "c", "d"]);
+    expect(loaded.retain("s", ["d", "b", "x"])).toEqual(["a", "c"]);
+    expect(loaded.loaded("s")).toEqual(["b", "d"]);
+    // What is found later goes at the end again.
+    loaded.load("s", ["a"]);
+    expect(loaded.loaded("s")).toEqual(["b", "d", "a"]);
+    expect(loaded.retain("s", [])).toEqual(["b", "d", "a"]);
+    expect(loaded.loaded("s")).toEqual([]);
+    expect(loaded.toJSON()).toEqual({});
+    expect(loaded.retain("nowhere", ["a"])).toEqual([]);
+  });
 });
