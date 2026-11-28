@@ -240,6 +240,7 @@ export {
   type FetchLike,
   type ImageCandidate,
   ImageLoader,
+  imageAllowed,
   imageParts,
   type LoadedImage,
 } from "./vision.js";

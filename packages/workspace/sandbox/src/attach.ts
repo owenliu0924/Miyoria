@@ -7,7 +7,8 @@
 // cut off at the cap instead of filling the disk. It goes to a temporary file beside the target
 // and is renamed into place (a link a program planted there is replaced, not followed). The caps
 // are the person's folder's (`people.ts`) and `max_file_kb`. The file is saved as it came: an
-// image's metadata is cleaned when it is shared out (`ArtifactCleanerKey`), not here.
+// image's metadata is cleaned when it is shared out (`ArtifactCleanerKey`), not here. A file
+// attached in her room comes from the room's `IncomingFiles` service (the call's services).
 //
 // What the platform calls a file is untrusted: its name is cut down to one safe segment, and
 // everything printed back to her goes through `escapeData`.
@@ -23,7 +24,7 @@ import {
 } from "@miyoria/gate/actions";
 import { accountRefString, escapeData, type MessageFiles, MessageFilesKey } from "@miyoria/types";
 import { z } from "zod";
-import { allowedHost, type FetchLike } from "./files.js";
+import { allowedFile, type FetchLike, fileFetch } from "./files.js";
 import { NODE_WORKSPACE } from "./nodes.js";
 import { normalizeRelativePath } from "./paths.js";
 import { type PersonLimits, scopeFor } from "./people.js";
@@ -184,7 +185,6 @@ async function target(
 export function workspaceAttachCapability(
   o: WorkspaceAttachOptions,
 ): Capability<WorkspaceAttachArgs> {
-  const doFetch: FetchLike = o.fetch ?? ((u, init) => fetch(u, init));
   return defineCapability<WorkspaceAttachArgs>({
     name: WORKSPACE_ATTACH,
     summary: "把對方傳來的檔案存進對方的工作資料夾(inbox/)",
@@ -239,13 +239,14 @@ export function workspaceAttachCapability(
       const taken = new Set((await readdir(inbox.dir)).map((n) => n.toLowerCase()));
       let bytesLeft = spot.limits.maxBytes - usage.bytes;
       let filesLeft = spot.limits.maxFiles - usage.files;
+      const doFetch = fileFetch(ctx.services, o.fetch);
       const saved: { path: string; size: number }[] = [];
       const declined: { name: string; why: keyof typeof REASONS }[] = [];
 
       for (const f of files) {
         ctx.signal.throwIfAborted();
         const refuse = (why: keyof typeof REASONS) => declined.push({ name: f.name, why });
-        if (!allowedHost(f.url, o.allowedHosts)) {
+        if (!allowedFile(f.url, o.allowedHosts, ctx.services)) {
           refuse("host");
           continue;
         }

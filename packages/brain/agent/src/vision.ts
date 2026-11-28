@@ -7,10 +7,20 @@
 // and only `allowed_hosts` over HTTPS are fetched) and sent as base64 data URLs; downloads are
 // cached by attachment id. Nothing is downloaded when the chat model takes no images
 // (`[llm.image_input]`). The history keeps `[圖片: name(alt)]` for later turns and memory.
+// An image attached in her room (`https://uploads.room.invalid/<id>`) is not on a CDN: the
+// room's `IncomingFiles` service hands it over without a network (docs/design/her-room.md §3.3).
 
 import type { ContentPart } from "@miyoria/llm/llm";
 import { errorMessage } from "@miyoria/runtime/kernel";
-import { type Attachment, imageType, safeName, sniffImage } from "@miyoria/types";
+import {
+  type Attachment,
+  type IncomingFilesLookup,
+  imageType,
+  incomingAllowed,
+  incomingFetch,
+  safeName,
+  sniffImage,
+} from "@miyoria/types";
 import type { VisionConfig } from "./config.js";
 import { timeout } from "./util.js";
 
@@ -56,14 +66,31 @@ export function allowedUrl(url: string, hosts: readonly string[]): boolean {
   return parsed.protocol === "https:" && hosts.includes(parsed.hostname.toLowerCase());
 }
 
+/** No services: only the allowed hosts. */
+const NO_SERVICES: IncomingFilesLookup = { get: () => undefined };
+
+/** Whether an image at `url` may be downloaded: HTTPS on one of `hosts`, or a file of her room. */
+export function imageAllowed(
+  url: string,
+  hosts: readonly string[],
+  services: IncomingFilesLookup = NO_SERVICES,
+): boolean {
+  return allowedUrl(url, hosts) || incomingAllowed(services, url);
+}
+
 /** Downloads images (with a small in-memory cache keyed by attachment id). */
 export class ImageLoader {
   readonly #cache = new Map<string, { dataUrl: string; bytes: number }>();
+  /** `fetchImpl`, but a file of her room comes from the room's service (looked up per call). */
+  readonly #fetch: FetchLike;
 
   constructor(
     readonly fetchImpl: FetchLike = (url, init) => fetch(url, init),
     readonly onError: (key: string, error: string) => void = () => undefined,
-  ) {}
+    readonly services: IncomingFilesLookup = NO_SERVICES,
+  ) {
+    this.#fetch = incomingFetch(services, fetchImpl);
+  }
 
   /**
    * Downloads `candidates` in order, skipping failures, until `max_total_bytes` would be
@@ -78,6 +105,8 @@ export class ImageLoader {
     let total = 0;
     for (const candidate of candidates) {
       signal.throwIfAborted();
+      // Checked again here, not only where the candidates are chosen: nothing else is fetched.
+      if (!imageAllowed(candidate.attachment.url, cfg.allowed_hosts, this.services)) continue;
       let image: { dataUrl: string; bytes: number } | null;
       try {
         image = await this.#get(candidate, cfg, signal);
@@ -106,7 +135,7 @@ export class ImageLoader {
       return cached;
     }
     const image = await timeout(cfg.download_timeout_ms, signal, (s) =>
-      download(this.fetchImpl, candidate, cfg.max_image_bytes, s),
+      download(this.#fetch, candidate, cfg.max_image_bytes, s),
     );
     if (image === null || cfg.cache_entries <= 0) return image;
     this.#cache.set(candidate.key, image);

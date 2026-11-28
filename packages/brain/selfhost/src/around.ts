@@ -43,9 +43,9 @@ import {
 } from "@miyoria/types";
 import {
   type Agent,
-  allowedUrl,
   fileParts,
   type ImageCandidate,
+  imageAllowed,
   imageParts,
   selectFiles,
   timeout,
@@ -210,6 +210,7 @@ export class LookAround {
   /** `selectImages` (agent/vision.ts) over the remembered lines instead of a session. */
   #candidates(run: AroundRun, parents: readonly IncomingMessage[]): ImageCandidate[] {
     const cfg = this.#agent.config.vision;
+    const services = this.#agent.ctx.services;
     const out: ImageCandidate[] = [];
     const keys = new Set<string>();
     const consider = (
@@ -222,7 +223,8 @@ export class LookAround {
       const type = imageType(a);
       if (type === null) return;
       if (a.size != null && a.size > cfg.max_image_bytes) return;
-      if (!allowedUrl(a.url, cfg.allowed_hosts)) return;
+      // The platform's CDN, or a file attached in her room (its service answers it).
+      if (!imageAllowed(a.url, cfg.allowed_hosts, services)) return;
       const key = a.id ? `id:${a.id}` : `url:${a.url.split("?")[0]}`;
       if (keys.has(key)) return;
       keys.add(key);

@@ -5,7 +5,14 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DATA_CLOSE, DATA_OPEN, type FileRequest } from "@miyoria/types";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
+import {
+  DATA_CLOSE,
+  DATA_OPEN,
+  type FileRequest,
+  type IncomingFiles,
+  IncomingFilesKey,
+} from "@miyoria/types";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   DECLINE_REASONS,
@@ -249,6 +256,108 @@ describe("the reader", () => {
     const r = reader(sandbox, bodyOf("x"), { enabled: false });
     expect(r.supports("a.txt")).toBe(false);
     expect(await r.read(request(), signal())).toMatchObject({ code: "unsupported" });
+  });
+
+  describe("files of her room", () => {
+    const ROOM = "https://uploads.room.invalid/up_x";
+
+    /** A room service holding `up_x` (or claiming every URL, when `greedy`). */
+    function room(greedy = false): { services: ServiceRegistry; asked: string[] } {
+      const asked: string[] = [];
+      const files: IncomingFiles = {
+        handles: (url) => greedy || url === ROOM,
+        fetch: async (url) => {
+          asked.push(url);
+          return new Response("房間的筆記", { headers: { "content-length": "15" } });
+        },
+      };
+      const services = new ServiceRegistry();
+      services.provide("test", IncomingFilesKey, files);
+      return { services, asked };
+    }
+
+    /** A fallback `fetch` that counts what it was asked. */
+    function network(): { fetch: FetchLike; calls: string[] } {
+      const calls: string[] = [];
+      return {
+        calls,
+        fetch: async (url) => {
+          calls.push(url);
+          return new Response("cdn");
+        },
+      };
+    }
+
+    const roomReader = (sandbox: Sandbox, net: FetchLike, services?: ServiceRegistry) =>
+      new SandboxFileReader({
+        sandbox,
+        config: config(),
+        fetch: net,
+        clock: { now: () => 1_000_000 },
+        ...(services === undefined ? {} : { services }),
+      });
+
+    it("reads_a_room_file_from_its_service_without_the_network", async () => {
+      const { sandbox, runs } = fakeSandbox(() => ok("房間的筆記"));
+      const net = network();
+      const { services, asked } = room();
+      const out = await roomReader(sandbox, net.fetch, services).read(
+        request({ url: ROOM, id: "up_x" }),
+        signal(),
+      );
+      expect(out.status).toBe("read");
+      expect(asked).toEqual([ROOM]);
+      expect(net.calls).toEqual([]);
+      // Still read in the offline container, like any other file.
+      expect(runs).toHaveLength(1);
+      expect(runs[0]?.network).toBe("none");
+      expect(Buffer.from(runs[0]?.files?.[0]?.content ?? "", "base64").toString()).toBe(
+        "房間的筆記",
+      );
+    });
+
+    it("declines_a_room_file_without_the_service_and_never_asks_the_network", async () => {
+      const { sandbox, runs } = fakeSandbox(() => ok("x"));
+      const net = network();
+      for (const services of [undefined, new ServiceRegistry()]) {
+        const out = await roomReader(sandbox, net.fetch, services).read(
+          request({ url: ROOM, id: "up_x" }),
+          signal(),
+        );
+        expect(out).toMatchObject({ code: "download" });
+      }
+      expect(net.calls).toEqual([]);
+      expect(runs).toHaveLength(0);
+    });
+
+    it("keeps_other_hosts_out_even_when_the_service_claims_them", async () => {
+      const { sandbox, runs } = fakeSandbox(() => ok("x"));
+      const net = network();
+      const { services, asked } = room(true);
+      const r = roomReader(sandbox, net.fetch, services);
+      for (const url of [
+        "https://evil.example/x",
+        "http://uploads.room.invalid/x",
+        "https://uploads.room.invalid.evil.com/x",
+      ]) {
+        expect(await r.read(request({ url, id: url }), signal()), url).toMatchObject({
+          code: "download",
+        });
+      }
+      expect(net.calls).toEqual([]);
+      expect(asked).toEqual([]);
+      expect(runs).toHaveLength(0);
+    });
+
+    it("sends_the_allowed_hosts_to_the_injected_fetch_as_before", async () => {
+      const { sandbox } = fakeSandbox(() => ok("cdn"));
+      const net = network();
+      const { services, asked } = room();
+      const out = await roomReader(sandbox, net.fetch, services).read(request(), signal());
+      expect(out.status).toBe("read");
+      expect(net.calls).toEqual([CDN]);
+      expect(asked).toEqual([]);
+    });
   });
 
   it("keeps_a_prompt_injection_file_inside_its_block", async () => {
