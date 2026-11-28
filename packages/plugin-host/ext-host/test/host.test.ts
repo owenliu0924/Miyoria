@@ -45,7 +45,7 @@ import {
 } from "@miyoria/types";
 import { afterEach, describe, expect, it } from "vitest";
 import { z } from "zod";
-import { discover } from "../src/index.js";
+import { discover, ExtensionCatalog, ExtensionManifest } from "../src/index.js";
 
 // The custom.* topics are made up to test who may receive what: no definition covers them, so
 // this test defines one to publish them by, and keeps them away from the bus check.
@@ -478,6 +478,67 @@ describe("ext host end to end", { timeout: 30_000 }, () => {
     expect(payload(env).ok).toBe(false);
     expect(payload(env).code).toBe(-32001);
     expect(h.tools.isEmpty).toBe(true);
+  });
+
+  it("a prompt fragment needs the tools grant, but for a game adapter's own game", async () => {
+    let h = await harness(
+      [join(FIXTURES, "no-perms")],
+      '[extensions."test.noperms"]\ndynamic = true\ndynamic_prompt = "facts"',
+      "ext.test.noperms.register_result",
+    );
+    await waitState(h, "ext.test.noperms", "running", 5000);
+    let env = await recvWithin(h.sub as Subscription, 3000);
+    if (!env) throw new Error("no register result");
+    expect(payload(env)).toMatchObject({ ok: false, code: -32001 });
+    expect(h.prompts.all()).toEqual([]);
+    await h.sup.stopAll();
+
+    // The owner took the tools away from the game adapter: its own game's prompt still goes in.
+    h = await harness(
+      [join(FIXTURES, "game-ext")],
+      '[extensions."test.game"]\ndynamic = true\ndynamic_prompt = "game.fake"\n' +
+        '[extensions."test.game".permissions]\ntools = false',
+      "ext.test.game.register_result",
+    );
+    await waitState(h, "ext.test.game", "running", 5000);
+    env = await recvWithin(h.sub as Subscription, 3000);
+    if (!env) throw new Error("no register result");
+    expect(payload(env)).toMatchObject({ ok: true });
+    expect(h.prompts.all().map((c) => c.key)).toEqual(["ext.test.game.game.fake"]);
+  });
+
+  it("bundled MCP servers and HTTP tools follow the tools grant", () => {
+    const manifest = ExtensionManifest.parse(
+      [
+        'id = "made.up"',
+        'version = "1"',
+        'runtime = "node"',
+        'entry = "i.js"',
+        "[[mcp_servers]]",
+        'name = "fx"',
+        'command = "node"',
+      ].join("\n"),
+    );
+    const dir = mkdtempSync(join(tmpdir(), "miyoria-catalog-"));
+    try {
+      mkdirSync(join(dir, "http-tools"));
+      const entry = (tools: boolean) => ({
+        enabled: true,
+        spec: {
+          manifest,
+          dir,
+          granted: { events: [], tools, commands: false, network: [], input: [] },
+        },
+      });
+      const granted = new ExtensionCatalog([entry(true)]);
+      expect(granted.mcpServers()).toHaveLength(1);
+      expect(granted.httpToolDirs()).toHaveLength(1);
+      const denied = new ExtensionCatalog([entry(false)]);
+      expect(denied.mcpServers()).toEqual([]);
+      expect(denied.httpToolDirs()).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("discovery_skips_stage_extensions_and_honours_enabled", () => {

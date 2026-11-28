@@ -85,10 +85,14 @@ async function onRequest(method, params) {
         setTimeout(async () => {
           let outcome;
           try {
-            await request("tools.register", {
-              name: config.dynamic_name ?? "dyn.tool",
-              description: "dynamic",
-            });
+            if (config.dynamic_prompt) {
+              await request("prompt.register", { key: config.dynamic_prompt });
+            } else {
+              await request("tools.register", {
+                name: config.dynamic_name ?? "dyn.tool",
+                description: "dynamic",
+              });
+            }
             outcome = { ok: true };
           } catch (error) {
             outcome = { ok: false, code: error.code, message: error.message };
