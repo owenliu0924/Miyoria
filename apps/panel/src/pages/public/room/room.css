@@ -454,8 +454,21 @@
   -webkit-user-select: text;
 }
 /* No band of shade across the stage: what is behind her stays as it is to the bottom edge. Her
-   line and the member's sit on plates of the capsule's own material, there only while there is
-   something to read. */
+   line and the member's are plain text over it; while there is a line to read, a soft pool of
+   shade sits behind the words alone (her stockings are white, and so is the text). */
+.hr-dock::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  inset: -26px -6% 46px;
+  background: radial-gradient(closest-side, rgba(8, 10, 15, 0.68), rgba(8, 10, 15, 0.4) 55%, transparent);
+  opacity: 0;
+  transition: opacity 0.4s var(--ease-out);
+}
+.hr-dock:has(.hr-her:not(:empty))::before {
+  opacity: 1;
+}
 .hr-dock[data-dragging] {
   transition: none;
 }
@@ -470,17 +483,11 @@
   min-height: 20px;
   opacity: 0;
   transition: opacity 1.2s var(--ease-out);
-}
-.hr-you:not(:empty) {
-  width: fit-content;
-  max-width: 100%;
-  margin-inline: auto;
-  padding: 1px 12px;
-  border-radius: 999px;
   color: var(--soft);
-  background: var(--capsule);
-  -webkit-backdrop-filter: var(--capsule-fx);
-  backdrop-filter: var(--capsule-fx);
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 8px rgba(6, 8, 12, 0.8),
+    0 0 18px rgba(6, 8, 12, 0.6);
 }
 .hr-you[data-show] {
   opacity: 1;
@@ -503,16 +510,11 @@
   line-height: 1.65;
   font-weight: 500;
   text-wrap: balance;
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(6, 8, 12, 0.75),
+    0 0 24px rgba(6, 8, 12, 0.55);
   overflow-wrap: anywhere;
-}
-.hr-her:not(:empty) {
-  width: fit-content;
-  padding: 10px 22px;
-  border-radius: 20px;
-  background: var(--capsule);
-  -webkit-backdrop-filter: var(--capsule-fx);
-  backdrop-filter: var(--capsule-fx);
-  border: 1px solid var(--border);
 }
 .hr-her[data-more] {
   cursor: pointer;
