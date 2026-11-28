@@ -1,7 +1,8 @@
 // Image downloading with a fake `fetch` (no network). Which images a run looks at is the text
 // runner's (`@miyoria/brain/selfhost` around.ts).
 
-import type { Attachment } from "@miyoria/types";
+import { ServiceRegistry } from "@miyoria/runtime/kernel";
+import { type Attachment, type IncomingFiles, IncomingFilesKey } from "@miyoria/types";
 import { describe, expect, it } from "vitest";
 import {
   allowedUrl,
@@ -9,6 +10,7 @@ import {
   type FetchLike,
   type ImageCandidate,
   ImageLoader,
+  imageAllowed,
   imageParts,
 } from "../src/index.js";
 
@@ -131,5 +133,94 @@ describe("image loader", () => {
     const cfg = { ...vision(), cache_entries: 2 };
     for (const id of ["a", "b", "c"]) await loader.load(candidates([id]), cfg, signal);
     expect(loader.cached).toBe(2);
+  });
+});
+
+describe("images of her room", () => {
+  const signal = new AbortController().signal;
+  const ROOM = "https://uploads.room.invalid/up_x";
+  const at = (url: string, id = url): ImageCandidate => ({
+    attachment: image(id, { url }),
+    author: "owen",
+    source: "message",
+    key: `url:${id}`,
+    type: "image/png",
+  });
+
+  /** A room service holding `up_x` (or claiming every URL, when `greedy`). */
+  function room(greedy = false): { services: ServiceRegistry; asked: string[] } {
+    const asked: string[] = [];
+    const files: IncomingFiles = {
+      handles: (url) => greedy || url === ROOM,
+      fetch: async (url) => {
+        asked.push(url);
+        const body = new Uint8Array(12).fill(7);
+        body.set(PNG_HEAD);
+        return new Response(body, {
+          headers: { "content-type": "image/png", "content-length": "12" },
+        });
+      },
+    };
+    const services = new ServiceRegistry();
+    services.provide("test", IncomingFilesKey, files);
+    return { services, asked };
+  }
+
+  it("gets_a_room_image_from_its_service_without_the_network", async () => {
+    const net = server(8);
+    const { services, asked } = room();
+    const loaded = await new ImageLoader(net.fetch, undefined, services).load(
+      [at(ROOM)],
+      vision(),
+      signal,
+    );
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]?.bytes).toBe(12);
+    expect(loaded[0]?.dataUrl).toMatch(/^data:image\/png;base64,/);
+    expect(asked).toEqual([ROOM]);
+    expect(net.calls).toEqual([]);
+    expect(imageAllowed(ROOM, vision().allowed_hosts, services)).toBe(true);
+  });
+
+  it("refuses_a_room_image_without_the_service_and_never_asks_the_network", async () => {
+    const net = server(8);
+    const empty = new ServiceRegistry();
+    expect(imageAllowed(ROOM, vision().allowed_hosts, empty)).toBe(false);
+    expect(imageAllowed(ROOM, vision().allowed_hosts)).toBe(false);
+    expect(
+      await new ImageLoader(net.fetch, undefined, empty).load([at(ROOM)], vision(), signal),
+    ).toEqual([]);
+    expect(await new ImageLoader(net.fetch).load([at(ROOM)], vision(), signal)).toEqual([]);
+    expect(net.calls).toEqual([]);
+  });
+
+  it("keeps_other_hosts_out_even_when_the_service_claims_them", async () => {
+    const net = server(8);
+    const { services, asked } = room(true);
+    const loader = new ImageLoader(net.fetch, undefined, services);
+    for (const url of [
+      "https://evil.example/x",
+      "http://uploads.room.invalid/x",
+      "https://uploads.room.invalid.evil.com/x",
+    ]) {
+      expect(imageAllowed(url, vision().allowed_hosts, services), url).toBe(false);
+      expect(await loader.load([at(url)], vision(), signal), url).toEqual([]);
+    }
+    expect(net.calls).toEqual([]);
+    expect(asked).toEqual([]);
+  });
+
+  it("sends_the_allowed_hosts_to_the_injected_fetch_as_before", async () => {
+    const net = server(8);
+    const { services, asked } = room();
+    const url = `${CDN}/cdn.png`;
+    const loaded = await new ImageLoader(net.fetch, undefined, services).load(
+      [at(url)],
+      vision(),
+      signal,
+    );
+    expect(loaded).toHaveLength(1);
+    expect(net.calls).toEqual([url]);
+    expect(asked).toEqual([]);
   });
 });

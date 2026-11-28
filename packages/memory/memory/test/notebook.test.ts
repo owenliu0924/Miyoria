@@ -90,6 +90,24 @@ describe("notebook", () => {
     ]);
   });
 
+  it("a page written in her room is that person's DM page, read there and in their Discord DM", async () => {
+    const b = book();
+    const room = {
+      context: {
+        platform: "web",
+        scope: null,
+        channel: `a.discord.${owen.id}`,
+        kind: "dm" as const,
+      },
+      accounts: [owen],
+    };
+    await b.store.write("人/Owen", "房間裡說的事", "append", room);
+    expect(b.store.index(room).map((e) => e.path)).toEqual(["人/Owen"]);
+    expect(b.store.index(inDm()).map((e) => e.path)).toEqual(["人/Owen"]);
+    expect(b.store.index(inDm(amy)).map((e) => e.path)).toEqual([]);
+    expect(b.store.read("人/Owen", inGuild)).toBeNull();
+  });
+
   it("refuses past its limits, with the reason", async () => {
     const b = book({ page_chars: 10, max_pages: 2, writes_per_hour: 3 });
     await expect(b.store.write("a", "12345678901", "append", inGuild)).rejects.toThrow(

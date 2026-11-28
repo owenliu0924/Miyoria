@@ -9,10 +9,12 @@
 // - Reading: `MessageLog` keeps its interface. `recent` reads a session's lines over a partial
 //   index, newest first, skipping redacted ones; `authoredSince` counts them, redacted ones too
 //   (the envelope stays for counts). The profile argument is ignored: one database belongs to
-//   one character (decision D6).
+//   one character (decision D6). `page` reads a session's text messages a page at a time, newest
+//   first, for her room's backlog (docs/design/her-room.md §3.5), over the same index.
 // - Forgetting: "do not remember this" (`redactMessage`) redacts every event filed under the
 //   message's key, her observations of it included; "forget me" (`forgetPerson`) redacts every
-//   line of a person, in one transaction each.
+//   line of a person, and her own lines in their room (`web:dm:<person>`), in one transaction
+//   each.
 //
 // Her text lines carry no person or account (she is not a person in identity): `self` in the
 // payload marks them. Her voice lines name her account in the payload's `speaker`.
@@ -37,6 +39,7 @@ import {
   newId,
   type PersonId,
   type ProfileId,
+  ROOM_PLATFORM,
   type Timestamp,
   type TurnId,
   type VoiceUtterance,
@@ -79,6 +82,58 @@ export interface ChatLineOptions {
   turn?: TurnId | null;
 }
 
+/** One text message of a page (`ChatLogStore.page`), as it was stored. */
+export interface ChatPageLine {
+  event_id: string;
+  at: Timestamp;
+  /** Its place in the log: lines at the same time are in this order. */
+  seq: number;
+  turn: TurnId | null;
+  /** One of her accounts wrote it. */
+  self: boolean;
+  message: IncomingMessage;
+}
+
+/** A page of a session's text messages, newest first. */
+export interface ChatPage {
+  lines: ChatPageLine[];
+  /** The cursor of the next, older page (`ChatPageOptions.before`); `null` when there is none. */
+  older: string | null;
+}
+
+export interface ChatPageOptions {
+  /**
+   * A page's `older` cursor: only lines before it. Absent or `null`: from the newest. A cursor
+   * this store did not give reads as the end: no lines.
+   */
+  before?: string | null;
+  limit: number;
+}
+
+/** The session of a person's room (`web:dm:<person>`, identity's DM key on the room's platform). */
+function roomSession(person: PersonId): string {
+  return `${ROOM_PLATFORM}:dm:${person}`;
+}
+
+const CURSOR = /^[A-Za-z0-9_-]{1,64}$/;
+const CURSOR_TEXT = /^(-?\d{1,17})\.(\d{1,16})$/;
+
+/** The cursor of a line: its `at` (microseconds) and `seq`, as base64url text. */
+function encodeCursor(at: number, seq: number): string {
+  return Buffer.from(`${at}.${seq}`, "utf8").toString("base64url");
+}
+
+/** `at` and `seq` of a cursor `encodeCursor` gave; `null` for anything else. */
+function decodeCursor(cursor: string): { at: number; seq: number } | null {
+  if (!CURSOR.test(cursor)) return null;
+  const m = CURSOR_TEXT.exec(Buffer.from(cursor, "base64url").toString("utf8"));
+  if (m === null) return null;
+  const at = Number(m[1]);
+  const seq = Number(m[2]);
+  if (!Number.isSafeInteger(at) || !Number.isSafeInteger(seq)) return null;
+  return encodeCursor(at, seq) === cursor ? { at, seq } : null;
+}
+
 /** Writing chat lines and forgetting them. */
 export interface ChatLogStore {
   /** A text message; `self` when one of her accounts wrote it. `null`: already stored. */
@@ -99,10 +154,16 @@ export interface ChatLogStore {
    */
   redactMessage(message: MessageRef, reason: string, source: string): Awaitable<string[]>;
   /**
-   * "Forget me": redacts every line of `person` (and her observations of what they said), in
-   * one transaction. Returns how many.
+   * "Forget me": redacts every line of `person` (and her observations of what they said), and
+   * her own lines in their room (`web:dm:<person>`), so the room's record is empty, in one
+   * transaction. Returns how many.
    */
   forgetPerson(person: PersonId, reason: string, source: string): Awaitable<number>;
+  /**
+   * The text messages of `context`'s session (`Identity.sessionOf`), newest first, at most
+   * `limit`, redacted ones left out. No lines when the context has no session yet.
+   */
+  page(context: ContextKey, options: ChatPageOptions): Awaitable<ChatPage>;
   /** The ids of the events filed under `key`, redacted ones too. */
   eventsOf(key: string): Awaitable<string[]>;
   /** Which of `ids` name a redacted event. */
@@ -385,6 +446,56 @@ export class ChatLog implements MessageLog, ChatLogStore {
     return out;
   }
 
+  page(context: ContextKey, options: ChatPageOptions): ChatPage {
+    const empty: ChatPage = { lines: [], older: null };
+    const n = sqlLimit(options.limit);
+    if (n === 0) return empty;
+    const session = this.#identity.sessionOf(context);
+    if (session === null) return empty;
+    const params: Record<string, string | number> = { session, limit: n === null ? -1 : n + 1 };
+    let before = "";
+    if (options.before != null) {
+      const cursor = decodeCursor(options.before);
+      if (cursor === null) return empty;
+      before = " AND (at < $at OR (at = $at AND seq < $seq))";
+      params.at = cursor.at;
+      params.seq = cursor.seq;
+    }
+    // The index's condition word for word, then the one type of it a page reads.
+    const rows = this.#db.all(
+      "SELECT id, at, seq, turn, data FROM events WHERE session = $session AND " +
+        `${CHAT_TYPES_SQL} AND type = '${PlatformMessageCreated.type}' AND redacted_at IS NULL` +
+        `${before} ORDER BY at DESC, seq DESC LIMIT $limit`,
+      params,
+    );
+    const more = n !== null && rows.length > n;
+    const taken = more ? rows.slice(0, n) : rows;
+    const lines: ChatPageLine[] = [];
+    for (const row of taken) {
+      const parsed = PlatformMessageCreated.data.safeParse(
+        parseJson(str(row, "data"), "chat line"),
+      );
+      if (!parsed.success) {
+        log.warn({ event: row.id }, "a stored chat line does not fit its type: left out");
+        continue;
+      }
+      const { self, ...message } = parsed.data;
+      lines.push({
+        event_id: str(row, "id"),
+        at: fromMicros(int(row, "at")),
+        seq: int(row, "seq"),
+        turn: optStr(row, "turn"),
+        self: self === true,
+        message,
+      });
+    }
+    const last = taken[taken.length - 1];
+    return {
+      lines,
+      older: more && last !== undefined ? encodeCursor(int(last, "at"), int(last, "seq")) : null,
+    };
+  }
+
   async authoredSince(
     _profile: ProfileId,
     authors: readonly AccountRef[],
@@ -427,8 +538,24 @@ export class ChatLog implements MessageLog, ChatLogStore {
   }
 
   forgetPerson(person: PersonId, reason: string, source: string): number {
-    return this.#events.redactWhere({ personId: person, types: PERSON_LINE_TYPES }, reason, source)
-      .length;
+    return this.#db.tx(() => {
+      const theirs = this.#events.redactWhere(
+        { personId: person, types: PERSON_LINE_TYPES },
+        reason,
+        source,
+      ).length;
+      // Her side of their room: her lines name no person, so the session finds them.
+      const hers = this.#db.all(
+        `SELECT id FROM events WHERE session = $session AND ${CHAT_TYPES_SQL} ` +
+          "AND redacted_at IS NULL ORDER BY seq",
+        { session: roomSession(person) },
+      );
+      let n = theirs;
+      for (const row of hers) {
+        if (this.#events.redact(str(row, "id"), reason, source) !== null) n += 1;
+      }
+      return n;
+    });
   }
 
   eventsOf(key: string): string[] {

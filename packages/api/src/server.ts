@@ -17,6 +17,7 @@ import * as oauth from "./oauth.js";
 import { ogRoutes, rewriteHtml } from "./og.js";
 import { servePanel, staticAccess } from "./panel.js";
 import { tooMany } from "./public.js";
+import { roomRoutes } from "./room/routes.js";
 import { ALL_GROUPS, groupOf, type Route, type RouteGroup } from "./route.js";
 import { type ResponseCheck, rpcRoutes } from "./rpc.js";
 import {
@@ -174,6 +175,7 @@ export function routes(state: ApiState, options: AppOptions = {}): Route[] {
     ...landingRoutes(state),
     ...memberRoutes(state),
     ...karaokeRoutes(state),
+    ...roomRoutes(state),
     ...dataRoutes(state),
     ...liveRoutes(state),
     ...githubLinkRoutes(state),

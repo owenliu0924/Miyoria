@@ -13,6 +13,7 @@ import { isOwnPath, OWN_PATH } from "@/pages/public/member-tabs";
 import { PublicSite } from "@/pages/public/PublicSite";
 import { isKaraokePath } from "@/pages/public/karaoke/path";
 import { isLivePath, LivePage } from "@/pages/public/live/LivePage";
+import { isRoomPath } from "@/pages/public/room/path";
 import { Backdrop } from "./Backdrop";
 import { ConnectionProvider, useConnection } from "./connection";
 import { PushProvider } from "./push";
@@ -31,6 +32,9 @@ import {
 
 /** Singing on the member's own (`/karaoke`): its screens and its audio, loaded when opened. */
 const KaraokePage = lazy(() => import("@/pages/public/karaoke/KaraokePage"));
+
+/** Her room (`/her`): a member alone with her, loaded when opened. */
+const RoomPage = lazy(() => import("@/pages/public/room/RoomPage"));
 
 /** The admin panel (shell, router, pages, event stream): only an admin downloads it. */
 const AdminApp = lazy(() => import("./AdminApp"));
@@ -203,6 +207,17 @@ function Authenticated({ router, history, initial }: { router?: AppRouter; histo
           <PushProvider audience="member">
             <KaraokePage member={member ?? undefined} home={discordAdmin ? OWN_PAGE : "/"} />
           </PushProvider>
+        </Suspense>
+      </QueryClientProvider>
+    );
+  }
+
+  // Her room, for the same people as singing; anyone else gets what `/` would show.
+  if (isRoomPath(path) && (member !== null || discordAdmin)) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <Suspense fallback={<div className="min-h-svh" aria-busy="true" aria-label="讀取中" />}>
+          <RoomPage member={member ?? undefined} home={discordAdmin ? OWN_PAGE : "/"} />
         </Suspense>
       </QueryClientProvider>
     );

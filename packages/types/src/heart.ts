@@ -356,6 +356,27 @@ export interface HeartDayChange {
   proposed: number | null;
   quote: string;
   cause: HeartCauseName;
+  /** The turn the change came from (its event's envelope); `null`: none or unknown. */
+  turn?: string | null;
+}
+
+/**
+ * One `heart.changed` as it is told once committed (`HeartPeople.onChanged`): her room marks the
+ * bond moving after her line of that turn. `delta` is what was applied, 0 when the caps took all
+ * of it (still told; a reader that shows movement skips those).
+ */
+export interface HeartChange {
+  person: PersonId;
+  field: HeartFieldName;
+  delta: number;
+  /** Her quote for it (`reason_quote`); empty when there is none. */
+  quote: string;
+  cause: HeartCauseName;
+  /** The turn the change came from; `null`: none (the daily pass, an owner's edit). */
+  turn: string | null;
+  at: Timestamp;
+  /** The `heart.changed` event's id. */
+  event_id: string;
 }
 
 /** One `heart.evidence` of a day. */
@@ -471,6 +492,11 @@ export interface HeartPeople {
   ): HeartReflected;
   /** What she calls each person who has a call name (for the checks that keep names apart). */
   callNames?(): { person: PersonId; call_name: string }[];
+  /**
+   * Tells `listener` of every change written, once its write is committed (never one that rolls
+   * back). The way to stop listening is the returned function.
+   */
+  onChanged?(listener: (change: HeartChange) => void): () => void;
 }
 
 export const HeartKey = serviceKey<HeartPeople>("HeartPeople");

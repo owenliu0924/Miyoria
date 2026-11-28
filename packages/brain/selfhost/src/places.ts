@@ -3,13 +3,14 @@
 // - a channel or thread by its mention (`<#id>`), `#id` or bare id;
 // - a channel or thread of the space she is in by its name (`#雜談` or `雜談`), as the platform
 //   describes it (`PlatformSink.describe`, the panel's "server / channel");
-// - a DM by `私訊:名字` (or `dm:名字`, `@名字`): the DM whose other person goes by that name.
+// - a DM by `私訊:名字` (or `dm:名字`, `@名字`): the DM whose other person goes by that name,
+//   never their room on the site (docs/design/her-room.md).
 //
 // She knows a place when it has a transcript (she was there) or a place on the runner this
 // process. Voice channels are never a `say` target: speaking there is the voice path's.
 
 import type { TranscriptStore } from "@miyoria/memory/transcript";
-import { type ContextKey, contextKeyEquals, safeName } from "@miyoria/types";
+import { type ContextKey, contextKeyEquals, isRoomContext, safeName } from "@miyoria/types";
 import { speakersOf } from "./prompt.js";
 
 export interface PlaceBook {
@@ -56,7 +57,8 @@ export async function resolvePlace(
   if (dm !== null || raw.startsWith("@")) {
     const who = dm !== null ? raw.slice(dm[0].length) : raw.slice(1);
     for (const place of places) {
-      if (place.kind !== "dm") continue;
+      // Her room is the member's to open, never a DM she sends to (docs/design/her-room.md §2.5).
+      if (place.kind !== "dm" || isRoomContext(place)) continue;
       const tail = book.transcript.tail(book.sessionOf(place));
       if (speakersOf(tail.entries).some((s) => sameName(s.name, who))) return place;
     }

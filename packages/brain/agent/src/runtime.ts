@@ -216,8 +216,10 @@ export class Agent {
     readonly commands: AgentCommands,
     fetchImage?: FetchLike,
   ) {
-    this.images = new ImageLoader(fetchImage, (key, error) =>
-      this.log.debug({ image: key, error }, "could not download image"),
+    this.images = new ImageLoader(
+      fetchImage,
+      (key, error) => this.log.debug({ image: key, error }, "could not download image"),
+      ctx.services,
     );
     this.focusBoard = new TurnFocusBoard(
       () => ctx.clock.now(),

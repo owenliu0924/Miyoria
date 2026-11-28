@@ -59,6 +59,7 @@ import {
   type ImpulseSource,
   is,
   isJsonObject,
+  isRoomContext,
   type JsonValue,
   type LedgerEntry,
   newId,
@@ -809,6 +810,8 @@ export class Initiative {
     }
     const out: Opportunity[] = [];
     for (const [key, p] of places) {
+      // A lull in a room is no opening of hers: she speaks there when the member does.
+      if (isRoomContext(p.place)) continue;
       const last = this.#h.transcript.tail(this.#h.sessionOf(p.place)).entries.at(-1);
       if (last === undefined || now - Date.parse(last.at) < quietMs) continue;
       out.push({
@@ -889,12 +892,15 @@ export class Initiative {
     ];
   }
 
-  /** Her DM with `person`, from the transcripts: the place and their account there. */
+  /**
+   * Her DM with `person`, from the transcripts: the place and their account there. Never their
+   * room on the site: the member opens it, she does not come knocking (docs/design/her-room.md §5).
+   */
   #dmWith(person: PersonId): { place: ContextKey; account: AccountRef } | null {
     const transcript = this.#h.transcript;
     for (const session of transcript.sessions().slice(0, MAX_DM_SESSIONS)) {
       const place = transcript.contextOf(session);
-      if (place?.kind !== "dm") continue;
+      if (place?.kind !== "dm" || isRoomContext(place)) continue;
       const line = transcript
         .tail(session)
         .entries.findLast(
@@ -926,7 +932,7 @@ export class Initiative {
     return dayIndex(now, this.#h.quiet ?? this.#h.settings.arbiter);
   }
 
-  /** `[modules.agent.initiative] home` as a place she knows; `null`: none. */
+  /** `[modules.agent.initiative] home` as a place she knows, never a room; `null`: none. */
   #home(): ContextKey | null {
     const home = this.#h.settings.own.home?.trim() ?? "";
     if (home === "") return null;
@@ -937,7 +943,11 @@ export class Initiative {
         return c === null ? [] : [c];
       }),
     ];
-    return known.find((c) => contextKeyString(c) === home || c.channel === home) ?? null;
+    return (
+      known.find(
+        (c) => !isRoomContext(c) && (contextKeyString(c) === home || c.channel === home),
+      ) ?? null
+    );
   }
 
   async #facts(now: number, candidates: readonly Opportunity[]): Promise<GateFacts> {

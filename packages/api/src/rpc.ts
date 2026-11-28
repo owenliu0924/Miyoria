@@ -63,7 +63,7 @@ import { economyRpc, personQuestsRpc } from "./economy.js";
 import { ApiError, NO_SUCH_ENDPOINT } from "./errors.js";
 import { evalRpc } from "./eval/route.js";
 import { exchangeAdminRpc, exchangeRpc } from "./exchange-routes.js";
-import { jsonRequest } from "./extract.js";
+import { cappedRequest, jsonRequest } from "./extract.js";
 import { factsRpc } from "./facts.js";
 import { filesAdminRpc, memberFilesRpc } from "./files/routes.js";
 import { fortuneRpc } from "./fortune-routes.js";
@@ -97,6 +97,7 @@ import { pushRpc } from "./push/routes.js";
 import { quotaRpc } from "./quota.js";
 import { reportsRpc } from "./reports.js";
 import { roleRpc } from "./roles.js";
+import { roomRpc } from "./room/routes.js";
 import type { Method, Route, RouteGroup } from "./route.js";
 import { sandboxRpc } from "./sandbox.js";
 import { placesRpc, settingsRpc } from "./settings.js";
@@ -147,6 +148,7 @@ export const router = os.router({
   karaoke: karaokeRpc,
   karaokeAdmin: karaokeAdminRpc,
   karaokeRooms: karaokeRoomsRpc,
+  room: roomRpc,
   reports: reportsRpc,
   githubLink: githubLinkRpc,
   memberFiles: memberFilesRpc,
@@ -202,6 +204,7 @@ const PUBLIC_SIDE = new Set([
   "giftsPublic",
   "karaoke",
   "karaokeRooms",
+  "room",
   "githubLink",
   "memberFiles",
 ]);
@@ -218,8 +221,12 @@ function tableGroup(path: readonly string[], meta: RouteMeta): RouteGroup {
   return meta.audience === "admin" ? "admin" : "public";
 }
 
-/** Whether a route is served at all: the public side's routes go away with its switch. */
+/**
+ * Whether a route is served at all: the public side's routes go away with its switch, her room's
+ * with its own (`[modules.api.room] enabled`) too.
+ */
 function served(state: ApiState, path: readonly string[]): boolean {
+  if (path[0] === "room" && (state.room === null || state.room === undefined)) return false;
   return !PUBLIC_SIDE.has(path[0] ?? "") || state.publicSide.config.enabled;
 }
 
@@ -378,8 +385,14 @@ function requirePermission(state: ApiState, c: ApiContext, node: string, refusal
 
 type Handler = OpenAPIHandler<RpcContext>;
 
-async function serve(handler: Handler, state: ApiState, c: ApiContext, body: boolean) {
-  let request = c.req.raw;
+async function serve(
+  handler: Handler,
+  state: ApiState,
+  c: ApiContext,
+  body: boolean,
+  maxBody?: RouteMeta["maxBody"],
+) {
+  let request = body && maxBody !== undefined ? await cappedRequest(c, maxBody) : c.req.raw;
   // Hono answers HEAD with the GET route; oRPC only knows the GET.
   if (request.method === "HEAD") request = new Request(request, { method: "GET" });
   if (body) request = await jsonRequest(request);
@@ -446,7 +459,7 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
             if (meta.permission !== null)
               requirePermission(state, c, meta.permission, meta.refusal);
             if (meta.limited) limitMember(state, c);
-            return await serve(handler, state, c, body);
+            return await serve(handler, state, c, body, meta.maxBody);
           } catch (error) {
             refused(c, error);
             throw error;
@@ -454,12 +467,12 @@ export function tableRoutes(state: ApiState, table: AnyRouter, options: RpcOptio
         }
         if (meta.permission !== null) requirePermission(state, c, meta.permission, meta.refusal);
         if (meta.limited) limitMember(state, c);
-        if (!stream) return serve(handler, state, c, body);
+        if (!stream) return serve(handler, state, c, body, meta.maxBody);
         // A HEAD gets the headers only: no subscription is left behind for it.
         if (c.req.method === "HEAD") {
           return new Response(null, { status: 200, headers: STREAM_HEADERS });
         }
-        const response = await serve(handler, state, c, body);
+        const response = await serve(handler, state, c, body, meta.maxBody);
         response.headers.set("cache-control", STREAM_HEADERS["cache-control"]);
         response.headers.set("x-accel-buffering", STREAM_HEADERS["x-accel-buffering"]);
         return response;

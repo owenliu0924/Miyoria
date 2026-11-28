@@ -10,6 +10,8 @@ import {
   type AccountRef,
   AuthorizerKey,
   type FileRequest,
+  type IncomingFiles,
+  IncomingFilesKey,
   type MessageFiles,
   MessageFilesKey,
   type MessageRef,
@@ -268,6 +270,70 @@ describe("workspace.attach", () => {
     expect(data(result).saved).toEqual([{ path: "inbox/ok.txt", size: 1 }]);
     expect(stray(mia())).toEqual([]);
     expect(result.text).toContain("沒能把檔案下載下來");
+  });
+
+  describe("files of her room", () => {
+    const ROOM = "https://uploads.room.invalid/up_x";
+    let asked: string[];
+
+    /** Gives the services a room holding `up_x` (or claiming every URL, when `greedy`). */
+    function room(greedy = false): void {
+      const incoming: IncomingFiles = {
+        handles: (url) => greedy || url === ROOM,
+        fetch: async (url) => {
+          asked.push(url);
+          return new Response(Uint8Array.from([1, 2, 3]), { headers: { "content-length": "3" } });
+        },
+      };
+      services.provide("test", IncomingFilesKey, incoming);
+    }
+
+    beforeEach(() => {
+      asked = [];
+    });
+
+    it("saves a room file from its service, without the network", async () => {
+      room();
+      files = [file("photo.png", 3, ROOM)];
+      const result = await attach();
+      expect(data(result).saved).toEqual([{ path: "inbox/photo.png", size: 3 }]);
+      expect(new Uint8Array(readFileSync(join(mia(), "photo.png")))).toEqual(
+        Uint8Array.from([1, 2, 3]),
+      );
+      expect(asked).toEqual([ROOM]);
+      expect(fetched).toEqual([]);
+    });
+
+    it("still takes only the asker's own room files", async () => {
+      room();
+      files = [file("theirs.png", 3, ROOM, "discord:300")];
+      expect(data(await attach()).refused).toBe("no_files");
+      expect(asked).toEqual([]);
+    });
+
+    it("refuses a room file without the service and never asks the network", async () => {
+      files = [file("photo.png", 3, ROOM)];
+      const result = await attach();
+      expect(data(result).declined).toEqual([{ name: "photo.png", why: "host" }]);
+      expect(fetched).toEqual([]);
+    });
+
+    it("keeps other hosts out even when the service claims them", async () => {
+      room(true);
+      files = [
+        file("a.txt", 1, "https://evil.example/x"),
+        file("b.txt", 1, "http://uploads.room.invalid/x"),
+        file("c.txt", 1, "https://uploads.room.invalid.evil.com/x"),
+        file("d.txt", 1, `${CDN}/d.txt`),
+      ];
+      bodies.set(`${CDN}/d.txt`, Uint8Array.from([4]));
+      const result = await attach();
+      expect(data(result).declined?.map((d) => d.why)).toEqual(["host", "host", "host"]);
+      // The allowed host still goes through the injected fetch, as before.
+      expect(data(result).saved).toEqual([{ path: "inbox/d.txt", size: 1 }]);
+      expect(fetched.map((f) => f.url)).toEqual([`${CDN}/d.txt`]);
+      expect(asked).toEqual([]);
+    });
   });
 
   it("names it prints are inert data", async () => {

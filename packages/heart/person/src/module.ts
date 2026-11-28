@@ -47,6 +47,7 @@ import {
   Events,
   type FeelProposal,
   type HeartActivity,
+  type HeartChange,
   type HeartDay,
   type HeartEvidenceInput,
   HeartKey,
@@ -227,6 +228,10 @@ export class HeartService implements HeartPeople {
 
   callNames(): { person: PersonId; call_name: string }[] {
     return this.#people.callNames();
+  }
+
+  onChanged(listener: (change: HeartChange) => void): () => void {
+    return this.#people.onChanged(listener);
   }
 
   /**

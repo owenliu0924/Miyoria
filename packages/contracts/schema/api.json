@@ -20091,6 +20091,498 @@
         "role"
       ]
     },
+    "ApiRoomBacklog": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiRoomEntry"
+          }
+        },
+        "older": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "entries",
+        "older"
+      ]
+    },
+    "ApiRoomDoing": {
+      "type": "string",
+      "enum": [
+        "offline",
+        "idle",
+        "singing",
+        "playing",
+        "live",
+        "in_voice",
+        "browsing",
+        "working"
+      ]
+    },
+    "ApiRoomEntry": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "line"
+            },
+            "id": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "who": {
+              "type": "string",
+              "enum": [
+                "you",
+                "her"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiRoomFile"
+              }
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "at",
+            "who",
+            "text",
+            "files"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "mark"
+            },
+            "id": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "sign": {
+              "type": "string",
+              "enum": [
+                "plus",
+                "minus"
+              ]
+            },
+            "quote": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "id",
+            "at",
+            "sign",
+            "quote"
+          ]
+        }
+      ]
+    },
+    "ApiRoomEvent": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "hello"
+            },
+            "state": {
+              "$ref": "#/$defs/ApiRoomState"
+            },
+            "turn": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "thinking",
+                        "speaking"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "phase"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "state",
+            "turn"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "you"
+            },
+            "id": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "text": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiRoomFile"
+              }
+            },
+            "client_id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "at",
+            "text",
+            "files",
+            "client_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "thinking"
+            },
+            "turn": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "turn"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "typing"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "step"
+            },
+            "turn": {
+              "type": "string"
+            },
+            "label": {
+              "type": "string"
+            },
+            "state": {
+              "type": "string",
+              "enum": [
+                "started",
+                "ended"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "turn",
+            "label",
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "line"
+            },
+            "id": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "turn": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "text": {
+              "type": "string"
+            },
+            "files": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ApiRoomFile"
+              }
+            },
+            "voice": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "at",
+            "turn",
+            "text",
+            "files",
+            "voice"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "face"
+            },
+            "turn": {
+              "type": "string"
+            },
+            "face": {
+              "$ref": "#/$defs/ApiRoomFace"
+            }
+          },
+          "required": [
+            "kind",
+            "turn",
+            "face"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "reaction"
+            },
+            "to": {
+              "type": "string"
+            },
+            "emoji": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "to",
+            "emoji"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "done"
+            },
+            "turn": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "turn"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "bond"
+            },
+            "id": {
+              "type": "string"
+            },
+            "at": {
+              "type": "string"
+            },
+            "turn": {
+              "type": "string"
+            },
+            "sign": {
+              "type": "string",
+              "enum": [
+                "plus",
+                "minus"
+              ]
+            },
+            "quote": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "id",
+            "at",
+            "turn",
+            "sign",
+            "quote"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "state"
+            },
+            "state": {
+              "$ref": "#/$defs/ApiRoomState"
+            }
+          },
+          "required": [
+            "kind",
+            "state"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "reset"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ping"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "ApiRoomExcluded": {
+      "type": "object",
+      "properties": {
+        "excluded": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "excluded"
+      ]
+    },
+    "ApiRoomFace": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,23}$"
+    },
+    "ApiRoomFile": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image",
+            "file"
+          ]
+        },
+        "download": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "kind",
+        "download"
+      ]
+    },
+    "ApiRoomForgotten": {
+      "type": "object",
+      "properties": {
+        "forgotten": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "forgotten"
+      ]
+    },
     "ApiRoomItem": {
       "type": "object",
       "properties": {
@@ -20133,6 +20625,300 @@
         "funded",
         "backers",
         "placed"
+      ]
+    },
+    "ApiRoomMemory": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text",
+        "kind",
+        "date"
+      ]
+    },
+    "ApiRoomRelation": {
+      "type": "object",
+      "properties": {
+        "bond": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ApiMemberBond"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feeling": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "memories": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ApiRoomMemory"
+          }
+        }
+      },
+      "required": [
+        "bond",
+        "feeling",
+        "memories"
+      ]
+    },
+    "ApiRoomSendRequest": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 8000
+        },
+        "uploads": {
+          "default": [],
+          "maxItems": 8,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^up_[A-Za-z0-9_-]{22}$"
+          }
+        },
+        "client_id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{8,64}$"
+        }
+      },
+      "required": [
+        "text",
+        "client_id"
+      ],
+      "additionalProperties": false
+    },
+    "ApiRoomSendResult": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string"
+        },
+        "heard": {
+          "type": "string",
+          "enum": [
+            "ok",
+            "held",
+            "ignored"
+          ]
+        },
+        "notice": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "heard",
+        "notice"
+      ]
+    },
+    "ApiRoomState": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        },
+        "closed": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "mood": {
+          "anyOf": [
+            {
+              "type": "object",
+              "properties": {
+                "word": {
+                  "type": "string"
+                },
+                "face": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/$defs/ApiRoomFace"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "word",
+                "face"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "doing": {
+          "$ref": "#/$defs/ApiRoomDoing"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "watch": {
+          "type": "boolean"
+        },
+        "paused": {
+          "type": "boolean"
+        },
+        "voice": {
+          "type": "object",
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "reason": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "available",
+            "reason"
+          ]
+        },
+        "quota": {
+          "type": "object",
+          "properties": {
+            "capped": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "hour",
+                    "day"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "until": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "capped",
+            "until"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_text_chars": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "max_files": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "max_image_bytes": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            "max_file_bytes": {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "max_text_chars",
+            "max_files",
+            "max_image_bytes",
+            "max_file_bytes"
+          ]
+        }
+      },
+      "required": [
+        "open",
+        "closed",
+        "mood",
+        "doing",
+        "detail",
+        "watch",
+        "paused",
+        "voice",
+        "quota",
+        "limits"
+      ]
+    },
+    "ApiRoomUpload": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "size": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "image",
+            "file"
+          ]
+        },
+        "expires_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "size",
+        "kind",
+        "expires_at"
       ]
     },
     "ApiRunningProfile": {

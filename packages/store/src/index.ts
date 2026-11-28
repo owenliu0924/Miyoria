@@ -263,6 +263,9 @@ export {
   type ChatLineOptions,
   ChatLog,
   type ChatLogStore,
+  type ChatPage,
+  type ChatPageLine,
+  type ChatPageOptions,
   messageKey,
   utteranceKey,
 } from "./events/chat.js";

@@ -3,6 +3,8 @@
 // as an input file and takes back the text the extractor printed (extract.ts). Nothing from the
 // file is parsed, decoded or executed in the Core process, and without a working sandbox the file
 // is declined: there is no unsandboxed fallback. The text is returned as an untrusted data block.
+// A file attached in her room (`https://uploads.room.invalid/<id>`) is not on a CDN: the room's
+// `IncomingFiles` service hands it over without a network (docs/design/her-room.md §3.3).
 
 import {
   type Clock,
@@ -11,6 +13,9 @@ import {
   type FileOutcome,
   type FileReader,
   type FileRequest,
+  type IncomingFilesLookup,
+  incomingAllowed,
+  incomingFetch,
   safeName,
 } from "@miyoria/types";
 import type { SandboxFiles } from "./config.js";
@@ -126,17 +131,36 @@ export function allowedHost(url: string, hosts: readonly string[]): boolean {
   }
 }
 
+/** No services: only the allowed hosts. */
+const NO_SERVICES: IncomingFilesLookup = { get: () => undefined };
+
+/** Whether a file at `url` may be downloaded: HTTPS on one of `hosts`, or a file of her room. */
+export function allowedFile(
+  url: string,
+  hosts: readonly string[],
+  services: IncomingFilesLookup = NO_SERVICES,
+): boolean {
+  return allowedHost(url, hosts) || incomingAllowed(services, url);
+}
+
 /** `fetch` as the downloader uses it (tests pass a fake; no real network). */
 export type FetchLike = (
   url: string,
   init: { signal: AbortSignal; redirect: "error" },
 ) => Promise<Response>;
 
+/** `fetch` (or `fallback`), except that a file of her room comes from the room's service. */
+export function fileFetch(services: IncomingFilesLookup, fallback?: FetchLike): FetchLike {
+  return incomingFetch(services, fallback ?? ((u, init) => fetch(u, init)));
+}
+
 export interface FileReaderOptions {
   sandbox: Sandbox;
   config: SandboxFiles;
   clock: Clock;
   fetch?: FetchLike;
+  /** Where the room's `IncomingFiles` is looked up, at each read (the module's services). */
+  services?: IncomingFilesLookup;
 }
 
 class Window {
@@ -227,7 +251,7 @@ export class SandboxFileReader implements FileReader {
     const kind = fileKind(request.name);
     if (!c.enabled || kind === null) return decline("unsupported");
     if (request.size !== null && request.size > c.max_bytes) return decline("too_big");
-    if (!allowedHost(request.url, c.allowed_hosts)) return decline("download");
+    if (!allowedFile(request.url, c.allowed_hosts, this.#o.services)) return decline("download");
     const key = request.id === null ? null : `id:${request.id}`;
     const cached = key === null ? undefined : this.#cache.get(key);
     if (cached !== undefined) return cached;
@@ -257,7 +281,7 @@ export class SandboxFileReader implements FileReader {
 
   async #download(url: string, signal: AbortSignal): Promise<Uint8Array | "big" | null> {
     const c = this.#o.config;
-    const doFetch: FetchLike = this.#o.fetch ?? ((u, init) => fetch(u, init));
+    const doFetch = fileFetch(this.#o.services ?? NO_SERVICES, this.#o.fetch);
     try {
       const response = await doFetch(url, {
         signal: AbortSignal.any([signal, AbortSignal.timeout(c.download_timeout_ms)]),

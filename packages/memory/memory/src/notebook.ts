@@ -72,7 +72,13 @@ export function originOf(where: NotebookWhere): PageOrigin {
   if (c === null) return null;
   if (c.kind === "dm" || c.scope === null) {
     const partner = where.accounts?.[0];
-    return { type: "dm", platform: c.platform, account: partner?.id ?? c.channel };
+    // The partner's own platform: her room is a DM on `web` with a Discord account, and what is
+    // written there is that person's DM page, as in their Discord DM (docs/design/her-room.md §10).
+    return {
+      type: "dm",
+      platform: partner?.platform ?? c.platform,
+      account: partner?.id ?? c.channel,
+    };
   }
   return { type: "guild", platform: c.platform, guild: c.scope };
 }

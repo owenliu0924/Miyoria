@@ -2,7 +2,7 @@
 // of two data blocks, the time-and-place lines, and how a line she wrote is cleaned before it is
 // said.
 
-import type { ContextKey } from "@miyoria/types";
+import { type ContextKey, isRoomContext } from "@miyoria/types";
 import { toTraditional } from "./script.js";
 import { utf8Len } from "./util.js";
 
@@ -27,6 +27,8 @@ export function whenAndWhere(ctx: ContextKey, now: Date, utcOffsetMinutes: numbe
   const time =
     `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(local.getUTCDate())} ` +
     `${pad2(local.getUTCHours())}:${pad2(local.getUTCMinutes())}(星期${weekday})`;
+  // Her room (docs/design/her-room.md §2.4): a DM on the site, not a platform's.
+  if (isRoomContext(ctx)) return `- 時間:${time}\n- 地點:網站上她的房間(私訊)`;
   const place =
     ctx.kind === "dm"
       ? "私訊"

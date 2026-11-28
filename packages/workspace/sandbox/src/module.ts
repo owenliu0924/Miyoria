@@ -191,7 +191,13 @@ export class SandboxModule implements Module {
     if (config.files.enabled) {
       ctx.provide(
         FileReaderKey,
-        new SandboxFileReader({ sandbox, config: config.files, clock: ctx.clock }),
+        new SandboxFileReader({
+          sandbox,
+          config: config.files,
+          clock: ctx.clock,
+          // The room's files come from its service, looked up at each read.
+          services: ctx.services,
+        }),
       );
     }
     const store = ctx.services.get(SettingsStoreKey);

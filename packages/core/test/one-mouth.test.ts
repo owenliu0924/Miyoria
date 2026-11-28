@@ -47,7 +47,13 @@ describe("only the main line speaks", () => {
   });
 
   it("the voice sink is only called by the scheduler; the others go through the mouth", () => {
-    expect(using(/\.speak\(/)).toEqual(["packages/runtime/scheduler/src/scheduler.ts"]);
+    expect(using(/\.speak\(/)).toEqual(
+      [
+        "packages/runtime/scheduler/src/scheduler.ts",
+        // `HerVoice` in her room: the voice of a line she already said there, not a new line.
+        "packages/api/src/room/voice.ts",
+      ].sort(),
+    );
     // The panel's "say" and game chat have no other route: without the mouth they fail.
     for (const file of ["packages/gate/actions/src/builtin.ts", "packages/play/game/src/chat.ts"]) {
       const text = readFileSync(join(ROOT, file), "utf8");

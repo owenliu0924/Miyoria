@@ -54,6 +54,10 @@ function memberDemoAsked(): boolean {
 // only: a production build drops this branch and the demo with it.
 if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("karaoke-demo")) {
   void import("./pages/public/karaoke/demo").then((m) => m.installDemo()).finally(start);
+} else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("room-demo")) {
+  // Her room without a Core (`/her?room-demo`, `=singing`, `=paused`, `=quota`, `=offline`,
+  // `=novoice`, `=closed`, `=stranger`, `=empty`): made-up data, dev server only.
+  void import("./pages/public/room/demo").then((m) => m.installRoomDemo()).finally(start);
 } else if (import.meta.env.DEV && new URLSearchParams(window.location.search).has("exchange-demo")) {
   // 深海交易所 without a Core (`/?exchange-demo`, `=chart`, `=chart-us`, `=local`, `=map`, `=map-tw`,
   // `=map-us`, `=owner`): made-up data, dev server only.
